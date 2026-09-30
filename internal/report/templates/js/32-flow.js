@@ -1,7 +1,9 @@
 // A declaration's flow (page_flow.go, owner-approved 2026-09-29, the
-// designer's flow v2): its calls in the order they are written, each run of
-// calls into one part under that part's box, drawn as the column draws a
-// part (its description on hover, a click reads it). A call opens in place
+// designer's flow v2): its calls under each part once, the parts in the
+// order of their first call and each part's calls in the order they are
+// written (Go groups them), each part's box drawn as the column draws a
+// part (its description on hover, a click reads it). A call of itself is
+// no row: one quiet line says "calls itself". A call opens in place
 // to its callee's own flow, grouped the same way; when all of those stay in
 // the caller's part, no box repeats. The twist shows under the pointer or
 // focus on a call that can open; a name reads its declaration and shows it
@@ -106,7 +108,12 @@ function rmFlowRow(ctx,data,call,opts,helper){
 var rmFlowFoldAbove=3;
 function rmFlowList(ctx,data,own,opts){
   var list=rmEl('div','map-flow-list'),all=own.flow||[];
-  var outside=all.filter(function(call){return call.decl===undefined&&!call.one;}),calls=all.filter(function(call){return outside.indexOf(call)<0;});
+  // A declaration never lists itself among its calls: its call of itself
+  // is one quiet line (reviewer, 2026-09-30: othello.ai/move's calls had
+  // opened with "othello.ai/move() ↑ shown above").
+  // A callback of itself (a timer re-arming its own function) says so.
+  var itself=[];all.forEach(function(call){if(call.decl===undefined||call.decl!==own.decl)return;var said=call.kind==='passes_callback'?'passes itself as a callback':'calls itself';if(itself.indexOf(said)<0)itself.push(said);});
+  var outside=all.filter(function(call){return call.decl===undefined&&!call.one;}),calls=all.filter(function(call){return outside.indexOf(call)<0&&!(call.decl!==undefined&&call.decl===own.decl);});
   var marked=calls.filter(function(call){return call.helper;}),fold=marked.length>rmFlowFoldAbove&&marked.length<calls.length;
   var work=fold?calls.filter(function(call){return !call.helper;}):calls,helpers=fold?marked:[];
   opts=Object.assign({},opts,{single:work.length===1,auto:(opts.auto||0)});
@@ -131,6 +138,7 @@ function rmFlowList(ctx,data,own,opts){
       group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&fold));
     });
     if(helpers.length&&!rmFlowHelpers)list.appendChild(helperLine(opened));
+    itself.forEach(function(said){list.appendChild(rmEl('p','map-flow-itself',rmT(said)));});
     if(outside.length)list.appendChild(alsoLine());
   }
   function alsoLine(){

@@ -141,7 +141,42 @@ assert.equal(lines.length,1,'the fan-out is one line');
 assert.equal(lines[0].tagName,'DETAILS','folded');
 const head=lines[0].children[0];
 assert.deepEqual(names(head),['loadAppendOnlyFile()','cmdTable'],'the caller and the site it dispatches through');
-assert.ok(head.textContent.includes('request handlers')&&!/\d/.test(head.textContent)&&head.all(c=>c.has('possible')).length===1,'its ends named by kind, not counted, possible: '+head.textContent);
+assert.equal(head.textContent,'loadAppendOnlyFile() calls one of these request handlers through cmdTable','in plain words, not counted: '+head.textContent);
+assert.equal(lines[0].all(c=>c.has('possible')||c.has('map-reading-relation')).length,0,'"one of these" says they are possible; no row repeats it');
+`)
+}
+
+// A relation other than a call is said once for a run of names, in plain
+// words, and each name stands once on its own line (reviewer, 2026-09-30:
+// Server admin commands had read "authCommand() — passed as a callback"
+// thirteen times, each wrapping to two lines, and Client I/O's "Calls
+// into" had listed each command twice, as a possible call and as a
+// callback): a caller whose ends are one run says it on its own line; a
+// list of several runs says each above its names, plain calls first; a
+// single name keeps its words; callers of a declaration are said alike.
+func TestARelationIsSaidOnceForItsRun(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	runSystemJS(t, readingViewElements+code+`
+const d=(name,part)=>({name,kind:'function',part,key:'h#'+name,href:'h#'+name,file:'redis.c',at:'redis.c:1'});
+const commands=['auth','bgsave','echo','ping'].map(n=>d(n+'Command','#own'));
+const decls=[Object.assign(d('cmdTable','#main'),{kind:'variable'}),d('deleteKey','#core'),d('lookupCommand','#core')].concat(commands);
+const table={decls,files:['redis.c'],members:[{kind:'function',decls:[3,4,5,6]}],
+ in:[{part:'',inputs:true,title:'Inputs',count:4,lines:[{caller:0,ends:[3,4,5,6].map(i=>({decl:i,kind:'passes_callback'}))}]}],
+ out:[{part:'#core',title:'Server core state',count:5,lines:[{caller:-1,ends:[3,4,5].map(i=>({decl:i,kind:'calls',possible:true})).concat([{decl:1,kind:'calls'}],[3,4,5].map(i=>({decl:i,kind:'passes_callback'})),[{decl:2,kind:'passes_callback'}])}]}]};
+const view=rmPartView(ctx,nodes['#own'],table).view;
+const incoming=view.children.find(c=>c.has('map-reading-in')),outgoing=view.children.find(c=>c.has('map-reading-out'));
+const caller=incoming.all(c=>c.has('map-reading-caller'))[0];
+assert.ok(caller.textContent.startsWith('cmdTable passes these as callbacks'),'said once, on the caller\'s line: '+caller.textContent);
+assert.equal(caller.all(c=>c.has('map-reading-relation')).length,0,'no name repeats it');
+assert.deepEqual(caller.all(c=>c.tagName==='LI').map(c=>c.textContent),['authCommand()','bgsaveCommand()','echoCommand()','pingCommand()'],'one name to a line');
+assert.deepEqual(outgoing.all(c=>c.has('map-reading-peer'))[0].children.filter(c=>c.tagName==='UL'||c.has('map-reading-run')).map(c=>c.tagName==='UL'?c.all(x=>x.tagName==='LI').map(x=>x.textContent).join(' '):c.textContent),
+ ['deleteKey()','possibly called, passed as callbacks:','authCommand() bgsaveCommand() echoCommand()','lookupCommand()passed as a callback'],
+ 'plain calls first, then each run said once above its names, each name once; a single name keeps its words');
+const callers=decls.concat([d('serverCron','#own')]);
+const one={decls:callers,files:['redis.c'],members:[{kind:'function',decls:[7]}],own:[{decl:7,callers:[{part:'#core',title:'Server core state',decls:[{decl:1,kind:'calls'},{decl:2,kind:'calls',possible:true},{decl:0,kind:'calls',possible:true}]}]}]};
+const reading=rmDeclView(ctx,nodes['#own'],one,{name:'serverCron',source:{Href:'h#serverCron',Text:'redis.c:1'}});
+assert.deepEqual(reading.children[0].all(c=>c.has('map-reading-run')).map(c=>c.textContent),['may call it:'],'its callers are said alike: '+reading.children[0].textContent);
+assert.equal(reading.children[0].all(c=>c.has('possible')).length,0,'no caller repeats "possible"');
 `)
 }
 
@@ -208,7 +243,9 @@ assert.deepEqual(read.slice(reads),['redisClient'],'a written field reads the ty
 // is a helper (owner, 2026-09-29: processCommand's own calls had waited
 // among eighteen names). The fold and "Show helper calls" open them in
 // place. A call opens in place to its callee's flow, a call its ancestors
-// make says it is shown above, and a library's call is a plain row.
+// make says it is shown above, a call of itself is no row but one quiet
+// line (reviewer, 2026-09-30: othello.ai/move's calls had opened with
+// "othello.ai/move() ↑ shown above"), and a library's call is a plain row.
 func TestAFunctionsReadingIsItsFlow(t *testing.T) {
 	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
@@ -227,13 +264,15 @@ data.own[0].flow=[{decl:log,helper:true,sites:[{at:'server.c:1273'},{at:'server.
   {decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},{decl:free,helper:true,sites:[{at:'server.c:1365'}]},
   {macro:'assert',lib:'assert.h',sites:[{at:'server.c:1370'}]},{decl:1,macro:'redisAssert',sites:[{at:'server.c:1380'}]}];
 data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}]}]});
-data.own.push({decl:lookup,flow:[{decl:log,helper:true,sites:[{at:'server.c:904'}]},{decl:1,sites:[{at:'server.c:905'}]}]});
+data.own.push({decl:lookup,flow:[{decl:log,helper:true,sites:[{at:'server.c:904'}]},{decl:1,sites:[{at:'server.c:905'}]},{decl:0,sites:[{at:'server.c:906'}]}]});
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
 const said=view.textContent;
 assert.ok(!/serverCron calls|in order|steps|\d+ helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
 const root=view.all(c=>c.has('map-flow-root'))[0];
 const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
-assert.deepEqual(rows(),['beforeSleep()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written');
+assert.deepEqual(rows(),['beforeSleep()','rdbSave()','rdbSave()','lookupKeyRead()','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written, and never itself');
+const itself=root.all(c=>c.has('map-flow-itself'));
+assert.ok(itself.length===1&&itself[0].textContent==='calls itself','its call of itself is said once, plainly');
 const macro=root.all(c=>c.has('map-reading-name')&&c.textContent==='redisAssert')[0];
 assert.ok(macro.title.includes('initServer'),'a macro names what its expansion calls on its hover: '+macro.title);
 // A call into code the report names no declaration for (wait3, the
@@ -250,7 +289,6 @@ for(const list of lists){const boxes=list.children.filter(c=>c.has&&c.has('map-f
 // A name is its link: no row carries a separate code mark, a link with no
 // name of its own (owner, 2026-09-29).
 assert.deepEqual(view.all(c=>c.tagName==='A'&&c.textContent==='').length,0,'no code mark beside a name');
-assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
 const helperLine=root.all(c=>c.has('map-flow-helpers'));
 assert.equal(helperLine.length,1,'one fold of helper calls under the step');
 assert.deepEqual(names(helperLine[0]),[],'the fold names none of them: several names to a line were a wall');
@@ -271,6 +309,7 @@ assert.ok(saveRow.all(c=>c.has('map-flow-row')).some(r=>r.textContent==='redisLo
 const lookupOpen=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lookupKeyRead()'))[0];
 lookupOpen.open=true;
 assert.ok(lookupOpen.all(c=>c.has('map-flow-row')).some(r=>r.textContent==='redisLog()'&&!r.has('map-flow-helper'))&&lookupOpen.all(c=>c.has('map-flow-helpers')).length===0,'a lone helper call stands as a row');
+assert.ok(lookupOpen.all(c=>c.has('map-flow-above')).length===1&&lookupOpen.all(c=>c.has('map-flow-itself')).length===0,'a call back into an ancestor is shown above, not "itself"');
 // The declaration no part holds is a plain name that still opens.
 const lookupRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lookupKeyRead()'))[0];
 assert.ok(lookupRow&&lookupRow.all(c=>c.has('map-flow-plain')).length>0,'a declaration no part holds keeps its call, a plain name');

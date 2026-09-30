@@ -189,3 +189,48 @@ func TestAnInputsReadingIsInTheInputsBlue(t *testing.T) {
 		t.Fatal("the reading of an input is not marked as one")
 	}
 }
+
+// Every fold of the reading column shows its disclosure marker (reviewer,
+// 2026-09-30): "Called from" and "Calls into", their summaries laid out as
+// flex, had lost the ▶ and read as empty headings between two rules, while
+// "Inputs reaching this part" beside them showed it, and a caller's
+// dispatch line had its marker pushed outside, out of sight. A summary the
+// column's styles lay out as flex or grid, strip of its list marker or push
+// it outside draws a marker of its own (::before or ::after), unless it is
+// a row that opens by its own twist or link: a flow's call and a
+// connection's line.
+func TestEveryColumnFoldShowsItsMarker(t *testing.T) {
+	ownTwist := map[string]bool{".map-frame-connections>details>summary": true, ".map-flow-row>summary": true}
+	rule := regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`)
+	stripped := regexp.MustCompile(`display:\s*(flex|grid|inline-flex|block)|list-style:\s*none|list-style-position:\s*outside`)
+	for _, name := range []string{"templates/css/38-reading.css", "templates/css/43-map-reading.css"} {
+		raw, err := reportTemplateFS.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		css := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(string(raw), "")
+		marked := map[string]bool{}
+		for _, match := range rule.FindAllStringSubmatch(css, -1) {
+			for _, selector := range strings.Split(match[1], ",") {
+				selector = strings.TrimSpace(selector)
+				for _, pseudo := range []string{"::before", "::after"} {
+					if base, found := strings.CutSuffix(selector, pseudo); found && strings.Contains(match[2], "content") {
+						marked[strings.ReplaceAll(base, "[open]", "")] = true
+					}
+				}
+			}
+		}
+		for _, match := range rule.FindAllStringSubmatch(css, -1) {
+			if !stripped.MatchString(match[2]) {
+				continue
+			}
+			for _, selector := range strings.Split(match[1], ",") {
+				selector = strings.TrimSpace(selector)
+				if !strings.HasSuffix(selector, "summary") || strings.Contains(selector, "target-picker") || ownTwist[selector] || marked[selector] {
+					continue
+				}
+				t.Errorf("%s: %q is laid out without its marker (%s)", name, selector, strings.TrimSpace(match[2]))
+			}
+		}
+	}
+}

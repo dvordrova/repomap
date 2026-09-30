@@ -139,24 +139,86 @@ function rmHeadingUp(map,kind,frame,member){
   up.addEventListener('click',function(){map.readUp(frame,!!member);});
   kind.append(document.createTextNode(' · '),up);
 }
-// One caller and what it calls in the part. A caller reaching many of its
-// declarations through one dispatch site is one line: "loadAppendOnlyFile()
-// → 17 request handlers, possible, via cmdTable", its ends folded under it.
+// A list of ends said by runs, in plain words (reviewer, 2026-09-30: "—
+// passed as a callback" had followed each of thirteen names, and Client
+// I/O's "Calls into" had listed each command twice, as a possible call and
+// as a callback): each name once, with every relation it has here; the
+// names of one set of relations stand together, in their order, and a run
+// of two or more says its relations once on a quiet line above it
+// ("possibly called, passed as callbacks:"); a single name keeps its words
+// on its row; plain calls say nothing. A list of callers (`side` "in")
+// says it of them ("may call it:"). With `head`, a list that is one run of
+// one relation leaves its words (`said`) for its caller's line; `quiet`
+// leaves a variable's readers unsaid ("Used by" says it).
+var rmRunWords={
+  out:{called:'called',possible:'possibly called',passes_callback:'passed as callbacks',binds_implementation:'supplied as implementations',decorates:'decorators',executes:'run',
+    imports:'imported',includes:'included',implements:'implemented',reads:'read',writes:'written',sources:'sourced',integration:'receive the connection'},
+  in:{called:'call it',possible:'may call it',passes_callback:'pass it as a callback',binds_implementation:'supply it as an implementation',decorates:'decorate it',executes:'run it',
+    imports:'import it',includes:'include it',implements:'implement it',reads:'read it',writes:'write it',sources:'source it',integration:'connect to it'}
+};
+var rmGroupWords={possible:'may call these',passes_callback:'passes these as callbacks',binds_implementation:'supplies these as implementations',decorates:'decorates these',executes:'runs these',
+  imports:'imports these',includes:'includes these',implements:'implements these',reads:'reads these',writes:'writes these',sources:'sources these',integration:'connects to these'};
+function rmEndRuns(ctx,data,ends,side,head,quiet){
+  var names=[],byDecl=new Map();
+  ends.forEach(function(end){
+    var entry=byDecl.get(end.decl),kind=end.kind||'calls',call=kind==='calls'||kind==='invokes_external';
+    if(!entry){entry={end:end,words:[]};byDecl.set(end.decl,entry);names.push(entry);}
+    var word=call?(end.possible&&entry.words.indexOf('called')<0?'possible':'called'):kind;
+    if(word==='called')entry.words=entry.words.filter(function(other){return other!=='possible';});
+    if(entry.words.indexOf(word)<0)entry.words.push(word);
+  });
+  // A name only called says nothing; called and more, "called" is said.
+  names.forEach(function(entry){
+    var order=Object.keys(rmRunWords.out);
+    if(quiet)entry.words=entry.words.filter(function(word){return word!=='reads';});
+    entry.words.sort(function(a,b){return order.indexOf(a)-order.indexOf(b);});
+    if(!entry.words.length||entry.words.length===1&&entry.words[0]==='called')entry.words=[];
+    entry.key=entry.words.join(' ');
+  });
+  // Plain calls first, then each run in the order its first name comes.
+  var keys=[];names.forEach(function(entry){if(keys.indexOf(entry.key)<0)keys.push(entry.key);});
+  if(keys.indexOf('')>0){keys.splice(keys.indexOf(''),1);keys.unshift('');}
+  var runs=keys.map(function(key){return names.filter(function(entry){return entry.key===key;});});
+  var one=head&&runs.length===1&&runs[0].length>1&&runs[0][0].words.length===1&&rmGroupWords[runs[0][0].words[0]];
+  var parts=[];
+  runs.forEach(function(run){
+    var words=run[0].words,list=rmEl('ul','map-reading-ends');
+    if(run.length>1&&words.length&&!one)parts.push(rmEl('p','map-reading-run',words.map(function(word){return rmT(rmRunWords[side][word]);}).join(', ')+':'));
+    run.forEach(function(entry){
+      var decl=data.decls[entry.end.decl],item=rmEl('li'),site=side==='in'&&entry.end.site;
+      item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl),false,site?{href:site.href,open:site.open,title:site.at}:undefined));
+      if(run.length===1)words.forEach(function(word){
+        if(word==='possible')item.appendChild(rmEl('span','possible',rmT('possible')));
+        else if(word!=='called'&&rmEndWords[side][word])item.appendChild(rmEl('span','map-reading-relation',rmT(rmEndWords[side][word])));
+      });
+      list.appendChild(item);
+    });
+    parts.push(list);
+  });
+  return {parts:parts,said:one||''};
+}
+// One caller and what it reaches in the part, in plain words: a caller
+// reaching many of its declarations through one dispatch site is one line,
+// "loadAppendOnlyFile() calls one of these request handlers through
+// cmdTable", its ends folded under it ("one of these" says they are
+// possible); a caller whose ends are one run says it on its own line,
+// "cmdTable passes these as callbacks".
+var rmFanWords={request:'calls one of these request handlers',command:'calls one of these command handlers'};
 function rmCallerLine(ctx,data,line){
   var caller=data.decls[line.caller],row=rmEl(line.fan?'details':'div','map-reading-caller'),head=line.fan?rmEl('summary'):row;
   head.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller)));
+  var runs=rmEndRuns(ctx,data,line.fan?line.ends.map(function(end){return Object.assign({},end,{possible:false});}):line.ends,'out',!line.fan);
   if(line.fan){
-    var fan=line.fan,say=rmEl('span','map-reading-fan');
-    say.append(document.createTextNode(' → '+rmT(({request:'request handlers',command:'command handlers'})[fan.noun]||'functions')));
-    if(line.ends.every(function(end){return end.possible;}))say.append(document.createTextNode(', '),rmEl('span','possible',rmT('possible')));
-    if((fan.via||[]).length){
-      say.append(document.createTextNode(', '+rmT('via')+' '));
-      fan.via.forEach(function(at,i){if(i)say.append(document.createTextNode(', '));var via=data.decls[at];say.appendChild(rmDeclName(via,via.name,ctx.goDecl(via),via.at));});
+    var fan=line.fan,say=rmEl('span','map-reading-fan'),via=(fan.via||[]).map(function(at){return data.decls[at];}).filter(Boolean);
+    var words=rmT((rmFanWords[fan.noun]||'calls one of these')+(via.length?' through {0}':''),'\u0001').split('\u0001');
+    say.append(document.createTextNode(' '+words[0]));
+    if(via.length){
+      via.forEach(function(decl,i){if(i)say.append(document.createTextNode(', '));say.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at));});
+      say.append(document.createTextNode(words[1]||''));
     }
     head.appendChild(say);row.appendChild(head);
-  }
-  var ends=rmEl('ul','map-reading-ends');line.ends.forEach(function(end){ends.appendChild(rmEndItem(ctx,data,end,'out'));});
-  row.appendChild(ends);
+  }else if(runs.said)head.appendChild(rmEl('span','map-reading-fan',' '+rmT(runs.said)));
+  runs.parts.forEach(function(part){row.appendChild(part);});
   return row;
 }
 // Functions by the part they stand in: the part in its box on a line of
@@ -208,8 +270,7 @@ function rmReachedFrom(ctx,data){
     var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
     if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
     head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
-    var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,'in'));});
-    box.appendChild(list);section.appendChild(box);
+    rmEndRuns(ctx,data,group.decls,'in').parts.forEach(function(part){box.appendChild(part);});section.appendChild(box);
   });
   return section;
 }
@@ -356,9 +417,9 @@ function rmPartView(ctx,node,data){
     data.out.forEach(function(peer){
       var box=rmEl(wide?'details':'div','map-reading-peer'),head=rmEl(wide?'summary':'div','map-reading-peer-head');
       head.appendChild(rmPeerBox(ctx,peer));box.appendChild(head);
-      var ends=peer.lines[0].ends,calls=rmEl('ul','map-reading-ends'),uses=rmEl('ul','map-reading-ends');
-      ends.forEach(function(end){(rmUsesVariable(end.kind)?uses:calls).appendChild(rmEndItem(ctx,data,end,'out'));});
-      if(calls.childElementCount)box.appendChild(calls);
+      var ends=peer.lines[0].ends,calls=ends.filter(function(end){return !rmUsesVariable(end.kind);}),uses=rmEl('ul','map-reading-ends');
+      ends.forEach(function(end){if(rmUsesVariable(end.kind))uses.appendChild(rmEndItem(ctx,data,end,'out'));});
+      if(calls.length)rmEndRuns(ctx,data,calls,'out').parts.forEach(function(part){box.appendChild(part);});
       if(uses.childElementCount){uses.querySelectorAll('.map-reading-relation').forEach(function(word){word.remove();});box.append(rmEl('p','map-reading-uses',rmT('Uses variables')),uses);}
       outgoing.appendChild(box);
     });
@@ -403,8 +464,7 @@ function rmDeclView(ctx,node,data,concept){
       // that program: "redis-cli: [Command line client] cliConnect()".
       if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
       head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
-      var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,which,variable));});
-      box.appendChild(list);section.appendChild(box);
+      rmEndRuns(ctx,data,group.decls,which,false,variable).parts.forEach(function(part){box.appendChild(part);});section.appendChild(box);
     });
     return section;
   }
@@ -497,8 +557,14 @@ function rmCollectionView(ctx,node,collection){
   // function, eight times); each catalogue of it under a quiet line saying
   // where its inputs are declared, then its inputs.
   var kinds=[];collection.groups.forEach(function(group){if(kinds.indexOf(group.kind)<0)kinds.push(group.kind);});
+  // Within a kind, its inputs by the groups the canvas draws in the
+  // collection (29-operation-view.js inputGroups), in the canvas's order,
+  // each under its part's box, the loose ones after them; a kind of more
+  // than twelve inputs in several groups folds each group to its box.
+  var parted=ctx.inputGroups?ctx.inputGroups(node.id):null;
   kinds.forEach(function(kind){
     var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
+    var inParts=parted?parted.groups.filter(function(part){return part.inputs.some(function(id){return all.indexOf(id)>=0;});}):[],fold=inParts.length>1&&all.length>12;
     var section=rmEl('section','map-collection-group'),heading=rmEl('h6','map-reading-count');
     // A kind chosen in the component's reading, or Settings in the
     // collection's frame, lands on its own section: Background work on the
@@ -519,19 +585,31 @@ function rmCollectionView(ctx,node,collection){
         if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
       });
       if(matched)box.appendChild(rmModelText('p','map-collection-matched',rmT('Matched to inputs of {0} by name',programs.join(', '))));
-      var names=rmEl('ul','map-collection-names');
-      group.inputs.forEach(function(id){
-        var input=ctx.nodeById(id);if(!input)return;
-        // A directive with its values: "appendfsync: always | everysec | no".
-        var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
-        var title=input.dataset.title+(values.length?': '+values.join(' | '):'');
-        var item=rmEl('li'),button=rmDotBreaks(rmEl('button','',title));button.type='button';
-        // A name that is a sentence (a query parameter's description) is
-        // prose, not code.
-        if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
-        button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);names.appendChild(item);
+      function names(ids){
+        var list=rmEl('ul','map-collection-names');
+        ids.forEach(function(id){
+          var input=ctx.nodeById(id);if(!input)return;
+          // A directive with its values: "appendfsync: always | everysec | no".
+          var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
+          var title=input.dataset.title+(values.length?': '+values.join(' | '):'');
+          var item=rmEl('li'),button=rmDotBreaks(rmEl('button','',title));button.type='button';
+          // A name that is a sentence (a query parameter's description) is
+          // prose, not code.
+          if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
+          button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);list.appendChild(item);
+        });
+        return list;
+      }
+      if(!inParts.length){box.appendChild(names(group.inputs));section.appendChild(box);return;}
+      inParts.forEach(function(part){
+        var ids=group.inputs.filter(function(id){return part.inputs.indexOf(id)>=0;});if(!ids.length)return;
+        var holder=ctx.nodeById(part.part),peer=rmEl(fold?'details':'div','map-reading-peer map-collection-part'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
+        head.appendChild(rmPartBox(ctx,holder?holder.getAttribute('href')||'#'+holder.id:'',part.title,fold));rmLights(ctx,head,ids);
+        peer.append(head,names(ids));box.appendChild(peer);
       });
-      box.appendChild(names);section.appendChild(box);
+      var loose=group.inputs.filter(function(id){return !inParts.some(function(part){return part.inputs.indexOf(id)>=0;});});
+      if(loose.length)box.appendChild(names(loose));
+      section.appendChild(box);
     });
     view.appendChild(section);
   });

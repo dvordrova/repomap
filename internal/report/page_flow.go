@@ -11,10 +11,11 @@ import (
 
 // pageFlowCall is one call a declaration makes, as its flow reads it (owner,
 // 2026-09-29, the designer's flow v2): its calls stand in the order they
-// are written (the first call site's line, then column), each callee once
-// with every place it is called; a dispatch site that calls one of several
-// declarations is one call. The reading column renders them in this order,
-// a call opening in place to its callee's own flow; it sorts nothing.
+// are written (the first call site's line, then column), then under each
+// part once (groupFlowByPart), each callee once with every place it is
+// called; a dispatch site that calls one of several declarations is one
+// call. The reading column renders them in this order, a call opening in
+// place to its callee's own flow; it sorts nothing.
 //
 //   - Decl is the callee in the reading's declarations; Name a call into
 //     code the report names no declaration for (a library's fork or write),
@@ -307,6 +308,37 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		}
 	}
 	return calls
+}
+
+// groupFlowByPart stands a flow's calls under each part once (reviewer,
+// 2026-09-30: redis main had shown "Server lifecycle and cron" four times,
+// FreqtradeBot.process "Trading bot core" three): the parts in the order of
+// their first call, each part's calls in the order they are written. A
+// call's part is its callee's (partOf, by position in the reading), a
+// dispatch site's its first declaration's; the calls into code the report
+// names no declaration for keep their written order among themselves.
+func groupFlowByPart(calls []pageFlowCall, partOf func(int) string) []pageFlowCall {
+	if len(calls) < 3 {
+		return calls
+	}
+	part := func(call pageFlowCall) string {
+		switch {
+		case call.Decl != nil:
+			return partOf(*call.Decl)
+		case len(call.One) > 0:
+			return partOf(call.One[0])
+		}
+		return "\x00"
+	}
+	first := map[string]int{}
+	for i, call := range calls {
+		if _, seen := first[part(call)]; !seen {
+			first[part(call)] = i
+		}
+	}
+	grouped := slices.Clone(calls)
+	slices.SortStableFunc(grouped, func(a, b pageFlowCall) int { return cmp.Compare(first[part(a)], first[part(b)]) })
+	return grouped
 }
 
 // waysIn are the ways a request reaches one dispatch site, one per outer

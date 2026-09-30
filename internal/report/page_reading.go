@@ -169,7 +169,7 @@ type pageReadingEnd struct {
 	// name's code link will open (owner, 2026-09-29: queueMultiCommand's
 	// caller had opened processCommand at its top, 70 lines above the
 	// call). The page prints no code mark; no other end keeps a place.
-	Site *pageReadingSite `json:"site,omitempty"`
+	Site  *pageReadingSite `json:"site,omitempty"`
 	sites []pageAnchor
 }
 
@@ -751,6 +751,9 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	}
 	builder.fieldReadings(&index, own, &reading, types, variables, functions, fieldsOf, declareSubject, partOf, ownerOf, byName)
 	slices.SortFunc(reading.Own, func(a, b pageReadingOwner) int { return cmp.Compare(a.Decl, b.Decl) })
+	for i := range reading.Own {
+		reading.Own[i].Flow = groupFlowByPart(reading.Own[i].Flow, func(position int) string { return reading.Decls[position].Part })
+	}
 	if len(reading.Decls) == 0 {
 		return ""
 	}

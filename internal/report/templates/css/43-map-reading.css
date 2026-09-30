@@ -212,7 +212,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-canvas .map-card-hint{display:none}
 .system-neighbours{display:grid;gap:5px;margin:12px 0}.system-neighbours button{font:13px var(--sans);color:var(--accent);text-align:left;background:var(--soft);border:1px solid var(--line);padding:7px;border-radius:5px;cursor:pointer}
 .system-entity-writes{border-top:1px solid var(--line);margin:16px 0;padding-top:12px}
-.system-entity-writes>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:14px}
+.system-entity-writes>summary{cursor:pointer;font-weight:600;font-size:14px}
 .system-entity-writes h6{font-size:14px;margin:14px 0 8px}.system-entity-writes li{margin:8px 0}
 .system-write-input{font:inherit;text-align:left;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--soft);cursor:pointer}
 @media(max-width:900px){.system-canvas .map-workspace{grid-template-columns:minmax(0,1fr) 280px}}
@@ -250,10 +250,11 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-canvas .flow-color-key>span.core::before{background:var(--core-bg);box-shadow:inset 0 0 0 1.5px var(--core)}
 .system-canvas .flow-color-key>span.input::before{background:#deedff;box-shadow:inset 0 0 0 1.5px #356faa}
 .system-canvas .flow-color-key>span.external::before{background:#ffefcf;box-shadow:inset 0 0 0 1.5px #906014}
-/* The mark stands on the small card's top border, as on a card: the entry
-   arrow keeps the very glyph the canvas draws, the core diamond its shape. */
+/* The mark stands on the small card's top border near its left end, as on a
+   card (canvas.css .flow-role-symbol): the entry arrow keeps the very glyph
+   the canvas draws, the core diamond its shape. */
 .system-canvas .flow-color-key>span>i{display:none}
-.system-canvas .flow-color-key>.entry>i,.system-canvas .flow-color-key>.core>i{display:block;position:absolute;left:9px;top:calc(50% - 6px);transform:translate(-50%,-50%)}
+.system-canvas .flow-color-key>.entry>i,.system-canvas .flow-color-key>.core>i{display:block;position:absolute;left:5px;top:calc(50% - 6px);transform:translate(-50%,-50%)}
 .system-canvas .flow-color-key>.entry>i{height:8px}
 .system-canvas .flow-color-key>.core>i{width:7px;height:7px}
 .flow-key-stroke svg{flex:none;overflow:visible}
@@ -373,15 +374,18 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 
 /* The reading column (31-reading-column.js): plain lists of names, a key in
    bold and no mark before a name; each part named stands in a small box
-   drawn as the canvas draws that part. */
+   drawn as the canvas draws that part. Every closed section shows its
+   marker, ▶ closed and ▼ open (reviewer, 2026-09-30: "Called from" and
+   "Calls into", laid out as flex, had lost it and read as empty headings);
+   a flow's calls and a connection's line open by their own twist and link. */
 .map-reading-side{margin:0 0 14px}
 .map-reading-side>h6,.map-reading-members>h6,.map-reading-fields>h6,.map-collection-group>h6{display:flex;gap:8px;margin:0 0 6px;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em}
 .map-reading-peer{margin:0 0 10px}
 .map-reading-peer-head{display:flex;align-items:center;gap:8px;list-style:none}
 details.map-reading-peer>summary{cursor:pointer}
 details.map-reading-peer>summary::-webkit-details-marker{display:none}
-details.map-reading-peer>summary::before{content:'▸';color:var(--muted);font-size:11px}
-details.map-reading-peer[open]>summary::before{content:'▾'}
+details.map-reading-peer>summary::before{content:'▶';color:var(--muted);font-size:10px}
+details.map-reading-peer[open]>summary::before{content:'▼'}
 .map-reading-peer-count{margin-left:auto;color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
 .flow-enabled .map-inspector .map-part-box,.map-part-box{display:inline-block;max-width:100%;box-sizing:border-box;padding:2px 8px;border:1.5px solid #718096;border-radius:6px;background:#fff;color:#243044;font:600 13px/1.35 system-ui;text-align:left;overflow-wrap:anywhere}
 .flow-enabled .map-inspector button.map-part-box{cursor:pointer}
@@ -406,6 +410,8 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-reading-name[aria-current]{outline:2px solid #243044;outline-offset:1px;border-radius:2px}
 .map-reading-relation{margin-left:.5em;color:var(--muted);font-size:12px}
 .map-reading-relation::before{content:'— '}
+/* A run's relations said once above its names (rmEndRuns). */
+.flow-enabled .map-inspector p.map-reading-run{margin:4px 0 0 14px;font:12px/1.4 system-ui;color:var(--muted)}
 .flow-enabled .map-inspector p.map-reading-uses{margin:6px 0 2px 12px;font-size:12px;color:var(--muted)}
 .map-reading-in{padding-bottom:4px;border-bottom:1px solid var(--line)}
 .map-reading-out{padding-top:10px;border-top:1px solid var(--line)}
@@ -444,7 +450,7 @@ a.map-decl-code:hover{text-decoration:underline}
 .map-component-inputs button:hover{text-decoration:underline}
 .map-reading-label{font-weight:600;font-size:13px}
 .map-component-section{border-top:1px solid var(--line);padding:8px 0}
-.map-component-section>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:14px}
+.map-component-section>summary{cursor:pointer;font-weight:600;font-size:14px}
 .map-component-section ol,.map-component-section ul{margin:6px 0;padding-left:1.2em}
 .flow-enabled .map-inspector .map-reading-up{border:0;background:transparent;padding:0;font:inherit;cursor:pointer}
 .map-reading-up:hover{text-decoration:underline}
@@ -468,16 +474,15 @@ a.map-decl-code:hover{text-decoration:underline}
 .map-reading-file{margin:8px 0 4px}
 .map-reading-file-name{margin:0 0 2px;font:600 13px/1.4 var(--mono);color:var(--ink)}
 /* A caller's dispatch into the part, one line, its ends folded under it. */
-details.map-reading-caller>summary{cursor:pointer;list-style-position:outside}
+details.map-reading-caller>summary{cursor:pointer}
 .map-reading-fan{color:var(--muted);font-size:13px}
-details.map-reading-in>summary,details.map-reading-out>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:13px}
+details.map-reading-in>summary,details.map-reading-out>summary{cursor:pointer;font-weight:600;font-size:13px}
 /* An input's registration as the code wrote it. */
 .map-card-written{margin:4px 0 8px}
 .map-card-written code{font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;color:var(--ink)}
 /* A dispatcher's inputs by name, each with its handler, and their filter. */
 .map-dispatched>summary{cursor:pointer;font-weight:600;font-size:13px}
 .flow-enabled .map-inspector .map-dispatched-filter{width:100%;box-sizing:border-box;margin:6px 0;padding:4px 6px;font:13px system-ui;border:1px solid var(--line);border-radius:5px}
-.map-dispatched>summary{display:flex;gap:8px}
 .flow-enabled .map-inspector ul.map-dispatched-list{list-style:none;margin:0;padding:0;font:12.5px/1.6 var(--mono)}
 .flow-enabled .map-inspector .map-dispatched-list button{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer}
 .flow-enabled .map-inspector .system-path-handlers{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer;text-decoration:underline dotted}
@@ -558,9 +563,9 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-frame-connections .flow-card-reading .flow-card-row>:not(i){display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;white-space:normal;overflow-wrap:normal}
 /* A step's calls into code the report names no declaration for: one muted
    line of names at its end, no marks. */
-.map-flow-also,.flow-enabled .map-inspector p.map-flow-also{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted)}
+.map-flow-also,.flow-enabled .map-inspector p.map-flow-also,.flow-enabled .map-inspector p.map-flow-itself{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted)}
 .map-flow-also .map-flow-plain{color:var(--muted)}
-.map-flow-also-label{font-family:system-ui}
+.map-flow-also-label,.flow-enabled .map-inspector p.map-flow-itself{font-family:system-ui}
 
 /* The column names one thing to a line and counts nothing (owner,
    2026-09-29): a file opens to its functions by part, a part's other

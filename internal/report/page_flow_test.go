@@ -98,8 +98,9 @@ func flowFixture() (*pageBuilder, groupindex.Index) {
 	return builder, index
 }
 
-// A function's flow is its calls in the order they are written, each
-// callee once with every place it is called; a dispatch site is one call;
+// A function's flow is its calls in the order they are written, under each
+// part once, each callee once with every place it is called; a dispatch
+// site is one call;
 // a library's call is named; a call a macro's expansion makes is the
 // macro as written, once, and a compiler builtin no call of its own
 // (owner, 2026-09-29: handleClientsWaitingListPush's assert had read
@@ -157,8 +158,8 @@ func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 	}
 	want := []string{
 		"redisLog [helper] @1273,1288", "tryResizeHashTables @1284", "closeTimedoutClients @1297", "fork from unistd.h @1300",
-		"rdbSaveBackground @1322", "lookupKeyRead (no part) @1350", "one of setCommand, getCommand @1360",
-		"macro assert from assert.h @1370,1372", "macro redisAssert calling _redisAssert @1380",
+		"macro assert from assert.h @1370,1372", "rdbSaveBackground @1322", "lookupKeyRead (no part) @1350", "one of setCommand, getCommand @1360",
+		"macro redisAssert calling _redisAssert @1380",
 	}
 	if got := flowOf("serverCron"); !slices.Equal(got, want) {
 		t.Fatalf("serverCron's flow = %q\nwant %q", got, want)
@@ -167,6 +168,35 @@ func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 	// dropped (lookupKeyRead → lookupKey had been lost with it).
 	if got := flowOf("lookupKeyRead"); !slices.Equal(got, []string{"redisLog [helper] @905", "dictFind @906"}) {
 		t.Fatalf("lookupKeyRead's flow = %q", got)
+	}
+}
+
+// A flow's calls stand under each part once (reviewer, 2026-09-30: redis
+// main had shown "Server lifecycle and cron" four times): the parts in the
+// order of their first call, each part's calls in written order, a
+// dispatch site by its first declaration's part, and the calls the report
+// names no declaration for in their written order among themselves.
+func TestAFlowStandsUnderEachPartOnce(t *testing.T) {
+	parts := []string{"#life", "#persist", "#core", "#life", "#loop", "#persist", "#life"}
+	callee := func(position int) *int { return &position }
+	calls := []pageFlowCall{
+		{Decl: callee(0)}, {Decl: callee(1)}, {Name: "fprintf"}, {Decl: callee(2)}, {Decl: callee(3)},
+		{One: []int{4, 0}}, {Name: "exit"}, {Decl: callee(5)}, {Decl: callee(6)},
+	}
+	var said []string
+	for _, call := range groupFlowByPart(calls, func(position int) string { return parts[position] }) {
+		switch {
+		case call.Decl != nil:
+			said = append(said, fmt.Sprint(*call.Decl))
+		case call.One != nil:
+			said = append(said, fmt.Sprint("one of ", call.One))
+		default:
+			said = append(said, call.Name)
+		}
+	}
+	want := []string{"0", "3", "6", "1", "5", "fprintf", "exit", "2", "one of [4 0]"}
+	if !slices.Equal(said, want) {
+		t.Fatalf("grouped flow = %q, want %q", said, want)
 	}
 }
 

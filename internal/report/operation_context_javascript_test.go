@@ -1,6 +1,9 @@
 package report
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // Inputs retain their named entrance and saved attachment when a reader opens
 // downstream code. Selection never manufactures or replaces the drawing.
@@ -99,5 +102,40 @@ let update;const surface={update:value=>update=value},map={classList:{toggle(){}
 const matches=n=>n.id==='input';function renderCaption(){}
 `+emphasize+`
 emphasize();assert.deepEqual([...update.matched],['input']);
+`)
+}
+
+// The Inputs column names the groups the canvas draws inside a collection,
+// in the canvas's order (reviewer, 2026-09-30: Redis's column had listed
+// ninety requests A to Z beside the canvas's groups): the projection's
+// groups are web/overview.mjs inputGroupsByPart's, frame for frame, on the
+// same records, each input by its handler's part, else the one part its
+// code takes it in, the rest loose.
+func TestTheInputsColumnGroupsAsTheCanvasDoes(t *testing.T) {
+	projection := systemJSPiece(t, "29-operation-view.js", "function rmSystemProjection(", "(function(){")
+	overview, err := filepath.Abs("web/overview.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runSystemJS(t, projection+`
+const nodes=[{id:'inputs',branch:'inputs',children:['get','set','lpush','bind','port','loose','two']},
+ {id:'strings',title:'String commands'},{id:'lists',title:'List commands'},{id:'config',title:'Configuration'},{id:'a',title:'A'},{id:'b',title:'B'},
+ {id:'get',activation:'request',inputOwner:'strings'},{id:'set',activation:'request'},{id:'lpush',activation:'request'},
+ {id:'bind',activation:'setting'},{id:'port',activation:'setting'},{id:'loose',activation:'command'},{id:'two',activation:'command'}];
+const edges=[{from:'set',to:'strings',label:'implemented in'},{from:'lpush',to:'lists',label:'implemented in'},
+ {from:'bind',to:'config',label:'declared in'},{from:'port',to:'config',label:'looked up in'},
+ {from:'two',to:'a',label:'declared in'},{from:'two',to:'b',label:'declared in'}];
+const titles=Object.fromEntries(nodes.map(n=>[n.id,n.title]));
+const p=rmSystemProjection(nodes,edges),column=p.inputGroups('inputs',id=>titles[id]);
+import(`+"`file://"+overview+"`"+`).then(({inputGroupsByPart})=>{
+ const records=nodes.map(n=>Object.assign({},n,{children:n.children||[]}));
+ const canvas=inputGroupsByPart(records,[{id:'inputs',nodes:nodes[0].children}],p.inputOwner,edges);
+ const frames=canvas.records.filter(n=>n.branch==='inputs-part');
+ assert.deepEqual(column.groups.map(g=>[g.title,g.inputs]),frames.map(f=>[f.title,f.children]),'the same groups, in the same order, holding the same inputs');
+ assert.deepEqual(column.loose,canvas.records.find(n=>n.id==='inputs').children.filter(id=>!frames.some(f=>f.id===id)),'the same loose inputs');
+ assert.deepEqual(column.groups.map(g=>g.title),['Configuration','List commands','String commands']);
+ assert.deepEqual(column.loose,['loose','two'],'an input its code takes in at two parts stays loose');
+ assert.equal(rmSystemProjection([nodes[0],nodes[1],nodes[6]],[]).inputGroups('inputs',id=>titles[id]),null,'one group is no grouping');
+});
 `)
 }

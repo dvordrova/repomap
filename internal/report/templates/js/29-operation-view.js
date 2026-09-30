@@ -29,7 +29,34 @@ function rmSystemProjection(nodes, edges) {
     var active=selection('',operation).active;
     return !active.has(id)&&!leaves(id).some(function(leaf){return active.has(leaf);});
   }
-  return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection,outside:outside};
+  // The groups the canvas draws inside an Inputs collection
+  // (web/overview.mjs inputGroupsByPart), for the column to read the same
+  // groups in the same order (reviewer, 2026-09-30: Redis's column had
+  // listed ninety requests A to Z beside the canvas's groups): each input by
+  // the part its handler is in, else the one part its code takes it in
+  // ("declared in", "looked up in"); the groups by their part's title; the
+  // rest loose after them. Null when fewer than two groups form.
+  var takenIn=null;
+  function inputGroups(id,titleOf){
+    var collection=byID[id];if(!collection||collection.branch!=='inputs')return null;
+    if(!takenIn){
+      takenIn={};
+      edges.forEach(function(e){if((e.label==='declared in'||e.label==='looked up in')&&byID[e.from]?.activation&&byID[e.to]&&!byID[e.to].activation)(takenIn[e.from]=takenIn[e.from]||new Set()).add(e.to);});
+    }
+    function partOf(input){return inputOwner[input]||(takenIn[input]&&takenIn[input].size===1?Array.from(takenIn[input])[0]:'');}
+    var groups=new Map(),loose=[];
+    (collection.children||[]).filter(function(input){return byID[input]?.activation;}).forEach(function(input){
+      var owner=partOf(input);
+      if(!owner||!byID[owner]){loose.push(input);return;}
+      if(!groups.has(owner))groups.set(owner,[]);
+      groups.get(owner).push(input);
+    });
+    if(groups.size<2)return null;
+    var list=Array.from(groups).map(function(pair){return {part:pair[0],title:titleOf(pair[0]),frame:id+'~'+pair[0],inputs:pair[1]};});
+    list.sort(function(a,b){return String(a.title).localeCompare(String(b.title))||a.frame.localeCompare(b.frame);});
+    return {groups:list,loose:loose};
+  }
+  return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection,outside:outside,inputGroups:inputGroups};
 }
 // An input chosen from Find, a link, a reading or its own tile is entered as
 // its path: the canvas frames the part holding its handler and the path's
@@ -635,7 +662,8 @@ function rmEntryLanding(link,nodes,component){
     goDecl:function(decl){var part=nodeByHref(decl.part);return part&&!part.dataset.activation&&decl.key?function(){readDeclaration(part,decl.key);}:null;},
     readDeclIn:readDeclaration,
     readNode:function(n){surface?.clearMember?.();select(n,true,null,true);},
-    light:function(ids){surface?.light?.(ids);}
+    light:function(ids){surface?.light?.(ids);},
+    inputGroups:function(id){return projection.inputGroups(id,function(part){return byID[part]?byID[part].dataset.title:'';});}
   };};
   // The frame holding what is read, and going up to it: from a declaration
   // to its part, which is read without it; from a part to its area or
