@@ -198,6 +198,10 @@ func TestCumulativePythonCallsOnCallResultsAndPartial(t *testing.T) {
 		`self._app.add_handler(CommandHandler("status", self._status))`:                              {"exact " + builder + ".token.build.add_handler", "exact telegram.ext.CommandHandler"},
 		"return self._app.bot.send_message(chat, text)":                                              {"exact " + builder + ".token.build.bot.send_message"},
 		"return self._fallback.bot.send_message(chat, text)":                                         {"unresolved"},
+		// create_datadir's two paths and default_datadir's call of it
+		// (the files' null and template rule, READING).
+		`return Path(datadir) if datadir else Path(f"{config['user_data_dir']}/data")`: {"exact pathlib.Path", "exact pathlib.Path"},
+		"return create_datadir(config, None)":                                          {"exact create_datadir"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("calls in outside_results.py:\n have %q\n want %q", got, want)
