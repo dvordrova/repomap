@@ -644,8 +644,12 @@ type boundaryState struct {
 	// destinationTargets are, by program, the target of this repository's
 	// program an outgoing row's destination is (programDestinations).
 	destinationTargets map[string]string
-	address            string
-	basis              string
+	// branch is, for an entry a comparison's case declares, the lines of
+	// that case when they call into the program's own code: the entry's
+	// handler is the comparing declaration there (bindComparisons).
+	branch  [2]int
+	address string
+	basis   string
 	// handlerUnknown marks an entry whose handler is not established: an
 	// option a call declares, a value handed over. It stays where its call
 	// is written and binds to no part.

@@ -258,7 +258,7 @@ func (graph *reachGraph) options(reaches []Reach, roots []int, nested map[string
 			return -1
 		}
 		position, ok := inputAt[operationLocationKey(holding.Location)]
-		if !ok || !index.Operations[position].HandlerUnknown {
+		if !ok || !index.Operations[position].HandlerUnknown && index.Operations[position].Branch == nil {
 			return -1
 		}
 		return position

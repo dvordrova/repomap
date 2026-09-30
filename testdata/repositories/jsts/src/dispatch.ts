@@ -6,7 +6,7 @@
 export function dispatch(): string {
   switch (process.argv[2]) {
     case "build":
-      return "build"
+      return runBuild()
     case "check":
     case "verify":
       return "check"
@@ -18,4 +18,9 @@ export function dispatch(): string {
 
 export function isDefault(level: string): boolean {
   return level === "default"
+}
+
+// build's own code: only the build case runs it, so build is handled there.
+function runBuild(): string {
+  return "build"
 }

@@ -110,9 +110,14 @@ func (r *reader) readComparisons(ctx context.Context) error {
 }
 
 // bindComparisons makes each case of a comparison answered an entry kind an
-// entry whose handler is not established, at its first word, declared by
-// the comparing declaration (its catalogue), named from the case's words.
-// A case none of whose words can name an entry makes none (entry_unnamed).
+// entry at its first word, declared by the comparing declaration (its
+// catalogue), named from the case's words. A case whose lines call into the
+// program's own code is handled there: its handler is the comparing
+// declaration within the case's lines (atlas Boundary BranchLine), as
+// litestream's case "replicate" runs NewReplicateCommand and the command's
+// ParseFlags, Run and Close; any other case's handler is not established
+// (a case returning a word, printing usage). A case none of whose words can
+// name an entry makes none (entry_unnamed).
 func (r *reader) bindComparisons() {
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || len(place.Symbol.Comparisons) == 0 || r.testFile(place.Parent) {
@@ -136,12 +141,30 @@ func (r *reader) bindComparisons() {
 					id = r.compactID("b", &r.nextBoundary)
 					r.boundaryIDs[source] = id
 				}
-				r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, place: atlas.Place{
+				state := &boundaryState{kind: kind, handlerUnknown: true, place: atlas.Place{
 					ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: item.LineNo, Column: item.Column,
 					Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 						Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name,
 						Values: slices.Clone(item.Words), Words: slices.Clone(item.Words), Direction: atlas.DirectionIn, GivenKind: kind}}}
+				if caseCallsProgram(place, item) {
+					state.handlerUnknown, state.branch = false, [2]int{item.BranchLine, item.BranchEnd}
+				}
+				r.boundaries[id] = state
 			}
 		}
 	}
+}
+
+// caseCallsProgram reports a case whose lines, when the adapter knows them,
+// hold a call into the program's own code the comparing declaration makes.
+func caseCallsProgram(place atlas.Place, item atlas.ComparisonCase) bool {
+	if item.BranchLine < 1 || item.BranchEnd < item.BranchLine {
+		return false
+	}
+	for _, call := range place.Symbol.Calls {
+		if call.Kind == "calls" && len(call.CalleeIDs) > 0 && call.Line >= item.BranchLine && call.Line <= item.BranchEnd {
+			return true
+		}
+	}
+	return false
 }

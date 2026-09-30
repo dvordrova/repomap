@@ -154,7 +154,7 @@
 ;; a call asked on its own.
 (defn run-command [args]
   (case (first args)
-    "serve" :serve
+    "serve" (shout "serving")
     ("check" "verify") :check
     :usage))
 

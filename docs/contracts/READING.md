@@ -937,10 +937,17 @@ The item is `compares` (the value as written), `from` (its origin in the
 words of a call's `arguments`), `in` (the declaration with its signature)
 and `cases` (each case's words in source order). A comparison none of whose
 words can name an entry is not asked. An entry answer makes one input per
-case whose words can name one, whose handler is not established, at the
-case's first word, named from its words and declared by the comparing
-declaration (one catalogue); a case none of whose words can is
-`entry_unnamed`. None and an undecided answer make nothing; an undecided
+case whose words can name one, at the case's first word, named from its
+words and declared by the comparing declaration. A case whose lines (its
+`branch`) hold a call into the program's own code is handled there: its
+handler is the comparing declaration, its atlas boundary carries the lines
+(`branch_line`, `branch_end`) and its GroupsIndex operation `Branch`, and
+its reach and spine start from the handler's calls, reads and hand-overs
+in those lines alone (groupindex `branch.go`): litestream's `replicate`
+reaches NewReplicateCommand and ReplicateCommand's Run, never
+DatabasesCommand.Run. Any other case's handler is not established (a case
+returning a word, printing usage), and those cases are one catalogue; a
+case none of whose words can name an entry is `entry_unnamed`. None and an undecided answer make nothing; an undecided
 comparison is not yet one of the launch walk's unsure calls. A case's
 `branch` is the lines a setting reads its written fields from (REPORT).
 litestream's `Main.Run` switch is one question whose 17 cases hold its 14

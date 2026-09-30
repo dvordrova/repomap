@@ -478,7 +478,8 @@ comparison of the function (PROGRAM_INDEX `comparisons`), labels stacked on
 one statement one case, a case's branch from its label to the line before
 the next label or the block's end, its value's origin the switch
 condition's (kvcli's `shortOption`: `switch (arg[1])` with `'h'`/`'?'` and
-`'V'`). A number, an enum or a range label is no word. C compares strings
+`'V'`; V's case calls `printVersion`, so shortOption handles V there,
+READING). A number, an enum or a range label is no word. C compares strings
 by calls, so a `strcmp` chain stays per-call facts with their branches.
 Redis records one in each program: redis-server's glob matcher
 `stringmatchlen` (`*`, `?`, `[`, `\`) and redis-cli's reply reader

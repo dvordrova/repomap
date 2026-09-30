@@ -266,7 +266,10 @@ comparisons of the same expression with a string constant, joined into one
 comparison by the expression (a variable by its declaration, anything else
 by its text). A case's branch is its clause; comparisons in one if
 condition, through parentheses, `||` and `&&`, are one case whose branch
-is the if's block, and one in a tagless switch's case its clause. The typed
+is the if's block, and one in a tagless switch's case its clause. A case
+whose branch calls the program's own code is handled there (READING):
+the fixture's `RunSubcommand` handles serve and check, runServe and
+runCheck their reach; litestream's `Main.Run` each subcommand. The typed
 syntax gives cases, words and lines; SSA, which compares a switch's tag at
 each case expression and an `==` at its operator, gives the value's
 origin. Source values follow a slice element (`IndexAddr`: litestream's

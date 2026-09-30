@@ -38,10 +38,10 @@ static const char *withoutScheme(const char *host) {
     return strncmp(host, "kvd://", strlen("kvd://")) == 0 ? host + strlen("kvd://") : host;
 }
 
-/* A short option before the command: the switch compares its letter with
- * each option's, one comparison of arg[1] for the whole switch ('h' and
- * '?' stacked on one body are one case). C compares strings by calls
- * (strcasecmp above), each its own call fact. */
+/* A short option before the command: one comparison of arg[1] for the
+ * whole switch ('h' and '?' stacked on one body are one case); -V runs
+ * printVersion, the client's own code. C compares strings by calls. */
+static int printVersion(void);
 static int shortOption(const char *arg) {
     switch (arg[1]) {
     case 'h':
@@ -49,8 +49,8 @@ static int shortOption(const char *arg) {
         fprintf(stderr, "usage: kvcli [-h] [-V] [--raw] command [argument ...]\n");
         return 2;
     case 'V':
-        puts("kvcli 1.0");
-        return 0;
+        /* -V is handled by the client's own printVersion. */
+        return printVersion();
     default:
         return -1;
     }
@@ -118,5 +118,10 @@ int main(int argc, char **argv) {
     fputs(reply, stdout);
     sbFree(&request);
     close(fd);
+    return 0;
+}
+
+static int printVersion(void) {
+    puts("kvcli 1.0");
     return 0;
 }

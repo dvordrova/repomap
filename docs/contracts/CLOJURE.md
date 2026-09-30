@@ -249,7 +249,8 @@ words in two or more cases are one comparison of the enclosing var
 result's last line, its value's origin the form as written (the adapter
 follows no Clojure value); `run-command`'s `(case (first args) "serve" …
 ("check" "verify") …)` is two cases, while `=` stays a call asked on its
-own. Not recorded yet:
+own; serve's case calls `shout`, so run-command handles serve there
+(READING). Not recorded yet:
 
 - `-main`'s `& args` carry no argument vector origin;
 - a function started on its own other than by a `future`: `(Thread. f)`,

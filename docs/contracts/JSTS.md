@@ -253,7 +253,8 @@ not. Not recorded yet:
   condition one case whose branch is the then-statement; its origin is
   the source value (`src/dispatch.ts`'s `switch (process.argv[2])` with
   its default's help check, one comparison of three cases; `isDefault`'s
-  lone `===` is none);
+  lone `===` is none); a case whose branch calls the program's own code is
+  handled there (READING: `build`, whose case runs `runBuild`);
 - the object an input is declared on (K2) and the join of a word entry
   with the hand-over made on its result (J1): commander's
   `program.command("init").action(initProject)` is that shape, and so is

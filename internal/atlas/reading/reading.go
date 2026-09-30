@@ -1307,7 +1307,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
 			Values: append([]string{}, facts.Values...), Name: state.name, Line: state.writtenLine(), FactID: factID,
 			Source: facts.Source, Destination: state.destinationOf(meta.ID), DestinationTarget: state.destinationTargets[meta.ID], Address: state.address, Basis: state.basis,
-			HandlerUnknown: state.handlerUnknown, ProgramNotNamed: state.programNotNamed,
+			HandlerUnknown: state.handlerUnknown, ProgramNotNamed: state.programNotNamed, BranchLine: state.branch[0], BranchEnd: state.branch[1],
 			DeclaredOn: state.on, Written: state.asWritten, ValueOf: state.valueOf, AliasOf: state.aliasOf,
 		})
 	}

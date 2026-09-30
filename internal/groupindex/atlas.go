@@ -884,7 +884,11 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		onOf[boundary.ID] = declaredOn(boundary)
 		wordless[boundary.ID] = len(boundary.Values) == 0
-		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written})
+		operation := Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written}
+		if boundary.BranchLine > 0 && subjectID != "" {
+			operation.Branch = &programindex.LineRange{Line: boundary.BranchLine, EndLine: boundary.BranchEnd}
+		}
+		operations = append(operations, operation)
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}

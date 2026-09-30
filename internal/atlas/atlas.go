@@ -943,6 +943,13 @@ type Boundary struct {
 	// over. Caller declares it; the code that acts on it is not a fact yet,
 	// so it binds to no part.
 	HandlerUnknown bool `json:"handler_unknown,omitempty"`
+	// BranchLine and BranchEnd are, for an entry a case of a comparison
+	// declares whose lines call into the program's own code, those lines
+	// (ComparisonCase): the entry is handled there, by the code of the
+	// comparing declaration (ObjectID) the case selects, not by all of it.
+	// litestream's case "replicate" in Main.Run.
+	BranchLine int `json:"branch_line,omitempty"`
+	BranchEnd  int `json:"branch_end,omitempty"`
 	// ProgramNotNamed marks a call that starts another program named by
 	// none of its words (BoundaryRunsProgram). Its Destination, the word
 	// that names the program, is then empty; both empty means the model

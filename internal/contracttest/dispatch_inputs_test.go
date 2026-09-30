@@ -45,8 +45,10 @@ func comparisonsAsked(preset *inputsPreset) []string {
 
 // expectDispatchInputs checks one comparison asked once with every case's
 // words, and one command input per case, named by its first word and
-// declared by the comparing declaration.
-func expectDispatchInputs(t *testing.T, preset *inputsPreset, projected groupindex.Index, path, value, cases, declaredBy string, names []string) {
+// declared by the comparing declaration: handled by it, within its case's
+// lines, when the case calls into the program's own code (handled), its
+// handler not established otherwise.
+func expectDispatchInputs(t *testing.T, preset *inputsPreset, projected groupindex.Index, path, value, cases, declaredBy string, names []string, handled ...string) {
 	t.Helper()
 	var asked []string
 	for _, item := range comparisonsAsked(preset) {
@@ -60,8 +62,8 @@ func expectDispatchInputs(t *testing.T, preset *inputsPreset, projected groupind
 	var got []string
 	for _, row := range inputRows(projected, path) {
 		if row.declaredBy == declaredBy {
-			if row.kind != "command" || row.handler != "" {
-				t.Fatalf("a case's input is %+v", row)
+			if want := map[bool]string{true: declaredBy}[slices.Contains(handled, row.name)]; row.kind != "command" || row.handler != want {
+				t.Fatalf("a case's input is %+v, want its handler %q", row, want)
 			}
 			got = append(got, row.name)
 		}
@@ -74,11 +76,16 @@ func expectDispatchInputs(t *testing.T, preset *inputsPreset, projected groupind
 }
 
 // Each language's comparison is asked once with all its cases, in the
-// inputs step, and an entry answer makes one input per case, whose handler
-// is not established, declared by the comparing function (its catalogue):
-// Go's RunSubcommand (the switch and its default's help words), Python's
-// if/elif chain, TypeScript's switch on process.argv[2], Clojure's case
-// form and C's switch on a letter. Python's tables of names are asked with
+// inputs step, and an entry answer makes one input per case, declared by the
+// comparing function (its catalogue): Go's RunSubcommand (the switch and its
+// default's help words), Python's if/elif chain, TypeScript's switch on
+// process.argv[2], Clojure's case form and C's switch on a letter. A case
+// whose lines call into the program's own code is handled by the comparing
+// function there, and its reach starts from those calls: Go's serve and
+// check (runServe, runCheck), Python's init (run_init), TypeScript's build
+// (runBuild), Clojure's serve (shout), C's V (printVersion), as
+// litestream's case "replicate" runs its command; a case returning a word
+// or printing usage has no handler established. Python's tables of names are asked with
 // the table question: OPTIONS and REQUIRED, never FORMATS, which nothing
 // reads.
 func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
@@ -95,14 +102,19 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
 		preset := dispatchPreset("cmd")
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}, root, preset)
-		expectDispatchInputs(t, preset, projected, "internal/storefixture/tool_cli.go", "cmd", `[["serve"],["check","verify"],["help","-h"]]`, "RunSubcommand", []string{"serve", "check", "help"})
+		expectDispatchInputs(t, preset, projected, "internal/storefixture/tool_cli.go", "cmd", `[["serve"],["check","verify"],["help","-h"]]`, "RunSubcommand", []string{"serve", "check", "help"}, "serve", "check")
+		if reached := reachedNames(projected, "serve"); !slices.Contains(reached, "runServe") || slices.Contains(reached, "runCheck") {
+			t.Fatalf("serve's reach %q, want runServe and never check's runCheck", reached)
+		}
 		for _, item := range preset.asked["enters"] {
 			if item["compares"] == "cmd" && !strings.Contains(item["from"].(string), `element "0" of parameter #1 args of RunSubcommand`) {
 				t.Fatalf("cmd's origin as asked: %v", item["from"])
 			}
 		}
-		if catalogues := catalogueRows(projected); !slices.Contains(catalogues, "command by RunSubcommand: serve check help") {
-			t.Fatalf("no catalogue of RunSubcommand's cases in %q", catalogues)
+		// The cases handled in their lines leave the catalogue of the words
+		// RunSubcommand declares whose handler is not established.
+		if catalogues := catalogueRows(projected); !slices.Contains(catalogues, "command by RunSubcommand: help") {
+			t.Fatalf("no catalogue of RunSubcommand's unhandled case in %q", catalogues)
 		}
 	})
 	t.Run("python", func(t *testing.T) {
@@ -111,7 +123,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
 		preset := dispatchPreset("command")
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
-		expectDispatchInputs(t, preset, projected, "src/fixture_app/dispatch.py", "command", `[["init"],["serve","run"],["help"]]`, "dispatch", []string{"init", "serve", "help"})
+		expectDispatchInputs(t, preset, projected, "src/fixture_app/dispatch.py", "command", `[["init"],["serve","run"],["help"]]`, "dispatch", []string{"init", "serve", "help"}, "init")
 		var tables []string
 		for _, item := range preset.asked["becomes"] {
 			if name, ok := item["table"].(string); ok {
@@ -136,7 +148,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
 		preset := dispatchPreset("process.argv[2]")
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: index.Target.Kind, Name: index.Target.Name, Root: "."}, root, preset)
-		expectDispatchInputs(t, preset, projected, "src/dispatch.ts", "process.argv[2]", `[["build"],["check","verify"],["help","-h"]]`, "dispatch", []string{"build", "check", "help"})
+		expectDispatchInputs(t, preset, projected, "src/dispatch.ts", "process.argv[2]", `[["build"],["check","verify"],["help","-h"]]`, "dispatch", []string{"build", "check", "help"}, "build")
 	})
 	t.Run("clojure", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "clojure")
@@ -155,7 +167,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		graph := graphWithFacts(t, repository, places.TargetInput{Index: index})
 		preset := dispatchPreset("(first args)")
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}, root, preset)
-		expectDispatchInputs(t, preset, projected, "src/example/core.clj", "(first args)", `[["serve"],["check","verify"]]`, "example.core/run-command", []string{"serve", "check"})
+		expectDispatchInputs(t, preset, projected, "src/example/core.clj", "(first args)", `[["serve"],["check","verify"]]`, "example.core/run-command", []string{"serve", "check"}, "serve")
 	})
 	t.Run("c", func(t *testing.T) {
 		fixture := loadCFixture(t)
@@ -170,6 +182,27 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		}
 		preset := dispatchPreset("arg[1]")
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root, preset)
-		expectDispatchInputs(t, preset, projected, "kvcli.c", "arg[1]", `[["h","?"],["V"]]`, "shortOption", []string{"h", "V"})
+		expectDispatchInputs(t, preset, projected, "kvcli.c", "arg[1]", `[["h","?"],["V"]]`, "shortOption", []string{"h", "V"}, "V")
 	})
+}
+
+// reachedNames are the declarations the input named name reaches, by name.
+func reachedNames(index groupindex.Index, name string) []string {
+	names := map[string]string{}
+	for _, subject := range index.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	for position, operation := range index.Operations {
+		if operation.Name != name || position >= len(index.Reach) {
+			continue
+		}
+		var reached []string
+		for _, subject := range index.Reach[position].Subjects {
+			reached = append(reached, names[subject.SubjectID])
+		}
+		return reached
+	}
+	return nil
 }

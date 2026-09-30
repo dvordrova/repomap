@@ -283,6 +283,11 @@ type Operation struct {
 	// the model matched it to (the joints peers question, decision 14):
 	// redis-cli's `get` row names redis-server's get. MODEL; never an arrow.
 	Sends []PeerInput `json:"sends,omitempty"`
+	// Branch is, for an input a case of a comparison declares, the case's
+	// lines: its handler (SubjectID, the comparing declaration) handles it
+	// there, and its reach starts from the calls written in them
+	// (litestream's case "replicate" in Main.Run).
+	Branch *programindex.LineRange `json:"branch,omitempty"`
 }
 
 // OperationAlias is another spelling of an input: its name, where its call
@@ -1017,6 +1022,7 @@ func (index Index) Validate() error {
 			return fmt.Errorf("group index: operation %q is declared by %q, which is no subject or declares an input with a handler", operation.ID, operation.DeclaredBy)
 		}
 		if operation.GroupID != "" && !groupExists || operation.SubjectID != "" && !subjectExists || operation.HandlerUnknown && operation.SubjectID != "" || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
+			operation.Branch != nil && (operation.SubjectID == "" || operation.Branch.Line < 1 || operation.Branch.EndLine < operation.Branch.Line) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
 		}

@@ -695,7 +695,8 @@ all read before any is bound (`command, rest = argv[0], argv[1:]`: element
 "0" of parameter `argv`). A module body's comparisons are the module's; a
 class body's are none. The fixture's `src/fixture_app/dispatch.py` holds
 `dispatch` (three cases), `describe` (`match`) and `is_default`'s lone
-comparison, which is none.
+comparison, which is none; init's case calls `run_init`, so dispatch handles
+init there (READING).
 
 A module-level list, tuple, set or dict written once whose elements share
 one shape (every element a string, a call to one callee, or a tuple of

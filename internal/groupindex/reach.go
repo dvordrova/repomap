@@ -279,7 +279,7 @@ func (graph *reachGraph) reach(position int, operation Operation) Reach {
 		current := queue[next]
 		for _, edge := range graph.exec[current] {
 			to := graph.to[edge]
-			if to != root && index.StructuralEdges[edge].Resolution == programindex.ResolutionAlternatives && len(graph.handlers[to]) > 0 {
+			if to != root && index.StructuralEdges[edge].Resolution == programindex.ResolutionAlternatives && len(graph.handlers[to]) > 0 || graph.outsideBranch(operation, current, root, edge) {
 				continue
 			}
 			result.Edges = append(result.Edges, edge)
@@ -295,6 +295,9 @@ func (graph *reachGraph) reach(position int, operation Operation) Reach {
 	for _, reader := range queue {
 		for _, edge := range graph.reads[reader] {
 			to := graph.to[edge]
+			if graph.outsideBranch(operation, reader, root, edge) {
+				continue
+			}
 			result.Edges = append(result.Edges, edge)
 			if _, seen := depth[to]; !seen {
 				depth[to] = depth[reader] + 1
@@ -310,7 +313,7 @@ func (graph *reachGraph) reach(position int, operation Operation) Reach {
 	result.Groups = graph.reachedGroups(root, reached, depth, result.Edges)
 	for _, current := range queue {
 		for _, edge := range graph.hands[current] {
-			if to := graph.to[edge]; to != root && len(graph.handlers[to]) > 0 {
+			if to := graph.to[edge]; to != root && len(graph.handlers[to]) > 0 && !graph.outsideBranch(operation, current, root, edge) {
 				result.HandsOver = append(result.HandsOver, edge)
 			}
 		}

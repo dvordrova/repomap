@@ -49,6 +49,15 @@ func (graph *reachGraph) spine(reach Reach) Spine {
 			reached[position] = true
 		}
 	}
+	// An input a case declares is handled in its case's lines: the
+	// handler's calls outside them are no step of its (branch.go).
+	var operation Operation
+	for _, candidate := range index.Operations {
+		if candidate.ID == reach.OperationID {
+			operation = candidate
+		}
+	}
+	rootOf := -1
 	// A method's step is its class; any other declaration is its own.
 	unitOf := func(position int) int {
 		object := index.Subjects[position].Object
@@ -90,7 +99,7 @@ func (graph *reachGraph) spine(reach Reach) Spine {
 		for next := 0; next < len(queue); next++ {
 			for _, edge := range graph.exec[queue[next]] {
 				to := graph.to[edge]
-				if !reached[to] || outside(to) || index.StructuralEdges[edge].RelationKind == programindex.RelationPassesCallback {
+				if !reached[to] || outside(to) || index.StructuralEdges[edge].RelationKind == programindex.RelationPassesCallback || graph.outsideBranch(operation, queue[next], rootOf, edge) {
 					continue
 				}
 				target := unitOf(to)
@@ -116,6 +125,7 @@ func (graph *reachGraph) spine(reach Reach) Spine {
 	if !ok {
 		return Spine{}
 	}
+	rootOf = root
 	id := func(position int) string { return index.Subjects[position].ID }
 	ids := func(positions []int) []string {
 		result := make([]string, 0, len(positions))
