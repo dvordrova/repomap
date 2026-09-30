@@ -168,7 +168,7 @@ func fixtureRoot(root string) string {
 // are confirmed one by one; outgoing boundaries without a candidate choose
 // a peer from the closed list of the other targets' incoming boundaries.
 func (r *reader) readJoints(ctx context.Context) error {
-	r.joints = nil
+	r.joints = r.selfJoints()
 	if len(r.opts.Targets) < 2 {
 		return nil
 	}
@@ -190,8 +190,16 @@ func (r *reader) readJoints(ctx context.Context) error {
 	sort.Slice(outs, func(i, j int) bool { return compactIDLess(outs[i].place.ID, outs[j].place.ID) })
 	sort.Slice(ins, func(i, j int) bool { return compactIDLess(ins[i].place.ID, ins[j].place.ID) })
 	var candidates []*jointState
+	// A request joined to what its own program serves looks for no other
+	// program's peer.
 	matched := make(map[string]bool)
+	for _, joint := range r.joints {
+		matched[joint.From.BoundaryID] = true
+	}
 	for _, out := range outs {
+		if matched[out.place.ID] {
+			continue
+		}
 		for _, in := range ins {
 			if out.place.Boundary.ObjectID != "" && out.place.Boundary.ObjectID == in.place.Boundary.ObjectID {
 				continue

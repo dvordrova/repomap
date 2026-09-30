@@ -443,7 +443,7 @@ func TestSystemMatchedOutboundKeepsReadingWithoutAnotherParticipant(t *testing.T
 }
 
 func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
-	for _, mismatch := range []string{"missing peer", "same owner", "two inputs", "two owners", "two records", "incomplete matches", "two matches"} {
+	for _, mismatch := range []string{"missing peer", "two inputs", "two owners", "two records", "incomplete matches", "two matches"} {
 		t.Run(mismatch, func(t *testing.T) {
 			row := pageOutbound{ID: "send", Destination: "Run service", Connections: []string{"match"}}
 			front := &pageSection{ID: "front", Map: &pageMap{Nodes: []pageMapNode{{ID: "caller"}}, Edges: []pageMapEdge{{ConnectionID: "match", From: "caller", To: "peer", Scope: "operation"}}}, Outbound: []pageOutbound{row}}
@@ -451,9 +451,6 @@ func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
 			view := pageView{Sections: []*pageSection{front, backend}}
 			switch mismatch {
 			case "missing peer":
-				backend.Map.Nodes = nil
-			case "same owner":
-				front.Map.Nodes = append(front.Map.Nodes, backend.Map.Nodes...)
 				backend.Map.Nodes = nil
 			case "two inputs", "two matches":
 				backend.Map.Nodes = append(backend.Map.Nodes, pageMapNode{ID: "other", Activation: "request"})
@@ -480,6 +477,53 @@ func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
 				t.Fatalf("%s incorrectly removed the independent communication record", mismatch)
 			}
 		})
+	}
+}
+
+// A program's request to a route it serves itself is an exchange with
+// itself (litestream's subcommands post to http://localhost/start, which its
+// own Server serves, and had stood as an Outside "Litestream"): the arrow
+// goes from the calling part to its own input and no outside tile stands for
+// it. A request written in the part it reaches draws nothing, and another
+// program's connection to this program's input joins no record of this one.
+func TestAProgramsRequestToItsOwnInputJoinsIt(t *testing.T) {
+	row := pageOutbound{ID: "post", Destination: "Litestream", Connections: []string{"self"}, KindLabel: outboundKindLabel("client_request"), Source: "fact",
+		Anchor: pageAnchor{Text: "start.go:63", Href: "start.go#L63"}, MapGroup: "cli"}
+	start := pageMapNode{ID: "start", Activation: "request", FullTitle: "POST /start", Source: pageAnchor{Text: "server.go:75", Href: "server.go#L75"}}
+	view := pageView{Sections: []*pageSection{{ID: "litestream", Outbound: []pageOutbound{row}, Map: &pageMap{
+		Nodes: []pageMapNode{{ID: "n-cli", FullTitle: "Command line"}, {ID: "n-server", FullTitle: "Control server"}, start},
+		Edges: []pageMapEdge{{ConnectionID: "self", From: "n-cli", To: "start", Scope: "structure"}}}}}}
+	tiles := func(got *pageMap) []string {
+		var ids []string
+		for _, node := range got.Nodes {
+			if node.ItemKind == "External communication" {
+				ids = append(ids, node.ID)
+			}
+		}
+		return ids
+	}
+	got := view.SystemMap()
+	if ids := tiles(got); len(ids) > 0 {
+		t.Fatalf("a request to the program's own route stands outside: %q", ids)
+	}
+	if !slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool {
+		return edge.From == "n-cli" && edge.To == "start" && edge.FromSource == row.Anchor && edge.ToSource == start.Source
+	}) {
+		t.Fatalf("no arrow from the calling part to its own input: %+v", got.Edges)
+	}
+	// The part the request is written in serves it: nothing to draw.
+	view.Sections[0].Map.Edges[0].To, view.Sections[0].Map.Nodes[2].Activation = "n-cli", ""
+	got = view.SystemMap()
+	if ids := tiles(got); len(ids) > 0 || slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool { return edge.From == edge.To }) {
+		t.Fatalf("a request written in the part it reaches: tiles %q, edges %+v", ids, got.Edges)
+	}
+	// Another program reaching this program's input is no record of this one.
+	other := &pageSection{ID: "client", Map: &pageMap{Nodes: []pageMapNode{{ID: "n-client"}}, Edges: []pageMapEdge{{ConnectionID: "self", From: "n-client", To: "start", Scope: "structure"}}}}
+	view.Sections[0].Map.Nodes[2].Activation = "request"
+	view.Sections[0].Map.Edges = nil
+	view.Sections = append(view.Sections, other)
+	if ids := tiles(view.SystemMap()); !slices.Contains(ids, "system-post") {
+		t.Fatalf("a record joined to its own program by another program's connection: tiles %q", ids)
 	}
 }
 

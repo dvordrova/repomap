@@ -1726,6 +1726,23 @@ keep exact signatures and comments, including streaming result types; protocol
 similarity alone is not the same operation. No Cobra-specific detector or
 parallel graph exists.
 
+A program's request to what it serves itself is joined by the code, never
+asked (reading `self_joints.go`, 2026-09-30): an outgoing request whose
+written address is on this machine (a path with no host, a loopback host,
+the unix network) and whose method and path, or value, are those of one of
+the same target's requests or listening addresses whose handler is known
+(the equal-value rule above) is an integration joint of the target with
+itself, the only joint one target has with itself. A unix socket joins as
+possible, its path known only at run time. A request so joined is offered
+to no other program's peer. litestream's subcommands post to
+`http://localhost/start` and `/info`, which its own Server serves, and had
+stood as an Outside "Litestream" on litestream's own map; a request to
+another host with the same path stays another server's. The rule reads
+every language's requests and routes alike: the Go fixture's `fetchLevels`
+gets `/api/levels`, which `registerLevelRoute` serves; the Python, JS/TS,
+Clojure and C fixtures request no route their own program serves (no
+adapter work is missing).
+
 The operation map follows native calls and executions from the selected
 subject, with cycle protection, and projects the visited subjects to groups.
 Imports and supplying a callback or service object are not execution paths;

@@ -457,6 +457,19 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 				}
 			}
 		}
+		// A program's request to a route it serves itself (reading
+		// self_joints.go) reaches that input on its own map.
+		if connection.SourceKind == "integration" && connection.ToLocation != nil && connection.From.TargetID == index.Target.ID && connection.To.TargetID == index.Target.ID {
+			for _, operation := range index.Operations {
+				if operationLocationKey(operation.Location) != operationLocationKey(*connection.ToLocation) {
+					continue
+				}
+				if _, drawn := byID[operationNodeID(section.ID, operation.ID)]; drawn {
+					to = operationNodeID(section.ID, operation.ID)
+					break
+				}
+			}
+		}
 		if _, exists := byID[from]; !exists {
 			continue
 		}

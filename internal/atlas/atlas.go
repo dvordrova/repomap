@@ -1025,7 +1025,8 @@ type Joint struct {
 	// SourceKind distinguishes program edges from model-confirmed integration.
 	SourceKind string    `json:"source_kind,omitempty"`
 	Witnesses  []Witness `json:"witnesses,omitempty"`
-	// Same and Label are MODEL.
+	// Same and Label are MODEL, except where one target joins itself: the
+	// code joins a program's request to what it serves itself.
 	Same     bool   `json:"same"`
 	Label    string `json:"label,omitempty"`
 	Possible bool   `json:"possible"`
@@ -1829,7 +1830,9 @@ func Validate(value Atlas) error {
 				return fmt.Errorf("atlas: joint %q endpoint names neither a boundary nor a box", joint.ID)
 			}
 		}
-		if joint.From.TargetID == joint.To.TargetID {
+		// One target joins itself only where its request reaches a route or
+		// an address it serves itself (reading self_joints.go).
+		if joint.From.TargetID == joint.To.TargetID && !(joint.SourceKind == "integration" && joint.From.BoundaryID != "" && joint.To.BoundaryID != "") {
 			return fmt.Errorf("atlas: joint %q joins one target to itself", joint.ID)
 		}
 		if invalidText(joint.Label) || invalidText(joint.Value) {

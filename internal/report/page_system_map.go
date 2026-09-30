@@ -122,7 +122,15 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
+	// A program's request to what it serves itself (reading
+	// self_joints.go) is an exchange with itself: its record's connection
+	// runs from one of its parts to its own input, or its own part, and
+	// joins it there as a peer program's would. litestream's subcommands
+	// posting to http://localhost/start had stood as an Outside
+	// "Litestream" on litestream's own map. Any other connection within
+	// one program is no record's peer.
 	peers := map[string]map[string]bool{}
+	selfOwner := map[string]string{}
 	for _, section := range view.Sections {
 		if section.Map == nil {
 			continue
@@ -132,8 +140,14 @@ func (view *pageView) SystemMap() *pageMap {
 			to, toKnown := positions[canonical(edge.To)]
 			if edge.ConnectionID == "" || !fromKnown || !toKnown ||
 				result.Nodes[from].Remote || result.Nodes[to].Remote || result.Nodes[from].Owner == "" ||
-				result.Nodes[to].Owner == "" || result.Nodes[from].Owner == result.Nodes[to].Owner {
+				result.Nodes[to].Owner == "" {
 				continue
+			}
+			if result.Nodes[from].Owner == result.Nodes[to].Owner {
+				if outboundByConnection[edge.ConnectionID] == "" {
+					continue
+				}
+				selfOwner[edge.ConnectionID] = result.Nodes[from].Owner
 			}
 			if peers[edge.ConnectionID] == nil {
 				peers[edge.ConnectionID] = map[string]bool{}
@@ -168,7 +182,7 @@ func (view *pageView) SystemMap() *pageMap {
 			peer := ""
 			for _, connection := range row.Connections {
 				candidate := peerByConnection[connection]
-				if candidate == "" || ambiguousConnections[connection] || result.Nodes[positions[candidate]].Owner == section.ID || peer != "" && peer != candidate {
+				if candidate == "" || ambiguousConnections[connection] || result.Nodes[positions[candidate]].Owner == section.ID && selfOwner[connection] != section.ID || peer != "" && peer != candidate {
 					peer = ""
 					break
 				}
@@ -369,6 +383,10 @@ func (view *pageView) SystemMap() *pageMap {
 					if edge.ToSource == (pageAnchor{}) {
 						edge.ToSource = result.Nodes[positions[to]].Source
 					}
+				}
+				// A request written in the part that serves it draws nothing.
+				if selfOwner[edge.ConnectionID] != "" && edge.From == edge.To {
+					continue
 				}
 				if _, ok := positions[edge.From]; !ok {
 					continue

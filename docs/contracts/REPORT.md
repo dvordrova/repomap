@@ -1362,7 +1362,13 @@ repository's program" and its arrow goes into that component, with no
 outside tile. redis-cli's "Redis server", its connect to redis-server's
 listening socket and the gethostbyname resolving the server's host, had
 stood outside beside the arrow into redis-server. A destination reaching
-several programs, or none, stays outside.
+several programs, or none, stays outside. A record whose connection
+reaches its own program's input (a request to a route the program serves
+itself, READING) is that exchange of the program with itself: its arrow
+goes from the calling part into that input, or into the part holding the
+address it listens on, with no outside tile, and a request written in that
+part draws none (2026-09-30, like a program starting itself); another
+program's connection into the input joins no record of this one.
 
 The Data shelf lists source-scoped models/tables, written columns and keys,
 queries and original sources. Query-to-table references are reversible, so a
