@@ -18,6 +18,10 @@ const options={
   'elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true',
 };
 const key=(...parts)=>JSON.stringify(parts);
+// The lanes of a packed program's gutters, in its own units where it is
+// entered at `zoom`: ten screen pixels apart and sixteen from the cards,
+// clear of a 10.5px arrowhead (canvas.jsx).
+export const packedRoom=zoom=>({step:10/zoom,margin:16/zoom});
 // The drawing shares one route between the two directions of a pair of ends
 // (route-drawing.mjs), so ELK lays out one edge per pair. Laying out both
 // made it reverse one of every such pair into an arrow wrapped around the
@@ -101,14 +105,33 @@ function groupedInterior(frame,ratio,top,order,headers){
   }
   // Rows of groups, a little wider than tall: stacked to the collection's
   // tall summary, its groups stood in one column taller than the canvas.
-  const area=groups.reduce((sum,group)=>sum+(group.width+gap)*(group.height+gap),0);
-  const target=Math.max(...groups.map(group=>group.width),Math.sqrt(area*Math.max(ratio,1.2)));
-  let x=side,y=top,row=0,right=0;
-  for(const group of groups){
-    if(x>side&&x+group.width>side+target){x=side;y+=row+gap;row=0;}
-    group.x=x;group.y=y;x+=group.width+gap;row=Math.max(row,group.height);right=Math.max(right,group.x+group.width);
+  const natural=new Map(groups.map(group=>[group.id,{width:group.width,height:group.height}]));
+  let width=0,height=0;
+  const wrap=()=>{
+    const area=groups.reduce((sum,group)=>sum+(group.width+gap)*(group.height+gap),0);
+    const target=Math.max(...groups.map(group=>group.width),Math.sqrt(area*Math.max(ratio,1.2)));
+    let x=side,y=top,row=0,right=0;
+    for(const group of groups){
+      if(x>side&&x+group.width>side+target){x=side;y+=row+gap;row=0;}
+      group.x=x;group.y=y;x+=group.width+gap;row=Math.max(row,group.height);right=Math.max(right,group.x+group.width);
+    }
+    width=right+side;height=y+row+side;
+  };
+  wrap();
+  // Entered whole, the collection shows its groups as closed cards
+  // (canvas.jsx frameView): each is at least the card a title reads in
+  // there, 150 by 56 screen pixels on an ordinary canvas. Sized by their
+  // one or two inputs, Redis's Replication and litestream's Directory
+  // monitoring had stood 57 by 28, their names at 4px (reviewer,
+  // 2026-09-30). The tiles keep their places at the card's top left.
+  for(let pass=0;pass<3;pass++){
+    const zoom=Math.min(1000/width,560/height);
+    for(const group of groups){
+      const own=natural.get(group.id);
+      group.width=Math.max(own.width,150/zoom);group.height=Math.max(own.height,56/zoom);
+    }
+    wrap();
   }
-  const width=right+side,height=y+row+side;
   for(const port of frame.ports||[]){
     const at=port.layoutOptions?.['elk.port.side'];
     if(at==='EAST'||at==='WEST'){port.x=at==='EAST'?width:0;port.y*=height/frame.height;}
@@ -543,13 +566,16 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
           // the cards above it run above the lanes of the cards below it: a
           // card's stub into its lane never runs along the stub of the card
           // facing it across the gutter.
+          // Lanes stand `room.step` apart and `room.margin` from the cards,
+          // so an arrowhead entering a card crosses no lane (packedRoom).
           const place=({key,id})=>{
             const [kind,at]=key.split(':'),index=Number(at),edges=kind==='row'?ys:xs,wide=size[kind][index],last=kind==='row'?rows:columns;
-            const list=kind==='row'?[...lanes.get(key)].sort((a,b)=>(boxes.get(b).row<index)-(boxes.get(a).row<index)):lanes.get(key),k=list.indexOf(id)+1;
-            const step=room||wide/(list.length+1);
-            if(index===0)return edges[0]-step*(list.length+1-k);
-            if(index===last)return edges[index]-wide+step*k;
-            return edges[index]-wide+wide*k/(list.length+1);
+            const list=kind==='row'?[...lanes.get(key)].sort((a,b)=>(boxes.get(b).row<index)-(boxes.get(a).row<index)):lanes.get(key),k=list.indexOf(id)+1,n=list.length;
+            if(!room)return index===0?edges[0]-wide*(n+1-k)/(n+2):index===last?edges[index]-wide+wide*k/(n+2):edges[index]-wide+wide*k/(n+1);
+            const {step,margin}=room;
+            if(index===0)return edges[0]-margin-step*(n-k);
+            if(index===last)return edges[index]-wide+margin+step*(k-1);
+            return edges[index]-wide+(wide-step*(n-1))/2+step*(k-1);
           };
           const routes=new Map();
           for(const [id,plan] of plans){
@@ -567,15 +593,17 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
           }
           return {routes,lanes,portAt};
         };
-        // A gutter is wide enough for its lanes five pixels apart where the
-        // program is entered: freqtrade's arrows had run two and a half
-        // pixels from the areas they passed.
+        // A gutter is wide enough for its lanes ten pixels apart and
+        // sixteen from the cards where the program is entered: five apart
+        // and five from the cards, freqtrade's seven arrows between its two
+        // rows had read as one bus, and an arrowhead into a card had crossed
+        // the lanes above it into a broken chevron (reviewer, 2026-09-30).
         let packed=best,routed=route(best);
         for(let pass=0;pass<3;pass++){
-          const room=5/fit(packed),gutters={row:[],column:[]};
+          const room=packedRoom(fit(packed)),gutters={row:[],column:[]};
           for(const [key,list] of routed.lanes){
             const [kind,at]=key.split(':'),index=Number(at),outer=index===0||index===(kind==='row'?best.rows:best.columns);
-            gutters[kind][index]=outer?32+room*list.length:Math.max(gap,room*(list.length+1));
+            gutters[kind][index]=outer?32+room.margin+room.step*(list.length-1):Math.max(gap,2*room.margin+room.step*(list.length-1));
           }
           packed=pack(best.columns,gutters,room);routed=route(packed);
         }

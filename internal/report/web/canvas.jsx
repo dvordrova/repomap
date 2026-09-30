@@ -6,17 +6,17 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections, borderCrossing, stubEnds} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
-import {emphasis, focusAncestors, endEmphasis, recedes} from './emphasis.mjs';
+import {emphasis, focusAncestors, endEmphasis, recedes, quietFrame} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {inputGroupsByPart,outsideChips} from './overview.mjs';
-import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading,overviewScale,describedHeading,descriptionLines as wholeLines,cardText} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {placeCard} from './card-place.mjs';
 import {InputTypes, KindMark, scrollInventory} from './card-content.jsx';
 import {callCard} from './call-card.mjs';
-import {CallRows, FrameConnections} from './call-card-view.jsx';
+import {BriefRows, FrameConnections} from './call-card-view.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -115,9 +115,8 @@ function Part({data}) {
   const far=useStore(state=>box.width*scale*state.transform[2]>=860);
   const deep=far&&!data.activation&&data.symbols?.length>0,grid=deep?partGrid(data,box):null;
   // A loose part's heading is fitted to its box; its description takes the
-  // whole lines left under the title and the zoom mark's row.
-  const standaloneLines=heading?Math.floor((heading.height-12-heading.title.split('\n').length*16-16)/15):0;
-  const standaloneText=standaloneLines>0;
+  // whole lines left under the title (cards.mjs describedHeading).
+  const standaloneText=!!heading?.lines?.length;
   if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
       style={{width:box.width,height:box.height,transform:`scale(${scale})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
@@ -133,8 +132,8 @@ function Part({data}) {
         browser that draws the 1.5px border 1px wide leaves a 226px column,
         where pykrx's 225.39px "Fetches Korean market fundamentals" fit whole
         and the card kept an empty line. */}
-    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:{WebkitLineClamp:data.descriptionMost||undefined,maxWidth:cardText}}
-      title={heading?data.description:undefined}>{data.description}</div>}
+    {data.description&&(!heading||standaloneText)&&<div className={`flow-description ${heading?'flow-description-lines':''}`} style={heading?undefined:{WebkitLineClamp:data.descriptionMost||undefined,maxWidth:cardText}}
+      title={heading?data.description:undefined}>{heading?heading.lines.join('\n'):data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {/* A part too dense to read its tiles where it fits shows the chosen one alone. */}
     {data.member?.alone&&data.symbols?.[data.member.chosen]&&<span className="flow-part-chosen">{data.symbols[data.member.chosen].name}{data.symbols[data.member.chosen].text&&<em>{data.symbols[data.member.chosen].text}</em>}</span>}
@@ -151,7 +150,7 @@ function Part({data}) {
 function Chip({data}) {
   const scale=data.contentScale||1;
   return <div className={`flow-chip ${data.unestablished?'flow-chip-unestablished':''}`} title={data.name}
-    style={{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}}>
+    style={{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left','--flow-chip-scale':scale}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <span className="flow-chip-name">{data.name}</span>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
@@ -164,19 +163,16 @@ function Area({data}) {
   </div>;
 }
 function AreaSummary({node,item,heading,enter,select,muted}){
-  const {scale,title}=heading;
+  const {scale,title,lines}=heading;
   // A closed area says what it is: its one-line description takes the whole
-  // lines left under its title, inside the 6px padding, the card's 8px gap
-  // and the description's 2px margin (canvas.css), a pixel spare: othello's
-  // areas had cut their descriptions a line short over an empty strip. Cut
-  // short, its title says it whole.
-  const lines=Math.floor((node.height/scale-12-title.split('\n').length*16-11)/15);
+  // lines left under its title (cards.mjs describedHeading). Cut short, its
+  // title says it whole.
   return <div className={`flow-area-summary nopan ${muted?'flow-node-muted':''}`} data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
-      {item?.summary&&lines>0&&<p className="flow-description" style={{WebkitLineClamp:lines,maxHeight:lines*15}} title={item.summary}>{item.summary}</p>}</div>
+      {item?.summary&&lines?.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{lines.join('\n')}</p>}</div>
     {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
   </div>;
 }
@@ -567,7 +563,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(!n||!stubs.length)return [];
     const box={x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height};
     const outsides=stubs.map(label=>{const other=placed.get(label.outside);return {key:label.id,incoming:label.incoming,box:{x:other.absolute.x,y:other.absolute.y,width:other.width,height:other.height}};});
-    const ends=stubEnds(box,outsides,.06*(n.width+n.height)/2);
+    // Thirty screen pixels, its arrowhead in sight: at 6% of the part, a
+    // part fitted across the canvas had its stubs run off it headless
+    // (reviewer, 2026-09-30).
+    const ends=stubEnds(box,outsides,Math.min(.06*(n.width+n.height)/2,30/(instance?.getViewport().zoom||zoom||1)));
     return stubs.map(label=>{
       const end=ends.get(label.id);Object.assign(label,{point:end.point,side:end.side});
       return {id:`stub:${label.id}`,from:part,to:part,edgeIDs:label.edges,points:end.points,boxes:label.incoming?[label.outside,part]:[part,label.outside],path:end.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' '),
@@ -618,9 +617,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // else, when the head is on a destination, the inputs or a loose part, the
   // outgoing connection of the frame at the arrow's other end.
   function headConnection(head){
+    // A part's short arrow is its own connection's (placeStubs).
+    const stub=lookedLabels.find(label=>head.route.id===`stub:${label.id}`);
+    if(stub)return stub;
     const ids=new Set(head.route.edgeIDs),carries=label=>label.edges.some(id=>ids.has(id));
     const standing=lookedLabels.filter(label=>carries(label)&&Math.hypot(label.point.x-head.tip.x,label.point.y-head.tip.y)<1);
     if(standing.length)return standing.find(label=>label.incoming===within(head.into,label.root))||standing[0];
+    // An arrow of the part looked at, its head beyond the canvas, is still
+    // that part's connection: Server lifecycle and cron's six arrows to its
+    // area's other parts had run off the canvas with no card.
+    const looked=deepPart&&(head.into===deepPart||head.from===deepPart)?lookedLabels.filter(carries):[];
+    if(looked.length)return looked.find(label=>label.incoming===(head.into===deepPart))||looked[0];
     const [frame,incoming]=isFrame(head.into)?[head.into,true]:isFrame(head.from)?[head.from,false]:[];
     return frame?frameLabels(frame,lastMatchingOf).find(label=>label.incoming===incoming&&carries(label))||null:null;
   }
@@ -776,6 +783,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // server infrastructure, entered whole at it, drew its parts at 6px
     // beside redis-benchmark's.
     const least=scales.has(n.id)||branch==='inputs-part'?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),branch==='area'?staysOpen/scale:0):Infinity;
+    // A program's Inputs or Outside frame is entered whole, its tiles at
+    // most at their own size: held at their reading size, Redis's Inputs
+    // had opened on its top-left corner with "Hash comma…" cut at the
+    // edge; whole, its groups read as their closed cards, each entered in
+    // turn (reviewer, 2026-09-30).
+    if(['inputs','outside'].includes(branch)){
+      const pad=24,zoom=Math.min(1/scale,Math.max(1,rect.width-2*pad)/n.width,Math.max(1,rect.height-2*pad)/n.height);
+      return {x:rect.width/2-(n.absolute.x+n.width/2)*zoom,y:rect.height/2-(n.absolute.y+n.height/2)*zoom,zoom};
+    }
     return frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least});
   }
   // The level the camera would stand at with viewport `v` (semantic.mjs,
@@ -952,16 +968,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const heading=useMemo(()=>visible?overviewHeading(item,screenWidth,measure):null,[screenWidth]);
     const text=useMemo(()=>{
       if(!visible)return null;
+      // A part named as its program is (a script's one part, named by its
+      // file) is not listed again under it: freqtrade's scripts had printed
+      // their path twice.
+      const words=text=>String(text||'').trim().replace(/\s+/g,' ').toLowerCase(),same=(a,b)=>words(a)===words(b);
       const communication=item.branch==='communication',inputs=item.branch==='inputs',areaIDs=communication||inputs?[]:
         // Areas first, then the loose parts beside them.
-        [...(children.get(n.id)||[])].sort((a,b)=>(byID.get(b)?.branch==='area')-(byID.get(a)?.branch==='area'));
+        [...(children.get(n.id)||[])].filter(id=>!same(byID.get(id)?.name||byID.get(id)?.title,item.name||item.title))
+          .sort((a,b)=>(byID.get(b)?.branch==='area')-(byID.get(a)?.branch==='area'));
+      // A role worded as one of its areas is that area, listed: redis-cli's
+      // "Command line client" had stood as its role over its area of that name.
+      const role=item.role&&!areaIDs.some(id=>same(byID.get(id)?.name||byID.get(id)?.title,item.role))?item.role:'';
       const textHeight=(text,font,lineHeight)=>wrapText(text,contentWidth,font,measure).length*lineHeight;
       const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
-      const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
-      return {communication,inputs,areaIDs,listHeight,roleHeight,inputHeight:inputs?item.overviewHeightAtWidth(screenWidth):0};
+      const roleHeight=role?textHeight(role,'600 13px system-ui',18)+10:0;
+      return {communication,inputs,areaIDs,listHeight,role,roleHeight,inputHeight:inputs?item.overviewHeightAtWidth(screenWidth):0};
     },[visible,contentWidth]);
     if(!heading)return null;
-    const {communication,inputs,areaIDs,listHeight,roleHeight}=text,scale=fit/zoom;
+    const {communication,inputs,areaIDs,listHeight,role,roleHeight}=text,scale=fit/zoom;
     let remaining=screenHeight-32-heading.height-listHeight-(areaIDs.length?10:0);
     const listOverflow=remaining<0;
     const showRole=!communication&&!inputs&&roleHeight>0&&remaining>=roleHeight;
@@ -973,8 +997,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,false);}}>
       {heading.lines.length>0&&<div className="flow-component-overview-heading" style={{maxWidth:heading.width,minHeight:inputs?32:undefined,paddingTop:heading.clearZoom?32:undefined}}>
         <strong style={heading.scale<1?{fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}:undefined}>{heading.lines.join('\n')}</strong></div>}
-      {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
-      {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description}</p>}
+      {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{role}</div>}
+      {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-lines" title={item.description}>{wholeLines(item.description,contentWidth-1,Math.min(3,descriptionLines),measure,'13px system-ui').join('\n')}</p>}
       {inputs&&<InputTypes groups={item.inputGroups} lit={lit} choose={(kinds,event)=>readKind(n.id,kinds,event)}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,false);}}>{byID.get(id).name||byID.get(id).title}</button>
@@ -1011,10 +1035,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const closedCards=layout.nodes.filter(n=>scales.has(n.id)||byID.get(n.id)?.branch==='inputs-part');
       const title=n=>byID.get(n.id).name||byID.get(n.id).title,rect={width:layoutSize.width,height:layoutSize.height},entered=new Map();
       const entry=n=>{const root=rootOf(n.id);if(!entered.has(root))entered.set(root,placed.get(root)?frameView(placed.get(root),rect).zoom:Infinity);return entered.get(root);};
-      return new Map(closedCards.map(n=>[n.id,groupHeading(n,title(n),Math.max(scale,1/entry(n)),measure,56,48)]));
+      // Its description starts under the title, the 6px padding, the
+      // card's 8px gap and its own 2px margin (canvas.css), and under a
+      // one-line title under the zoom mark (8 to 32 in its units, ZoomMark),
+      // a pixel spare.
+      const card={side:12,lines:(height,titleLines)=>Math.floor((height-7-Math.max(16+16*titleLines,34))/15)};
+      // Drawn smaller for its description, its title still reads at eleven
+      // pixels where its program is entered.
+      return new Map(closedCards.map(n=>[n.id,describedHeading(n,title(n),byID.get(n.id).summary,Math.max(scale,1/entry(n)),measure,56,48,0,{...card,least:11/12/entry(n)})]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
-      const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
+      const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height),rect={width:layoutSize.width,height:layoutSize.height};
+      const entry=n=>{const root=placed.get(rootOf(n.id));return root?frameView(root,rect).zoom:Infinity;};
       // The note naming the targets not analysed fills its box with its
       // words at the size they were measured at (cards.mjs).
       const note=n=>{
@@ -1023,7 +1055,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       };
       return new Map(layout.nodes.filter(n=>!n.frame&&(!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component'||byID.get(n.id).note)).map(n=>{
         if(byID.get(n.id).note)return note(n);
-        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,50,15,58);
+        // Inside its 1.5px border and 6px padding, the zoom mark beside
+        // the title (canvas.css).
+        const item=byID.get(n.id),heading=describedHeading(n,item.name||item.title,item.description,scale,measure,50,15,58,{side:15,lines:(height,titleLines)=>Math.floor((height-15-16*titleLines)/15),least:11/12/entry(n)});
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);
@@ -1070,7 +1104,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // A part looked at draws its arrows from its own border, not from the
     // border of the area holding it.
     const boundary=(id,other)=>id===deep?null:boundaryBetween(id,other);
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,recede,boundary,initVisible,deep?new Set([deep]):zoomedArea?new Set(leaves(zoomedArea)):null);
+    // A quiet arrow is drawn while one of its ends is looked at: the part
+    // the camera stands in, else the area the reader has chosen or zoomed
+    // into, whatever the pointer crosses (owner's reviewer, 2026-09-30:
+    // othello's Game logic read, AI evaluation had floated with no arrow
+    // from AI search or to Board and rules, both quiet, both in the column).
+    // A whole program looks at nothing in particular.
+    const restFrame=quietFrame(rest,view.scope,detailed.size===1?[...detailed][0]:'',frameOf);
+    const quietEnds=deep?new Set([deep]):restFrame&&byID.get(restFrame)?.branch==='area'?new Set(leaves(restFrame)):null;
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,recede,boundary,initVisible,quietEnds);
     const matchingOf=routeIndex(routes);
     const labels=(area?connections(area,members,layout.edges,outsideOf(area)):[]).flatMap(group=>{
       // A label stands where its arrow meets the frame it marks.
@@ -1109,7 +1151,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     function deepInto(node){
       if(!instance)return;
       const rect=host.getBoundingClientRect(),readable=deepZoom(node.id);
-      const fit=Math.min((rect.width-48)/node.width,(rect.height-48)/node.height);
+      // Fitted with room around it for its short arrows (placeStubs).
+      const fit=Math.min((rect.width-72)/node.width,(rect.height-72)/node.height);
       const {box,scale}=partBox({...byID.get(node.id),...looseOf(node)}),tiles=860*1.02/(box.width*scale);
       overviewFit=false;hover.pause();arrive([node.id]);locationSubject=node.id;
       callbacks.follow?.(node.id,true);
@@ -1339,7 +1382,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       </div>}
       {destinations?<ul className="flow-card-destinations">{destinations.map(([name,parts])=><li key={name}>
         <b>{name}</b>{parts.size>0&&<span>← {[...parts].join(', ')}</span>}</li>)}</ul>
-        :<CallRows card={card} counts={false}/>}</FloatingCard>;
+        :<BriefRows card={card}/>}</FloatingCard>;
   }
   // A click on an arrow end, its chip or its arrowhead, reads its frame's
   // connections in the column, that connection open (owner's 3b); its card

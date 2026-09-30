@@ -566,3 +566,17 @@ test('stepping out takes the closest zoom below the level it leaves',()=>{
   assert.ok(out<2&&out>1.99,`just below the areas: ${out}`);
   assert.equal(zoomBelow(1.5,.1,steps,1),1.5,'a frame already framed below it keeps its zoom');
 });
+
+// Each program's Inputs opens to its inputs when its own read: one program's
+// large inputs had held cmd/litestream's 180 open as 4px tiles.
+test('an input collection opens its groups when its own inputs read, not another collection\'s',()=>{
+  const records=[{id:'big',branch:'inputs',children:['b1']},{id:'small',branch:'inputs',children:['s1']},
+    {id:'b1',branch:'inputs-part',children:['get'],contentScale:1},{id:'s1',branch:'inputs-part',children:['set'],contentScale:.1},
+    {id:'get',activation:'request',contentScale:1},{id:'set',activation:'request',contentScale:.1}];
+  const box=(id,parentId,x,y,width,height,frame=false)=>({id,parentId,absolute:{x,y},width,height,frame});
+  const nodes=[box('big',undefined,0,0,400,400,true),box('small',undefined,500,0,400,400,true),
+    box('b1','big',20,40,300,300,true),box('s1','small',520,40,300,300,true),box('get','b1',40,80,260,60),box('set','s1',540,80,260,60)];
+  const open=detailLayers(nodes,records,{x:0,y:0,zoom:2},1000,700);
+  assert.ok(open.has('b1'),'the collection whose inputs read opens to them');
+  assert.ok(open.has('small')&&!open.has('s1'),'the other stays at its named groups');
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {callCard,reach,countWords,countsHandlers,countsInputs,headingRows} from './call-card.mjs';
+import {callCard,reach,countWords,countsHandlers,countsInputs,headingRows,briefCard} from './call-card.mjs';
 
 const names={persist:'Persistence',clients:'Client connections',data:'Data structures',strings:'Strings',
   generic:'Generic key commands',lists:'List commands',get:'get',inputs:'Inputs'};
@@ -151,4 +151,16 @@ test('reach says all, some of, or nothing for a single part',()=>{
   assert.deepEqual(reach(8,8),{all:true,count:8});
   assert.deepEqual(reach(8,9),{all:false,count:8,of:9});
   assert.equal(reach(1,1),null);
+});
+
+// Litestream's CLI → Core database engine card had listed 174 caller and
+// callee rows: on the canvas each part it goes into names what it reaches
+// there once.
+test('an arrow card on the canvas names each callee once under the part it goes into',()=>{
+  const relations=[{from:'persist',to:'data',calls:[call('rdbSave calls dictNext','rdb.c:10'),call('rdbLoad calls dictNext','rdb.c:40'),call('rdbSave calls sdsnew','rdb.c:12')]},
+    {from:'clients',to:'strings',calls:[call('readQuery calls sdsnew','net.c:5')]}];
+  const brief=briefCard(callCard(relations,{nameOf}));
+  assert.deepEqual(brief.map(part=>part.name),['Data structures','Strings']);
+  assert.deepEqual(brief[0].names.map(entry=>entry.name),['dictNext','sdsnew']);
+  assert.deepEqual(brief[1].names.map(entry=>entry.name),['sdsnew']);
 });

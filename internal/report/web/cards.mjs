@@ -173,6 +173,42 @@ export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reserv
   return {scale,title:lines(scale).join('\n')};
 }
 
+// The whole lines of a closed card's description that fit `most` lines of
+// `width`: the last one shown ends after a whole word with "…", never
+// inside a word (-webkit-line-clamp had cut "applies pluggabl…").
+const descriptionFont='11px system-ui';
+export function descriptionLines(text,width,most,measure,font=descriptionFont){
+  if(!text||most<=0)return [];
+  const lines=wrapText(text,width,font,measure);
+  if(lines.length<=most)return lines;
+  const words=lines[most-1].split(' ');
+  while(words.length>1&&measure(`${words.join(' ')}…`,font)>width)words.pop();
+  return [...lines.slice(0,most-1),`${words.join(' ')}…`];
+}
+
+// A closed card's heading with the whole lines of its description under
+// it. The title is fitted as groupHeading fits it; when that leaves the
+// description cut, the heading is drawn up to two fifths smaller if that
+// lets it read whole, or at least two lines of it (reviewer, 2026-09-30:
+// freqtrade's "Core / trading / runtime" had stood in three big lines over
+// "Executes trading strategies and…" and an empty strip). `card` is the card's room in its own units:
+// `side`, the width the description does not take, and `lines(height,
+// titleLines)`, how many 15px lines fit under the title; `least`, the
+// smallest scale its title may be drawn at.
+export function describedHeading(node,title,text,maxScale,measure,reservedWidth,reservedHeight,minHeight,card){
+  const first=groupHeading(node,title,maxScale,measure,reservedWidth,reservedHeight,minHeight);
+  const at=scale=>{
+    const titleLines=wrapText(title,node.width/scale-reservedWidth,'600 12px system-ui',measure);
+    const width=node.width/scale-card.side-1,most=Math.max(0,card.lines(node.height/scale,titleLines.length));
+    return {scale,title:titleLines.join('\n'),width,most,whole:!text||wrapText(text,width,descriptionFont,measure).length<=most};
+  };
+  // Whole if it can be down to 0.6 of the title's size, else at least two
+  // lines of it, else as the title fits.
+  const ladder=[1,.95,.9,.85,.8,.75,.7,.65,.6].filter(factor=>factor===1||first.scale*factor>=(card.least||0)).map(factor=>at(first.scale*factor));
+  const chosen=ladder.find(next=>next.whole)||ladder.find(next=>next.most>=2)||ladder[0];
+  return {scale:chosen.scale,title:chosen.title,lines:descriptionLines(text,chosen.width,chosen.most,measure)};
+}
+
 // A callable written inline is named as the reading column names it
 // (31-reading-column.js rmInlineText): "anonymous function in
 // ReplicateCommand.Run", never GroupsIndex's "ReplicateCommand.Run

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {emphasis,focusAncestors,endEmphasis,recedes} from './emphasis.mjs';
+import {emphasis,focusAncestors,endEmphasis,recedes,quietFrame} from './emphasis.mjs';
 
 const leaves=id=>id==='area'?['handler','paint']:id==='other'?['test']: [id];
 const edges=[
@@ -106,4 +106,17 @@ test('the pointer recedes nothing; a choice recedes what it does not involve',()
   const far={...empty,scope:'unrelated',selected:new Set(['unrelated'])};
   const framed=recedes(emphasis(far,'',leaves,edges),emphasis(far,'area',leaves,edges),new Set(['area']),inside);
   assert.deepEqual(['area','handler','paint','test','unrelated'].filter(framed),['handler','paint']);
+});
+
+// Othello's Game logic, chosen, had drawn none of its quiet arrows: the
+// area chosen keeps its parts looked at while the pointer crosses them.
+test('quiet arrows are drawn in the area chosen or zoomed into, whatever the pointer does',()=>{
+  const frameOf=id=>id==='handler'?'area':id;
+  const chosen={scope:'area',operation:'',selected:new Set(['area']),matched:new Set(),searching:false};
+  const rest=emphasis(chosen,'',leaves,[]);
+  assert.equal(quietFrame(rest,'area','',frameOf),'area');
+  assert.equal(quietFrame(emphasis({...chosen,scope:'handler'},'',leaves,[]),'handler','',frameOf),'area','a part chosen is read in its area');
+  const idle={scope:'',operation:'',selected:new Set(),matched:new Set(),searching:false};
+  assert.equal(quietFrame(emphasis(idle,'',leaves,[]),'','area',frameOf),'area','the one area zoomed into');
+  assert.equal(quietFrame(emphasis({...idle,searching:true},'',leaves,[]),'','area',frameOf),'','a search looks at its matches');
 });

@@ -710,3 +710,63 @@ func TestSystemMapKeepsEqualConnectionIDsOfDifferentTargetsApart(t *testing.T) {
 		t.Fatalf("the cli's link lost its ends: %v", ends)
 	}
 }
+
+// A call written once stands once, in the first program's Outside frame;
+// that frame is then every program's whose arrows enter it, its own first,
+// never the other program's alone (Redis's DNS Resolver, reached from
+// redis-benchmark and redis-cli).
+func TestASharedOutsideFrameIsNamedAfterEveryProgramReachingIt(t *testing.T) {
+	row := func(id string) pageOutbound {
+		return pageOutbound{ID: id, Destination: "DNS Resolver", External: "gethostbyname", Caller: "anetResolve", MapGroup: "net", Source: "model",
+			Anchor: pageAnchor{Path: "anet.c", Line: 115, Text: "anet.c:115", Href: "anet.c#L115"}}
+	}
+	section := func(id, label string) *pageSection {
+		return &pageSection{ID: id, ShortLabel: label, programTargetID: id, Outbound: []pageOutbound{row(id + "-b1")},
+			Map: &pageMap{Nodes: []pageMapNode{{ID: "n-" + id + "-net", FullTitle: "Network sockets"}}}}
+	}
+	view := pageView{Sections: []*pageSection{section("tb", "redis-benchmark"), section("tc", "redis-cli"), section("ts", "redis-server")}}
+	view.Sections[2].Outbound = nil
+	got := view.SystemMap()
+	nodes := map[string]pageMapNode{}
+	for _, n := range got.Nodes {
+		nodes[n.ID] = n
+	}
+	frame := nodes["system-outside-tb"]
+	if frame.FullTitle != "redis-benchmark, redis-cli" || frame.Owner != "tb" {
+		t.Fatalf("shared Outside frame is not named after both programs: %+v", frame)
+	}
+	if _, own := nodes["system-outside-tc"]; own {
+		t.Fatal("the call written once gained a second tile")
+	}
+	var into []string
+	for _, edge := range got.Edges {
+		if edge.To == "system-tb-b1" {
+			into = append(into, edge.From)
+		}
+	}
+	if !slices.Equal(into, []string{"n-tb-net", "n-tc-net"}) {
+		t.Fatalf("each program keeps its own arrow into the one tile: %v", into)
+	}
+}
+
+// A dependency between two programs already drawn from one's part into the
+// other's input is that arrow; one no finer arrow draws stays.
+func TestAProgramDependencyAlreadyDrawnIsNotASecondArrow(t *testing.T) {
+	view := pageView{Sections: []*pageSection{
+		{ID: "client", ShortLabel: "ws_client", Map: &pageMap{Nodes: []pageMapNode{{ID: "n-ws", FullTitle: "WebSocket client"}, {ID: "remote-ws", Remote: true, Href: "#ws-in"}},
+			Edges: []pageMapEdge{{From: "n-ws", To: "remote-ws", Scope: "operation", Possible: true}}}},
+		{ID: "bot", ShortLabel: "freqtrade", Requests: []pageGroupOperation{{Href: "#ws-in", Kind: "request", Name: "WS /api/v1/message/ws"}}},
+		{ID: "docs", ShortLabel: "create_command_partials"},
+	}, RepoMap: &pageRepoMap{
+		Nodes: []pageRepoNode{{ID: "c", Href: "#client", Analyzed: true}, {ID: "b", Href: "#bot", Analyzed: true}, {ID: "d", Href: "#docs", Analyzed: true}},
+		Edges: []pageRepoEdge{{From: "c", To: "b", Possible: true}, {From: "d", To: "b"}},
+	}}
+	got := view.SystemMap()
+	var between []string
+	for _, edge := range withoutMembership(got.Edges) {
+		between = append(between, edge.From+">"+edge.To)
+	}
+	if !slices.Equal(between, []string{"n-ws>ws-in", "system-component-docs>system-component-bot"}) {
+		t.Fatalf("a drawn dependency gained a second arrow, or an undrawn one was lost: %v", between)
+	}
+}

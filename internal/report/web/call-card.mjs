@@ -132,3 +132,31 @@ export function reach(count,of){
   if(!(of>1))return null;
   return count>=of?{all:true,count:of}:{all:false,count,of};
 }
+
+// What an arrow's card says on the canvas, where the pointer asks "what is
+// this": the parts it goes into, each with the names it reaches there, each
+// name once, in the order the card lists them: the callee of a call, the
+// inputs a handler takes, the field read or written. Every call and who makes
+// it are read in the column. Litestream's "Command line interface → Core
+// database engine" had listed 174 caller-and-callee rows, "writes
+// SnapshotInterval" and "reads Replica" among them, and freqtrade's Inputs
+// every REST route beside its cut handler (reviewer, 2026-09-30).
+export function briefCard(card){
+  const into=new Map();
+  const add=(part,entry)=>{
+    if(!entry.name)return;
+    if(!into.has(part))into.set(part,new Map());
+    if(!into.get(part).has(entry.name))into.get(part).set(entry.name,entry);
+  };
+  for(const group of card.groups){
+    for(const fold of group.folds)for(const part of fold.parts)for(const row of part.rows)add(part.name,{name:row.callee,href:row.href});
+    for(const pair of group.pairs)for(const row of pair.rows){
+      if(row.inputRefs)for(const ref of row.inputRefs)add(pair.name,{name:ref.name});
+      else if(row.callee)add(pair.name,{name:row.callee,href:row.calleeHref});
+      else if(row.other&&row.other!==pair.name&&row.other!==group.name)add(pair.name,{name:row.other,href:row.otherHref});
+      else add(pair.name,{name:''});
+    }
+  }
+  const order=new Map(card.into.map((part,i)=>[part.name,i]));
+  return [...into].sort((a,b)=>(order.get(a[0])??Infinity)-(order.get(b[0])??Infinity)).map(([name,names])=>({name,names:[...names.values()]}));
+}

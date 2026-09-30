@@ -335,6 +335,7 @@ func (view *pageView) SystemMap() *pageMap {
 	for _, tile := range tileOrder {
 		result.Nodes[positions[tile]].Reached = reachedReading(tileRows[tile])
 	}
+	nameSharedOutside(result, positions, view.Sections)
 	// An input's path into a folded record leads to the tile that stands for
 	// it: reading that tile on the input's path keeps "Why it appears".
 	// Without it, echo's GET /users/:id and fifteen microblog inputs named
@@ -513,8 +514,26 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 			add(pageMapNode{ID: "system-unread", ItemKind: "Component", FullTitle: title, Summary: strings.Join(unread, ", "), Lane: "dependencies"})
 		}
+		// A dependency between two programs already drawn between their own
+		// parts or inputs is that arrow: freqtrade's scripts/ws_client.py,
+		// whose call into freqtrade's WebSocket input is drawn, had a second
+		// dashed arrow into freqtrade that no card explained (reviewer,
+		// 2026-09-30).
+		drawn := map[[2]string]bool{}
+		ownerOf := func(id string) string {
+			if at, ok := positions[id]; ok {
+				return result.Nodes[at].Owner
+			}
+			return ""
+		}
+		for _, edge := range result.Edges {
+			drawn[[2]string{ownerOf(edge.From), ownerOf(edge.To)}] = true
+		}
 		for _, e := range view.RepoMap.Edges {
 			from, to := components[e.From], components[e.To]
+			if drawn[[2]string{ownerOf(from), ownerOf(to)}] && ownerOf(from) != "" {
+				continue
+			}
 			if from != "" && to != "" && from != to {
 				result.Edges = append(result.Edges, pageMapEdge{From: from, To: to, Scope: "component", Label: e.Label, Possible: e.Possible})
 			}
@@ -553,6 +572,52 @@ func outsideGroups(rows []pageOutbound) []pageOutboundGroup {
 		named = append(named, *unestablished)
 	}
 	return named
+}
+
+// nameSharedOutside names an Outside frame after every program whose arrows
+// enter its tiles, its own first, then in the page's order. A call written
+// once stands once, in the first program's frame (SystemMap), so Redis's
+// DNS Resolver, reached from redis-benchmark and redis-cli, had read
+// "redis-cli → Outside · redis-benchmark" in redis-cli's own arrow card,
+// column and breadcrumb.
+func nameSharedOutside(result *pageMap, positions map[string]int, sections []*pageSection) {
+	frameOf := map[string]int{}
+	for position, node := range result.Nodes {
+		if node.Branch != "outside" {
+			continue
+		}
+		for _, destination := range strings.Fields(node.Children) {
+			if at, ok := positions[destination]; ok {
+				for _, tile := range strings.Fields(result.Nodes[at].Children) {
+					frameOf[tile] = position
+				}
+			}
+		}
+	}
+	reaching := map[int]map[string]bool{}
+	for _, edge := range result.Edges {
+		frame, into := frameOf[edge.To]
+		from, known := positions[edge.From]
+		if !into || !known {
+			continue
+		}
+		if owner := result.Nodes[from].Owner; owner != "" && owner != result.Nodes[frame].Owner {
+			if reaching[frame] == nil {
+				reaching[frame] = map[string]bool{}
+			}
+			reaching[frame][owner] = true
+		}
+	}
+	for frame, owners := range reaching {
+		names := []string{result.Nodes[frame].FullTitle}
+		for _, section := range sections {
+			if owners[section.ID] {
+				names = append(names, componentTitle(section, sections))
+			}
+		}
+		result.Nodes[frame].FullTitle = strings.Join(names, ", ")
+		result.Nodes[frame].Title = mapTitle(result.Nodes[frame].FullTitle)
+	}
 }
 
 func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {

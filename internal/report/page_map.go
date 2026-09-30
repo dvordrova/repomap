@@ -2308,24 +2308,28 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 	return string(raw), string(rawCalls)
 }
 
-// sharedNamespace is the namespace every declaration of a part is named in
-// ("othello.ui.host/", Clojure's ns/name), "" when they are not all so named
-// or not all in one.
+// sharedNamespace is the namespace most declarations of a part are named in
+// ("othello.ui.host/", Clojure's ns/name), "" when no namespace names more
+// than half of them. A part of one namespace calling one declaration of
+// another names that one whole: othello's AI search had repeated
+// "othello.ai.search/" on thirteen tiles for the sake of othello.ai/move.
 func sharedNamespace(symbols []pageNodeSymbol) string {
-	namespace := ""
+	counts, declarations, namespace := map[string]int{}, 0, ""
 	for _, symbol := range symbols {
 		if symbol.Kind == "field" || symbol.Kind == "skip" {
 			continue
 		}
-		at := strings.LastIndex(symbol.Name, "/")
-		if at <= 0 || at == len(symbol.Name)-1 {
-			return ""
+		declarations++
+		if at := strings.LastIndex(symbol.Name, "/"); at > 0 && at < len(symbol.Name)-1 {
+			space := symbol.Name[:at+1]
+			counts[space]++
+			if counts[space] > counts[namespace] || counts[space] == counts[namespace] && space < namespace {
+				namespace = space
+			}
 		}
-		if namespace == "" {
-			namespace = symbol.Name[:at+1]
-		} else if symbol.Name[:at+1] != namespace {
-			return ""
-		}
+	}
+	if namespace == "" || 2*counts[namespace] <= declarations {
+		return ""
 	}
 	return namespace
 }

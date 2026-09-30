@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark} from './cards.mjs';
+import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines} from './cards.mjs';
 import {semanticLayout} from './semantic.mjs';
 
 // canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
@@ -250,4 +250,15 @@ test('an input written inline is named as the reading names it',()=>{
   const [input]=prepareCards([{id:'run',title:'ReplicateCommand.Run (inline)',activation:'command'}],{},text=>String(text).length*7,(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),'translated '+key));
   assert.equal(input.name,'translated anonymous function in ReplicateCommand.Run');
   assert.doesNotMatch(input.title,/inline/);
+});
+
+// "applies pluggabl…": a card's description ends after a whole word.
+test('a card description is cut after a whole word, never inside one',()=>{
+  const measure=text=>Array.from(text).length*6;
+  const lines=descriptionLines('Loads, filters, and applies pluggable trading components.',16*6,2,measure);
+  assert.equal(lines.length,2);
+  assert.ok(lines.at(-1).endsWith('…'));
+  const words=new Set('Loads, filters, and applies pluggable trading components.'.split(' '));
+  for(const line of lines)for(const word of line.replace(/…$/,'').split(' '))assert.ok(words.has(word),`"${word}" is a whole word`);
+  assert.deepEqual(descriptionLines('Short text.',100*6,2,measure),['Short text.']);
 });

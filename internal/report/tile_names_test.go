@@ -32,6 +32,11 @@ func TestAPartsSharedNamespaceIsSaidOnce(t *testing.T) {
 	if got := sharedNamespace(withField); got != "othello.board/" {
 		t.Fatalf("a field decided the namespace: %q", got)
 	}
+	// Most of a part's declarations in one namespace are named without it;
+	// the one of another keeps its whole name.
+	if got := sharedNamespace(symbols("othello.ai/move", "othello.ai.search/choose", "othello.ai.search/negamax")); got != "othello.ai.search/" {
+		t.Fatalf("the namespace most share = %q", got)
+	}
 }
 
 // A callable written inline is read by the name GroupsIndex gives it,

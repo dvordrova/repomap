@@ -64,3 +64,13 @@ export function carries(edge,member){
     (into&&sources.has(relation.toSource))||(out&&sources.has(relation.fromSource))||
     (relation.calls||[]).some(call=>(into&&sources.has(call.to))||(out&&names.has(String(call.label||'').split(' ')[0]))));
 }
+
+// The frame whose parts' quiet arrows are drawn (route-drawing.mjs): the
+// area the reader has chosen, or the one area zoomed into with nothing
+// chosen, from the emphasis at rest, so the pointer crossing it changes
+// nothing. Read from the pointer's emphasis, othello's Game logic had lost
+// AI search → AI evaluation → Board and rules, both quiet, whenever the
+// area was chosen. `zoomed` is the one open area, or ''.
+export function quietFrame(rest,scope,zoomed,frameOf){
+  return rest.mode==='selection'?frameOf(scope):rest.mode==='all'?zoomed:'';
+}

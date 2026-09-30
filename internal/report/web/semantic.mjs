@@ -103,9 +103,15 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   // when those are readable, as areas open to their parts. Opened with the
   // collection, Redis's 95 inputs stood as a wall of 5px tiles under 5px
   // group names.
-  const groups=inputGroups(nodes,byID).filter(group=>open.has(group.parentId));
-  if(groups.length&&viewport.zoom>=layerThreshold(groups,byID,width,height,1,groups.some(group=>previous.has(group.id))))
-    for(const group of groups)open.add(group.id);
+  // Each collection's groups open together, when its own inputs read: one
+  // threshold for every program's, set by the largest inputs anywhere, had
+  // left cmd/litestream's 180 inputs open as 4px tiles when its whole
+  // Inputs frame was entered.
+  const collections=new Map();
+  for(const group of inputGroups(nodes,byID).filter(group=>open.has(group.parentId)))collections.set(group.parentId,[...(collections.get(group.parentId)||[]),group]);
+  for(const groups of collections.values())
+    if(viewport.zoom>=layerThreshold(groups,byID,width,height,1,groups.some(group=>previous.has(group.id))))
+      for(const group of groups)open.add(group.id);
   return open;
 }
 const inputGroups=(nodes,byID)=>nodes.filter(node=>node.frame&&byID.get(node.id)?.branch==='inputs-part');
