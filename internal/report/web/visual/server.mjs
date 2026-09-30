@@ -31,10 +31,19 @@ const renderReal=()=>real||=(async()=>{
 // Reports already rendered, named by REPOMAP_GEOMETRY_REPORTS, served as
 // /geometry-<n>.html for the geometry checks (geometry.spec.mjs).
 const geometryReports=(process.env.REPOMAP_GEOMETRY_REPORTS||'').split(',').filter(Boolean);
+// Reports named by REPOMAP_JOURNEY_REPORTS, served as /journey-<n>.html for
+// the journey check and the reading lints (journeys.spec.mjs).
+const journeyReports=(process.env.REPOMAP_JOURNEY_REPORTS||'').split(',').filter(Boolean);
 // This test-only server exposes only this fixture, ordinary report assets and
 // those rendered reports.
 createServer(async(request,response)=>{
   const path=new URL(request.url,'http://127.0.0.1').pathname;
+  const journey=/^\/journey-(\d+)\.html$/.exec(path);
+  if(journey&&journeyReports[Number(journey[1])]){
+    try{response.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'}).end(await readFile(journeyReports[Number(journey[1])]));}
+    catch(error){response.writeHead(500).end(String(error));}
+    return;
+  }
   const geometry=/^\/geometry-(\d+)\.html$/.exec(path);
   if(geometry&&geometryReports[Number(geometry[1])]){
     try{response.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'}).end(await readFile(geometryReports[Number(geometry[1])]));}

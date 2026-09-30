@@ -191,6 +191,24 @@ lone number. It runs on the fixture always,
 and on rendered reports named by `REPOMAP_GEOMETRY_REPORTS` (a comma list of
 HTML files from `repomap render`), printing each finding with its level.
 
+`visual/journeys.spec.mjs` (`visual/journeys.mjs`) runs on rendered reports
+named by `REPOMAP_JOURNEY_REPORTS` (a comma list, served as
+`/journey-<n>.html`; no provider call):
+
+    REPOMAP_JOURNEY_REPORTS=a.html,b.html npx playwright test journeys
+
+Its frozen journeys print PASS or FAIL per repository and never fail the
+run: litestream's `replicate` shows its handler `ReplicateCommand.Run` in
+the column, unfolded; freqtrade's `trade` shows `FreqtradeBot.process`
+within one expand; redis's `set` names `redisDb` or `dict` among its State
+changes; othello's `key-pressed` lists its keys n, u, h, 1 and 2. Its
+reading lints are tests, walking the whole map and every program, Inputs,
+Outside, destination, area and part as the explorer reads them, with two
+arrow cards at each frame: no `file:line` in a row of the column or a
+card, no entry twice in one list, no word cut by an ellipsis or the
+browser, no Outside chip naming its own program, and no empty card or
+frame in sight. Each offender is printed with its level.
+
 Each system has one compact input collection outside its component frame on
 the initial map. Its existing input types remain readable; opening the collection
 reveals the original named inputs. Selecting an input retains its exact saved

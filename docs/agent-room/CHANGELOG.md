@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Frozen journey check and reading lints (visual/journeys.spec.mjs)
+
+- `REPOMAP_JOURNEY_REPORTS=a.html,… npx playwright test journeys` on
+  `repomap render` output. Journeys print PASS/FAIL, never failing the run;
+  lints are tests over the whole map and every program, Inputs, Outside,
+  destination, area and part (two arrow cards at each frame).
+- Served reports of 07:12–07:16: all four journeys FAIL (litestream
+  `replicate` → ReplicateCommand.Run; freqtrade `trade` →
+  FreqtradeBot.process; redis `set` → redisDb/dict in State changes;
+  othello `key-pressed` → n, u, h, 1, 2). Lints: redis 31, litestream 36,
+  freqtrade 57, othello 13 offenders, mostly column part summaries clipped
+  by the browser (78), file:line rows (19, in parts' written registrations),
+  half-empty cards (19), repeated list entries (5), litestream's
+  "Litestream" chip in cmd/litestream's own Outside.
+
 ## 2026-09-30 — An input's flow spine, and only its handler's own words (critic's verdict)
 
 - **Sub-arguments (9ac16afc):** "Words its handler checks" lists only the
