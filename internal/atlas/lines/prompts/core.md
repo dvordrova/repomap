@@ -18,6 +18,8 @@ Give every row exactly one `role`:
 - `support`: helpers any program could have: errors, logging, validation
   plumbing, tokens and crypto utilities, generic utilities, build, lint and
   release tooling.
+- `example`: code the program ships for its users to read, copy or start
+  from, which the program itself does not run to do its work.
 
 A part that touches a database is `domain` only when it holds the program's
 own models and queries; opening, pooling or migrating the connection is

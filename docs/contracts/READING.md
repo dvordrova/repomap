@@ -481,6 +481,13 @@ run, with or without `--captions`. Each `atlas_core` row and `atlas_keys`
 context carries `declarations`: every declaration the part holds, in ID order,
 never cut to a count.
 
+**Core.** Every drawn non-test part but the one its program starts in is one
+`atlas_core` row (Jev, `prompts/core.md`): `domain`, `interface`, `wiring`,
+`support` or `example`, code the program ships for its users to read, copy
+or start from and does not run itself (criteria in `core_options.md`; the
+task defines the other four). A `domain` part is core; an example part is
+not (freqtrade's sample strategies had carried the core mark as domain).
+
 **Areas.** A target with at least three drawn non-test parts sends one
 `atlas_areas` request (`prompts/design_areas.md`) listing them with `ref`,
 `name`, `description`, `dirs` (of its source files, split files included) and
