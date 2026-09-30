@@ -84,7 +84,16 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 	if !found {
 		t.Fatal("the client's call made no outgoing boundary")
 	}
-	if lines.DestinationTarget([]lines.Destination{{Ref: "d1", Value: "server"}}, "d1") != "" {
-		t.Fatal("a system entry named a program")
+	catalog := []lines.Destination{{Ref: "d1", Value: "Telegram"}, {Ref: "d2", Value: "server", Program: true, Target: "server"}}
+	for _, cell := range [][2]string{{"d1", "Telegram"}, {"other: Server farm", "Server farm"}} {
+		if target, _ := lines.DestinationTarget(catalog, cell[0], cell[1]); target != "" {
+			t.Fatalf("%q named the program %s", cell[0], target)
+		}
+	}
+	// The offered program named after the free prefix is that program.
+	for _, cell := range [][2]string{{"d2", "server"}, {"other: Server", "Server"}} {
+		if target, name := lines.DestinationTarget(catalog, cell[0], cell[1]); target != "server" || name != "server" {
+			t.Fatalf("%q named %q %q, want the server program", cell[0], target, name)
+		}
 	}
 }

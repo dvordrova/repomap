@@ -86,15 +86,18 @@ func WithPrograms(catalog, programs []Destination) []Destination {
 	return offered
 }
 
-// DestinationTarget is the target of the program a chosen ref names; empty
-// for a system, an unknown ref or a name after the free prefix.
-func DestinationTarget(catalog []Destination, ref string) string {
+// DestinationTarget is the program a chosen cell names, with the program's
+// name: its ref, or its name written after the free prefix (name, case
+// aside), which chooses the offered program as its ref does: freqtrade's
+// run drew "other: Freqtrade" where "freqtrade" was offered. Empty for a
+// system, an unknown ref or any other name.
+func DestinationTarget(catalog []Destination, ref, name string) (string, string) {
 	for _, entry := range catalog {
-		if entry.Ref == ref && entry.Program {
-			return entry.Target
+		if entry.Program && (entry.Ref == ref || name != "" && strings.EqualFold(entry.Value, strings.TrimSpace(name))) {
+			return entry.Target, entry.Value
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // Destinations is the closed catalogue of the named packages: one entry per

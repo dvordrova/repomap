@@ -1142,8 +1142,10 @@ package answered `none` gives none. After them, marked `program`, come the
 repository's other programs that serve requests or listen while they run,
 each with what it `takes` (those entries by kind, method and name); never
 the destination's own program (a replica's primary is another copy of it),
-and a fixture only to fixtures of its root. A program chosen is the
-boundary's `destination_target`, and the report draws the destination into
+and a fixture only to fixtures of its root. A program chosen, by its ref
+or by its name after `other: ` (case aside: freqtrade's run drew "other:
+Freqtrade" once), is the boundary's `destination_target`, and the report
+draws the destination into
 that program: freqtrade-client's one request, whose path the code computes,
 matched none of freqtrade's inputs and had stood as "Freqtrade Server"
 beside it (5 of 5 draws chose freqtrade, and scripts/ws_client.py's

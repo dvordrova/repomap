@@ -250,7 +250,10 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 		chosen := "not decided"
 		if answer := answers[i].answer; answer != nil {
 			chosen = destinationChoice(def, question.catalog, answer["destination"])
-			program := lines.DestinationTarget(question.catalog, answer["destination"])
+			program, named := lines.DestinationTarget(question.catalog, answer["destination"], chosen)
+			if program != "" {
+				chosen = named
+			}
 			for _, member := range question.members {
 				name(member, chosen)
 				if program != "" {
