@@ -1,5 +1,45 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A command group keeps its word; marks, sentences and pattern re-registrations name no input
+
+- **Command group (coordinator's item 1, 4075c377):** the dest drop now
+  needs its call to give its word only under a parameter's name
+  (`wordsByName` over ProgramIndex patterns: `add_subparsers(dest=…)`), and
+  any input declared on its object, handled or not. A group given its
+  word by position keeps it (commander's `program.command("remote")` with
+  handled `add`/`rm`; argparse's `add_parser("remote")`). Fixtures:
+  Python `build_remote` (remote stays, both dests go), JS `cli.ts`'s
+  `remote` group (facts only: commander's declarations are not installed,
+  so nothing of it is asked; `TestACommandGroupsWordIsGivenByPositionAndADestsByName`),
+  `TestADestOfHandledSubcommandsIsNoInputButACommandGroupKeepsItsWord`.
+- **Marks and sentences (items 2 and 3):** `lines.NamesAnInput`: a word
+  with no letter or digit that is no path is a mark (litestream's two `-`
+  tiles from `strings.HasPrefix(u, "-")`, a config line's `#` and `[`
+  elsewhere in the gallery); three or more letter-only words are a
+  sentence (freqtrade's five `Query(…, description=…)` inputs, five to
+  eight words; usages three or four; `"chat message"` two stays a name).
+  A word call, comparison case or table row with no such word makes no
+  entry; a chosen mark or sentence is left out of a name. Question items
+  are unchanged (the offered words keep `nameable`), so no cache churn.
+  Fixtures: Go `LooksLikeFlag`, Python `cli.py` `weekly_levels`
+  (`token` stays, the description goes).
+- **Pattern re-registrations (item 2):** a handler registered again by a
+  call given its words only under a parameter's name folds into the
+  registration of its kind given words otherwise: freqtrade's 12
+  `update_*` callbacks join `profit`, `balance`, … (saved atlas projected:
+  telegram 54 → 42 requests); `force_enter__\S+`, `force_exit__\S+` and
+  `update_status_table` have no other registration and stay.
+  `TestAHandlerRegisteredAgainByAPatternIsOneInput`.
+- **Left (needs the owner or a question change):** Telegram command words
+  are `request` by the `binds` answer for `CommandHandler` (a chat bot
+  polls, it serves nothing): the next run already carries cd732b6a's
+  question change, so no second one. `_blacklist_delete` & co. are named
+  by their handler because `CommandHandler(["blacklist_delete",
+  "bl_delete"], …)`'s list literal carries no elements (the owner's
+  reserved list-literal element fact). `/api/v1` is
+  `include_router(prefix=…)`, a mount the facts compose into routes but no
+  place names.
+
 ## 2026-09-30 — Canvas, reviewer pass 3: quiet arrows of a read area, shared Outside names, gutters, whole Inputs, brief arrow cards
 
 - **Quiet arrows:** an area chosen or zoomed into looks at its parts

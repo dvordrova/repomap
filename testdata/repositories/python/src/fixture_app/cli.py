@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 
 from . import events
 from .levels import fetch_level, retrieve_level
@@ -105,6 +105,16 @@ def overridden_level():
 @mixed_router.get("/api/mixed-lookalike")
 def mixed_level():
     return None
+
+
+@app.get("/api/weekly")
+def weekly_levels(
+    weeks: int = Query(4, ge=1, description="Number of weeks to fetch levels for"),
+    token: str = Query(None, alias="token"),
+):
+    """A query parameter's description is no word of its request: the
+    parameter is named by its alias, or by nothing its call writes."""
+    return weeks
 
 
 if __name__ == "__main__":

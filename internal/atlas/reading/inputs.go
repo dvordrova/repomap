@@ -250,7 +250,7 @@ func (r *reader) bindTableRows() {
 				words = append(words, literal.Value)
 			}
 			first := row.Literals[0]
-			if len(lines.NameableWords(words)) == 0 {
+			if len(lines.InputWords(words)) == 0 {
 				r.noEntryWithoutWords(atlas.Place{ID: place.ID, Path: place.Path, LineNo: first.LineNo}, kind)
 				continue
 			}

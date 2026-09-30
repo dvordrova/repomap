@@ -814,12 +814,23 @@ is declared where its call is written, in its caller's part, and binds to no
 part. It has no subject, reach or phase in GroupsIndex; it does not make its
 caller a key's entry, its part the side work comes in at or a core part's
 entry, and gives no address to a holder's entries. A call none of whose words
-can name an entry (a format ending in a line break) makes none, recorded as
+can name an entry (a format ending in a line break; a mark, which holds no
+letter or digit and is no path, as litestream's `strings.HasPrefix(u, "-")`
+and a configuration line's `"#"`; a sentence, three or more words of
+letters alone, as freqtrade's `Query(3, description="Number of months to
+fetch data for")`: `lines.NamesAnInput`) makes none, recorded as
 `entry_unnamed`, and is read as any other call; a call in a test file makes
-none. GroupsIndex keeps one input per kind, words as written and declaring
-caller: an option written twice in one function is one input at its first
-site; the same word in another caller is another. A name that cannot stand
-refuses that entry alone.
+none, and a chosen mark or sentence is left out of a name. The line is
+measured: descriptions run five to eight words, flag usages three or four,
+an event's name (`"chat message"`) two. GroupsIndex keeps one input per
+kind, words as written and declaring caller: an option written twice in
+one function is one input at its first site; the same word in another
+caller is another. A handler registered again by a call given its words
+only under a parameter's name (freqtrade's `CallbackQueryHandler(
+self._profit, pattern="update_profit$")` beside `CommandHandler("profit",
+self._profit)`) is that handler's one input, the other registration of
+its kind standing for it; a handler only such a call registers keeps its
+own (`force_exit__\S+`). A name that cannot stand refuses that entry alone.
 
 Spellings of one value are one input, as a case listing several words is
 (reviewer's item 6a, 2026-09-30). A call whose ProgramIndex pattern

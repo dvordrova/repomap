@@ -105,8 +105,8 @@ func TestCallTextFollowsIndexesGenericsAndNew(t *testing.T) {
 func TestRowTextIsTheRowAsWritten(t *testing.T) {
 	cases := []struct {
 		name, path, src, mark string
-		others               []string
-		want                 string
+		others                []string
+		want                  string
 	}{
 		{"a dict row from its key", "options.py", "OPTIONS = {\n    \"verbose\": Opt(\"-v\", \"--verbose\", help=\"print more\"),  # loud\n    \"force\": Opt(\"-f\", \"--force\", help=\"overwrite files\"),\n}\n",
 			`"force"`, []string{`"print more"`}, `"force": Opt("-f", "--force", help="overwrite files")`},

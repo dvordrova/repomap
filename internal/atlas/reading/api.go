@@ -516,7 +516,7 @@ func (r *reader) readWordCall(running atlas.Place, sampleID, objectID string, li
 		r.recordWordCall(running, objectID, line, column, symbol, wordUndecided, "")
 	case answer == lines.APINone:
 		r.recordWordCall(running, objectID, line, column, symbol, wordNone, "")
-	case len(lines.NameableWords(words)) == 0:
+	case len(lines.InputWords(words)) == 0:
 		r.noEntryWithoutWords(atlas.Place{ID: sampleID, Path: running.Path, LineNo: line}, answer)
 		r.recordWordCall(running, objectID, line, column, symbol, wordNoWords, "")
 	default:

@@ -70,6 +70,9 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 				return "command", true
 			case strings.HasSuffix(symbol, "strings.EqualFold") && strings.Contains(callText(item), "os.Args"):
 				return "command", true
+			case strings.HasSuffix(symbol, "strings.HasPrefix"):
+				// As litestream's reading answered strings.HasPrefix(u, "-").
+				return "command", true
 			}
 		case "program":
 			if slices.Contains(options, "git") {
@@ -93,6 +96,13 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	slices.Sort(equalFolds)
 	if want := []string{`strings.EqualFold(level, "default")`, `strings.EqualFold(os.Args[1], "check")`}; !slices.Equal(equalFolds, want) {
 		t.Fatalf("EqualFold calls asked: %q, want %q", equalFolds, want)
+	}
+	// LooksLikeFlag's "-" is a mark, no word: no input, whatever its call
+	// was answered.
+	for _, row := range inputRows(projected, "internal/storefixture/tool_cli.go") {
+		if row.name == "-" {
+			t.Fatalf("a mark is an input: %+v", row)
+		}
 	}
 	got := inputRows(projected, "internal/storefixture/tool_cli.go", "internal/storefixture/destinations.go")
 	want := []inputRow{
@@ -211,6 +221,10 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 				strings.HasSuffix(symbol, ".add_subparsers") || strings.HasSuffix(symbol, ".pop") {
 				return "command", true
 			}
+			// As freqtrade's reading answered Query(…, description=…).
+			if strings.HasSuffix(symbol, ".Query") {
+				return "request", true
+			}
 		case "binds":
 			if strings.HasSuffix(symbol, ".set_defaults") {
 				return "command", true
@@ -230,6 +244,16 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		if row.name == "help" {
 			t.Fatalf("dispatch.py's input %+v", row)
 		}
+	}
+	// A query parameter's description names no input; its alias does.
+	var queries []string
+	for _, row := range inputRows(projected, "src/fixture_app/cli.py") {
+		if row.kind == "request" && row.declaredBy != "" && !strings.HasPrefix(row.name, "/") {
+			queries = append(queries, row.name)
+		}
+	}
+	if !slices.Equal(queries, []string{"token"}) {
+		t.Fatalf("cli.py's query inputs %q, want [token]", queries)
 	}
 	// The dest of add_subparsers, given only as dest=, on which subcommands
 	// with their own handlers are declared (init, serve), is none of their

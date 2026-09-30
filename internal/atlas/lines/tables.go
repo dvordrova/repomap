@@ -291,6 +291,46 @@ func NameableWords(values []string) []string {
 	return words
 }
 
+// InputWords are the words, as written and in order, that can name an
+// input (NamesAnInput): the words an entry is made of.
+func InputWords(values []string) []string {
+	var words []string
+	for _, value := range values {
+		if NamesAnInput(value) {
+			words = append(words, value)
+		}
+	}
+	return words
+}
+
+// NamesAnInput says a word can name an input: it can stand in a one-line
+// name and is neither a mark nor a sentence. A mark holds no letter or
+// digit and is no path: what a word starts with ("-", "#", "["), never a
+// word a person types or a program is sent; "/" is a path. A sentence is
+// three or more words of letters alone, one space between them: a
+// parameter's description ("Number of weeks to fetch data for", five to
+// eight words in freqtrade) or a flag's usage ("control socket path",
+// three or four in litestream), never its name; an event's two-word name
+// ("chat message") is a name.
+func NamesAnInput(value string) bool {
+	if !nameable(value) {
+		return false
+	}
+	if !strings.HasPrefix(value, "/") && !strings.ContainsFunc(value, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+		return false
+	}
+	fields := strings.Split(value, " ")
+	if len(fields) < 3 {
+		return true
+	}
+	for _, field := range fields {
+		if field == "" || strings.ContainsFunc(field, func(r rune) bool { return !unicode.IsLetter(r) }) {
+			return true
+		}
+	}
+	return false
+}
+
 // FirstEntryWord names an entry whose handler is not established when no word
 // was chosen for it: the first word its code wrote that can stand in a
 // one-line name. A flag's name comes before its default and its usage
@@ -308,7 +348,7 @@ func FirstEntryWord(facts *atlas.BoundaryFacts) string {
 		words = facts.Values
 	}
 	for _, value := range words {
-		if nameable(value) {
+		if NamesAnInput(value) {
 			return value
 		}
 	}
@@ -329,7 +369,8 @@ func nameable(value string) bool {
 
 // EntryName restores a name cell: the chosen words as written, joined by one
 // space in the order the model wrote them. No word is translated, recased,
-// trimmed or composed any other way.
+// trimmed or composed any other way. A chosen word that names no input (a
+// mark, a sentence: NamesAnInput) is left out of the name.
 func EntryName(words []EntryWord, cell string) string {
 	values := make(map[string]string, len(words))
 	for _, word := range words {
@@ -337,7 +378,7 @@ func EntryName(words []EntryWord, cell string) string {
 	}
 	var chosen []string
 	for _, ref := range strings.Fields(cell) {
-		if value, ok := values[ref]; ok {
+		if value, ok := values[ref]; ok && NamesAnInput(value) {
 			chosen = append(chosen, value)
 		}
 	}

@@ -951,6 +951,37 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			dropped[position] = true
 		}
 	}
+	// The same handler registered again by a call given its words only
+	// under a parameter's name (a pattern what it is handed is matched
+	// against: freqtrade's CallbackQueryHandler(self._profit,
+	// pattern="update_profit$") beside CommandHandler("profit",
+	// self._profit)) is that handler's input, once: a registration of its
+	// kind given its words otherwise stands for it. A handler no such
+	// registration names keeps its own input.
+	registrations := make(map[string]bool)
+	for position, operation := range operations {
+		if !dropped[position] && !operation.HandlerUnknown && operation.SubjectID != "" {
+			registrations[operationLocationKey(operation.Location)] = true
+		}
+	}
+	patterned := wordsByName(program, registrations)
+	standing := make(map[string]int)
+	for position, operation := range operations {
+		if !dropped[position] && registrations[operationLocationKey(operation.Location)] && !patterned[operationLocationKey(operation.Location)] {
+			if _, seen := standing[operation.Kind+"\x00"+operation.SubjectID]; !seen {
+				standing[operation.Kind+"\x00"+operation.SubjectID] = position
+			}
+		}
+	}
+	for position, operation := range operations {
+		if dropped[position] || operation.HandlerUnknown || operation.SubjectID == "" || !patterned[operationLocationKey(operation.Location)] {
+			continue
+		}
+		if at, ok := standing[operation.Kind+"\x00"+operation.SubjectID]; ok {
+			dropped[position] = true
+			standsFor[operation.ID] = operations[at].ID
+		}
+	}
 	if len(dropped) > 0 {
 		kept := operations[:0]
 		for position, operation := range operations {

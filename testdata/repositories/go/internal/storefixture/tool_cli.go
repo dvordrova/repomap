@@ -131,3 +131,10 @@ func addCommon(fs *flag.FlagSet) {
 func IsDefaultLevel(level string) bool {
 	return level == "default"
 }
+
+// LooksLikeFlag tells an argument placed after the positional ones by its
+// first character, as litestream's replicate does: "-" is a mark a flag
+// starts with, never a word of its own.
+func LooksLikeFlag(arg string) bool {
+	return strings.HasPrefix(arg, "-")
+}
