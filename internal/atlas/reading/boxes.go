@@ -633,8 +633,10 @@ type boundaryState struct {
 	place   atlas.Place
 	line    string
 	written bool
-	// name is an entry's chosen words, restored as written.
+	// name is an entry's chosen words, restored as written; unnamed marks
+	// an entry the model answered no written word names.
 	name        string
+	unnamed     bool
 	kind        string
 	destination string
 	// destinations are, by program, what an outgoing row reaches as that
@@ -961,6 +963,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 			if cell, ok := answer["name"]; ok {
 				state.name = lines.EntryName(lines.EntryWords(state.place), cell)
+				state.unnamed = state.name == ""
 			}
 			if !fixed {
 				state.kind = answer["kind"]
@@ -983,13 +986,32 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 		}
 	}
-	// An entry whose handler is not established has no handler to be named
-	// by: with no word chosen, it is named by the first word its code wrote
-	// (lines.FirstEntryWord). Its other words, a flag's default and usage, stay
-	// its registration as written, never its name.
+	// An entry the model answered no written word names is named by its
+	// handler (GroupsIndex), never by a word the code picks over that
+	// answer: freqtrade's Query(…, description=…) had been named by its
+	// description. One whose handler is not established has no handler to
+	// be named by, so it is no entry, journaled (entry_unnamed), and its
+	// values stand alone. Asked nothing (one word, without captions) or
+	// refused, it is named by the first word its code wrote
+	// (lines.FirstEntryWord); its other words, a flag's default and usage,
+	// stay its registration as written, never its name.
+	dropped := map[string]bool{}
 	for _, state := range r.boundaries {
-		if state.handlerUnknown && state.name == "" {
+		switch {
+		case !state.handlerUnknown || state.name != "":
+		case state.unnamed:
+			r.noEntryUnnamed(state.place, state.kind)
+			dropped[state.place.ID] = true
+		default:
 			state.name = lines.FirstEntryWord(state.place.Boundary)
+		}
+	}
+	for id := range dropped {
+		delete(r.boundaries, id)
+	}
+	for _, state := range r.boundaries {
+		if dropped[state.valueOf] {
+			state.valueOf = ""
 		}
 	}
 	r.reportStage(lines.StageBoundaries)

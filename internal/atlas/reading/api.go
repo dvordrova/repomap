@@ -535,6 +535,15 @@ func (r *reader) noEntryWithoutWords(place atlas.Place, kind string) {
 	fmt.Fprintf(&r.tables, "- %s\n", reason)
 }
 
+// noEntryUnnamed records an entry whose handler is not established and
+// which the model answered no written word names: no entry is made and no
+// word is chosen for it over that answer.
+func (r *reader) noEntryUnnamed(place atlas.Place, kind string) {
+	reason := fmt.Sprintf("no %s entry at %s:%d: no written word names it and its handler is not established", kind, place.Path, place.LineNo)
+	r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageBoundaries, Kind: "entry_unnamed", Count: 1, Reason: reason, Samples: []string{place.ID}})
+	fmt.Fprintf(&r.tables, "- %s\n", reason)
+}
+
 // publishAddress is the literal among a publishing call's values that reads
 // as an address: a host:port, a :port, a URL or a socket path. A module path
 // or a name is not where the program listens.

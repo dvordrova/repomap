@@ -533,9 +533,14 @@ function making the registration (othello's `:draw draw/draw-state`, handed
 over in `start!` with its handler in another file, had read
 `othello.ui.sketch/start!`, 2026-09-30); an entry whose
 handler is not established (External symbols) is named by its one word without
-a question, and with several and no accepted choice by the first nameable word
-its code wrote (`lines.FirstEntryWord`; a handed value's first literal), never
-by its declaring caller: a flag's name before its default and usage
+a question, and with several and a refused name cell by the first nameable
+word its code wrote (`lines.FirstEntryWord`; a handed value's first literal),
+never by its declaring caller. An entry the model answered no written word
+names is never named by a word the code picks over that answer (owner,
+2026-09-30; freqtrade's `Query(…, description=…)` had been named by its
+description): it is named by its handler, and one whose handler is not
+established is no entry, journaled (`entry_unnamed`), its values standing
+alone. The first nameable word is: a flag's name before its default and usage
 (`fs.String("socket", "/var/run/litestream.sock", "control socket path")` is
 `socket`), a row's first field, a case's first spelling. The other words are
 its registration as written (`Written`), which its reading shows, never its
