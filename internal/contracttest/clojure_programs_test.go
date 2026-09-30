@@ -166,6 +166,15 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	if written := writtenRows(projected, "src/example/service.cljc"); written["n"] != ":n :new-greeting" || written["u"] != ":u :undo" {
 		t.Fatalf("each key's row as written: %q", written)
 	}
+	// The key is the row's name, the one the lookup finds it by: no row of
+	// key->command is asked what it is or which of its words name it.
+	for column, items := range preset.asked {
+		for _, item := range items {
+			if caller, _ := item["caller"].(string); caller == "example.service/key->command" {
+				t.Fatalf("a key of key->command was asked %s: %v", column, item)
+			}
+		}
+	}
 }
 
 // The shadow-cljs.edn's :app build is the fixture's browser program: the

@@ -177,9 +177,12 @@ func (r *reader) handedEntry(handler, kind string) string {
 
 // bindHandedRows makes each row of a table an established handler looks up
 // with part of what it was handed a value of that handler's entry
-// (handedTables): an entry of the entry's kind, named by the row's words,
-// at its first word, whose handler is not established, listed under the
-// entry (ValueOf) and never asked. It reports the tables it bound.
+// (handedTables): an entry of the entry's kind at its first word, named by
+// that word, the key the lookup finds it by, whose handler is not
+// established, listed under the entry (ValueOf) and never asked, neither
+// what it is nor its name. The row's other words, what the key names, stay
+// its row as written (othello's `:n :new-game`: the key n; the model had
+// named it "n new-game"). It reports the tables it bound.
 func (r *reader) bindHandedRows() map[string]bool {
 	bound := map[string]bool{}
 	for tableID, handed := range r.handedTables() {
@@ -197,7 +200,8 @@ func (r *reader) bindHandedRows() map[string]bool {
 				words = append(words, literal.Value)
 			}
 			first := row.Literals[0]
-			if len(lines.NameableWords(words)) == 0 {
+			nameable := lines.NameableWords(words)
+			if len(nameable) == 0 {
 				continue
 			}
 			source := fmt.Sprintf("%s\x00row\x00%s\x00%d", atlas.DirectionIn, place.ID, position)
@@ -216,11 +220,13 @@ func (r *reader) bindHandedRows() map[string]bool {
 				next := place.Symbol.Rows[position+1].Literals[0]
 				neighbours = append(neighbours, [2]int{next.LineNo, next.Column})
 			}
-			r.boundaries[id] = &boundaryState{kind: handed.kind, handlerUnknown: true, tableRow: true, rowNeighbours: neighbours, valueOf: entry, place: atlas.Place{
+			// No words to name it by: a row the model made with none is not
+			// asked (readBoundaries).
+			r.boundaries[id] = &boundaryState{kind: handed.kind, name: nameable[0], handlerUnknown: true, tableRow: true, rowNeighbours: neighbours, valueOf: entry, place: atlas.Place{
 				ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: first.LineNo, Column: first.Column,
 				Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name,
-					Values: slices.Clone(words), Words: slices.Clone(words), Direction: atlas.DirectionIn, GivenKind: handed.kind}}}
+					Values: slices.Clone(words), Direction: atlas.DirectionIn, GivenKind: handed.kind}}}
 		}
 	}
 	return bound

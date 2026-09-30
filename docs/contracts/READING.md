@@ -997,9 +997,11 @@ that declaration's parameter at the position the part was handed at. A
 table is a call's argument or receiver where the code reads it (places
 `read_at`) or whose value the adapter traced to the table's own
 declaration. Each row is a value of the entry (`ValueOf`, listed under it
-and no tile), of its kind, named by its first word, handler not
-established, its row as written (`RowText`; a Lisp map's row is its key and
-value). othello's key-pressed handler `host/on-key` hands `(:key event)` to
+and no tile), of its kind, named by its first word, the key the lookup
+finds it by, handler not established, its row as written (`RowText`; a
+Lisp map's row is its key and value); the row is asked nothing, neither
+its line nor its name (a live run had named the key n "n new-game").
+othello's key-pressed handler `host/on-key` hands `(:key event)` to
 `events/on-key`, which calls `(get key->command key)`: n, u, h, 1 and 2 are
 the keys key-pressed takes, each with the command it names. A table two
 handlers look up is neither's and is asked.
