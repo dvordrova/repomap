@@ -7,3 +7,11 @@ export function exerciseMarket(): string {
 export function createTestOnlyRows(execute: (statement: string) => void): void {
   execute("CREATE TABLE test_only_rows (id INTEGER PRIMARY KEY)");
 }
+
+// A test hands the program's throttle an arrow function: none of the
+// program's values.
+import { Throttle } from "./stored-callbacks";
+
+export function throttleAnArrow(): void {
+  new Throttle().throttle(() => {}, 0);
+}

@@ -22,11 +22,13 @@ type dynamicValueSummary struct {
 	cyclic      bool
 }
 
-// dynamicFieldWitness is one store that put a witness callable into a field.
+// dynamicFieldWitness is one store that put a witness callable into a field,
+// or one call handing it to passedTo's parameter that passedTo calls.
 type dynamicFieldWitness struct {
 	field       string
 	location    godynamichandoff.Location
 	underBranch bool
+	passedTo    *ssa.Function
 }
 
 type dynamicValueKey struct {
@@ -362,6 +364,66 @@ func (r *dynamicValueResolver) interfaceValue(value ssa.Value) dynamicValueSumma
 		result = r.interfaceParameter(current)
 	}
 	return r.finish(key, result)
+}
+
+// A call of a function's own func-typed parameter (the call's value is the
+// parameter itself, so the function never rebinds it) calls what every
+// static call of the function hands that parameter, as the Python and C
+// adapters join a parameter's callers: the functions, closures and method
+// values each call site passes there. A caller handing any other value, and
+// a function reached otherwise than by its static calls (reachedOtherwise)
+// or by none, leave the call open, each function handed a witness at the
+// call handing it. Only the call through the parameter is joined: a
+// parameter stored or handed on keeps its own frontier, so a register(h)
+// storing h under a branch borrows no caller's handler.
+//
+// It is no case of functionValue, whose values it reads: a callable reaching
+// a value through a parameter stays that value's frontier.
+func (r *dynamicValueResolver) functionParameter(parameter *ssa.Parameter) dynamicValueSummary {
+	unknown := dynamicValueSummary{unresolved: 1}
+	parent := parameter.Parent()
+	if r.analyzer == nil || parent == nil {
+		return unknown
+	}
+	position := -1
+	for index, candidate := range parent.Params {
+		if candidate == parameter {
+			position = index
+		}
+	}
+	if position < 0 {
+		return unknown
+	}
+	calls := r.analyzer.staticCallsTo(parent)
+	open := len(calls) == 0 || r.analyzer.reachedOtherwise(parent)
+	var handed []dynamicValueSummary
+	var sites []godynamichandoff.Location
+	for _, call := range calls {
+		arguments := call.Common().Args
+		if position >= len(arguments) {
+			open = true
+			continue
+		}
+		child := r.functionValue(arguments[position], true)
+		open = open || child.unresolved > 0
+		handed = append(handed, child)
+		sites = append(sites, dynamicLocation(r.analyzer.location(call.Pos())))
+	}
+	result := dynamicValueSummary{}
+	for i, child := range handed {
+		if !open {
+			r.merge(&result, child)
+			continue
+		}
+		result.cyclic = result.cyclic || child.cyclic
+		for function := range child.functions {
+			result.witness(function, dynamicFieldWitness{location: sites[i], passedTo: parent})
+		}
+	}
+	if open {
+		result.unresolved = 1
+	}
+	return result
 }
 
 // An interface constructor parameter is resolved from the actual values at

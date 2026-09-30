@@ -1095,13 +1095,18 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			if err != nil {
 				return nil, err
 			}
-			detail := functionNames[witness.FunctionID] + " stored in " + witness.Field
+			detail, kind := functionNames[witness.FunctionID]+" stored in "+witness.Field, "interface_field_assignment"
+			if witness.PassedTo != "" {
+				// A callable a call hands the parameter the open call calls,
+				// in the Python adapter's words.
+				detail, kind = functionNames[witness.FunctionID]+" passed to "+functionNames[witness.PassedTo], "function_value_store"
+			}
 			if witness.UnderBranch {
 				detail += " under a condition"
 			}
 			// The witness names the implementation its store put there; the
 			// call stays open and the implementation is never its target.
-			witnesses = append(witnesses, programindex.Witness{Kind: "interface_field_assignment", Detail: detail, Location: at, ObjectRef: projection.directNodeObjectRefs[witness.FunctionID]})
+			witnesses = append(witnesses, programindex.Witness{Kind: kind, Detail: detail, Location: at, ObjectRef: projection.directNodeObjectRefs[witness.FunctionID]})
 		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef:         handoff.ID,

@@ -438,13 +438,23 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
   its `invokes_external` fact of `fmt.Stringer.String`, and a field cleared to
   nil under a branch keeps the name stored before it as an alternative.
 
-Missing equivalents, recorded rather than fabricated:
+- A call of a function's own func-typed parameter (the call's SSA value is
+  the parameter, so the function never rebinds it) calls what every static
+  call of the function hands there, as the Python and C adapters join a
+  parameter's callers: the functions, closures and method values the
+  arguments are, one exact, several alternatives, dispatch `function_value`
+  (`throttle`'s `step()`: `processRunning` and `processStopped`; `runOnce`'s
+  `job()`: `acceptJob`). A caller handing any other value, and a function
+  used as a value (handed over, stored, a method value or expression) or a
+  method whose name an interface call invokes, leave the call unresolved;
+  each function a call hands is then a `function_value_store` witness at
+  that call (`runAny`: `flushJob passed to runAny`). Only the call through
+  the parameter is joined: a parameter stored into a field or handed on keeps
+  its own frontier, so `register(readable, h)` still gives neither field
+  both handlers. A closure calling its enclosing function's parameter is not
+  joined. Tests are not loaded, so no test hands anything.
 
-- A call of a function-typed parameter (`func run(job func()) { job() }`)
-  stays an unresolved `function_value` call. The SSA resolver joins what the
-  direct callers pass only for an interface-typed parameter, where the Python
-  and C adapters make the callables callers hand a parameter the targets of
-  its call (PYTHON, Handler tables and stored callbacks).
+Missing equivalents, recorded rather than fabricated:
 
 - GroupsIndex derives no dispatch site on the fixture: `DispatchCommand`'s
   looked-up row call stays unresolved (below), so no input is dispatched from

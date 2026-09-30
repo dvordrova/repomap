@@ -289,6 +289,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		kind, to := callRelationShape(value)
 		spelling[value.Ref] = fmt.Sprint(value.Pattern != nil, kind, value.CallerRef, to)
 	}
+	callRelations := make(map[string]int, len(result.Calls))
 	for _, value := range result.Calls {
 		to := append([]string(nil), value.CalleeRefs...)
 		kind := programindex.RelationCalls
@@ -311,6 +312,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			witnessKind = "javascript_call"
 		}
 		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, jstsInvocation(value.Invocation))
+		callRelations[value.Ref] = relationIndex
 		relations[relationIndex].Patterns = programCallPatterns(value)
 		if first := value.SameValueAs; first != "" && value.Pattern != nil && len(relations[relationIndex].Patterns) == 1 && spelling[first] == spelling[value.Ref] {
 			relations[relationIndex].Patterns[0].SameValueAs = &programindex.PatternRefInput{RelationSourceRef: "program:" + first, PatternSourceRef: "pattern:" + first}
@@ -405,6 +407,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			addRelation("contract-use:"+contract.Ref+":"+caller, programindex.RelationReads, caller, []string{contract.DeclarationRef}, programindex.ResolutionExact, contract.Location, "typescript_symbol_reference", contract.Name, "")
 		}
 	}
+	handParameterCalls(result, relations, callRelations, declarationByRef)
 	keys := make([]string, 0, len(externalObjects))
 	for key := range externalObjects {
 		keys = append(keys, key)

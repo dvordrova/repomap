@@ -276,8 +276,14 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		// it stays a possible value.
 		156: {calls, "RunNamedLoop", "", unresolved},
 		157: {calls, "RunNamedLoop", "String", alternatives},
+		// A function calling its own parameter calls what every call into it
+		// hands there: two method values, one function, or, with a caller
+		// handing a value it was given, nothing known.
+		185: {calls, "throttle", "processRunning,processStopped", alternatives},
+		192: {calls, "runOnce", "acceptJob", exact},
+		200: {calls, "runAny", "", unresolved},
 	})
-	throughFields := map[int]bool{40: true, 60: true, 61: true, 77: true, 86: true}
+	throughFields := map[int]bool{40: true, 60: true, 61: true, 77: true, 86: true, 185: true, 192: true, 200: true}
 	for _, view := range relations {
 		functionValue := view.relation.Dispatch == programindex.DispatchFunctionValue
 		if functionValue != (view.relation.Kind == calls && throughFields[view.line]) {
@@ -346,6 +352,22 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 				t.Fatalf("line %d: handler lost its exact registration: %+v", view.line, view)
 			}
 			seenRegistrations++
+		}
+	}
+	// The open call through runAny's parameter names the function the other
+	// call hands it, at that call, by identity.
+	for _, view := range relations {
+		if view.line != 200 || view.relation.Kind != calls {
+			continue
+		}
+		var handed []string
+		for _, witness := range view.relation.Witnesses {
+			if witness.Kind == "function_value_store" && witness.Location != nil {
+				handed = append(handed, strings.ReplaceAll(witness.Detail, fixturePackage, "")+"@"+strconv.Itoa(witness.Location.Line)+"="+objects[witness.ObjectID].Name)
+			}
+		}
+		if strings.Join(handed, "|") != "flushJob passed to runAny@203=flushJob" {
+			t.Fatalf("runAny's open call witnesses = %v", handed)
 		}
 	}
 	if seenOpen != len(openCalls) || seenRegistrations != len(registrations) || seenExternal != 2 {

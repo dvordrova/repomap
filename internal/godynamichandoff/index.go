@@ -180,11 +180,16 @@ type ReceiverField struct {
 // field is then no exact or alternative call of the callable: the witness is
 // evidence of an open frontier, never a candidate. UnderBranch marks the
 // stores that a branch decides.
+//
+// PassedTo is, instead of Field, the function whose own parameter an open
+// function-value call calls: the callable is one a static call of that
+// function hands the parameter, at that call (Assignment).
 type FieldWitness struct {
 	FunctionID  string   `json:"function_id"`
-	Field       string   `json:"field"`
+	Field       string   `json:"field,omitempty"`
 	Assignment  Location `json:"assignment"`
 	UnderBranch bool     `json:"under_branch,omitempty"`
+	PassedTo    string   `json:"passed_to,omitempty"`
 }
 
 type Handoff struct {
@@ -304,6 +309,9 @@ func New(input Input) (Index, error) {
 		for _, witness := range handoff.Witnesses {
 			if _, exists := functionByID[witness.FunctionID]; !exists {
 				return Index{}, fmt.Errorf("Go dynamic handoff index: handoff cites unknown witness %q", witness.FunctionID)
+			}
+			if _, exists := functionByID[witness.PassedTo]; witness.PassedTo != "" && !exists {
+				return Index{}, fmt.Errorf("Go dynamic handoff index: witness cites unknown function %q", witness.PassedTo)
 			}
 		}
 		if handoff.CandidatesConsidered == 0 {
@@ -447,11 +455,13 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 			}
 		}
 	}
-	if len(handoff.Witnesses) > 0 && (handoff.Kind != InterfaceInvoke || handoff.CandidatesOmitted == 0) {
-		return fmt.Errorf("Go dynamic handoff index: field witnesses belong to an open interface invoke")
+	if len(handoff.Witnesses) > 0 && (handoff.Kind != InterfaceInvoke && handoff.Kind != FunctionValueCall || handoff.CandidatesOmitted == 0) {
+		return fmt.Errorf("Go dynamic handoff index: field witnesses belong to an open interface invoke or function-value call")
 	}
 	for i, witness := range handoff.Witnesses {
-		if _, exists := functions[witness.FunctionID]; !exists || !validText(witness.Field) || !validLocation(witness.Assignment) ||
+		_, passedTo := functions[witness.PassedTo]
+		named := witness.PassedTo == "" && validText(witness.Field) || passedTo && witness.Field == ""
+		if _, exists := functions[witness.FunctionID]; !exists || !named || !validLocation(witness.Assignment) ||
 			i > 0 && fieldWitnessKey(handoff.Witnesses[i-1]) >= fieldWitnessKey(witness) {
 			return fmt.Errorf("Go dynamic handoff index: invalid field witness")
 		}
@@ -550,7 +560,7 @@ func canonicalReceiverFields(values []ReceiverField) []ReceiverField {
 }
 
 func fieldWitnessKey(value FieldWitness) string {
-	return locationKey(value.Assignment) + "\x00" + value.Field + "\x00" + value.FunctionID + "\x00" + strconv.FormatBool(value.UnderBranch)
+	return locationKey(value.Assignment) + "\x00" + value.Field + "\x00" + value.FunctionID + "\x00" + strconv.FormatBool(value.UnderBranch) + "\x00" + value.PassedTo
 }
 
 func canonicalFieldWitnesses(values []FieldWitness) []FieldWitness {

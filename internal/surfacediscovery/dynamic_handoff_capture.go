@@ -411,7 +411,28 @@ func (capture *dynamicHandoffCapture) observeFunctionValueCall(
 	callsite Location,
 ) {
 	common := call.Common()
-	candidates, unresolved, err := dynamicFunctionCandidates(a, common.Value)
+	var candidates []godynamichandoff.Candidate
+	var unresolved int
+	var witnesses []godynamichandoff.FieldWitness
+	var err error
+	if parameter, ok := common.Value.(*ssa.Parameter); ok {
+		// A call of the function's own parameter calls what its callers
+		// hand there (dynamicValueResolver.functionParameter).
+		r := newDynamicValueResolver(a, nil)
+		summary := r.functionParameter(parameter)
+		if r.err != nil {
+			capture.err = r.err
+			return
+		}
+		var facts []dynamicFunctionCandidateFact
+		facts, unresolved, err = dynamicFunctionSummaryFacts(a, summary)
+		for _, fact := range facts {
+			candidates = append(candidates, fact.candidate)
+		}
+		witnesses = dynamicInterfaceWitnesses(a, summary)
+	} else {
+		candidates, unresolved, err = dynamicFunctionCandidates(a, common.Value)
+	}
 	if err != nil {
 		capture.err = err
 		return
@@ -421,7 +442,12 @@ func (capture *dynamicHandoffCapture) observeFunctionValueCall(
 	if resolution == godynamichandoff.ResolutionUnresolved {
 		candidates = []godynamichandoff.Candidate{}
 	}
+	if candidatesConsidered == len(candidates) {
+		// Witnesses are evidence of an open frontier and never stand alone.
+		witnesses = nil
+	}
 	capture.append(godynamichandoff.Handoff{
+		Witnesses:  witnesses,
 		Kind:       godynamichandoff.FunctionValueCall,
 		CallerID:   callerID,
 		Invocation: dynamicInvocation(call),
@@ -761,9 +787,15 @@ func dynamicInterfaceWitnesses(a *analyzer, summary dynamicValueSummary) []godyn
 			continue
 		}
 		for store := range stores {
-			result = append(result, godynamichandoff.FieldWitness{
+			witness := godynamichandoff.FieldWitness{
 				FunctionID: functionID, Field: store.field, Assignment: store.location, UnderBranch: store.underBranch,
-			})
+			}
+			if store.passedTo != nil {
+				if witness.PassedTo, ok = a.directCallIndex.recordFunction(a, store.passedTo); !ok {
+					continue
+				}
+			}
+			result = append(result, witness)
 		}
 	}
 	return result
@@ -797,6 +829,15 @@ func dynamicFunctionCandidateFacts(
 	if err != nil {
 		return nil, 0, err
 	}
+	return dynamicFunctionSummaryFacts(a, summary)
+}
+
+// dynamicFunctionSummaryFacts are the repository callables a resolved
+// function value holds, with the count of its unknown paths.
+func dynamicFunctionSummaryFacts(
+	a *analyzer,
+	summary dynamicValueSummary,
+) ([]dynamicFunctionCandidateFact, int, error) {
 	resolved, unresolved := summary.functions, summary.unresolved
 	if len(resolved) == 0 {
 		return []dynamicFunctionCandidateFact{}, unresolved, nil

@@ -45,6 +45,11 @@ type analyzer struct {
 	// is complete when the analyzer is constructed.
 	ordered         []*ssa.Function
 	staticCalls     map[*ssa.Function][]ssa.CallInstruction
+	// valueUsed and invokedMethods are computed once too
+	// (reachedOtherwise): the functions a repository function uses as a
+	// value, and the method names an interface call invokes.
+	valueUsed      map[*ssa.Function]bool
+	invokedMethods map[string]bool
 	callControls    map[Location][]ControlContext
 	methodArguments map[Location][]*sourcevalue.Value
 	// sameValues is, by call site, the earlier call each call reads the
@@ -460,6 +465,46 @@ func (a *analyzer) orderedFunctions() []*ssa.Function {
 	sort.Slice(functions, func(i, j int) bool { return keys[functions[i]] < keys[functions[j]] })
 	a.ordered = functions
 	return functions
+}
+
+// reachedOtherwise says a function may run with arguments no static call of
+// it shows: a repository function uses it as a value (hands it over, stores
+// it, makes a method value or a method expression of it, whose wrapper
+// calls it), or it is a method and an interface call invokes a method of
+// its name.
+func (a *analyzer) reachedOtherwise(function *ssa.Function) bool {
+	if a.valueUsed == nil {
+		a.valueUsed, a.invokedMethods = make(map[*ssa.Function]bool), make(map[string]bool)
+		var operands []*ssa.Value
+		for _, caller := range a.orderedFunctions() {
+			if caller == nil || caller.Blocks == nil || !a.isRepositoryFunction(caller) {
+				continue
+			}
+			for _, block := range caller.Blocks {
+				for _, instruction := range block.Instrs {
+					var callee *ssa.Value
+					if call, ok := instruction.(ssa.CallInstruction); ok && call.Common() != nil {
+						if call.Common().IsInvoke() {
+							a.invokedMethods[call.Common().Method.Name()] = true
+						} else {
+							callee = &call.Common().Value
+						}
+					}
+					operands = instruction.Operands(operands[:0])
+					for _, operand := range operands {
+						if operand == callee || operand == nil {
+							continue
+						}
+						if used, ok := (*operand).(*ssa.Function); ok {
+							a.valueUsed[used] = true
+							a.valueUsed[wrapperTarget(used)] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	return a.valueUsed[function] || function.Signature.Recv() != nil && a.invokedMethods[function.Name()]
 }
 
 // staticCallsTo returns every call in a repository function whose static

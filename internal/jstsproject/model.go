@@ -175,6 +175,11 @@ type Call struct {
 	// ?? written the same around its call, or an arm of the same
 	// if/else-if chain written the same but for its call's words.
 	SameValueAs string `json:"same_value_as,omitempty"`
+	// CalleeParameter is, for a call of the caller's own parameter that the
+	// caller never assigns, the parameter's position among those arguments
+	// fill; SpreadFrom the position of the call's first spread argument.
+	CalleeParameter int `json:"callee_parameter,omitempty"`
+	SpreadFrom      int `json:"spread_from,omitempty"`
 }
 
 // Binding records a callable value supplied to a JSX attribute, not an

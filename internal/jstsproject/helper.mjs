@@ -1048,6 +1048,38 @@ const refForDeclarationNode = (node) => {
   return moduleRef(relative(sourceFile.fileName))
 }
 
+// A call of its enclosing function's own parameter, which the function never
+// assigns: the parameter's position among those a call's arguments fill (a
+// TypeScript `this` parameter fills none), else 0. A closure calling its
+// enclosing function's parameter, a rest or destructured parameter and a
+// reassigned one are none.
+function calledOwnParameter(node) {
+  const checker = checkerForNode(node)
+  if (!checker || !ts.isIdentifier(node.expression)) return 0
+  let symbol
+  try { symbol = checker.getSymbolAtLocation(node.expression) } catch {}
+  const declaration = symbol?.valueDeclaration
+  if (!declaration || !ts.isParameter(declaration) || !ts.isIdentifier(declaration.name) || declaration.dotDotDotToken) return 0
+  let owner = node.parent
+  while (owner && !ts.isFunctionLike(owner)) owner = owner.parent
+  if (!owner || owner !== declaration.parent || !owner.body) return 0
+  let assigned = false
+  const visit = (child) => {
+    if (assigned) return
+    if (ts.isBinaryExpression(child) && child.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        child.operatorToken.kind <= ts.SyntaxKind.LastAssignment && ts.isIdentifier(child.left)) {
+      let target
+      try { target = checker.getSymbolAtLocation(child.left) } catch {}
+      if (target === symbol) assigned = true
+    }
+    ts.forEachChild(child, visit)
+  }
+  visit(owner.body)
+  if (assigned) return 0
+  const filled = owner.parameters.filter((parameter) => !(ts.isIdentifier(parameter.name) && parameter.name.text === "this"))
+  return filled.indexOf(declaration) + 1
+}
+
 function symbolDeclarations(symbol) {
   const result = []
   for (const declaration of symbol?.declarations || []) {
@@ -2378,6 +2410,15 @@ for (const { sourceFile } of sourceFiles) {
         if (pattern) {pattern.context = callControlContext(node); call.pattern = pattern}
         const first = ts.isCallExpression(node) ? sameValueRoot(node) : undefined
         if (first) call.same_value_as = callFactRef(first)
+      }
+      if (ts.isCallExpression(node)) {
+        // The argument a spread starts at fills no parameter by position,
+        // nor does any after it; a call of the function's own parameter
+        // names that parameter (the projection's handParameterCalls).
+        const spread = node.arguments.findIndex((argument) => ts.isSpreadElement(argument))
+        if (spread >= 0) call.spread_from = spread + 1
+        const parameter = localRefs.length === 0 && !externalPackage ? calledOwnParameter(node) : 0
+        if (parameter > 0) call.callee_parameter = parameter
       }
       calls.push(call)
 

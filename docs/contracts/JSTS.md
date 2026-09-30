@@ -320,12 +320,22 @@ of two properties under a branch gives the calls through `this.onRead` and
 `this.onWrite` no handler: they stay unresolved, and each handler keeps its
 exact callback at its `register` call.
 
-Missing equivalents, recorded rather than fabricated:
+A call of a function's own parameter, which the function never assigns,
+calls what the program's exact calls into the function hand there, as the
+Python, Go and C adapters join a parameter's callers: the one function,
+method or indexed arrow function an argument names by position before any
+spread, one exact, several alternatives, dispatch `function_value`
+(`Throttle.throttle`'s `step()`: `processRunning` and `processStopped`;
+`runOnce`'s `job()`: `acceptClient`). A call handing any other value or none
+there, and a function the program reaches otherwise (read as a value, handed
+over, constructed, one of a call's alternatives) leave the call unresolved;
+each function a call hands is then a `function_value_store` witness at that
+call (`runAny`). A test's call (`market.test.ts`'s arrow function) hands a
+function outside the tests nothing. A closure calling its enclosing
+function's parameter, and a rest, destructured or `this` parameter, are not
+joined.
 
-- A call of a function's own parameter (`function run(job) { job() }`) stays
-  an unresolved call with no dispatch word. The callables its callers hand are
-  not joined to it, where the Python and C adapters make them its targets
-  (PYTHON, Handler tables and stored callbacks).
+Missing equivalents, recorded rather than fabricated:
 
 - The fixture has no input of its own and no relation resolved as several
   alternatives, so GroupsIndex's reach is checked by probing declarations as

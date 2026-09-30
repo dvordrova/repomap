@@ -164,3 +164,44 @@ func RunNamedLoop(readable bool) []string {
 var defaultCommands = namedCommands("get", "set")
 
 func namedCommands(names ...string) []string { return names }
+
+// A function calling its own parameter calls what every call into it hands
+// there, as the Python and C adapters join a parameter's callers: run's two
+// calls hand throttle two method values, the call's alternatives, and
+// StartOnce hands runOnce one function, its exact target.
+type throttle struct{}
+
+func RunThrottle(running bool) { throttle{}.run(running) }
+
+func (t throttle) run(running bool) {
+	if running {
+		t.throttle(t.processRunning, 1)
+	} else {
+		t.throttle(t.processStopped, 1)
+	}
+}
+
+func (throttle) throttle(step func(), secs int) {
+	step()
+}
+
+func (throttle) processRunning() {}
+
+func (throttle) processStopped() {}
+
+func runOnce(job func()) { job() }
+
+func StartOnce() { runOnce(acceptJob) }
+
+func acceptJob() {}
+
+// A call handing any other value leaves the call open, the function another
+// call hands its witness.
+func runAny(job func()) { job() }
+
+func StartAny(job func()) {
+	runAny(flushJob)
+	runAny(job)
+}
+
+func flushJob() {}
