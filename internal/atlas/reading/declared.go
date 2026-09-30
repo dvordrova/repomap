@@ -116,8 +116,10 @@ func (r *reader) markDeclaredOn() {
 		if state.tableRow {
 			// A row is its own element of the table, never the whole table.
 			written = r.rowText(files, state.place.Path, state.place.LineNo, state.place.Column, state.rowNeighbours)
-		} else {
-			written = r.sourceText(files, state.place.Path, state.place.LineNo, state.place.Column)
+		} else if file := r.callFile(files, state.place.Path); file != nil {
+			// An entry handed over under a keyword is its keyword and value,
+			// never the whole form around its siblings.
+			written = file.EntryText(state.place.LineNo, state.place.Column)
 		}
 		if atlas.ValidName(written) {
 			state.asWritten = written

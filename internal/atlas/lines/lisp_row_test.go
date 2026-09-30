@@ -15,3 +15,24 @@ func TestALispMapRowIsItsOwnPair(t *testing.T) {
 		t.Fatalf("row at :u = %q", got)
 	}
 }
+
+// An entry a Lisp form hands over under a keyword is written as that
+// keyword and its value: othello's q/sketch hands six functions over under
+// ten keywords, and each entry had been written as the whole form. A value
+// no keyword precedes keeps the call around it.
+func TestALispKeywordEntryIsItsOwnPair(t *testing.T) {
+	src := []byte("(q/sketch\n  :title \"Othello\"\n  :key-pressed host/on-key\n  :middleware [m/fun-mode])\n(ws/websocket url {:on-message (fn [m] (read m))})\n(future (greet names))\n")
+	file := NewCallFile(src, "sketch.clj")
+	for _, c := range []struct {
+		line, column int
+		want         string
+	}{
+		{3, 16, ":key-pressed host/on-key"},
+		{5, 32, ":on-message (fn [m] (read m))"},
+		{6, 9, "(greet names)"},
+	} {
+		if got := file.EntryText(c.line, c.column); got != c.want {
+			t.Fatalf("entry at %d:%d = %q, want %q", c.line, c.column, got, c.want)
+		}
+	}
+}

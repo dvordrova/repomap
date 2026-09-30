@@ -890,7 +890,13 @@ its arity and flags), which the input's reading shows; no request carries it.
 A table's row is its own element of the table, bounded by the neighbouring
 rows' words (`lines.CallFile.RowText`): a dict's `"verbosity": Arg(...)`,
 never the whole dict (freqtrade's 124 rows each carried the 19.7 KB
-`AVAILABLE_CLI_OPTIONS`).
+`AVAILABLE_CLI_OPTIONS`). An entry a Lisp form hands over under a keyword is
+that keyword and its value (`lines.CallFile.EntryText`): othello's
+key-pressed is `:key-pressed host/on-key`, where each of the six entries of
+its q/sketch had been the whole form of ten keywords. The other languages'
+registrations stand at their registering call, whose text they are; a
+Python call handing several callables over as keyword arguments (none in
+the fixture; `Thread(target=...)` hands one) is that call for each.
 
 **Programs started.** A call to a `runs_program` symbol is one outgoing
 boundary of that kind, unless its receiver is the result of such a call (a

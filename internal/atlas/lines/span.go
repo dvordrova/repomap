@@ -60,6 +60,48 @@ func (f *CallFile) Text(line, column int) string {
 	return renderTokens(c.src, c.tokens, first, last)
 }
 
+// EntryText is an entry's registration as the code wrote it: CallText,
+// except that a value a Lisp form hands over under a keyword is that
+// keyword and its value, the entry's own argument. othello's key-pressed
+// is `:key-pressed host/on-key`, where CallText gives the whole q/sketch
+// form of ten keywords, the same for each of its six entries.
+func (f *CallFile) EntryText(line, column int) string {
+	c := f.reader
+	if c != nil && line >= 1 && c.family == lispFamily {
+		if offset, ok := lineOffset(c.src, line, column); ok {
+			if at := tokenAt(c.tokens, offset); at > 0 {
+				if pair := c.keywordPair(at); pair != "" {
+					return pair
+				}
+			}
+		}
+	}
+	return f.Text(line, column)
+}
+
+// keywordPair is a Lisp keyword and the form after it, when the form at a
+// token is a value some keyword of the same group precedes; else "".
+func (c *callReader) keywordPair(at int) string {
+	if c.tokens[at].kind != 'i' && c.tokens[at].kind != 'o' && c.tokens[at].kind != 's' || c.parents[at] < 0 {
+		return ""
+	}
+	key := at - 1
+	for key >= 0 && c.tokens[key].kind == 'n' {
+		key--
+	}
+	if key < 0 || c.tokens[key].kind != 'i' || c.parents[key] != c.parents[at] || !strings.HasPrefix(c.text(key), ":") {
+		return ""
+	}
+	last := at
+	if c.tokens[at].kind == 'o' {
+		if c.matches[at] < 0 {
+			return ""
+		}
+		last = c.matches[at]
+	}
+	return renderTokens(c.src, c.tokens, key, last)
+}
+
 // RowText is a table's row as the code wrote it, from the position of its
 // first word: the widest element around that word (the tokens between two
 // commas of one group, or between a comma and the group's edge) holding

@@ -127,6 +127,12 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	if want := []string{"quil.core/sketch", "key-pressed", "Greeter"}; !slices.Equal(named, want) {
 		t.Fatalf("key-pressed's entry is named from %q, want %q", named, want)
 	}
+	// Each keyword entry is written as its keyword and value, not as the
+	// whole sketch or websocket call around its siblings (othello's
+	// q/sketch of ten keywords had been each entry's registration).
+	if written := writtenRows(projected, core); written["quil.core/sketch"] != ":key-pressed on-key" || written["hato.websocket/websocket"] != ":on-message receive-greeting" {
+		t.Fatalf("keyword entries as written: %q", written)
+	}
 	var inputs []string
 	for _, row := range inputRows(projected, core) {
 		inputs = append(inputs, row.kind+" "+row.handler+" "+row.at)
