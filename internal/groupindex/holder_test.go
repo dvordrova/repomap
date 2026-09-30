@@ -71,13 +71,13 @@ func TestADestOfHandledSubcommandsIsNoInputButACommandGroupKeepsItsWord(t *testi
 	}
 }
 
-// One handler registered by several calls of one kind is one input: the
-// registration written first stands, and each other is among its Aliases
-// with its word, site and call as written (freqtrade's
-// CallbackQueryHandler(self._profit, pattern="update_profit$") under
-// CommandHandler("profit", self._profit)); a handler registered once keeps
-// its own input.
-func TestAHandlerRegisteredTwiceIsOneInputWithItsOtherRegistration(t *testing.T) {
+// One handler registered by several calls of one kind under the same word
+// is one input: the registration written first stands, and each other is
+// among its Aliases with its site and call as written. Under another word
+// it is another input (freqtrade's CallbackQueryHandler(self._profit,
+// pattern="update_profit$") beside CommandHandler("profit", self._profit);
+// redis's smembers row beside sinter's): a word a person types is its own.
+func TestAHandlerRegisteredTwiceUnderOneWordIsOneInput(t *testing.T) {
 	p := atlasTestProgram(t, "bot", "bot/chat.py", "bot/profit.py", "bot/exit.py")
 	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "python", Kind: "executable", Root: "bot", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
 		Boxes: []atlas.Box{{ID: "bot", Dir: "bot", Title: "Bot", Line: "Answers chat.", Side: atlas.SideIn, MemberIDs: []string{p.Objects[0].ID, p.Objects[1].ID, p.Objects[2].ID},
@@ -87,6 +87,7 @@ func TestAHandlerRegisteredTwiceIsOneInputWithItsOtherRegistration(t *testing.T)
 			Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Values: []string{word}, Name: word, Source: "model"}
 	}
 	target.Boundaries = []atlas.Boundary{
+		registration("b4", 8, p.Objects[1].ID, "profit", `CommandHandler("profit", self._profit_again)`),
 		registration("b2", 6, p.Objects[1].ID, "update_profit$", `CallbackQueryHandler(self._profit, pattern="update_profit$")`),
 		registration("b1", 5, p.Objects[1].ID, "profit", `CommandHandler("profit", self._profit)`),
 		registration("b3", 7, p.Objects[2].ID, `force_exit__\S+`, `CallbackQueryHandler(self._force_exit_inline, pattern=r"force_exit__\S+")`),
@@ -97,14 +98,14 @@ func TestAHandlerRegisteredTwiceIsOneInputWithItsOtherRegistration(t *testing.T)
 	}
 	var got []string
 	for _, operation := range indexes[0].Operations {
-		row := operation.Name
+		row := fmt.Sprintf("%s @%d", operation.Name, operation.Location.Line)
 		for _, alias := range operation.Aliases {
-			row += fmt.Sprintf(" (also %s @%d: %s)", alias.Name, alias.Location.Line, alias.Written)
+			row += fmt.Sprintf(" (also @%d: %s)", alias.Location.Line, alias.Written)
 		}
 		got = append(got, row)
 	}
 	sort.Strings(got)
-	want := []string{`force_exit__\S+`, `profit (also update_profit$ @6: CallbackQueryHandler(self._profit, pattern="update_profit$"))`}
+	want := []string{`force_exit__\S+ @7`, `profit @5 (also @8: CommandHandler("profit", self._profit_again))`, "update_profit$ @6"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("inputs %q, want %q", got, want)
 	}

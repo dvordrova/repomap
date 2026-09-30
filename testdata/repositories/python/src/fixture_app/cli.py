@@ -121,8 +121,15 @@ def weekly_levels(
 @app.get("/api/levels/latest")
 @app.get("/api/levels/newest")
 def latest_levels():
-    """One handler registered at two routes: one input, the route written
-    first standing, the other kept as its other registration."""
+    """One handler registered at two routes: two inputs, one per word."""
+    return []
+
+
+@app.get("/api/levels/current")
+@app.api_route("/api/levels/current", methods=["HEAD"])
+def current_levels():
+    """One handler registered twice under one word: one input, the
+    registration written first standing, the other kept with its site."""
     return []
 
 

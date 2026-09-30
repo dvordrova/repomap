@@ -1,5 +1,19 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — One input per word: a handler's registrations fold only under the same word
+
+- **Coordinator's decision:** 7caf404a's (kind, handler) fold erased typed
+  words (redis `smembers` under `sinter`, freqtrade `list-pairs` under
+  `list-markets`, `convert-trade-data` under `trades-to-ohlcv`). The fold
+  now keys on kind, handler, word and address, as the old same-name dedup
+  did, and keeps each other site among the input's `Aliases`. The
+  `update_*` callbacks stay their own inputs.
+- **Fixtures:** Python `latest_levels` at two routes (two inputs) and
+  `current_levels` registered twice at one route (one input, the other
+  site an alias): `TestAHandlerRegisteredTwiceIsOneInputPerWord`,
+  `TestAHandlerRegisteredTwiceUnderOneWordIsOneInput`; the route test
+  keeps GET /status and GET /health apart again.
+
 ## 2026-09-30 — Clojure: a special form is no call; a call of another arity is no recursion
 
 - **Special forms:** clj-kondo reports `if`, `recur`, `fn*`, `do`, `try`

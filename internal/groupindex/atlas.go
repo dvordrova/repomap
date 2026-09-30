@@ -962,9 +962,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	// A declaration with an observed route already has an operation carrying
 	// that route's syntax. Keep its interpretation on the subject, without
-	// presenting the declaration as a second route. Several registrations
-	// of one handler (`GET("")` and `GET("/")`, two routes) are one input
-	// that keeps each other's word and site (foldRegistrations).
+	// presenting the declaration as a second route. Registrations of one
+	// handler under one word are one input that keeps each other's site;
+	// other words stay their own inputs (foldRegistrations).
 	uniqueOperations := operations[:0]
 	for _, operation := range operations {
 		if operation.ID == operation.SubjectID && boundRequests[operation.SubjectID] {
@@ -1355,21 +1355,20 @@ func wordsByName(program programindex.Index, sites map[string]bool) map[string]b
 }
 
 // foldRegistrations makes one input of one handler's registrations of one
-// kind: the registration written first stands for it, and each other is
-// kept among its Aliases with its name, site and call as written
-// (freqtrade's CallbackQueryHandler(self._profit, pattern="update_profit$")
-// under CommandHandler("profit", self._profit); redis's smembers row under
-// sinter's), as spellings of one value are (foldSpellings): no word or site
-// is lost.
+// kind under the same word (`GET("")` and `GET("/")` named alike, one route
+// written twice): the registration written first stands for it, and each
+// other is kept among its Aliases with its site and call as written, so no
+// site is lost. Different words are different inputs even with one handler
+// (redis's smembers beside sinter, freqtrade's list-pairs beside
+// list-markets): a word a person types is its own input.
 func foldRegistrations(operations []Operation, standsFor map[string]string) []Operation {
 	standing := make(map[string]int)
 	for position, operation := range operations {
 		if operation.HandlerUnknown || operation.SubjectID == "" {
 			continue
 		}
-		key := operation.Kind + "\x00" + operation.SubjectID
-		if at, seen := standing[key]; !seen || locationBefore(&operation.Location, &operations[at].Location) {
-			standing[key] = position
+		if at, seen := standing[registrationKey(operation)]; !seen || locationBefore(&operation.Location, &operations[at].Location) {
+			standing[registrationKey(operation)] = position
 		}
 	}
 	folded := make(map[int]bool)
@@ -1377,7 +1376,7 @@ func foldRegistrations(operations []Operation, standsFor map[string]string) []Op
 		if operation.HandlerUnknown || operation.SubjectID == "" {
 			continue
 		}
-		at := standing[operation.Kind+"\x00"+operation.SubjectID]
+		at := standing[registrationKey(operation)]
 		if at == position {
 			continue
 		}
@@ -1406,4 +1405,10 @@ func foldRegistrations(operations []Operation, standsFor map[string]string) []Op
 		}
 	}
 	return kept
+}
+
+// registrationKey is what makes two registrations one input: kind, handler,
+// word and address.
+func registrationKey(operation Operation) string {
+	return strings.Join([]string{operation.Kind, operation.SubjectID, operation.Name, operation.Address}, "\x00")
 }

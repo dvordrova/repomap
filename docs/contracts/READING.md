@@ -830,13 +830,15 @@ text. Only Python and Clojure write keyword arguments; Go, C and JS/TS words
 are positional, so their words carry none. GroupsIndex keeps one input per
 kind, words as written and declaring caller: an option written twice in one
 function is one input at its first site; the same word in another caller is
-another. One handler registered by several calls of one kind is one input:
-the registration written first stands, and each other is among its
-`Aliases` with its name, site and call as written (freqtrade's
-`CallbackQueryHandler(self._profit, pattern="update_profit$")` under
-`CommandHandler("profit", self._profit)`, redis's `smembers` row under
-`sinter`'s, two routes of one handler), so no word or site is lost. A name
-that cannot stand refuses that entry alone.
+another. One handler registered by several calls of one kind under the same
+word is one input: the registration written first stands, and each other is
+among its `Aliases` with its site and call as written, so no site is lost.
+Different words are different inputs even with one handler: a word a person
+types is its own (redis's `smembers` beside `sinter`, freqtrade's
+`list-pairs` beside `list-markets` and its `update_*` callbacks beside the
+commands they repeat, two routes of one handler; how many such inputs a
+reading shows is the display's matter). A name that cannot stand refuses
+that entry alone.
 
 Spellings of one value are one input, as a case listing several words is
 (reviewer's item 6a, 2026-09-30). A call whose ProgramIndex pattern

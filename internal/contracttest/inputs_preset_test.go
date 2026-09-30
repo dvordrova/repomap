@@ -31,7 +31,10 @@ type inputsPreset struct {
 	decide func(column string, item map[string]any, options []string) (string, bool)
 	// read, when set, is asked first with each option's criteria: a reader
 	// deciding by what an option is not for.
-	read  func(column string, item map[string]any, options []llm.Option) (string, bool)
+	read func(column string, item map[string]any, options []llm.Option) (string, bool)
+	// named, when set, chooses the ref an entry is named by among the
+	// words its row offers, or nil for the preset's own choice.
+	named func(words []map[string]any) any
 	mu    sync.Mutex
 	asked map[string][]map[string]any
 }
@@ -125,6 +128,17 @@ func (p *inputsPreset) Complete(_ context.Context, prepared llm.Prepared) (llm.C
 					// column says never one and the word says what it is
 					// given as.
 					words, _ := row["words"].([]any)
+					if p.named != nil {
+						var offered []map[string]any
+						for _, word := range words {
+							value, _ := word.(map[string]any)
+							offered = append(offered, value)
+						}
+						if ref := p.named(offered); ref != nil {
+							cells[name] = []any{ref}
+							break
+						}
+					}
 					note, _ := column["note"].(string)
 					for _, word := range words {
 						offered, _ := word.(map[string]any)
