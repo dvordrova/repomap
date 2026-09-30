@@ -18,6 +18,11 @@
   with no outside tile. litestream: 7 posts to /start, /info, … joined to
   server.go's routes, 7 unix dials possibly to its socket; no Outside
   "Litestream". Go fixture fetchLevels → getLevel.
+- **Keys with what they name (e62dce63):** a handed row's other words
+  (atlas `Boundary.Names`, GroupsIndex `Operation.Names`) stand beside its
+  key, the keys in written order: othello's key-pressed reads n → new-game,
+  u → undo, h → hints, 1 → play-black, 2 → play-white (had read
+  "1 2 h n u").
 - **Keyword entry as written (f6a3ba2d):** `lines.CallFile.EntryText`
   writes an entry a Lisp form hands over under a keyword as that pair:
   othello's key-pressed is `:key-pressed host/on-key`, not the whole
