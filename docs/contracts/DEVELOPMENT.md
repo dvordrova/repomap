@@ -197,9 +197,13 @@ named by `REPOMAP_JOURNEY_REPORTS` (a comma list, served as
 
     REPOMAP_JOURNEY_REPORTS=a.html,b.html npx playwright test journeys
 
+`REPOMAP_TEST_PORT` runs a suite on another port beside one already serving
+8875 (with `--output` in a directory of its own).
+
 Its frozen journeys print PASS or FAIL per repository and never fail the
-run: litestream's `replicate` shows its handler `ReplicateCommand.Run` in
-the column, unfolded; freqtrade's `trade` shows `FreqtradeBot.process`
+run, reading the column as it is rendered (a dotted name whole across its
+line breaks): litestream's `replicate` shows its handler
+`ReplicateCommand.Run` in the column, unfolded; freqtrade's `trade` shows `FreqtradeBot.process`
 within one expand; redis's `set` names `redisDb` or `dict` among its State
 changes; othello's `key-pressed` lists its keys n, u, h, 1 and 2. Its
 reading lints are tests, walking the whole map and every program, Inputs,

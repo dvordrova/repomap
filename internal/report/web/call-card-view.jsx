@@ -3,13 +3,14 @@ import {countsHandlers, countsInputs, headingRows, briefCard} from './call-card.
 
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
-// A name breaks only after a dot, never inside a word ("sql.Tx.Rollbac k";
-// 43-map-reading.css makes it a unit).
+// A name breaks only after a dot or a slash, never inside a word
+// ("sql.Tx.Rollbac k"; 43-map-reading.css makes it a unit): a route
+// ("/api/v1/backtest/history") had been clipped in its row.
 // A callable written inline reads "anonymous function in
 // ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
 // (inline)").
 const inline=text=>{const said=typeof text==='string'&&/^(.+) \(inline\)$/.exec(text);return said?t('anonymous function in {0}',said[1]):text;};
-const dotted=text=>{text=inline(text);return typeof text==='string'&&text.includes('.')?text.split(/(?<=\.)/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;};
+const dotted=text=>{text=inline(text);return typeof text==='string'&&/[./]/.test(text)?text.split(/(?<=[./])/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;};
 function Link({href,title,children}){
   children=dotted(children);
   return href?<a href={href} title={title||undefined} target="_blank" onClick={stop}>{children}</a>:<span title={title||undefined}>{children}</span>;

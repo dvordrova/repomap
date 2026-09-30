@@ -448,3 +448,45 @@ export function shrinkOutside(layout,fits,rootOf){
 export function shrunkScale(item,fit){
   return fit?{contentScale:(item?.contentScale||1)*fit.f,summaryScale:(item?.summaryScale||1)*fit.f}:{};
 }
+
+// A loose part drawn among open areas' parts is its card at their size
+// (canvas.jsx looseLook), shorter than the box laid out for its closed
+// heading: drawn in that box, litestream's loose parts had stood with their
+// words in the top third (the reading lints). `fits` maps a part to its
+// card's height; the part is drawn that tall in the middle of its box, and
+// the ends of its arrows move with its border, each end's last leg keeping
+// its direction.
+export function shrinkLoose(layout,fits){
+  const boxes=new Map(layout.nodes.filter(node=>fits.has(node.id)).map(node=>{
+    const height=Math.min(node.height,fits.get(node.id)),dy=(node.height-height)/2;
+    return [node.id,{node,top:node.absolute.y+dy,height,dy}];
+  }));
+  if(!boxes.size)return layout;
+  const nodes=layout.nodes.map(node=>{
+    const box=boxes.get(node.id);if(!box)return node;
+    return {...node,absolute:{...node.absolute,y:box.top},position:{...node.position,y:node.position.y+box.dy},height:box.height};
+  });
+  const eps=1e-6;
+  const move=(points,box,end)=>{
+    const route=points.map(point=>({...point})),i=end?route.length-1:0,j=end?route.length-2:1,{node}=box;
+    const was=route[i],next=route[j];if(!was||!next)return route;
+    const left=node.absolute.x,right=left+node.width,top=node.absolute.y,bottom=top+node.height;
+    if(was.x<left-eps||was.x>right+eps||was.y<top-eps||was.y>bottom+eps)return route;
+    const y=Math.abs(was.y-top)<eps?box.top:Math.abs(was.y-bottom)<eps?box.top+box.height:Math.min(box.top+box.height,Math.max(box.top,was.y));
+    if(y===was.y)return route;
+    if(Math.abs(next.y-was.y)<eps&&Math.abs(next.x-was.x)>=eps)next.y=y;
+    route[i]={...was,y};return route;
+  };
+  const reshape=(segments,from,to)=>segments&&segments.map((points,k)=>{
+    let route=points;
+    if(to&&k===segments.length-1)route=move(route,to,true);
+    if(from&&k===0)route=move(route,from,false);
+    return route;
+  });
+  const edges=layout.edges.map(edge=>{
+    const from=boxes.get(edge.from),to=boxes.get(edge.to);
+    if(!from&&!to)return edge;
+    return {...edge,segments:reshape(edge.segments,from,to),outerSegments:reshape(edge.outerSegments,from,to)};
+  });
+  return {...layout,nodes,edges};
+}

@@ -7,7 +7,7 @@ import {connections, borderCrossing, stubEnds} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors, endEmphasis, recedes, quietFrame} from './emphasis.mjs';
-import {createSemanticLayout, outsideShrink, shrinkOutside, shrunkScale, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
+import {createSemanticLayout, outsideShrink, shrinkOutside, shrinkLoose, shrunkScale, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {inputGroupsByPart,outsideChips} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,overviewScale,describedHeading,descriptionLines as wholeLines,sameWords,cardText} from './cards.mjs';
@@ -150,7 +150,7 @@ function Part({data}) {
 function Chip({data}) {
   const scale=data.contentScale||1;
   return <div className={`flow-chip ${data.unestablished?'flow-chip-unestablished':''}`} title={data.name}
-    style={{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left','--flow-chip-scale':scale}}>
+    style={{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left','--flow-chip-scale':scale,'--flow-chip-font':`${data.chipFont||12}px`}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <span className="flow-chip-name">{data.name}</span>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
@@ -1037,7 +1037,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // size its chips read at there, the scale of the program's own cards,
     // anchored where the program's arrow enters it (outsideShrink).
     const shrunk=new Map([...outsideFits].filter(([,fit])=>openComponents.has(fit.program)));
-    const drawing=shrunk.size?shrinkOutside(layout,shrunk,rootOf):layout;
+    const outsideDrawn=shrunk.size?shrinkOutside(layout,shrunk,rootOf):layout;
+    // A loose part among open areas' parts is drawn as tall as its card.
+    const looseCards=new Map(detailed.size?outsideDrawn.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&!byID.get(n.id)?.note&&byID.get(n.parentId)?.branch==='component'&&(children.get(n.parentId)||[]).some(id=>byID.get(id)?.branch==='area'))
+      .map(n=>[n.id,(byID.get(n.id)?.originalHeight||n.height)*(byID.get(n.id)?.contentScale||1)]):[]);
+    const drawing=looseCards.size?shrinkLoose(outsideDrawn,looseCards):outsideDrawn;
     shownNodes=drawing.nodes;
     const groupHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
@@ -1076,7 +1080,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(byID.get(n.id).note)return note(n);
         // Inside its 1.5px border and 6px padding, the zoom mark beside
         // the title (canvas.css).
-        const item=byID.get(n.id),heading=describedHeading(n,item.name||item.title,item.description,scale,measure,50,15,58,{side:15,lines:(height,titleLines)=>Math.floor((height-15-16*titleLines)/15),least:11/12/entry(n)});
+        const item=byID.get(n.id),heading=describedHeading(n,item.name||item.title,item.description,scale,measure,50,15,58,{side:15,lines:(height,titleLines)=>Math.floor((height-15-16*titleLines)/15),least:11/12/entry(n),grow:true});
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);

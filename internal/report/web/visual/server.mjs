@@ -58,4 +58,4 @@ createServer(async(request,response)=>{
   const asset=routes.get(path);
   if(!asset){response.writeHead(404).end();return;}
   response.writeHead(200,{'Content-Type':asset[0], 'Cache-Control':'no-store'}).end(asset[1]);
-}).listen(8875,'127.0.0.1');
+}).listen(Number(process.env.REPOMAP_TEST_PORT||8875),'127.0.0.1');

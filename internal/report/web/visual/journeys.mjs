@@ -28,8 +28,12 @@ export function journeyHelpers(){
   const column=()=>document.querySelector('.map-inspector');
   const shown=el=>el.checkVisibility?.({checkOpacity:true,checkVisibilityCSS:true})!==false&&el.getClientRects().length>0;
   const leaves=()=>[...column().querySelectorAll('*')].filter(el=>![...el.children].some(child=>child.textContent.trim()));
+  // The column's text as a reader sees it: what is rendered (no closed
+  // fold's content), a dotted name whole across the pieces its line breaks
+  // split it into (rmDotBreaks).
+  const read=()=>column().innerText.replace(/[\u200b\u00ad]/g,'');
   window.__journey={
-    visible:pattern=>leaves().some(el=>pattern.test(el.textContent)&&shown(el)),
+    visible:pattern=>pattern.test(read()),
     // One click: the closed fold whose content names it.
     expandTo:pattern=>{
       const fold=[...column().querySelectorAll('details:not([open])')].find(details=>pattern.test(details.textContent));

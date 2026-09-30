@@ -277,7 +277,10 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const derived=id===root.id?minimum:null;
         // A loose part is a peer of the area's summary, not a miniature of
         // an interior card. Give both the same column width before routing.
-        const peer=record.branch==='area'||root.branch==='component'&&parent.get(id)===root.id&&!children.has(id);
+        // A program with no area (a script) has no summary for its part to
+        // be a peer of: its part is its own card, not a 400 by 200 box with
+        // its words in the top third (the reading lints).
+        const peer=record.branch==='area'||root.branch==='component'&&parent.get(id)===root.id&&!children.has(id)&&(children.get(root.id)||[]).some(child=>children.has(child));
         const min={width:Math.max(record.minimumWidth||0,derived?.width||0,peer?400:0),
           height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?Math.max(record.height,200):0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}

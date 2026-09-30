@@ -101,10 +101,13 @@ export function lintCanvas(level,near=3,readNames=true){
       if(segments(route).some(segment=>inside({left:Math.min(segment[0].x,segment[1].x),right:Math.max(segment[0].x,segment[1].x)+1,top:Math.min(segment[0].y,segment[1].y),bottom:Math.max(segment[0].y,segment[1].y)+1})&&distance(segment,r)<near))
         out.push({kind:'crowded',element:`${route.id} (${route.ends.join('→')}) at ${box.id}`,level});
     }
-    // 4b: an arrow ends on the border of the boxes at its ends.
-    const [from,to]=route.ends.map(id=>placed.get(id));
+    // 4b: an arrow ends on the border of the boxes at its ends. A part's
+    // short arrow (canvas.jsx placeStubs) starts on the part's border and
+    // stops short of its other end by design.
+    const [from,to]=route.ends.map(id=>placed.get(id)),stub=String(route.id).startsWith('stub:');
     for(const [box,point] of [[from,route.points[0]],[to,route.points.at(-1)]]){
       if(!box||!box.shown)continue;
+      if(stub)continue;
       const r=rect(box),edge=Math.min(Math.abs(point.x-r.left),Math.abs(point.x-r.right),Math.abs(point.y-r.top),Math.abs(point.y-r.bottom));
       const on=point.x>=r.left-1.5&&point.x<=r.right+1.5&&point.y>=r.top-1.5&&point.y<=r.bottom+1.5&&edge<=1.5;
       if(!on&&inside({left:point.x-1,right:point.x+1,top:point.y-1,bottom:point.y+1}))out.push({kind:'loose-end',element:`${route.id} at ${box.id}`,level});

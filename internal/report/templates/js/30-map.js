@@ -756,8 +756,17 @@ function rmDeclarationRelations(map,node,key,nodes){
         if(destination&&node.dataset.branch&&href!=='#'+id&&destination!==map.closest('[data-report-page]')){var detail=document.createElement('a');detail.href=href;detail.textContent=rmT('Open component');detail.className='map-details-link';actions.appendChild(detail);}
         var users=map.operationChoices(id);
         if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');usage.className='map-related-operations';summary.textContent=rmT('Related operations for {0}',titleOf(node));usage.appendChild(summary);
+          // Operations of one name are told apart by what differs among
+          // them, their kind, their handler or their file, never a line
+          // (owner: no line numbers; "save · redis.c:781" had read so).
           users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;
-            if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
+            var namesakes=users.filter(function(other){return other.dataset.title===op.dataset.title;});
+            if(namesakes.length>1){
+              var file=function(n){return String(n.dataset.sourceText||'').replace(/:\d+(?::\d+)?$/,'');};
+              var kind=function(n){return rmT((globalThis.rmKindNames||{})[n.dataset.activation]||n.dataset.activation||'');};
+              var apart=[kind,function(n){return n.dataset.handler||'';},file].find(function(say){return new Set(namesakes.map(say)).size===namesakes.length&&say(op);});
+              if(apart)b.textContent+=' · '+apart(op);
+            }
             b.addEventListener('click',function(){
             var concept=concepts.find(function(c){return repomapMembers.sourceKey(c.source)===map.explorerMember?.key;});
             map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',repomapMembers.displayName(concept),titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open,key:repomapMembers.sourceKey(concept.source)}});

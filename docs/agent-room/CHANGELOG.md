@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Canvas side of the reading lints: cards to their words, chip names whole, no line on a related operation
+
+- **Loose parts:** a script's part is a card of its own size (no 400×200
+  peer box without areas); a closed loose part's words take the largest
+  size that fits its box (≥11 px where entered); among open areas' parts it
+  is drawn as tall as its card, at their size, in the middle of its box,
+  its arrows' ends following its border (`shrinkLoose`). The owner's
+  loose-part spec (peers' size) still holds.
+- **Chips:** a name stands whole in two lines, its type down to 9 px
+  (freqtrade's "External Message Producer").
+- **Rows:** a name in a card row wraps after "." and "/" instead of being
+  clipped; a related operation of a shared name is told apart by its kind,
+  handler or file, never "redis.c:781".
+- **Harness:** journeys read the column as rendered (dotted names whole);
+  `REPOMAP_TEST_PORT`; the geometry lint skips a stub's free end.
+- **Fresh renders at HEAD (+ this):** journeys 4/4 PASS; lints: 0 canvas
+  offenders; column 14 long names cut, 1 repeat (--erase). Geometry lint
+  equal to HEAD's; page shape unchanged; visual 55 pass; make test/vet pass.
+
 ## 2026-09-30 — A function's call of its own parameter, in Go and TypeScript too
 
 - 6484a3b7: Go (SSA: the call's value is the function's own parameter;

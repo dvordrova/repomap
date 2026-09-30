@@ -162,7 +162,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - External communication records without an exact local peer stand, per
   program, in one amber Outside frame beside it (owner, 2026-09-29): one
   chip per destination its records name, every chip one size, in rows
-  toward a square, naming it in at most two lines with the rest on hover,
+  toward a square, naming it whole in at most two lines (its type down to
+  nine pixels when it must), the rest on hover,
   and the records naming none in one muted "not established" chip last.
   A destination's calls are read in the column when its chip is clicked,
   the camera staying; no call tile is drawn, and the program's arrows to
@@ -420,8 +421,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   member-list height; but no closed card of a component (an area or a loose
   part) is smaller than nine twentieths of its largest area on either side,
   or half again its own size, an area so grown holding its parts in its
-  middle and a loose part drawn open at its parts' size in the middle of its
-  box. The arrows between a component's areas keep the interiors' spacing in
+  middle and a loose part drawn open at its parts' size, as tall as its card,
+  in the middle of its box, its arrows' ends following its border. A
+  program's part in no area is a card of its own size when the program has
+  no area (a script). A closed loose part's title and description take the
+  largest size at which both still fit its box, no smaller than eleven
+  pixels where its program is entered. The arrows between a component's areas keep the interiors' spacing in
   the unit of those areas' median height. A closed card's title reads at
   twelve pixels where its layer opens, or where its program is entered
   whole when that is closer; its description takes the whole lines left

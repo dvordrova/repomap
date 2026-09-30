@@ -104,6 +104,14 @@ export function fitTitle(title,width,font,measure){
 // under its program it takes little of the map's width.
 // `top` is the band its title "Outside" stands in.
 export const chip={width:112,height:40,gap:8,side:12,top:34};
+// The type size, 12px down to 9px, at which a chip's name stands in its
+// two lines of its text column (canvas.css: 8px padding, 1.25px border),
+// whole words to a line.
+export function chipFont(name,measure){
+  const room=chip.width-2*8-2*1.25-1;
+  for(let size=12;size>9;size-=.5)if(wrapText(name,room,`600 ${size}px system-ui`,measure).length<=2&&widestWord(name,`600 ${size}px system-ui`,measure)<=room)return size;
+  return 9;
+}
 export function chipGrid(count){
   let best=null;
   for(let columns=1;columns<=Math.max(1,count);columns++){
@@ -196,7 +204,7 @@ export function descriptionLines(text,width,most,measure,font=descriptionFont){
 // "Executes trading strategies and…" and an empty strip). `card` is the card's room in its own units:
 // `side`, the width the description does not take, and `lines(height,
 // titleLines)`, how many 15px lines fit under the title; `least`, the
-// smallest scale its title may be drawn at.
+// smallest scale its title may be drawn at; `grow`, a card of words alone.
 export function describedHeading(node,title,text,maxScale,measure,reservedWidth,reservedHeight,minHeight,card){
   const first=groupHeading(node,title,maxScale,measure,reservedWidth,reservedHeight,minHeight);
   const at=scale=>{
@@ -207,7 +215,22 @@ export function describedHeading(node,title,text,maxScale,measure,reservedWidth,
   // Whole if it can be down to 0.6 of the title's size, else at least two
   // lines of it, else as the title fits.
   const ladder=[1,.95,.9,.85,.8,.75,.7,.65,.6].filter(factor=>factor===1||first.scale*factor>=(card.least||0)).map(factor=>at(first.scale*factor));
-  const chosen=ladder.find(next=>next.whole)||ladder.find(next=>next.most>=2)||ladder[0];
+  let chosen=ladder.find(next=>next.whole)||ladder.find(next=>next.most>=2)||ladder[0];
+  // A card that is its words alone (`card.grow`, a loose part) takes the
+  // largest size at which its title and its whole description still fit:
+  // at the size of the area titles beside it, freqtrade's scripts and
+  // litestream's loose parts had stood with their words in the top third of
+  // their cards (the reading lints).
+  if(card.grow&&chosen.whole){
+    const fits=scale=>{
+      const next=at(scale),lines=next.title.split('\n');
+      return next.whole&&node.height/scale>=minHeight&&node.width/scale-reservedWidth>=Math.max(0,...lines.map(line=>measure(line,'600 12px system-ui')))&&
+        node.height/scale-reservedHeight>=Math.max(20,lines.length*16);
+    };
+    let low=chosen.scale,high=chosen.scale*8;
+    for(let i=0;i<24;i++){const middle=(low+high)/2;if(fits(middle))low=middle;else high=middle;}
+    chosen=at(low);
+  }
   return {scale:chosen.scale,title:chosen.title,lines:descriptionLines(text,chosen.width,chosen.most,measure)};
 }
 
@@ -325,6 +348,10 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
       // An input says its kind by the mark before its name, in no row of its
       // own. A chip is the Outside frame's one size.
-      width:n.branch==='chip'?chip.width:card.width,height:n.branch==='chip'?chip.height:frame?undefined:cardHeight};
+      width:n.branch==='chip'?chip.width:card.width,height:n.branch==='chip'?chip.height:frame?undefined:cardHeight,
+      // A chip's name reads whole in its two lines, its type smaller when
+      // it must: clamped, freqtrade's "External Message Producer" had read
+      // "External Message…" (the reading lints).
+      chipFont:n.branch==='chip'?chipFont(n.name||n.title,measure):undefined};
   });
 }

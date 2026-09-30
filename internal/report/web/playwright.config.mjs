@@ -1,5 +1,8 @@
 import {defineConfig} from '@playwright/test';
 
+// REPOMAP_TEST_PORT runs a second suite beside one already serving 8875.
+const port=Number(process.env.REPOMAP_TEST_PORT||8875);
+
 export default defineConfig({
   testDir: './visual',
   testMatch: '*.spec.mjs',
@@ -13,7 +16,7 @@ export default defineConfig({
   expect: {timeout: 10_000},
   use: {
     browserName: 'chromium',
-    baseURL: 'http://127.0.0.1:8875',
+    baseURL: `http://127.0.0.1:${port}`,
     deviceScaleFactor: 1,
     colorScheme: 'light',
     locale: 'en-US',
@@ -26,7 +29,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'node visual/server.mjs',
-    url: 'http://127.0.0.1:8875',
+    url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 10_000,
   },
