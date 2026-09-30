@@ -217,7 +217,12 @@ func compareSites(a, b *programindex.Location) int {
 // flowOf is a declaration's calls in the order they are written. declare
 // names a callee in the reading (its position, or -1 when the report names
 // no declaration for it); partOf is the part a declaration stands in.
-func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, declare func(string) int) []pageFlowCall {
+//
+// With a case's lines (Operation.Branch), it is what those lines call, as
+// an input a case declares is handled there (GroupsIndex branch.go): what
+// litestream's case "replicate" does is its lines of Main.Run, never the
+// other cases'.
+func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, declare func(string) int, within *programindex.LineRange) []pageFlowCall {
 	flow := builder.flowIndex(index)
 	groupOf := builder.edgesBetweenGroups(*index).groupOf
 	macros := builder.macroCalls(index.Target.ID)
@@ -232,6 +237,9 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 	first := map[int]string{}
 	for _, position := range flow.byCaller[callerID] {
 		edge := index.StructuralEdges[position]
+		if within != nil && (edge.Location == nil || edge.Location.Line < within.Line || edge.Location.Line > within.EndLine) {
+			continue
+		}
 		var site *pageReadingSite
 		if edge.Location != nil {
 			anchor := builder.links.anchor(edge.Location.Path, edge.Location.Line, edge.Location.Column)

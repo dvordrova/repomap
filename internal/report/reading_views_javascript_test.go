@@ -366,6 +366,33 @@ assert.ok(sent.has('map-flow-sent')&&sent.textContent.includes('redis-cli'),'who
 `)
 }
 
+// An input a case of its handler's comparison declares does what the case's
+// lines call (critic, 2026-09-30: litestream's replicate had read all of
+// Main.Run): its "What it does" is that case's flow, never the handler's
+// other cases, and an input handled by the whole function reads its flow.
+func TestACaseInputDoesWhatItsCaseCalls(t *testing.T) {
+	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
+	runSystemJS(t, readingViewElements+reading+flow+`
+El.prototype.insertBefore=function(c,ref){c.parent=this;const at=this.children.indexOf(ref);if(at<0)this.children.push(c);else this.children.splice(at,0,c);return c;};
+El.prototype.closest=function(){return null;};
+const d=data.decls;
+d.push(decl('Run','function','#own'),decl('NewReplicateCommand','function','#core'),decl('ReplicateRun','function','#core'),decl('DatabasesRun','function','#core'));
+const run=d.length-4,make=d.length-3,replicate=d.length-2,databases=d.length-1;
+data.own.push({decl:run,flow:[{decl:make,sites:[{at:'main.go:120'}]},{decl:replicate,sites:[{at:'main.go:124'}]},{decl:databases,sites:[{at:'main.go:131'}]}],
+  cases:[{line:119,flow:[{decl:make,sites:[{at:'main.go:120'}]},{decl:replicate,sites:[{at:'main.go:124'}]}]},{line:130,flow:[{decl:databases,sites:[{at:'main.go:131'}]}]}]});
+document.getElementById=id=>id==='own'?{dataset:{reading:'1'},rmReading:data}:null;
+ctx.nodeById=id=>id==='n-own'?nodes['#own']:null;
+const does=path=>{const section=rmInputFlowSection(ctx,path,'replicate',()=>null,()=>{});const box=section&&section.children.find(c=>c.has('map-flow-does'));
+  return box?box.all(c=>c.has('map-flow-row')).map(c=>c.all(x=>x.has('map-reading-name'))[0].textContent):null;};
+const path={decls:[{name:'Run',part:'n-own',href:'h#Run'}],parts:[{depth:0,handler:0,part:'n-own'}]};
+assert.deepEqual(does(Object.assign({case:119},path)),['NewReplicateCommand()','ReplicateRun()'],'the replicate case\'s calls alone');
+assert.deepEqual(does(Object.assign({case:130},path)),['DatabasesRun()'],'the databases case\'s');
+assert.deepEqual(does(path),['NewReplicateCommand()','ReplicateRun()','DatabasesRun()'],'an input the whole function handles reads its flow');
+assert.equal(does(Object.assign({case:200},path)),null,'a case with no flow of its own shows none, never the whole handler');
+`)
+}
+
 // A function's reading prints no line number (owner, 2026-09-29:
 // "человек будет видеть код"): a caller calling from two places is its
 // name once, the name its link and no place kept beside it, and

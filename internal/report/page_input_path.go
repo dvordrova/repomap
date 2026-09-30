@@ -182,6 +182,10 @@ type pageInputPath struct {
 	// branches the work splits into, helpers marked. The parts it names no
 	// branch of stay folded under their names (critic, 2026-09-30).
 	Spine *pageSpine `json:"spine,omitempty"`
+	// Case is, for an input a case of its handler's comparison declares,
+	// the case's first line: what it does is what those lines call (its
+	// handler's reading, Cases).
+	Case int `json:"case,omitempty"`
 }
 
 // pageSpine is an input's flow spine: its steps, then its branches.
@@ -311,6 +315,9 @@ func appendCall(calls []pageCall, call pageCall) []pageCall {
 func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupindex.Operation, reach groupindex.Reach,
 	decls *pathDecls, nodeOf func(string) string, inputNode func(string) string, extra []pageInputPart) string {
 	var path pageInputPath
+	if operation.Branch != nil {
+		path.Case = operation.Branch.Line
+	}
 	seen := map[string]bool{}
 	for _, site := range index.Dispatch {
 		if seen[site.FromSubjectID] || !slices.Contains(site.OperationIDs, operation.ID) {

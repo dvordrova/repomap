@@ -982,7 +982,11 @@ ways in:" follows on one folded line, each way named by the part of the
 declaration where it leaves the first ("from {part}"; another dispatch
 site by its own part), with "+N" for the inputs whose own code runs the site;
 opened, each way is its chain. Then comes what its handler does, its flow, a
-single call opening by itself while its calls go one at a time; last, one
+single call opening by itself while its calls go one at a time; of an input a
+case of its handler's comparison declares, what the case's lines call alone
+(the reading's `cases`, as GroupsIndex's reach starts from those lines:
+litestream's replicate is `NewReplicateCommand` and the command's
+`ParseFlags`, `Run` and `Close`, never Main.Run's other cases); last, one
 quiet line names who sends it ("{program} sends {input}."), a model's match.
 Without a known way, the reading shows one box per dispatch site whose
 alternatives hold the handler, the first open: "Dispatched from {site} ·

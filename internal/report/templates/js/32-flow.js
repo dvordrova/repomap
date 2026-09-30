@@ -281,9 +281,14 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
       section.appendChild(more);
     }
   }
-  // What the handler does: its own flow.
+  // What the handler does: its own flow; of an input a case declares, what
+  // the case's lines call, never the rest of its handler.
   if(handler){
     var target=rmFlowOwner(ctx,null,{key:handler.href||handler.open,part:(function(){var node=rmFlowPart(ctx,handler.part);return node?node.getAttribute('href')||'#'+node.id:'';})()});
+    if(target&&path.case){
+      var inCase=(target.own.cases||[]).find(function(c){return c.line===path.case;});
+      target=inCase&&inCase.flow.length?{data:target.data,own:{decl:target.own.decl,flow:inCase.flow}}:null;
+    }
     if(target){
       var does=rmEl('div','map-flow-does');
       var headline=rmEl('div','map-flow-headline');headline.append(rmEl('h5','',rmT('What it does:')),rmFlowToggle(null));does.appendChild(headline);

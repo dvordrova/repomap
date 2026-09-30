@@ -216,8 +216,11 @@ type pageReadingOwner struct {
 	// it reads and writes, which Reads and Writes say.
 	Callees []pageReadingPeerDecls `json:"callees,omitempty"`
 	// Flow is what a function calls, in the order its calls are written
-	// (page_flow.go).
-	Flow    []pageFlowCall `json:"flow,omitempty"`
+	// (page_flow.go); Cases, for a function handling inputs a case of its
+	// comparison declares, what each case's lines call, by the case's first
+	// line (an input's "What it does").
+	Flow    []pageFlowCall    `json:"flow,omitempty"`
+	Cases   []pageReadingCase `json:"cases,omitempty"`
 	Returns []int          `json:"returns,omitempty"`
 	Takes   []int          `json:"takes,omitempty"`
 	// Fields are a record type's fields, or a global variable's fields as
@@ -227,6 +230,12 @@ type pageReadingOwner struct {
 	Fields []pageReadingFieldUse `json:"fields,omitempty"`
 	Writes []pageReadingPath     `json:"writes,omitempty"`
 	Reads  []pageReadingPath     `json:"reads,omitempty"`
+}
+
+// pageReadingCase is what one case's lines of a function call.
+type pageReadingCase struct {
+	Line int            `json:"line"`
+	Flow []pageFlowCall `json:"flow"`
 }
 
 // pageReadingPeerDecls is one part's declarations at the other end of a
@@ -735,11 +744,18 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if position < 0 {
 			continue
 		}
-		flow := builder.flowOf(&index, id, declareSubject)
+		flow := builder.flowOf(&index, id, declareSubject, nil)
 		if len(flow) == 0 {
 			continue
 		}
 		ownerOf(position).Flow = flow
+		for _, operation := range index.Operations {
+			owner := ownerOf(position)
+			if operation.SubjectID != id || operation.Branch == nil || slices.ContainsFunc(owner.Cases, func(other pageReadingCase) bool { return other.Line == operation.Branch.Line }) {
+				continue
+			}
+			owner.Cases = append(owner.Cases, pageReadingCase{Line: operation.Branch.Line, Flow: builder.flowOf(&index, id, declareSubject, operation.Branch)})
+		}
 		for _, call := range flow {
 			if call.Decl == nil {
 				continue
@@ -752,7 +768,11 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	builder.fieldReadings(&index, own, &reading, types, variables, functions, fieldsOf, declareSubject, partOf, ownerOf, byName)
 	slices.SortFunc(reading.Own, func(a, b pageReadingOwner) int { return cmp.Compare(a.Decl, b.Decl) })
 	for i := range reading.Own {
-		reading.Own[i].Flow = groupFlowByPart(reading.Own[i].Flow, func(position int) string { return reading.Decls[position].Part })
+		partOfDecl := func(position int) string { return reading.Decls[position].Part }
+		reading.Own[i].Flow = groupFlowByPart(reading.Own[i].Flow, partOfDecl)
+		for c := range reading.Own[i].Cases {
+			reading.Own[i].Cases[c].Flow = groupFlowByPart(reading.Own[i].Cases[c].Flow, partOfDecl)
+		}
 	}
 	if len(reading.Decls) == 0 {
 		return ""

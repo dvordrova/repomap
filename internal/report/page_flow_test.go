@@ -171,6 +171,57 @@ func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 	}
 }
 
+// A function handling inputs a case of its comparison declares keeps, beside
+// its flow, what each case's lines call (critic, 2026-09-30: litestream's
+// replicate had read all of Main.Run): only the calls written in the case,
+// once for every input of it.
+func TestACaseFlowIsWhatItsLinesCall(t *testing.T) {
+	builder, index := flowFixture()
+	index.Operations = []groupindex.Operation{
+		{ID: "o1", SubjectID: "cron", Branch: &programindex.LineRange{Line: 1284, EndLine: 1300}},
+		{ID: "o2", SubjectID: "cron", Branch: &programindex.LineRange{Line: 1284, EndLine: 1300}},
+		{ID: "o3", SubjectID: "cron", Branch: &programindex.LineRange{Line: 1350, EndLine: 1360}},
+		{ID: "o4", SubjectID: "cron"},
+	}
+	builder.indexes = []groupindex.Index{index}
+	raw := builder.groupReading(index, index.Groups[0], pageGroup{ID: "t1-g1", Title: index.Groups[0].Title})
+	var reading pageGroupReading
+	if err := json.Unmarshal([]byte(raw), &reading); err != nil {
+		t.Fatal(err)
+	}
+	var said []string
+	for _, own := range reading.Own {
+		if reading.Decls[own.Decl].Name != "serverCron" {
+			continue
+		}
+		for _, inCase := range own.Cases {
+			var calls []string
+			for _, call := range inCase.Flow {
+				var sites []string
+				for _, site := range call.Sites {
+					sites = append(sites, strings.TrimPrefix(site.At, "redis.c:"))
+				}
+				name := call.Name
+				switch {
+				case call.Decl != nil:
+					name = reading.Decls[*call.Decl].Name
+				case call.One != nil:
+					name = "one of " + fmt.Sprint(len(call.One))
+				}
+				calls = append(calls, name+" @"+strings.Join(sites, ","))
+			}
+			said = append(said, fmt.Sprintf("%d: %s", inCase.Line, strings.Join(calls, " | ")))
+		}
+	}
+	want := []string{
+		"1284: tryResizeHashTables @1284 | closeTimedoutClients @1297 | redisLog @1288 | fork @1300",
+		"1350: lookupKeyRead @1350 | one of 2 @1360",
+	}
+	if !slices.Equal(said, want) {
+		t.Fatalf("serverCron's cases = %q\nwant %q", said, want)
+	}
+}
+
 // A flow's calls stand under each part once (reviewer, 2026-09-30: redis
 // main had shown "Server lifecycle and cron" four times): the parts in the
 // order of their first call, each part's calls in written order, a
