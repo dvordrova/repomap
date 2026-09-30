@@ -16,16 +16,15 @@ import (
 )
 
 // shownCall is what a provider may learn of one call: every field of the
-// graph's call but its column and its callees' identities, which stay
-// local; a callee is its declaration's name and place, origins are cut
-// to lines.OriginDepth as every evidence row cuts them.
+// graph's call but its column, its callees' identities and its argument
+// origins, which stay local; a callee is its declaration's name and place,
+// origins are cut to lines.OriginDepth as every evidence row cuts them.
 type shownCall struct {
 	Name, Kind, Invocation, Dispatch, Detail, Resolution string
 	Line                                                 int
 	Callees                                              []string // "name path:line"
 	Repository                                           bool     // callees the repository indexes, none named
 	Arguments, Values                                    []string
-	Args                                                 []atlas.SourceArgument
 	Receiver, Result                                     *sourcevalue.Value
 	API                                                  *atlas.CallAPI
 	Evidence                                             []atlas.EdgeEvidence
@@ -36,9 +35,6 @@ func shown(call atlas.SymbolCall, places map[string]atlas.Place) shownCall {
 		Name: call.Name, Kind: call.Kind, Invocation: call.Invocation, Dispatch: call.Dispatch, Detail: call.Detail,
 		Resolution: call.Resolution, Line: call.Line, Arguments: call.Arguments, Values: call.Values,
 		Receiver: cut(call.ReceiverValue, 0), Result: cut(call.ResultValue, 0), API: call.API, Evidence: call.Evidence,
-	}
-	for _, argument := range call.SourceArguments {
-		result.Args = append(result.Args, atlas.SourceArgument{Position: argument.Position, Keyword: argument.Keyword, Origin: cut(argument.Origin, 0)})
 	}
 	for _, id := range call.CalleeIDs {
 		if place, known := places[id]; known && place.Symbol != nil {
@@ -143,24 +139,8 @@ func readRow(t *testing.T, raw []byte, members map[string]memberRow) []shownCall
 			return out
 		}
 		call.Arguments = strs("arguments")
-		for _, arg := range asList(details["args"]) {
-			parts := arg.([]any)
-			argument := atlas.SourceArgument{Origin: readOrigin(parts[len(parts)-1])}
-			for _, key := range parts[:len(parts)-1] {
-				switch key := key.(type) {
-				case float64:
-					argument.Position = int(key)
-				case string:
-					argument.Keyword = key
-				}
-			}
-			call.Args = append(call.Args, argument)
-		}
 		call.Receiver, call.Result = readOrigin(details["receiver"]), readOrigin(details["result"])
-		call.Values = literalTexts(call.Args)
-		if _, set := details["values"]; set {
-			call.Values = strs("values")
-		}
+		call.Values = strs("values")
 		if api := strs("api"); api != nil {
 			call.API = &atlas.CallAPI{Package: api[0], Receiver: api[1], Name: api[2], Signature: api[3]}
 		}
@@ -195,7 +175,10 @@ func readOrigin(value any) *sourcevalue.Value {
 
 // A member row's call tuples hold every field of every call the graph keeps
 // for a provider: read back, each is the call as the evidence rows would
-// show it, in the order written.
+// show it, in the order written. No argument origin is among them
+// (2026-09-30: othello's arguments were half its member bytes, and a change
+// of their form alone had moved its main flow from 9 steps to 47), while a
+// call's literal words stay its values.
 func TestAMemberRowReadsBackEveryCallLosslessly(t *testing.T) {
 	deep := &sourcevalue.Value{Kind: "call", Text: "f(g(h(x)))", Parts: []sourcevalue.Value{
 		{Kind: "call", Text: "g(h(x))", Parts: []sourcevalue.Value{{Kind: "call", Text: "h(x)", Parts: []sourcevalue.Value{{Kind: "parameter", Text: "x"}}}}},
@@ -236,7 +219,7 @@ func TestAMemberRowReadsBackEveryCallLosslessly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, local := range []string{"sym:", `"column"`, "callee_id", "stores", `"t1.n3"`} {
+	for _, local := range []string{"sym:", `"column"`, "callee_id", "stores", `"t1.n3"`, `"args"`, "argv[1]", "self.freqtrade"} {
 		if strings.Contains(string(raw), local) {
 			t.Fatalf("the row carries a local identity %q: %s", local, raw)
 		}

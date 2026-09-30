@@ -26,8 +26,8 @@ func TestOrientationMemberRowsCarryCompactOrigins(t *testing.T) {
 		origin = &sourcevalue.Value{Kind: "field", Text: fmt.Sprintf("level%d", level), Anchor: anchor(level + 10), Owner: anchor(1), Parts: []sourcevalue.Value{*origin}}
 	}
 	call := atlas.SymbolCall{Name: "Apply", Kind: "calls", Line: 5, Column: 9, Resolution: "exact",
-		ReceiverValue:   &sourcevalue.Value{Kind: "parameter", Text: "client", Position: 1, Owner: anchor(1)},
-		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: origin}},
+		ReceiverValue:   origin,
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Text: "client", Position: 1, Owner: anchor(1)}}},
 		ResultValue:     &sourcevalue.Value{Kind: "call_result", Anchor: anchor(5)}}
 	main := atlas.Place{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1, TargetIDs: []string{fixture.input.Groups[0].Target.ID},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.objectID("alpha", "inbound"), Name: "Serve", Signature: "func Serve()"}, Calls: []atlas.SymbolCall{call}}}
@@ -44,12 +44,13 @@ func TestOrientationMemberRowsCarryCompactOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"level0"`, `"level1"`, `"level2"`, `"receiver":["parameter","client"]`, `"result":["call_result",""]`} {
+	for _, want := range []string{`"level0"`, `"level1"`, `"level2"`, `"receiver":["field","level0"`, `"result":["call_result",""]`} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("the seed row lost %s: %s", want, raw)
 		}
 	}
-	for _, forbidden := range []string{`"anchor"`, `"owner"`, "level3", "level9"} {
+	// A call's argument origins stay local: steps are chosen by calls.
+	for _, forbidden := range []string{`"anchor"`, `"owner"`, "level3", "level9", `"args"`, `"client"`} {
 		if strings.Contains(string(raw), forbidden) {
 			t.Fatalf("the seed row carries %s: %s", forbidden, raw)
 		}

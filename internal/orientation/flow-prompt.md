@@ -39,10 +39,9 @@ cite a ref of the wrong kind.
     (`deferred`, `goroutine`, `async_task`, `construct`), how its target is
     found (`interface`, `interface_method`, `function_value`) and a
     resolution of `alternatives` (one of several) or `unresolved`.
-  - an object with what else is known: `args`, each `[position, origin]`,
-    `[keyword, origin]` or `[position, keyword, origin]`; the `receiver` and
-    `result` origins; `values` when they say more than the literal
-    arguments; `arguments` (repository symbols passed); `api` (`[package,
+  - an object with what else is known: the `receiver` and `result`
+    origins; `values`, the literal words it is given; `arguments`
+    (repository symbols passed); `api` (`[package,
     receiver, name, signature]` of an outside symbol); `detail`; and
     `evidence_refs` into the member's `evidence` (`[extractor, label, path,
     line]`). An origin is `[kind, text]`, or `[kind, text, initializer or 0,

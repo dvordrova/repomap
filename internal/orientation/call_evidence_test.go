@@ -40,12 +40,13 @@ func TestOrientationUsesOriginalMemberCallsWithoutImportingNeighbourBehavior(t *
 	// A seed's callee outside the request is named by its declaration; in
 	// the flow, where Apply is a member, by its ref.
 	for raw, callee := range map[string]string{string(seeds): "Apply (alpha/core.go:8)", string(members): fixture.objectID("alpha", "core")} {
-		for _, want := range []string{"issueTrackerClient", "alternatives", "goroutine", "Apply@5 -> " + callee} {
+		for _, want := range []string{"alternatives", "goroutine", "Apply@5 -> " + callee} {
 			if !strings.Contains(raw, want) {
 				t.Fatalf("original observation %q missing: %s", want, raw)
 			}
 		}
-		for _, forbidden := range append(fixture.canonicalIDs(), "local-place-", "local-object-", "unselected-neighbour-exchange", "callee_ids", `"column"`) {
+		// An argument's origin stays local (rows.go).
+		for _, forbidden := range append(fixture.canonicalIDs(), "local-place-", "local-object-", "unselected-neighbour-exchange", "callee_ids", `"column"`, "issueTrackerClient") {
 			if strings.Contains(raw, forbidden) {
 				t.Fatalf("unadvertised identity/neighbor leaked: %s", forbidden)
 			}

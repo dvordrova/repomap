@@ -96,14 +96,17 @@ func (writer *rowWriter) row(ref string, label memberWire, place *atlas.Place) m
 //	                                 member's ref, or "name (path:line)"
 //	"flags"                          its non-default kind, invocation,
 //	                                 dispatch and resolution words
-//	{details}                        detail, args, receiver, result, values,
+//	{details}                        detail, receiver, result, values,
 //	                                 arguments, api, evidence_refs
 //
 // A call with neither flags nor details is its head string alone. An
 // origin is [kind, text] or [kind, text, initializer or 0, part, ...]. A
-// call's values are left out only when they are exactly its literal
-// arguments' texts in order. The call's column and each callee's column stay
-// local, as the evidence rows keep them.
+// call's argument origins stay local: they were half of othello's member
+// bytes, and a Clojure adapter refinement of their form alone had moved its
+// main flow from 9 steps to 47 (2026-09-30); the flow's steps are chosen by
+// calls, and the literal words a call is given stay its values. The call's
+// column and each callee's column stay local, as the evidence rows keep
+// them.
 func (writer *rowWriter) call(call atlas.SymbolCall, evidence *evidenceRefs) any {
 	head := call.Name + "@" + strconv.Itoa(call.Line)
 	var callees []string
@@ -147,27 +150,13 @@ func (writer *rowWriter) call(call atlas.SymbolCall, evidence *evidenceRefs) any
 	if call.Detail != "" {
 		details["detail"] = call.Detail
 	}
-	if len(call.SourceArguments) > 0 {
-		args := make([]any, 0, len(call.SourceArguments))
-		for _, argument := range call.SourceArguments {
-			switch {
-			case argument.Keyword == "":
-				args = append(args, []any{argument.Position, originTuple(argument.Origin, 0)})
-			case argument.Position == 0:
-				args = append(args, []any{argument.Keyword, originTuple(argument.Origin, 0)})
-			default:
-				args = append(args, []any{argument.Position, argument.Keyword, originTuple(argument.Origin, 0)})
-			}
-		}
-		details["args"] = args
-	}
 	if call.ReceiverValue != nil {
 		details["receiver"] = originTuple(call.ReceiverValue, 0)
 	}
 	if call.ResultValue != nil {
 		details["result"] = originTuple(call.ResultValue, 0)
 	}
-	if values := literalTexts(call.SourceArguments); !slices.Equal(call.Values, values) {
+	if len(call.Values) > 0 {
 		details["values"] = append([]string{}, call.Values...)
 	}
 	if len(call.Arguments) > 0 {
@@ -190,18 +179,6 @@ func (writer *rowWriter) call(call atlas.SymbolCall, evidence *evidenceRefs) any
 		return head
 	}
 	return tuple
-}
-
-// literalTexts are the texts of a call's literal arguments, in order, each
-// once: what the call's values hold when they say nothing more.
-func literalTexts(arguments []atlas.SourceArgument) []string {
-	var texts []string
-	for _, argument := range arguments {
-		if argument.Origin != nil && argument.Origin.Kind == "literal" && argument.Origin.Text != "" && !slices.Contains(texts, argument.Origin.Text) {
-			texts = append(texts, argument.Origin.Text)
-		}
-	}
-	return texts
 }
 
 // originTuple writes a source origin as [kind, text], or [kind, text,
