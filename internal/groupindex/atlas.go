@@ -771,9 +771,10 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	boundRequests := make(map[string]bool)
 	// What each boundary's operation is declared on, and whether its call
-	// gives words of its own, by operation position (J1 below).
-	onOf := make(map[int]*DeclaredOn)
-	wordless := make(map[int]bool)
+	// gives words of its own (J1 below), by boundary ID: folding spellings
+	// moves the operations.
+	onOf := make(map[string]*DeclaredOn)
+	wordless := make(map[string]bool)
 	declaredOn := func(boundary atlas.Boundary) *DeclaredOn {
 		on := boundary.DeclaredOn
 		if on == nil {
@@ -881,8 +882,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if subject := byID[subjectID]; boundary.Name == "" && subject != nil && subject.Object != nil && subject.Object.Inline != "" {
 			name = subject.Object.Inline
 		}
-		onOf[len(operations)] = declaredOn(boundary)
-		wordless[len(operations)] = len(boundary.Values) == 0
+		onOf[boundary.ID] = declaredOn(boundary)
+		wordless[boundary.ID] = len(boundary.Values) == 0
 		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
@@ -903,8 +904,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	joinedInto := make(map[int]bool)
 	dropped := make(map[int]bool)
 	for position, operation := range operations {
-		on := onOf[position]
-		if operation.HandlerUnknown || operation.SubjectID == "" || on == nil || !wordless[position] {
+		on := onOf[operation.ID]
+		if operation.HandlerUnknown || operation.SubjectID == "" || on == nil || !wordless[operation.ID] {
 			continue
 		}
 		at, ok := entryAt[operationLocationKey(on.Location)]
@@ -919,6 +920,27 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		joinedInto[at], dropped[position] = true, true
 		standsFor[operation.ID] = entry.ID
+	}
+	// An input whose own call made the object inputs of its kind with
+	// their own handlers are declared on names where the one chosen is
+	// kept, and is no input of its own: argparse's
+	// add_subparsers(dest="command"), on which freqtrade's 33 subcommands
+	// are joined to their handlers. Those inputs are its words, each its
+	// own tile.
+	holds := make(map[string]bool)
+	for position, operation := range operations {
+		on := operation.DeclaredOn
+		if on == nil {
+			on = onOf[operation.ID]
+		}
+		if !dropped[position] && !operation.HandlerUnknown && on != nil {
+			holds[operation.Kind+"\x00"+operationLocationKey(on.Location)] = true
+		}
+	}
+	for position, operation := range operations {
+		if !dropped[position] && operation.HandlerUnknown && holds[operation.Kind+"\x00"+operationLocationKey(operation.Location)] {
+			dropped[position] = true
+		}
 	}
 	if len(dropped) > 0 {
 		kept := operations[:0]

@@ -205,7 +205,10 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 				return "client_request", true
 			}
 		case "enters":
-			if strings.HasSuffix(symbol, ".add_argument") || strings.HasSuffix(symbol, ".add_parser") {
+			// add_subparsers(dest=…) and a pop of a key are answered as
+			// freqtrade's reading answered them.
+			if strings.HasSuffix(symbol, ".add_argument") || strings.HasSuffix(symbol, ".add_parser") ||
+				strings.HasSuffix(symbol, ".add_subparsers") || strings.HasSuffix(symbol, ".pop") {
 				return "command", true
 			}
 		case "binds":
@@ -216,6 +219,20 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		return "", false
 	}}
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
+	// A pop out of a copy of the code's own table row (dispatch.py's
+	// option_help, freqtrade's options.pop("help")) is not asked.
+	for _, item := range preset.asked["enters"] {
+		if symbol, _ := item["symbol"].(string); strings.HasSuffix(symbol, ".pop") {
+			t.Fatalf("a call on the code's own table row was asked: %v", item)
+		}
+	}
+	for _, row := range inputRows(projected, "src/fixture_app/dispatch.py") {
+		if row.name == "help" {
+			t.Fatalf("dispatch.py's input %+v", row)
+		}
+	}
+	// The dest of add_subparsers, on which subcommands with their own
+	// handlers are declared (init, serve), is none of their tiles.
 	got := inputRows(projected, "src/fixture_app/tool_cli.py")
 	want := []inputRow{
 		// run_init, init's handler, compares its argument's cmd with

@@ -709,7 +709,14 @@ call is both. Nor is a call asked of a symbol handed a callable (`binds`
 decides), or when another fact already names it at its line and column (a SQL
 statement, a setting read, a table row, a kept callable); a registration of
 the symbol itself handing nothing over is no other fact, and its call's answer
-decides it. A registration whose own call gives no word is not asked. One
+decides it. Nor is a call made on a table the program wrote: the table
+read at one of its read sites, an element or a field of it, or what an
+outside call naming nothing made of one (a package function's first
+argument, a method's receiver: freqtrade's `options.pop("help")` on
+`deepcopy(AVAILABLE_CLI_OPTIONS[val].kwargs)`); its words are keys of the
+code's own data (`onOwnTable`; tables of names are Python's and C's, and a
+C call has no receiver). A registration whose own call gives no word is not
+asked. One
 symbol's calls share windows in source order, with request-local row refs;
 each call is remembered by what its item shows, never by line or program. An
 oversized row goes alone, a refusal leaves it unanswered, and nothing is cut.
@@ -741,9 +748,12 @@ handler-less input under an input of the same kind, as its option
 facts. It is declared on the object that input's own call made (argparse's
 `init.add_argument("--force")` on `commands.add_parser("init")`: the
 catalogue's `OnOperationID`), unless an input with its own handler is declared
-on that object too (freqtrade's subparsers hold 33 handled subcommands, no
-options of the `command` dest); or it is declared in a case's branch, or by code
-only that branch runs: the calls written in the lines a comparison case or a
+on that object too (freqtrade's subparsers hold 33 handled subcommands); a
+handler-less input whose own call made an object inputs of its kind with
+their own handlers are declared on names where the chosen one is kept and
+is no input at all (GroupsIndex projection, after the hand-over join:
+freqtrade's `add_subparsers(dest="command")`); or it is declared in a case's
+branch, or by code only that branch runs: the calls written in the lines a comparison case or a
 guarding call selects (ProgramIndex comparison case and pattern `branch`,
 GroupsIndex `Branches`), followed as the launch walk follows calls, while the
 walk from the launch's roots that takes no call written in a case's branch

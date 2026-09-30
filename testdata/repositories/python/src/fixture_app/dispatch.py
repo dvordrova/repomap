@@ -27,9 +27,12 @@ case by case, as an if/elif chain compares words.
 `build_serve` hands `build_args` ARGS_SERVE with the parser its own call
 to add_parser made for `serve`: the OPTIONS rows ARGS_SERVE names are
 serve's options. They stay the program's too, since `build_subcommands`
-hands `build_args` parsers the code does not follow.
+hands `build_args` parsers the code does not follow. `option_help` pops
+"help" out of a copy of an OPTIONS row: a key of the code's own data,
+never an input.
 """
 import argparse
+import copy
 
 
 class Opt:
@@ -167,3 +170,9 @@ def build_serve():
     serve = commands.add_parser("serve")
     build_args(optionlist=ARGS_SERVE, parser=serve)
     return parser
+
+
+def option_help(val):
+    opt = OPTIONS[val]
+    options = copy.deepcopy(opt.__dict__)
+    return options.pop("help", None)

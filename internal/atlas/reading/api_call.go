@@ -61,6 +61,7 @@ func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[
 	var waiting []waitingCall
 	bySymbol := map[string][]askedCall{}
 	files := map[string]*lines.CallFile{}
+	tables := r.tableReadSites()
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || r.testFile(place.Parent) {
 			continue
@@ -73,7 +74,7 @@ func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[
 			symbol := apiName(*call.API)
 			role := r.api[symbol]
 			site := sourceSite{place.Path, call.Line, call.Column}
-			if _, seen := r.callEnters[site]; seen || handed[symbol] || role.talks != "" || role.publishes || claimedByOtherFact(claims[sourceSite{path: site.path, line: site.line}], symbol, site.column) {
+			if _, seen := r.callEnters[site]; seen || handed[symbol] || role.talks != "" || role.publishes || claimedByOtherFact(claims[sourceSite{path: site.path, line: site.line}], symbol, site.column) || r.onOwnTable(call, tables) {
 				continue
 			}
 			// Words its handler compares with what it was handed are an
@@ -287,4 +288,70 @@ func (r *reader) entersAt(path string, line, column int) (kind string, undecided
 		return "", false
 	}
 	return answer, false
+}
+
+// tableReadSites are where a declaration reads a table the program wrote
+// (a variable with rows), by site.
+func (r *reader) tableReadSites() map[sourceSite]bool {
+	sites := map[sourceSite]bool{}
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil || len(place.Symbol.Rows) == 0 {
+			continue
+		}
+		for _, read := range place.Symbol.ReadAt {
+			if reader, ok := r.places[read.ReaderID]; ok {
+				sites[sourceSite{reader.Path, read.LineNo, read.Column}] = true
+			}
+		}
+	}
+	return sites
+}
+
+// onOwnTable says a call is made on a table the program wrote: on the
+// table read at one of its read sites, an element or a field of it, or
+// what an outside call naming nothing made of it (freqtrade's
+// options.pop("help") on deepcopy(AVAILABLE_CLI_OPTIONS[val].kwargs)). Its
+// words are keys of the code's own data, never what the program is given:
+// the call is not asked and makes no entry.
+func (r *reader) onOwnTable(call atlas.SymbolCall, tables map[sourceSite]bool) bool {
+	sites := r.callSites()
+	value := call.ReceiverValue
+	seen := map[sourcevalue.Anchor]bool{}
+	for value != nil {
+		// A value read at a table's read site: the table itself, the base
+		// of an element (a table of the same module is anchored at its
+		// initializer, the element at the read).
+		if value.Anchor != nil && tables[sourceSite{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}] {
+			return true
+		}
+		switch value.Kind {
+		case "field", "index":
+			if len(value.Parts) == 0 {
+				return false
+			}
+			value = &value.Parts[0]
+			continue
+		case "call_result":
+			if value.Anchor == nil || seen[*value.Anchor] {
+				return false
+			}
+			seen[*value.Anchor] = true
+			producer := sites[sourceSite{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}]
+			if producer == nil || producer.Kind != string(programindex.RelationInvokesExternal) || len(producer.Values) > 0 {
+				return false
+			}
+			// A package's function (copy.deepcopy) makes its value of its
+			// first argument; a method of the value it is called on.
+			value = producer.ReceiverValue
+			if value == nil || producer.API != nil && producer.API.Receiver == "" {
+				value = nil
+				if len(producer.SourceArguments) > 0 {
+					value = producer.SourceArguments[0].Origin
+				}
+			}
+			continue
+		}
+		return false
+	}
+	return false
 }

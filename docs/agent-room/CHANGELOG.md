@@ -1,6 +1,6 @@
 # Implementation and acceptance journal
 
-## 2026-09-30 — Options handed to a helper's parameter (skeptic's verdict on freqtrade's flags)
+## 2026-09-30 — Options handed to a helper's parameter, a row's own text, no dest or copied-row tiles (skeptic's verdict on freqtrade's flags)
 
 - **Why:** freqtrade's 124 flags are rows of `AVAILABLE_CLI_OPTIONS` that
   `_build_args(optionlist=ARGS_X, parser=P)` adds to the parser it is
@@ -35,6 +35,19 @@
   the widest element around the word holding no neighbouring row's word;
   C rows keep their braces. `TestATableRowIsWrittenAsItsOwnRow` (fails
   before), `TestRowTextIsTheRowAsWritten`.
+- **False tiles `command` and `help` (code facts, no question change):**
+  `command` was `add_subparsers(dest="command")` answered command; it made
+  the object freqtrade's 33 handled subcommands are declared on, so after
+  the hand-over join GroupsIndex drops a handler-less input whose own call
+  made an object inputs of its kind with their own handlers are declared
+  on (`onOf`/`wordless` now keyed by boundary ID: folding spellings had
+  shifted the positions J1 read). `help` was `options.pop("help", None)`
+  on `deepcopy(AVAILABLE_CLI_OPTIONS[val].kwargs)`: a call made on the
+  code's own table (read at a table read site, through elements, fields
+  and an outside call naming nothing) is not asked (`onOwnTable`).
+  Fixture: `dispatch.py` `option_help`; `TestCumulativePythonInputsJoinAndCatalogue`
+  answers `add_subparsers` and `pop` as freqtrade's reading did and fails
+  without either fix.
 - **Tests:** `TestASubcommandsOptionsAreNestedUnderIt` (Go, Python),
   `TestAFlagDeclaredOnAHandedParserIsAnOptionOfTheSubcommandMakingIt`,
   `TestARowLookedUpWithHandedKeysIsAnOptionOfTheSubcommandMakingTheParser`;
