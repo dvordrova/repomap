@@ -651,8 +651,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(button.hasAttribute('data-map-fit'))fitOverview(420);
     else if(button.hasAttribute('data-map-zoom')&&Number(button.dataset.mapZoom)<1)stepOut();
     else if(button.hasAttribute('data-map-zoom')){
-      const box=host.getBoundingClientRect();gestureAim={x:box.left+box.width/2,y:box.top+box.height/2};
-      Promise.resolve(instance.zoomTo(camera.get().zoom*Number(button.dataset.mapZoom),{duration:200})).then(()=>{gestureAim=null;});
+      // "+" is a zoom at the canvas's centre: it may enter a level.
+      const box=host.getBoundingClientRect(),previous=camera.get().zoom;gestureAim={x:box.left+box.width/2,y:box.top+box.height/2};
+      Promise.resolve(instance.zoomTo(previous*Number(button.dataset.mapZoom),{duration:200})).then(()=>{
+        const viewport=instance.getViewport();camera.set(viewport);lastZoom=viewport.zoom;levelForZoom(previous,viewport);gestureAim=null;});
     }
   });
   // A resize lays every level out again; the camera keeps the level.
