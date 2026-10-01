@@ -16,6 +16,8 @@ import {zoomAction} from './store.mjs';
 import {syntheticPages,realPages,measure} from './scene-pages.mjs';
 
 const canvas={width:1056,height:632};
+// The smallest room between two lanes in the owner-approved Step 1 drawing.
+const laneGap=7.5;
 const pages=[...syntheticPages,...realPages()];
 const prepared=new Map();
 async function prepare(name,page){
@@ -89,21 +91,27 @@ function checkScene(name,model,geometry,scene,problems){
     else if(s.horizontal&&t.horizontal&&Math.abs(s.a.y-t.a.y)<.5*px)overlap=Math.min(Math.max(s.a.x,s.b.x),Math.max(t.a.x,t.b.x))-Math.max(Math.min(s.a.x,s.b.x),Math.min(t.a.x,t.b.x));
     if(overlap*zoom>6)problems.push(['shared',`${where}: ${s.edge} and ${t.edge} share ${Math.round(overlap*zoom)}px`]);
   }
-  // At most four lanes run side by side in a gap between two boxes.
+  // Lanes keep at least the room between them that the owner-approved
+  // Step 1 drawing (daf1231e) kept at an area's entry zoom: 7.5 screen
+  // pixels, its smallest (redis's Core server infrastructure, measured on
+  // the daf1231e layout code at a 1056x632 canvas). Lanes of one level's
+  // own graph, with no box between them.
   const boxes=scene.nodes.filter(node=>node.band===bands.box).map(node=>node.rect);
-  for(const s of all){
-    if(!s.vertical&&!s.horizontal)continue;
-    const axis=s.vertical?'x':'y',span=s.vertical?['y','height']:['x','width'],at=s.a[axis],mid=(s.a[span[0]]+s.b[span[0]])/2;
-    const size=axis==='x'?'width':'height';
-    const across=boxes.filter(r=>mid>=r[span[0]]&&mid<=r[span[0]]+r[span[1]]);
-    const low=Math.max(-Infinity,...across.filter(r=>r[axis]+r[size]<=at+eps).map(r=>r[axis]+r[size]));
-    const high=Math.min(Infinity,...across.filter(r=>r[axis]>=at-eps).map(r=>r[axis]));
-    if(!Number.isFinite(low)||!Number.isFinite(high))continue;
-    // Lanes of one level's own graph: an open frame's border parts its routes from its program's.
-    const lanes=new Set(all.filter(t=>t.container===s.container&&(s.vertical?t.vertical:t.horizontal)&&t.a[axis]>low&&t.a[axis]<high&&
-      Math.min(t.a[span[0]],t.b[span[0]])<=mid&&Math.max(t.a[span[0]],t.b[span[0]])>=mid).map(t=>Math.round(t.a[axis]*zoom)));
-    if(lanes.size>4){problems.push(['lanes',`${where}: ${lanes.size} lanes in one gap`]);break;}
+  const drawnAll=all.filter(s=>scene.edges.find(edge=>edge.id===s.edge).rest!==false);
+  let narrowest=Infinity,between='';
+  for(let i=0;i<drawnAll.length;i++)for(let j=i+1;j<drawnAll.length;j++){
+    const s=drawnAll[i],t=drawnAll[j];if(s.edge===t.edge||s.container!==t.container)continue;
+    for(const [axis,other,size] of [['x','y','width'],['y','x','height']]){
+      if(!(axis==='x'?s.vertical&&t.vertical:s.horizontal&&t.horizontal))continue;
+      const lo=Math.max(Math.min(s.a[other],s.b[other]),Math.min(t.a[other],t.b[other])),hi=Math.min(Math.max(s.a[other],s.b[other]),Math.max(t.a[other],t.b[other]));
+      if(hi-lo<=px)continue;
+      const d=Math.abs(s.a[axis]-t.a[axis]);if(d<.5*px)continue;
+      const a=Math.min(s.a[axis],t.a[axis]),b=Math.max(s.a[axis],t.a[axis]),mid=(lo+hi)/2;
+      if(boxes.some(r=>r[axis]>a&&r[axis]+r[size]<b&&mid>=r[other]&&mid<=r[other]+r[other==='x'?'width':'height']))continue;
+      if(d<narrowest){narrowest=d;between=`${s.edge} and ${t.edge}`;}
+    }
   }
+  if(narrowest*zoom<laneGap)problems.push(['gaps',`${where}: lanes ${(narrowest*zoom).toFixed(1)}px apart (${between})`]);
   // Titles at one level within ±10%: the boxes the level's own frame holds.
   const own=scene.nodes.filter(node=>node.band===bands.box&&(scene.inner?model.parent(node.id)===scene.inner||scene.inner===scene.program&&model.parent(node.id)===scene.program:!model.parent(node.id)));
   if(own.length){
@@ -147,8 +155,34 @@ function checkScene(name,model,geometry,scene,problems){
     }
     const longest=segments(edge.points).sort((a,b)=>Math.hypot(b.b.x-b.a.x,b.b.y-b.a.y)-Math.hypot(a.b.x-a.a.x,a.b.y-a.a.y))[0];
     const middle={x:(longest.a.x+longest.b.x)/2,y:(longest.a.y+longest.b.y)/2};
-    const hit=hitTest(scene,middle,zoom);
+    const hit=hitTest(scene,middle,zoom,()=>true);
     if(hit?.type!=='box'&&hit?.type!=='marker'&&hit?.type!=='port'&&!(hit?.type==='edge'))problems.push(['hits',`${where} ${edge.id}: its middle finds ${hit?.type||'nothing'}`]);
+  }
+}
+
+// The whole map at rest (owner, 2026-10-01): no arrow of code use between
+// programs, and one arrow for every two programs an operation joins,
+// however it reaches the other (its part, its input, or through an outside
+// system the other serves).
+function checkHome(name,model,geometry,problems){
+  const scene=sceneAt(model,geometry,[],{});
+  const program=id=>model.nodes.get(id)?.kind==='program';
+  const atRest=scene.edges.filter(edge=>edge.rest!==false&&program(edge.from)&&program(edge.to));
+  for(const edge of atRest){
+    const relations=edge.edgeIDs.flatMap(id=>model.edges.find(e=>e.id===id)?.relations||[]);
+    const folded=edge.edgeIDs.some(id=>{const e=model.edges.find(x=>x.id===id);return model.nodes.get(e?.from)?.kind==='system';});
+    if(!folded&&relations.every(relation=>relation.scope==='structure'))problems.push(['uses',`${name}: ${edge.from} and ${edge.to} joined by code use at rest`]);
+  }
+  const wanted=new Set();
+  for(const edge of model.edges){
+    if(!edge.relations.some(relation=>relation.scope==='operation'))continue;
+    const ends=model.nodes.get(edge.from)?.kind==='system'?[...(model.callingPrograms.get(edge.from)||[])]:[model.programOf(edge.from)];
+    const to=model.programOf(edge.to);
+    for(const from of ends)if(program(from)&&program(to)&&from!==to)wanted.add([from,to].sort().join('|'));
+  }
+  for(const key of wanted){
+    const [a,b]=key.split('|'),count=atRest.filter(edge=>[edge.from,edge.to].sort().join('|')===key).length;
+    if(count!==1)problems.push(['pairs',`${name}: ${count} arrows at rest between ${a} and ${b}`]);
   }
 }
 
@@ -156,13 +190,16 @@ function checkScene(name,model,geometry,scene,problems){
 // chosen box draws its quiet arrows, and the rules hold for them.
 const rules={ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
-  lanes:'at most four lanes run side by side in a gap',titles:'titles at one level are within ±10%',
+  gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
+  uses:'the whole map draws no code-use arrow between programs at rest',
+  pairs:'every two programs an operation joins have exactly one arrow at rest',titles:'titles at one level are within ±10%',
   markers:'markers keep 20–28px, at most three a side, beside their box',order:'dark arrows are drawn after grey ones',
   hover:'a marker lights only markers sharing its systems',connections:'every arrow resolves to its connection',hits:'an arrow is found where it is drawn'};
 const problemsOf=new Map();
 async function problemsFor(name,page){
   if(!problemsOf.has(name))problemsOf.set(name,(async()=>{
     const {model,geometry}=await prepare(name,page),problems=[];
+    checkHome(name,model,geometry,problems);
     for(const level of levelsOf(model)){
       const scene=sceneAt(model,geometry,level,{});
       checkScene(name,model,geometry,scene,problems);

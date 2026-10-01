@@ -57,3 +57,6 @@
 .scene-kind-marks{display:flex;gap:6px;align-items:center;color:#204a7b}
 .scene-kind-marks .flow-lit{outline:2px solid #243044;border-radius:4px}
 .scene-program-card>strong{font-size:17px;line-height:21.25px}
+.scene-kind-mark{position:absolute;display:flex;align-items:center;justify-content:center;color:#204a7b;border-radius:4px}
+.scene-kind-mark.flow-lit{outline:2px solid #243044}
+.scene-root .flow-edge .flow-edge-hit{pointer-events:none!important}

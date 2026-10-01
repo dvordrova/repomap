@@ -52,10 +52,12 @@ export function sceneAt(model,geometry,level=[],selection={}){
       const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
       if(node.kind==='program')box(id,'program',rect,1);
       else if(node.kind==='inputs'){
-        if(!open.has(id)){box(id,'inputs',rect,1);continue;}
+        // Closed: its kinds' marks in a row under its title, each read alone.
+        if(!open.has(id)){box(id,'inputs',rect,1,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
+          rect:{x:rect.x+16+i*22,y:rect.y+40,width:18,height:18}}))});continue;}
         // Open, its frame is its box: the map's arrows end on it.
         const t=geometry.text.get(id);
-        box(id,'frame',rect,t,{title:node.name,titleText:1});
+        box(id,'frame',rect,t,{title:node.name});
         for(const group of node.children){
           box(group,'group',rectOf(group),t,{inputKind:model.nodes.get(group).inputKind});
           for(const input of model.nodes.get(group).children)box(input,'tile',rectOf(input),t,{inputKind:model.nodes.get(input).inputKind});
@@ -68,7 +70,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
           if(item.kind==='system')box(child,'chip',rectOf(child),1,{systemKind:item.systemKind});
           else if(item.kind==='bucket'&&open.has(child)){
             const t=geometry.text.get(child);
-            box(child,'frame',rectOf(child),t,{bucket:true,titleText:1});
+            box(child,'frame',rectOf(child),t,{bucket:true});
             for(const system of item.children)box(system,'chip',rectOf(system),t,{systemKind:model.nodes.get(system).systemKind});
           }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),1,{kinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
         }
@@ -78,19 +80,24 @@ export function sceneAt(model,geometry,level=[],selection={}){
       else if(node.kind==='input')box(id,'tile',rect,1,{inputKind:node.inputKind});
       else box(id,'card',rect,1);
     }
-    for(const route of geometry.routes.get('')||[])edges.push(edgeOf(route,model,looked));
+    // A pair of programs joined only by code use is drawn while one of them
+    // is chosen, else only while one is pointed at (emphasisOf).
+    for(const route of geometry.routes.get('')||[]){
+      const edge=edgeOf(route,model,looked);
+      if(route.uses&&!looked.has(route.from)&&!looked.has(route.to))edge.rest=false;
+      edges.push(edge);
+    }
     return finish();
   }
   // Inside a program: its frame, its areas closed but the one entered, its
   // loose parts; one text scale for every title at the level.
   const programNode=model.nodes.get(program),partText=geometry.scales.get(program)?.scale||1;
   text=level.length>1?geometry.text.get(level[1])||partText:geometry.text.get(program)||partText;
-  const titleText=geometry.text.get(program)||partText;
-  box(program,'frame',frameOf(program),text,{program:true,titleText});
+  box(program,'frame',frameOf(program),text,{program:true});
   for(const child of programNode.children){
     const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
     if(node.kind==='area'&&level[1]===child){
-      box(child,'frame',frameOf(child),text,{area:true,titleText:geometry.text.get(child),lane:node.item?.lane||''});
+      box(child,'frame',frameOf(child),text,{area:true,lane:node.item?.lane||''});
       for(const part of node.children){
         if(!rectOf(part))continue;
         box(part,level[2]===part?'deep':'card',rectOf(part),text,{lane:model.nodes.get(part).item?.lane||''});
@@ -162,7 +169,7 @@ function edgeOf(route,model,looked){
   return {id:route.id,container:route.container,from:route.from,to:route.to,points:route.points,band:bands.arrow,
     heads:{end:route.forward.length>0,start:route.backward.length>0},edgeIDs:ids,forward:route.forward,backward:route.backward,
     possible:all.length>0&&all.every(edge=>edge.possible),quiet:all.length>0&&all.every(edge=>edge.init),
-    near:all.some(edge=>end(edge.from).some(id=>looked.has(id))||end(edge.to).some(id=>looked.has(id))),port:route.port||''};
+    near:all.some(edge=>end(edge.from).some(id=>looked.has(id))||end(edge.to).some(id=>looked.has(id))),port:route.port||'',rest:true};
 }
 const edgeIndex=new WeakMap();
 export function edgeByID(model){
@@ -183,7 +190,7 @@ function distanceToPolyline(points,p){
 // What stands under world point `p` at `zoom`, the topmost first: a marker
 // or a port, a box (a card, a chip, a closed frame), an arrow within six
 // pixels, then an open frame, its title band first. Null on empty canvas.
-export function hitTest(scene,p,zoom){
+export function hitTest(scene,p,zoom,shown=edge=>edge.rest!==false){
   for(const item of overlayAt(scene,zoom).reverse())
     if(item.shown&&Math.abs(p.x-item.x)<=item.size/2&&Math.abs(p.y-item.y)<=item.size/2)return {type:item.type,id:item.type==='zoom'?item.box:item.id,box:item.box||'',item};
   const member=(scene.members||[]).find(m=>inside(m.rect,p));
@@ -191,10 +198,12 @@ export function hitTest(scene,p,zoom){
   const boxes=scene.nodes.filter(node=>node.band===bands.box&&inside(node.rect,p));
   if(boxes.length){
     const top=boxes.reduce((a,b)=>b.rect.width*b.rect.height<a.rect.width*a.rect.height?b:a);
-    return {type:'box',id:top.id,node:top};
+    const kind=(top.kinds||[]).find(entry=>inside(entry.rect,p,2/zoom));
+    return {type:'box',id:top.id,node:top,...(kind?{kind:kind.kind,group:kind.group}:{})};
   }
   let near=null;
   for(const edge of scene.edges){
+    if(!shown(edge))continue;
     const d=distanceToPolyline(edge.points,p);
     if(d<=6/zoom&&(!near||d<near.d))near={d,edge};
   }
@@ -241,11 +250,15 @@ export function emphasisOf(scene,model,pointer,view={},member=null){
   // the grey ones fade, but for those between the boxes looked at.
   const active=state.activeEdges;
   const edgeState=new Map(),order=[];
-  const anyDark=scene.edges.some(edge=>edge.edgeIDs.some(id=>active.has(id)));
+  const anyDark=scene.edges.some(edge=>edge.rest!==false&&edge.edgeIDs.some(id=>active.has(id)));
+  // An arrow drawn only for a box pointed at stands while one of its ends
+  // is the subject.
+  const subjectBoxes=new Set([state.subject,...(pointer?.type==='edge'?[pointer.edge.from,pointer.edge.to]:[])].filter(Boolean));
   for(const edge of scene.edges){
-    const on=edge.edgeIDs.some(id=>active.has(id));
+    const hidden=edge.rest===false&&!subjectBoxes.has(edge.from)&&!subjectBoxes.has(edge.to);
+    const on=!hidden&&edge.edgeIDs.some(id=>active.has(id));
     const kept=!recede||edge.edgeIDs.some(id=>recede.activeEdges.has(id));
-    edgeState.set(edge.id,{on,dim:!!recede&&!on&&!kept,faint:anyDark&&!on,band:on?bands.dark:bands.arrow});
+    edgeState.set(edge.id,{on,hidden,dim:!!recede&&!on&&!kept,faint:anyDark&&!on,band:on?bands.dark:bands.arrow});
     order.push(edge.id);
   }
   order.sort((a,b)=>edgeState.get(a).band-edgeState.get(b).band);
@@ -317,6 +330,31 @@ export function connectionOf(model,edge,backward=false){
   const box=id=>String(id).startsWith('port:')?'':id;
   // The box it leaves, else (a port, an Inputs frame, whose inputs are
   // no part) the box it enters.
+  // A call through an outside system folded into its caller's arrow is the
+  // connection of the Outside frame holding that system.
+  const first=edgeByID(model).get([...ids][0]);
   return (box(ends[0])&&frameGroups(model,ends[0]).find(group=>!group.incoming&&carries(group)))||
-    (box(ends[1])&&frameGroups(model,ends[1]).find(group=>group.incoming&&carries(group)))||null;
+    (box(ends[1])&&frameGroups(model,ends[1]).find(group=>group.incoming&&carries(group)))||
+    (first&&frameGroups(model,model.rootOf(first.from)).find(group=>!group.incoming&&carries(group)))||null;
+}
+
+// The zoom a pinch tick may take from `from` toward `to`: one pinch crosses
+// one level boundary, going on or back, and stops short of the next
+// (owner: a pinch of eight ticks had carried Redis's readers from the whole
+// map past the areas into a part's tiles). `depthAt(zoom)` is the level's
+// depth the pinch would leave at that zoom; `gesture.depth` the depth it
+// began at; `gesture.across`, set here, the depth beyond the boundary.
+export function pinchLimit(from,to,depthAt,gesture,steps=30){
+  if(gesture.across===undefined){
+    if(depthAt(to)===gesture.depth)return to;
+    let same=from,other=to;
+    for(let i=0;i<steps;i++){const middle=Math.sqrt(same*other);if(depthAt(middle)===gesture.depth)same=middle;else other=middle;}
+    gesture.across=depthAt(other);
+  }
+  const low=Math.min(gesture.depth,gesture.across),high=Math.max(gesture.depth,gesture.across);
+  const ok=zoom=>{const depth=depthAt(zoom);return depth>=low&&depth<=high;};
+  if(ok(to)||!ok(from))return ok(to)?to:from;
+  let good=from,bad=to;
+  for(let i=0;i<steps;i++){const middle=Math.sqrt(good*bad);if(ok(middle))good=middle;else bad=middle;}
+  return good;
 }

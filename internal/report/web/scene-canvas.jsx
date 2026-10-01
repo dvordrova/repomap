@@ -11,7 +11,7 @@ import {flushSync} from 'react-dom';
 import {ReactFlow,Handle,Position} from '@xyflow/react';
 import {buildModel,inputKindTitles} from './model.mjs';
 import {layoutLevels,homeCamera,units} from './levels.mjs';
-import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf} from './scene.mjs';
+import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit} from './scene.mjs';
 import {project,mark} from './overlay.mjs';
 import {createStore,sceneReducer,initialState,createCamera,zoomAction} from './store.mjs';
 import {wrapText,descriptionLines} from './cards.mjs';
@@ -58,7 +58,7 @@ function CardNode({data}){
     {node.ghosts&&<svg className="scene-ghosts" width={node.rect.width/node.text} height={node.rect.height/node.text} aria-hidden="true">
       {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={9*r.width/node.text/260}/>)}</svg>}
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
-    <div className="scene-words"><strong data-title="">{words.title.join('\n')}</strong>
+    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>
     {words.lines.length>0&&<div className="flow-description flow-description-lines" title={item?.summary||undefined}>{words.lines.join('\n')}</div>}</div>
   </Scaled></>;
 }
@@ -72,7 +72,7 @@ function ProgramNode({data}){
     return {title,role,purpose:item?.summary?descriptionLines(item.summary,inner,Math.max(0,Math.min(2,Math.floor(room/c.textLine))),measure,c.text):[]};
   },[node.rect.width,node.rect.height,node.title]);
   return <>{handles}<Scaled node={node} className="scene-program-card">
-    <strong data-title="">{words.title.join('\n')}</strong>
+    <strong data-box-title={node.id}>{words.title.join('\n')}</strong>
     {words.role.length>0&&<div className="flow-component-role" title={item.role}>{words.role.join('\n')}</div>}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{words.purpose.join('\n')}</p>}
   </Scaled></>;
@@ -84,7 +84,7 @@ function FrameNode({data}){
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   return <>{handles}<div className={`flow-area ${tone}`} style={{width:node.rect.width,height:node.rect.height}}>
     <Scaled node={{...node,text:node.titleText||node.text,rect:{...node.rect,height:units.band(1)*(node.titleText||node.text)}}} className="scene-frame-title">
-      <strong data-title="">{title}</strong></Scaled>
+      <strong data-box-title={node.id}>{title}</strong></Scaled>
   </div></>;
 }
 // An Inputs frame closed: its title over its kinds' marks, each named on
@@ -92,16 +92,17 @@ function FrameNode({data}){
 function InputsNode({data}){
   const {node,groups}=data;
   return <>{handles}<Scaled node={node} className="flow-area flow-input-collection scene-inputs-card">
-    <strong data-title="">{t('Inputs')}</strong>
-    <span className="scene-kind-marks">{groups.map(group=><span key={group.kind} className={group.lit?'flow-lit':undefined} title={t(inputKindTitles[group.kind])}>
-      <Mark icon={kindIcon(group.kind)}/></span>)}</span>
+    <strong data-box-title={node.id}>{t('Inputs')}</strong>
+    {node.kinds.map((entry,i)=><span key={entry.kind} className={`scene-kind-mark ${groups[i]?.lit?'flow-lit':''}`} title={t(inputKindTitles[entry.kind])}
+      data-input-group-kind={entry.kind} style={{left:(entry.rect.x-node.rect.x)/node.text,top:(entry.rect.y-node.rect.y)/node.text,width:entry.rect.width/node.text,height:entry.rect.height/node.text}}>
+      <Mark icon={kindIcon(entry.kind)}/></span>)}
   </Scaled></>;
 }
 function GroupNode({data}){
   const {node}=data;
   return <>{handles}<div className="scene-group" style={{width:node.rect.width,height:node.rect.height}}>
     <Scaled node={{...node,rect:{...node.rect,height:units.band(.8)*node.text}}} className="scene-group-title">
-      <Mark icon={kindIcon(node.inputKind)}/><strong data-title="">{node.title}</strong></Scaled></div></>;
+      <Mark icon={kindIcon(node.inputKind)}/><strong>{node.title}</strong></Scaled></div></>;
 }
 function TileNode({data}){
   const {node}=data;
@@ -121,7 +122,7 @@ function BucketNode({data}){
 }
 function NoteNode({data}){
   const {node}=data,item=data.item;
-  return <>{handles}<Scaled node={node} className="flow-part scene-note"><strong data-title="">{node.title}</strong>
+  return <>{handles}<Scaled node={node} className="flow-part scene-note"><strong data-box-title={node.id}>{node.title}</strong>
     {item?.summary&&<div className="flow-description">{item.summary}</div>}</Scaled></>;
 }
 // A part entered: its declarations as tiles in its card (part-symbols.jsx),
@@ -131,7 +132,7 @@ function DeepNode({data}){
   if(!drawn)return <CardNode data={data}/>;
   const {grid,box}=drawn,s=node.rect.width/box.width;
   return <>{handles}<div className={`flow-part flow-part-deep scene-deep ${laneClass(node.lane)}`} style={{width:box.width,height:box.height,transform:`scale(${s})`}}>
-    <strong data-title="" style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{node.title}</strong>
+    <strong data-box-title={node.id} style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{node.title}</strong>
     <PartSymbols symbols={item.symbols} calls={item.symbolCalls} width={box.width} height={box.height} grid={grid} member={member}/>
   </div></>;
 }
@@ -141,9 +142,12 @@ const arrowHead=7;
 function SceneEdge({id,data}){
   const d=data.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
   const head=data.on?'url(#scene-arrow-active)':'url(#scene-arrow)';
-  return <g className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''} ${data.faint?'flow-edge-faint':''}`} data-edge-id={id} data-edge-ends={`${data.from} ${data.to}`}>
+  const heads=data.heads.end&&data.heads.start?'both':data.heads.end?'end':data.heads.start?'start':'none';
+  return <g className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''} ${data.faint?'flow-edge-faint':''}`} data-edge-id={id}
+    data-edge-ends={`${data.from} ${data.to}`} data-edge-head={heads} data-edge-dark={data.on?'':undefined}>
+    <path className="flow-edge-hit" d={d} data-edge-hit={id}/>
     <path className="flow-edge-casing" d={d}/>
-    <path d={d} style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined}
+    <path d={d} data-edge-line="" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined}
       markerEnd={data.heads.end?head:undefined} markerStart={data.heads.start?head:undefined}/>
   </g>;
 }
@@ -341,6 +345,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       return;
     }
     const node=target.node;
+    if(target.kind){
+      const kinds=[...new Set(model.nodes.get(target.group).children.map(id=>model.nodes.get(id)?.item?.activation).filter(Boolean))];
+      if(callbacks.readKind)callbacks.readKind(node.id,kinds);else read(node.id,event);
+      return;
+    }
     if(node.kind==='kind'){read(model.parent(node.id),event);return;}
     if(node.kind==='bucket'){read(node.id.split('~').pop(),event);return;}
     read(node.id,event);
@@ -348,6 +357,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // Whether a point on an arrow is nearer its start than its end.
   const nearStart=(edge,at)=>edge.heads.start&&(!edge.heads.end||Math.hypot(edge.points[0].x-at.x,edge.points[0].y-at.y)<Math.hypot(edge.points.at(-1).x-at.x,edge.points.at(-1).y-at.y));
 
+  // The arrows drawn now (an arrow drawn for a box pointed at counts while
+  // it stands).
+  let lastEmphasis=null;
+  const shownEdge=edge=>lastEmphasis?.edgeState.get(edge.id)?!lastEmphasis.edgeState.get(edge.id).hidden:edge.rest!==false;
   // One hit test for the pointer and the click.
   let down=null;
   const worldAt=event=>{
@@ -359,7 +372,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointermove',event=>{
     if(initializing||event.buttons)return;
     if(onCard(event))return;
-    const scene=sceneOf(store.getState()),target=hitTest(scene,worldAt(event),camera.get().zoom);
+    const scene=sceneOf(store.getState()),target=hitTest(scene,worldAt(event),camera.get().zoom,shownEdge);
     store.dispatch({type:'point',target:target?.type==='edge'?{...target,at:undefined}:target});
     if(target?.type==='edge'){
       const key=`edge:${target.id}:${nearStart(target.edge,target.at)?'back':'on'}`;
@@ -376,7 +389,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(initializing||onCard(event))return;
     if(down&&Math.hypot(event.clientX-down.x,event.clientY-down.y)>4)return;
     const scene=sceneOf(store.getState());
-    clickAt(hitTest(scene,worldAt(event),camera.get().zoom),event);
+    clickAt(hitTest(scene,worldAt(event),camera.get().zoom,shownEdge),event);
   });
   document.addEventListener('keydown',event=>{
     if(event.key!=='Escape')return;
@@ -385,17 +398,59 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
 
   // A zoom gesture may change the level; a pan never does.
   let lastZoom=geometry.home.zoom,gestureAim=null;
-  host.addEventListener('wheel',event=>{gestureAim={x:event.clientX,y:event.clientY};},{capture:true,passive:true});
+  // One pinch (ctrl+wheel, a trackpad's pinch) crosses at most one level
+  // boundary and stops short of the next; a pause ends it. The zoom a tick
+  // asks for is React Flow's own; only a tick that would cross a second
+  // boundary is held short of it.
+  let gesture=null;
+  host.addEventListener('wheel',event=>{
+    gestureAim={x:event.clientX,y:event.clientY};
+    if(!event.ctrlKey||!instance||initializing||event.target.closest?.('.flow-floating-card'))return;
+    const now=performance.now(),v=camera.get(),box=host.getBoundingClientRect();
+    const aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
+    if(!gesture||now-gesture.at>300){
+      const start=store.getState().level;
+      gesture={start,depth:start.length};
+    }
+    gesture.at=now;
+    const factor=navigator.userAgent.indexOf('Mac')>=0?10:1;
+    const asked=v.zoom*Math.pow(2,-event.deltaY*(event.deltaMode===1?.05:event.deltaMode?1:.002)*factor);
+    const to=Math.min(maxZoom(),Math.max(minZoom(),asked));
+    if(to===v.zoom)return;
+    // The level a zoom would bring, entering as deep as it reaches.
+    const scenes=gesture.scenes||=new Map();
+    const sceneFor=level=>{const key=levelKey(level);if(!scenes.has(key))scenes.set(key,sceneAt(model,geometry,level,{}));return scenes.get(key);};
+    const depthAt=zoom=>{
+      let level=gesture.start;
+      for(let step=0;step<5;step++){
+        const next=levelAfterZoom(model,geometry,sceneFor(level),level,zoom,aim,zoom>v.zoom);
+        if(levelKey(next)===levelKey(level))break;
+        level=next;
+      }
+      return level.length;
+    };
+    const zoom=pinchLimit(v.zoom,to,depthAt,gesture);
+    if(zoom===to)return;
+    event.preventDefault();event.stopPropagation();
+    if(Math.abs(zoom/v.zoom-1)<1e-9)return;
+    const at={x:event.clientX-box.left,y:event.clientY-box.top};
+    const next={x:at.x-(at.x-v.x)*zoom/v.zoom,y:at.y-(at.y-v.y)*zoom/v.zoom,zoom};
+    const previous=v.zoom;instance.setViewport(next);camera.set(next);lastZoom=next.zoom;levelForZoom(previous,next);
+  },{capture:true,passive:false});
   function moved(event,viewport){
     camera.set(viewport);
     host.style.setProperty('--flow-zoom',String(viewport.zoom));
+    const previous=lastZoom;lastZoom=viewport.zoom;
+    if(event)levelForZoom(previous,viewport);
+  }
+  // A zoom gesture's level, with hysteresis (store.mjs zoomAction); a
+  // zoom that brings another level has the column read it.
+  function levelForZoom(previous,viewport){
     const box=host.getBoundingClientRect(),aimScreen=gestureAim||{x:box.left+box.width/2,y:box.top+box.height/2};
-    const action=event?zoomAction(lastZoom,viewport,{x:(aimScreen.x-box.left-viewport.x)/viewport.zoom,y:(aimScreen.y-box.top-viewport.y)/viewport.zoom}):null;
-    lastZoom=viewport.zoom;
+    const action=zoomAction(previous,viewport,{x:(aimScreen.x-box.left-viewport.x)/viewport.zoom,y:(aimScreen.y-box.top-viewport.y)/viewport.zoom});
     if(!action)return;
     const before=levelKey(store.getState().level);
     store.dispatch(action);
-    // A zoom that brings another level has the column read it.
     const level=store.getState().level;
     if(levelKey(level)!==before&&level.length)callbacks.follow?.(level.at(-1));
   }
@@ -410,7 +465,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       {items.filter(item=>item.type==='zoom').map(item=><span key={item.id} className="scene-zoom" data-zoom-into={item.box}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></span>)}
       {items.filter(item=>item.type!=='zoom').map(item=><span key={item.id} className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
-        data-marker={item.type==='marker'?item.id:undefined} data-port={item.type==='port'?item.id:undefined}
+        data-marker={item.type==='marker'?item.id:undefined} data-marker-box={item.type==='marker'?item.box:undefined} data-marker-side={item.type==='marker'?item.side:undefined}
+        data-marker-end={item.type==='marker'?(item.side==='out'?item.systems:item.members).join(' '):undefined} data-port={item.type==='port'?item.id:undefined} data-port-end={item.type==='port'?item.id:undefined}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}>
         <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></span>)}
       {tip&&<MarkTip item={tip}/>}
@@ -472,6 +528,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const facts=memberFacts(pointed);
     const pointer=state.pointer?.type==='member'?{type:'box',id:state.pointer.part}:state.pointer;
     const emphasis=useMemo(()=>emphasisOf(scene,model,pointer,state.view,facts),[scene,state.pointer,state.view,chosen]);
+    lastEmphasis=emphasis;
     useEffect(()=>{callbacks.emphasis?.({...emphasis.state,overview:!state.level.length});},[emphasis.state.mode,emphasis.state.subject,state.view.scope,state.level.length]);
     useEffect(()=>{
       if(state.level.length)map.dataset.sceneLevel=levelKey(state.level);else delete map.dataset.sceneLevel;
@@ -490,7 +547,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
     }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen]);
-    const edges=useMemo(()=>emphasis.order.map(id=>{
+    const edges=useMemo(()=>emphasis.order.filter(id=>!emphasis.edgeState.get(id).hidden).map(id=>{
       const edge=scene.edges.find(e=>e.id===id),flags=emphasis.edgeState.get(id);
       const ends=[edge.from,edge.to].map(end=>scene.nodes.some(node=>node.id===end)?end:scene.program||scene.nodes[0]?.id);
       return {id,source:ends[0],target:ends[1],type:'scene',zIndex:flags.on?1:0,selectable:false,focusable:false,data:{...edge,...flags}};
@@ -499,7 +556,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
       nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} nodesFocusable={false} edgesFocusable={false} disableKeyboardA11y
       deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null} panActivationKeyCode={null} zoomActivationKeyCode={null}
-      zoomOnDoubleClick={false} minZoom={Math.min(.05,geometry.home.zoom*.5)} maxZoom={maxZoom()} panOnScroll preventScrolling
+      zoomOnDoubleClick={false} minZoom={minZoom()} maxZoom={maxZoom()} panOnScroll preventScrolling
       onInit={flow=>{instance=flow;fitOverview().then(()=>requestAnimationFrame(()=>{
         initializing=false;map.classList.remove('flow-initializing');status.remove();
         if(restorePending)restore(restorePending);
@@ -518,6 +575,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     </ReactFlow>;
   }
   // Far enough into a part to read its declarations, and a little more.
+  const minZoom=()=>Math.min(.05,geometry.home.zoom*.5);
   const maxZoom=()=>Math.max(4,...[...geometry.enterZoom.values()].map(zoom=>zoom*1.6),...[...geometry.grids.keys()].map(id=>levelZoom([id])*1.6));
 
   let restorePending=null;

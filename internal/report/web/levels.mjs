@@ -25,8 +25,9 @@ const interior={
   'elk.layered.nodePlacement.bk.fixedAlignment':'BALANCED',
   'elk.spacing.nodeNode':'96','elk.spacing.componentComponent':'96',
   'elk.layered.spacing.nodeNodeBetweenLayers':'72',
-  'elk.spacing.edgeNode':'32','elk.spacing.edgeEdge':'16',
-  'elk.layered.spacing.edgeNodeBetweenLayers':'28','elk.layered.spacing.edgeEdgeBetweenLayers':'16',
+  'elk.spacing.edgeNode':'32','elk.spacing.edgeEdge':'20',
+  'elk.layered.spacing.edgeNodeBetweenLayers':'28','elk.layered.spacing.edgeEdgeBetweenLayers':'20',
+  'elk.spacing.portPort':'20',
 };
 // The whole map keeps ELK's own spacing (owner, 2026-09-29), its flow from
 // the Inputs through the programs to the Outside frames left to right.
@@ -35,7 +36,11 @@ const outer={
   'elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true',
   'elk.spacing.nodeNode':'40','elk.layered.spacing.nodeNodeBetweenLayers':'80',
   'elk.spacing.edgeNode':'24','elk.spacing.edgeEdge':'14',
+  'elk.layered.spacing.edgeNodeBetweenLayers':'24','elk.layered.spacing.edgeEdgeBetweenLayers':'14',
+  // Arrows leaving one side of a box as far apart as lanes.
+  'elk.spacing.portPort':'14',
 };
+
 
 // Sizes, in each level's own units: a part's card is cards.mjs's (260 wide,
 // its title at 17px); the whole map's text is 1 unit to a pixel.
@@ -127,6 +132,40 @@ function pairsOf(model,edges,childOf){
     if(!pairs.has(key))pairs.set(key,{key,from:a,to:b,forward:[],backward:[]});
     const pair=pairs.get(key);(pair.from===a?pair.forward:pair.backward).push(edge.id);
   }
+  return [...pairs.values()];
+}
+
+// The whole map's pairs (owner, 2026-10-01, on the skeptic's verdict):
+// each program's Inputs frame into it, a program into each Outside frame it
+// calls, and one arrow per pair of programs. A program reaching another
+// program's input reaches that program; a call through an outside system
+// served by another program's input (connects_to) is the caller's arrow to
+// the served program. A pair of programs joined only by code use
+// (scope=structure) is `uses`: drawn only while one of them is pointed at
+// or chosen.
+export function homePairs(model){
+  const {nodes}=model,pairs=new Map();
+  const add=(a,b,edge)=>{
+    if(!a||!b||a===b)return;
+    const key=pairKey(a,b);
+    if(!pairs.has(key))pairs.set(key,{key,from:a,to:b,forward:[],backward:[],operation:false});
+    const pair=pairs.get(key);
+    (pair.from===a?pair.forward:pair.backward).push(edge.id);
+    pair.operation||=edge.relations.some(relation=>relation.scope!=='structure');
+  };
+  for(const edge of model.edges){
+    const from=nodes.get(edge.from),to=nodes.get(edge.to);
+    let sources=[model.rootOf(edge.from)],target=model.rootOf(edge.to);
+    if(to?.kind==='input'&&to.program&&model.rootOf(edge.from)!==to.program)target=to.program;
+    if(from?.kind==='input'&&from.program&&model.rootOf(edge.to)!==from.program)sources=[from.program];
+    if(from?.kind==='system'&&to?.kind==='input'){
+      sources=[...(model.callingPrograms.get(edge.from)||[])];target=to.program||target;
+      for(const source of sources)add(source,target,{...edge,relations:[{scope:'operation'}]});
+      continue;
+    }
+    for(const source of sources)add(source,target,edge);
+  }
+  for(const pair of pairs.values())pair.uses=nodes.get(pair.from)?.kind==='program'&&nodes.get(pair.to)?.kind==='program'&&!pair.operation;
   return [...pairs.values()];
 }
 
@@ -306,19 +345,25 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     if(node.kind==='input')return inputBox(node,measure);
     return partBox(node);
   };
-  const rootPairs=pairsOf(model,model.edges,model.rootOf);
-  let map=null,chosen=1;
+  const rootPairs=homePairs(model);
+  let map=null,chosen={aspect:1,direction:'RIGHT'};
   const hasOutside=[...nodes.values()].some(node=>node.kind==='outside');
-  for(const aspect of hasOutside?[1,.6,1.6]:[1]){
+  const spaced=factor=>{
+    const options={...outer};
+    for(const name of ['elk.spacing.edgeEdge','elk.spacing.edgeNode','elk.layered.spacing.edgeEdgeBetweenLayers','elk.layered.spacing.edgeNodeBetweenLayers'])options[name]=String(Math.round(Number(outer[name])*factor));
+    return options;
+  };
+  const layMap=async(aspect,direction,factor)=>{
     packOutside(aspect);
     const roots=model.roots.map(rootBox);
-    for(const direction of ['RIGHT','DOWN']){
-      const laid=readNode(await native({id:'map',layoutOptions:{...outer,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
-        edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
-      if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen=aspect;}
-    }
+    return readNode(await native({id:'map',layoutOptions:{...spaced(factor),'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
+      edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
+  };
+  for(const aspect of hasOutside?[1,.6,1.6]:[1])for(const direction of ['RIGHT','DOWN']){
+    const laid=await layMap(aspect,direction,1);
+    if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen={aspect,direction};}
   }
-  packOutside(chosen);
+  packOutside(chosen.aspect);
   local.set('',{...map,text:1,pairs:rootPairs,kind:'map'});
 
   // 5. World places: the map's units are the world's; a box drawn at one
@@ -338,7 +383,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const drawn=[];
     for(const pair of inside.pairs||[]){
       const points=(inside.routes.get(pair.key)||[]).map(world);
-      if(points.length>1)drawn.push({id:`${container||'map'}:${pair.key}`,container,from:pair.from,to:pair.to,points,forward:pair.forward,backward:pair.backward});
+      if(points.length>1)drawn.push({id:`${container||'map'}:${pair.key}`,container,from:pair.from,to:pair.to,points,forward:pair.forward,backward:pair.backward,uses:!!pair.uses});
     }
     for(const pair of inside.portPairs||[]){
       const points=(inside.routes.get(pair.key)||[]).map(world);
