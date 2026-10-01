@@ -4,6 +4,7 @@
 // carries. It is pure: no layout, no camera, no DOM. The page's records,
 // relations and readings are unchanged; this is display containment only.
 import {prepareCards} from './cards.mjs';
+import {connections} from './layout.mjs';
 
 // An input's kind, as the reading column names its sections.
 export const inputKinds=['request','command','setting','scheduled','continuous','interaction','consumer','extension','entry'];
@@ -280,13 +281,71 @@ export function buildModel(page,{measure,t=text=>text}={}){
     return result;
   }
 
-  return {
-    nodes,roots,edges,record,inputOwner,anchors,calls,callingPrograms,
+  const model={
+    nodes,roots,edges,record,inputOwner,anchors,calls,callers,callingPrograms,
     shown,parent,ancestors,rootOf,leaves,within,programOf,markersOf,memberMarkersOf,
     kindGroupOf,
   };
+  model.homePairs=homePairsOf(model);
+  model.frameGroups=id=>frameGroupsOf(model,id);
+  return model;
 }
 
+// The whole map's pairs (owner, 2026-10-01, on the skeptic's verdict):
+// each program's Inputs frame into it, a program into each Outside frame it
+// calls, and one arrow per pair of programs. A program reaching another
+// program's input reaches that program; a call through an outside system
+// served by another program's input (connects_to) is the caller's arrow to
+// the served program. A pair of programs joined only by code use
+// (scope=structure) is `uses`: drawn only while one of them is pointed at
+// or chosen.
+function homePairsOf(model){
+  const {nodes}=model,pairs=new Map();
+  const add=(a,b,edge)=>{
+    if(!a||!b||a===b)return;
+    const key=a<b?`${a}|${b}`:`${b}|${a}`;
+    if(!pairs.has(key))pairs.set(key,{key,from:a,to:b,forward:[],backward:[],operation:false});
+    const pair=pairs.get(key);
+    (pair.from===a?pair.forward:pair.backward).push(edge.id);
+    pair.operation||=edge.relations.some(relation=>relation.scope!=='structure');
+  };
+  for(const edge of model.edges){
+    const from=nodes.get(edge.from),to=nodes.get(edge.to);
+    let sources=[model.rootOf(edge.from)],target=model.rootOf(edge.to);
+    if(to?.kind==='input'&&to.program&&model.rootOf(edge.from)!==to.program)target=to.program;
+    if(from?.kind==='input'&&from.program&&model.rootOf(edge.to)!==from.program)sources=[from.program];
+    if(from?.kind==='system'&&to?.kind==='input'){
+      sources=[...(model.callingPrograms.get(edge.from)||[])];target=to.program||target;
+      for(const source of sources)add(source,target,{...edge,relations:[{scope:'operation'}]});
+      continue;
+    }
+    for(const source of sources)add(source,target,edge);
+  }
+  for(const pair of pairs.values())pair.uses=nodes.get(pair.from)?.kind==='program'&&nodes.get(pair.to)?.kind==='program'&&!pair.operation;
+  return [...pairs.values()];
+}
+
+// A frame's connections as the reading column groups them (canvas.jsx
+// frameConnections): its members' edges by the participant at the other
+// end, another program, or the outermost area under a shared parent, and
+// the direction. Each group is {key, area, outside, incoming, insides,
+// relations, edges}.
+function frameMembers(model,id){
+  const own=model.leaves(id).filter(leaf=>model.nodes.get(leaf)?.kind!=='input');
+  return model.nodes.get(id)?.kind==='program'?[id,...own]:own;
+}
+function outsideOf(model,frame){
+  const boundary=id=>{
+    const shared=new Set([frame,...model.ancestors(frame)]);
+    let found='';for(const at of model.ancestors(id))if(model.nodes.get(at)?.kind==='area'&&!shared.has(at))found=at;
+    return found;
+  };
+  return id=>model.rootOf(id)!==model.rootOf(frame)?model.rootOf(id):boundary(id)||id;
+}
+function frameGroupsOf(model,id){
+  if(!model.nodes.has(id))return [];
+  return connections(id,frameMembers(model,id),model.edges,outsideOf(model,id));
+}
 // The model's things a scene can draw as boxes, by kind: what a box at
 // each level stands for.
 export const containerKinds=new Set(['program','area','inputs','kind','outside','bucket']);

@@ -158,40 +158,6 @@ function pairsOf(model,edges,childOf){
   return [...pairs.values()];
 }
 
-// The whole map's pairs (owner, 2026-10-01, on the skeptic's verdict):
-// each program's Inputs frame into it, a program into each Outside frame it
-// calls, and one arrow per pair of programs. A program reaching another
-// program's input reaches that program; a call through an outside system
-// served by another program's input (connects_to) is the caller's arrow to
-// the served program. A pair of programs joined only by code use
-// (scope=structure) is `uses`: drawn only while one of them is pointed at
-// or chosen.
-export function homePairs(model){
-  const {nodes}=model,pairs=new Map();
-  const add=(a,b,edge)=>{
-    if(!a||!b||a===b)return;
-    const key=pairKey(a,b);
-    if(!pairs.has(key))pairs.set(key,{key,from:a,to:b,forward:[],backward:[],operation:false});
-    const pair=pairs.get(key);
-    (pair.from===a?pair.forward:pair.backward).push(edge.id);
-    pair.operation||=edge.relations.some(relation=>relation.scope!=='structure');
-  };
-  for(const edge of model.edges){
-    const from=nodes.get(edge.from),to=nodes.get(edge.to);
-    let sources=[model.rootOf(edge.from)],target=model.rootOf(edge.to);
-    if(to?.kind==='input'&&to.program&&model.rootOf(edge.from)!==to.program)target=to.program;
-    if(from?.kind==='input'&&from.program&&model.rootOf(edge.to)!==from.program)sources=[from.program];
-    if(from?.kind==='system'&&to?.kind==='input'){
-      sources=[...(model.callingPrograms.get(edge.from)||[])];target=to.program||target;
-      for(const source of sources)add(source,target,{...edge,relations:[{scope:'operation'}]});
-      continue;
-    }
-    for(const source of sources)add(source,target,edge);
-  }
-  for(const pair of pairs.values())pair.uses=nodes.get(pair.from)?.kind==='program'&&nodes.get(pair.to)?.kind==='program'&&!pair.operation;
-  return [...pairs.values()];
-}
-
 // Lay out a container's children with ELK: `boxes` [{id,width,height}],
 // `pairs` from pairsOf, `ports` [{id, side}] on its border with `portPairs`
 // [{key, child, port, forward, backward}] joining a child to one.
@@ -369,7 +335,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     if(node.kind==='input')return inputBox(node,measure);
     return partBox(node);
   };
-  const rootPairs=homePairs(model);
+  const rootPairs=model.homePairs;
   let map=null,chosen={aspect:1,direction:'RIGHT'};
   const hasOutside=[...nodes.values()].some(node=>node.kind==='outside');
   const layMap=async(aspect,direction)=>{

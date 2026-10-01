@@ -1197,6 +1197,55 @@ the canvas above stays the default.
   here"), else in its program. Inside an entered part a handled input's
   marker stands on its handler's tile and an outside call's on its caller's;
   an input with no known handler stays on the part's edge.
+- The facts the canvas draws are derived only behind `buildModel`'s one
+  input boundary (owner, 2026-10-01: "у html должна быть простая задача —
+  вот данные, показываю"); they are to move into the saved data, and then
+  `buildModel` reads them instead of deriving them. Layout, camera, hover
+  and emphasis stay in the browser. `buildModel` reads the page's canvas
+  input `{items, relations, areas, inputOwner}`: of an item `id`, `title`,
+  `branch` (component, area, inputs, outside, communication), `category`,
+  `activation`, `lane`, `summary`, `role`, `children`, `componentOwner`,
+  `destinationKind`, `unestablished`, `trace`, `symbols`, `symbolCalls`
+  (and what `cards.mjs` measures); of a relation `from`, `to`,
+  `displayFrom`/`displayTo`, `scope`, `label`, `possible`, `init`,
+  `operations` and `calls` (`to`/`callee`, `caller`); `areas` `{id,
+  nodes}`; `inputOwner` input → part. IDs are the page's: programs
+  `system-component-tN`, parts `n-tN-gM`, areas `tN-area-kM`, inputs
+  `tN-oM`, Inputs frames `system-inputs-tN`, outside systems
+  `system-tN-out-bM-destination` (a call record `system-tN-out-bM` stands
+  for its system), Outside frames `system-outside-…`. The facts it derives
+  today, to be read from saved fields of these shapes:
+  - `inputs[inputID]`: `{kind, program, parts: [partID], handled, handler}`;
+    `kind` one of request, command, setting, scheduled, continuous,
+    interaction, consumer, extension, entry (an activation `background`
+    is continuous, `queue_consumer` consumer); `parts` the handler's part
+    when `handled`, else the parts taking it in (declared in, looked up
+    in), empty when none, the input then taking effect in `program`;
+    `handler` the handler declaration's key (its source href) when handled.
+  - `systems[systemID]`: `{kind, parts: [partID], programs: [programID]}`;
+    `kind` one of database, request, sdk, queue, started, other (the kind
+    most of its calls' facts give); `parts` the parts whose calls reach it,
+    `programs` the programs calling it. Equal destination names across
+    programs are one system where the page already shares its Outside
+    frame.
+  - `calls[partID]`: `[{system: systemID, caller: key}]`, the declaration
+    making each outside call (its source href).
+  - `programPairs`: `[{from: programID, to: programID, runtime, relations}]`,
+    one per directed pair of programs: `runtime` when any relation between
+    them is an operation (scope other than structure), a part reaching
+    another program's input counting for that program, and a call through
+    an outside system served by another program's input (connects_to)
+    counting as its caller's runtime pair to the served program;
+    `relations` the relation indexes it stands for.
+  From these `buildModel` keeps the grouping it draws: inputs by kind
+  (groups `{inputs ID}#{kind}`), an Outside frame's items in order
+  (systems two or more parts call, the most called first; buckets
+  `{frame}~{part}`; the rest), a box's markers `markersOf(box)` `{in,
+  out}` (`[{kind, members, systems, handled, folded}]`, at most three a
+  side), markers on an entered part's declarations `memberMarkersOf(part)`,
+  the whole map's arrows `homePairs` (`uses` when neither direction is
+  runtime) and a frame's connections for the reading column
+  `frameGroups(id)`. Levels, scene and overlay read only the model.
 - `levels.mjs` `layoutLevels(model, canvas)` lays every level out once per
   canvas size with ELK, bottom-up, each level its own graph with final
   routes: an area its parts (layered down, arrows on the boxes' tops and

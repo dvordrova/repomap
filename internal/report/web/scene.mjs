@@ -10,7 +10,6 @@
 //               pan never changes it.
 import {emphasis,recedes,focusAncestors} from './emphasis.mjs';
 import {overlayAt} from './overlay.mjs';
-import {connections} from './layout.mjs';
 import {tileRoom,tileHeader} from './symbols.mjs';
 
 // What can be entered: a level of its own opens inside it.
@@ -300,27 +299,6 @@ export function levelAfterZoom(model,geometry,scene,level,zoom,aim,zoomingIn){
   return next;
 }
 
-// A frame's connections as the reading column groups them (canvas.jsx
-// frameConnections): its members' edges by the participant at the other
-// end, another program, or the outermost area under a shared parent, and
-// the direction. Each group is {key, area, outside, incoming, insides,
-// relations, edges}.
-export function frameMembers(model,id){
-  const own=model.leaves(id).filter(leaf=>model.nodes.get(leaf)?.kind!=='input');
-  return model.nodes.get(id)?.kind==='program'?[id,...own]:own;
-}
-export function outsideOf(model,frame){
-  const boundary=id=>{
-    const shared=new Set([frame,...model.ancestors(frame)]);
-    let found='';for(const at of model.ancestors(id))if(model.nodes.get(at)?.kind==='area'&&!shared.has(at))found=at;
-    return found;
-  };
-  return id=>model.rootOf(id)!==model.rootOf(frame)?model.rootOf(id):boundary(id)||id;
-}
-export function frameGroups(model,id){
-  if(!model.nodes.has(id))return [];
-  return connections(id,frameMembers(model,id),model.edges,outsideOf(model,id));
-}
 // The connection an arrow stands for, in the direction its head nearest
 // the pointer gives (`backward` the head at its start): the outgoing
 // connection of the box it leaves to what the box it enters stands in.
@@ -335,9 +313,9 @@ export function connectionOf(model,edge,backward=false){
   // A call through an outside system folded into its caller's arrow is the
   // connection of the Outside frame holding that system.
   const first=edgeByID(model).get([...ids][0]);
-  return (box(ends[0])&&frameGroups(model,ends[0]).find(group=>!group.incoming&&carries(group)))||
-    (box(ends[1])&&frameGroups(model,ends[1]).find(group=>group.incoming&&carries(group)))||
-    (first&&frameGroups(model,model.rootOf(first.from)).find(group=>!group.incoming&&carries(group)))||null;
+  return (box(ends[0])&&model.frameGroups(ends[0]).find(group=>!group.incoming&&carries(group)))||
+    (box(ends[1])&&model.frameGroups(ends[1]).find(group=>group.incoming&&carries(group)))||
+    (first&&model.frameGroups(model.rootOf(first.from)).find(group=>!group.incoming&&carries(group)))||null;
 }
 
 // The zoom a pinch tick may take from `from` toward `to`: one pinch crosses
@@ -360,3 +338,6 @@ export function pinchLimit(from,to,depthAt,gesture,steps=30){
   for(let i=0;i<steps;i++){const middle=Math.sqrt(good*bad);if(ok(middle))good=middle;else bad=middle;}
   return good;
 }
+
+// A frame's connections as the reading column groups them (model.mjs).
+export const frameGroups=(model,id)=>model.frameGroups(id);
