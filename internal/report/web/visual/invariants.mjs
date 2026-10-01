@@ -332,8 +332,10 @@ export function invariantKit(){
       for(const f of fractions){
         const p=path.getPointAtLength(length*f),x=p.x*ctm.a+p.y*ctm.c+ctm.e,y=p.x*ctm.b+p.y*ctm.d+ctm.f;
         if(x<c.l+6||x>c.r-6||y<c.t+6||y>c.b-6)continue;
-        seen++;
         const el=document.elementFromPoint(x,y);
+        // React Flow's attribution is no part of the map.
+        if(el?.closest?.('.react-flow__attribution'))continue;
+        seen++;
         if(el?.closest?.('[data-edge-hit]')?.dataset.edgeHit===id)return {x,y};
         over||=el;
       }

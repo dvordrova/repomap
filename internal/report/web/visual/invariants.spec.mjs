@@ -167,6 +167,9 @@ for(const target of targets)for(const path of paths){
         const ids=[...new Set(await page.evaluate(()=>window.__inv.hitIds()))];
         info.arrows=ids.length;let outOfSight=0;
         for(const id of ids){
+          // A card still open from the last arrow would stand over this one.
+          for(let k=0;k<16&&await page.evaluate(()=>window.__inv.cardOpen());k++){if(k===8){await page.keyboard.press('Escape');await park(page);}await page.waitForTimeout(100);}
+          if(await page.evaluate(()=>window.__inv.cardOpen())){add('cards',false,`a card stays open with the pointer off the canvas and Escape pressed, before ${id}`);await go(level.id);}
           const point=await page.evaluate(id=>window.__inv.hitPoint(id),id);
           if(point.outOfSight){outOfSight++;continue;}
           if(point.missing)continue;
