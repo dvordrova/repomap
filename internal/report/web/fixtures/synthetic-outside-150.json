@@ -2594,7 +2594,7 @@
   },
   {
    "id": "system-outside-t1-b153-destination",
-   "title": "PostgreSQL 2",
+   "title": "PostgreSQL EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -2614,7 +2614,7 @@
   },
   {
    "id": "system-outside-t1-b155-destination",
-   "title": "MySQL 2",
+   "title": "MySQL EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -2652,7 +2652,7 @@
   },
   {
    "id": "system-outside-t1-b159-destination",
-   "title": "Redis 2",
+   "title": "Redis EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -2672,7 +2672,7 @@
   },
   {
    "id": "system-outside-t1-b161-destination",
-   "title": "Amazon S3 2",
+   "title": "Amazon S3 EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -2692,7 +2692,7 @@
   },
   {
    "id": "system-outside-t1-b163-destination",
-   "title": "Google Cloud Storage 2",
+   "title": "Google Cloud Storage EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -2730,7 +2730,7 @@
   },
   {
    "id": "system-outside-t1-b167-destination",
-   "title": "Azure Blob Storage 2",
+   "title": "Azure Blob Storage EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -2750,7 +2750,7 @@
   },
   {
    "id": "system-outside-t1-b169-destination",
-   "title": "Kafka 2",
+   "title": "Kafka EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -2788,7 +2788,7 @@
   },
   {
    "id": "system-outside-t1-b173-destination",
-   "title": "RabbitMQ 2",
+   "title": "RabbitMQ EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -2817,7 +2817,7 @@
   },
   {
    "id": "system-outside-t1-b176-destination",
-   "title": "NATS 2",
+   "title": "NATS EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -2837,7 +2837,7 @@
   },
   {
    "id": "system-outside-t1-b178-destination",
-   "title": "SQS 2",
+   "title": "SQS EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -2866,7 +2866,7 @@
   },
   {
    "id": "system-outside-t1-b181-destination",
-   "title": "Stripe 2",
+   "title": "Stripe EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -2895,7 +2895,7 @@
   },
   {
    "id": "system-outside-t1-b184-destination",
-   "title": "PayPal 2",
+   "title": "PayPal EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -2915,7 +2915,7 @@
   },
   {
    "id": "system-outside-t1-b186-destination",
-   "title": "Twilio 2",
+   "title": "Twilio EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -2935,7 +2935,7 @@
   },
   {
    "id": "system-outside-t1-b188-destination",
-   "title": "SendGrid 2",
+   "title": "SendGrid EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -2964,7 +2964,7 @@
   },
   {
    "id": "system-outside-t1-b191-destination",
-   "title": "Slack 2",
+   "title": "Slack EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3002,7 +3002,7 @@
   },
   {
    "id": "system-outside-t1-b195-destination",
-   "title": "GitHub API 2",
+   "title": "GitHub API EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3031,7 +3031,7 @@
   },
   {
    "id": "system-outside-t1-b198-destination",
-   "title": "GitLab API 2",
+   "title": "GitLab API EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3069,7 +3069,7 @@
   },
   {
    "id": "system-outside-t1-b202-destination",
-   "title": "LDAP 2",
+   "title": "LDAP EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3089,7 +3089,7 @@
   },
   {
    "id": "system-outside-t1-b204-destination",
-   "title": "Okta 2",
+   "title": "Okta EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -3127,7 +3127,7 @@
   },
   {
    "id": "system-outside-t1-b208-destination",
-   "title": "Auth0 2",
+   "title": "Auth0 EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3165,7 +3165,7 @@
   },
   {
    "id": "system-outside-t1-b212-destination",
-   "title": "Elasticsearch 2",
+   "title": "Elasticsearch EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3185,7 +3185,7 @@
   },
   {
    "id": "system-outside-t1-b214-destination",
-   "title": "OpenSearch 2",
+   "title": "OpenSearch EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3223,7 +3223,7 @@
   },
   {
    "id": "system-outside-t1-b218-destination",
-   "title": "etcd 2",
+   "title": "etcd EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3261,7 +3261,7 @@
   },
   {
    "id": "system-outside-t1-b222-destination",
-   "title": "Consul 2",
+   "title": "Consul EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -3299,7 +3299,7 @@
   },
   {
    "id": "system-outside-t1-b226-destination",
-   "title": "Vault 2",
+   "title": "Vault EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3319,7 +3319,7 @@
   },
   {
    "id": "system-outside-t1-b228-destination",
-   "title": "Prometheus 2",
+   "title": "Prometheus EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3357,7 +3357,7 @@
   },
   {
    "id": "system-outside-t1-b232-destination",
-   "title": "OpenTelemetry collector 2",
+   "title": "OpenTelemetry collector EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3386,7 +3386,7 @@
   },
   {
    "id": "system-outside-t1-b235-destination",
-   "title": "Sentry 2",
+   "title": "Sentry EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3406,7 +3406,7 @@
   },
   {
    "id": "system-outside-t1-b237-destination",
-   "title": "Datadog 2",
+   "title": "Datadog EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -3426,7 +3426,7 @@
   },
   {
    "id": "system-outside-t1-b239-destination",
-   "title": "Docker Engine 2",
+   "title": "Docker Engine EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3446,7 +3446,7 @@
   },
   {
    "id": "system-outside-t1-b241-destination",
-   "title": "Kubernetes API 2",
+   "title": "Kubernetes API EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3475,7 +3475,7 @@
   },
   {
    "id": "system-outside-t1-b244-destination",
-   "title": "SQLite 2",
+   "title": "SQLite EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3504,7 +3504,7 @@
   },
   {
    "id": "system-outside-t1-b247-destination",
-   "title": "MongoDB 2",
+   "title": "MongoDB EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3524,7 +3524,7 @@
   },
   {
    "id": "system-outside-t1-b249-destination",
-   "title": "Cassandra 2",
+   "title": "Cassandra EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -3562,7 +3562,7 @@
   },
   {
    "id": "system-outside-t1-b253-destination",
-   "title": "ClickHouse 2",
+   "title": "ClickHouse EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3582,7 +3582,7 @@
   },
   {
    "id": "system-outside-t1-b255-destination",
-   "title": "git 2",
+   "title": "git EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3602,7 +3602,7 @@
   },
   {
    "id": "system-outside-t1-b257-destination",
-   "title": "ffmpeg 2",
+   "title": "ffmpeg EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3640,7 +3640,7 @@
   },
   {
    "id": "system-outside-t1-b261-destination",
-   "title": "ImageMagick 2",
+   "title": "ImageMagick EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3660,7 +3660,7 @@
   },
   {
    "id": "system-outside-t1-b263-destination",
-   "title": "DNS resolver 2",
+   "title": "DNS resolver EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -3689,7 +3689,7 @@
   },
   {
    "id": "system-outside-t1-b266-destination",
-   "title": "SMTP server 2",
+   "title": "SMTP server EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3727,7 +3727,7 @@
   },
   {
    "id": "system-outside-t1-b270-destination",
-   "title": "LLM API 2",
+   "title": "LLM API EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3756,7 +3756,7 @@
   },
   {
    "id": "system-outside-t1-b273-destination",
-   "title": "Discord 2",
+   "title": "Discord EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3785,7 +3785,7 @@
   },
   {
    "id": "system-outside-t1-b276-destination",
-   "title": "Telegram 2",
+   "title": "Telegram EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3814,7 +3814,7 @@
   },
   {
    "id": "system-outside-t1-b279-destination",
-   "title": "Facebook OAuth 2",
+   "title": "Facebook OAuth EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -3852,7 +3852,7 @@
   },
   {
    "id": "system-outside-t1-b283-destination",
-   "title": "Google OAuth 2",
+   "title": "Google OAuth EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -3881,7 +3881,7 @@
   },
   {
    "id": "system-outside-t1-b286-destination",
-   "title": "WeChat 2",
+   "title": "WeChat EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -3919,7 +3919,7 @@
   },
   {
    "id": "system-outside-t1-b290-destination",
-   "title": "Alipay 2",
+   "title": "Alipay EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -3939,7 +3939,7 @@
   },
   {
    "id": "system-outside-t1-b292-destination",
-   "title": "Microsoft Graph 2",
+   "title": "Microsoft Graph EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -3968,7 +3968,7 @@
   },
   {
    "id": "system-outside-t1-b295-destination",
-   "title": "Dropbox 2",
+   "title": "Dropbox EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4006,7 +4006,7 @@
   },
   {
    "id": "system-outside-t1-b299-destination",
-   "title": "Box 2",
+   "title": "Box EU",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4035,7 +4035,7 @@
   },
   {
    "id": "system-outside-t1-b302-destination",
-   "title": "PostgreSQL 3",
+   "title": "PostgreSQL US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4073,7 +4073,7 @@
   },
   {
    "id": "system-outside-t1-b306-destination",
-   "title": "MySQL 3",
+   "title": "MySQL US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -4111,7 +4111,7 @@
   },
   {
    "id": "system-outside-t1-b310-destination",
-   "title": "Redis 3",
+   "title": "Redis US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -4140,7 +4140,7 @@
   },
   {
    "id": "system-outside-t1-b313-destination",
-   "title": "Amazon S3 3",
+   "title": "Amazon S3 US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4169,7 +4169,7 @@
   },
   {
    "id": "system-outside-t1-b316-destination",
-   "title": "Google Cloud Storage 3",
+   "title": "Google Cloud Storage US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4207,7 +4207,7 @@
   },
   {
    "id": "system-outside-t1-b320-destination",
-   "title": "Azure Blob Storage 3",
+   "title": "Azure Blob Storage US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4227,7 +4227,7 @@
   },
   {
    "id": "system-outside-t1-b322-destination",
-   "title": "Kafka 3",
+   "title": "Kafka US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -4247,7 +4247,7 @@
   },
   {
    "id": "system-outside-t1-b324-destination",
-   "title": "RabbitMQ 3",
+   "title": "RabbitMQ US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -4276,7 +4276,7 @@
   },
   {
    "id": "system-outside-t1-b327-destination",
-   "title": "NATS 3",
+   "title": "NATS US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4305,7 +4305,7 @@
   },
   {
    "id": "system-outside-t1-b330-destination",
-   "title": "SQS 3",
+   "title": "SQS US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4334,7 +4334,7 @@
   },
   {
    "id": "system-outside-t1-b333-destination",
-   "title": "Stripe 3",
+   "title": "Stripe US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4354,7 +4354,7 @@
   },
   {
    "id": "system-outside-t1-b335-destination",
-   "title": "PayPal 3",
+   "title": "PayPal US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -4392,7 +4392,7 @@
   },
   {
    "id": "system-outside-t1-b339-destination",
-   "title": "Twilio 3",
+   "title": "Twilio US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -4430,7 +4430,7 @@
   },
   {
    "id": "system-outside-t1-b343-destination",
-   "title": "SendGrid 3",
+   "title": "SendGrid US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4468,7 +4468,7 @@
   },
   {
    "id": "system-outside-t1-b347-destination",
-   "title": "Slack 3",
+   "title": "Slack US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4488,7 +4488,7 @@
   },
   {
    "id": "system-outside-t1-b349-destination",
-   "title": "GitHub API 3",
+   "title": "GitHub API US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4517,7 +4517,7 @@
   },
   {
    "id": "system-outside-t1-b352-destination",
-   "title": "GitLab API 3",
+   "title": "GitLab API US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -4546,7 +4546,7 @@
   },
   {
    "id": "system-outside-t1-b355-destination",
-   "title": "LDAP 3",
+   "title": "LDAP US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -4584,7 +4584,7 @@
   },
   {
    "id": "system-outside-t1-b359-destination",
-   "title": "Okta 3",
+   "title": "Okta US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4622,7 +4622,7 @@
   },
   {
    "id": "system-outside-t1-b363-destination",
-   "title": "Auth0 3",
+   "title": "Auth0 US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4651,7 +4651,7 @@
   },
   {
    "id": "system-outside-t1-b366-destination",
-   "title": "Elasticsearch 3",
+   "title": "Elasticsearch US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4671,7 +4671,7 @@
   },
   {
    "id": "system-outside-t1-b368-destination",
-   "title": "OpenSearch 3",
+   "title": "OpenSearch US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -4700,7 +4700,7 @@
   },
   {
    "id": "system-outside-t1-b371-destination",
-   "title": "etcd 3",
+   "title": "etcd US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -4729,7 +4729,7 @@
   },
   {
    "id": "system-outside-t1-b374-destination",
-   "title": "Consul 3",
+   "title": "Consul US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4758,7 +4758,7 @@
   },
   {
    "id": "system-outside-t1-b377-destination",
-   "title": "Vault 3",
+   "title": "Vault US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4787,7 +4787,7 @@
   },
   {
    "id": "system-outside-t1-b380-destination",
-   "title": "Prometheus 3",
+   "title": "Prometheus US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4825,7 +4825,7 @@
   },
   {
    "id": "system-outside-t1-b384-destination",
-   "title": "OpenTelemetry collector 3",
+   "title": "OpenTelemetry collector US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -4863,7 +4863,7 @@
   },
   {
    "id": "system-outside-t1-b388-destination",
-   "title": "Sentry 3",
+   "title": "Sentry US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -4901,7 +4901,7 @@
   },
   {
    "id": "system-outside-t1-b392-destination",
-   "title": "Datadog 3",
+   "title": "Datadog US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -4921,7 +4921,7 @@
   },
   {
    "id": "system-outside-t1-b394-destination",
-   "title": "Docker Engine 3",
+   "title": "Docker Engine US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -4950,7 +4950,7 @@
   },
   {
    "id": "system-outside-t1-b397-destination",
-   "title": "Kubernetes API 3",
+   "title": "Kubernetes API US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -4979,7 +4979,7 @@
   },
   {
    "id": "system-outside-t1-b400-destination",
-   "title": "SQLite 3",
+   "title": "SQLite US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -5017,7 +5017,7 @@
   },
   {
    "id": "system-outside-t1-b404-destination",
-   "title": "MongoDB 3",
+   "title": "MongoDB US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -5055,7 +5055,7 @@
   },
   {
    "id": "system-outside-t1-b408-destination",
-   "title": "Cassandra 3",
+   "title": "Cassandra US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -5075,7 +5075,7 @@
   },
   {
    "id": "system-outside-t1-b410-destination",
-   "title": "ClickHouse 3",
+   "title": "ClickHouse US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -5095,7 +5095,7 @@
   },
   {
    "id": "system-outside-t1-b412-destination",
-   "title": "git 3",
+   "title": "git US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -5133,7 +5133,7 @@
   },
   {
    "id": "system-outside-t1-b416-destination",
-   "title": "ffmpeg 3",
+   "title": "ffmpeg US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -5171,7 +5171,7 @@
   },
   {
    "id": "system-outside-t1-b420-destination",
-   "title": "ImageMagick 3",
+   "title": "ImageMagick US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -5200,7 +5200,7 @@
   },
   {
    "id": "system-outside-t1-b423-destination",
-   "title": "DNS resolver 3",
+   "title": "DNS resolver US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -5220,7 +5220,7 @@
   },
   {
    "id": "system-outside-t1-b425-destination",
-   "title": "SMTP server 3",
+   "title": "SMTP server US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -5249,7 +5249,7 @@
   },
   {
    "id": "system-outside-t1-b428-destination",
-   "title": "LLM API 3",
+   "title": "LLM API US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -5269,7 +5269,7 @@
   },
   {
    "id": "system-outside-t1-b430-destination",
-   "title": "Discord 3",
+   "title": "Discord US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -5307,7 +5307,7 @@
   },
   {
    "id": "system-outside-t1-b434-destination",
-   "title": "Telegram 3",
+   "title": "Telegram US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -5327,7 +5327,7 @@
   },
   {
    "id": "system-outside-t1-b436-destination",
-   "title": "Facebook OAuth 3",
+   "title": "Facebook OAuth US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -5365,7 +5365,7 @@
   },
   {
    "id": "system-outside-t1-b440-destination",
-   "title": "Google OAuth 3",
+   "title": "Google OAuth US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -5385,7 +5385,7 @@
   },
   {
    "id": "system-outside-t1-b442-destination",
-   "title": "WeChat 3",
+   "title": "WeChat US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -5428,7 +5428,7 @@
   },
   {
    "id": "system-outside-t2-b445-destination",
-   "title": "Alipay 3",
+   "title": "Alipay US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",
@@ -5457,7 +5457,7 @@
   },
   {
    "id": "system-outside-t2-b448-destination",
-   "title": "Microsoft Graph 3",
+   "title": "Microsoft Graph US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -5495,7 +5495,7 @@
   },
   {
    "id": "system-outside-t2-b452-destination",
-   "title": "Dropbox 3",
+   "title": "Dropbox US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
@@ -5515,7 +5515,7 @@
   },
   {
    "id": "system-outside-t2-b454-destination",
-   "title": "Box 3",
+   "title": "Box US",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",

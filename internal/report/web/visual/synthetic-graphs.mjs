@@ -108,7 +108,9 @@ function outside150(){
   const area=b.area('t2',small.id,'core');for(let i=0;i<3;i++)parts.t2.push(b.part('t2',area,i===0?'triggers':''));
   for(const t of ['t1','t2'])for(let i=0;i<parts[t].length*1.3;i++){const from=b.pick(parts[t]),to=b.pick(parts[t]);if(from!==to)b.relation(from,to);}
   b.inputs('t1',big.id,parts.t1,40);b.inputs('t2',small.id,parts.t2,5);
-  const names=[];for(let i=0;i<150;i++)names.push(i<systemNames.length?systemNames[i]:`${systemNames[i%systemNames.length]} ${Math.floor(i/systemNames.length)+1}`);
+  // Past the fifty names, a region tells copies apart: a digit would read
+  // as a printed number on the canvas.
+  const regions=['','EU','US'],names=[];for(let i=0;i<150;i++)names.push(`${systemNames[i%systemNames.length]}${regions[Math.floor(i/systemNames.length)]?` ${regions[Math.floor(i/systemNames.length)]}`:''}`);
   // A few systems used by many parts; most by one; identity providers by
   // one part, many of them.
   const systems=names.map((name,i)=>({name,kind:kinds[i%kinds.length],callers:i<4?parts.t1.filter(()=>b.chance(.5)).slice(0,12):i<20?[b.pick(parts.t1),b.pick(parts.t1)]:i<60?[parts.t1[3]]:[b.pick(parts.t1)]}));
