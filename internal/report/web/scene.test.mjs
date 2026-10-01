@@ -144,8 +144,10 @@ function checkScene(name,model,geometry,scene,problems){
   }
   // Pointing changes classes and order only, dark arrows after grey; and
   // every arrow resolves to a connection and is found where it is drawn.
-  const pointers=[null,...scene.nodes.slice(0,25).map(node=>({type:node.band===bands.frame?'frame':'box',id:node.id,node})),
-    ...overlayAt(scene,zoom).filter(item=>item.type==='marker').slice(0,25).map(item=>({type:'marker',id:item.id,box:item.box,item}))];
+  // Every marker pointed at, and the boxes (up to sixty a level: an
+  // Inputs frame entered holds a thousand inputs' names).
+  const pointers=[null,...scene.nodes.slice(0,60).map(node=>({type:node.band===bands.frame?'frame':'box',id:node.id,node})),
+    ...overlayAt(scene,zoom).filter(item=>item.type==='marker').map(item=>({type:'marker',id:item.id,box:item.box,item}))];
   for(const pointer of pointers){
     const emphasis=emphasisOf(scene,model,pointer,{});
     assert.deepEqual([...emphasis.nodeClass.keys()].sort(),scene.nodes.map(node=>node.id).sort(),`${where}: pointing at ${pointer?.id} keeps the boxes`);
