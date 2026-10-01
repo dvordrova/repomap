@@ -7,7 +7,7 @@
 .scene-root .flow-part{padding:14px;gap:6px;overflow:hidden}
 .scene-root .flow-part>strong{white-space:pre-line;line-height:21.25px}
 .scene-root .flow-description-lines{white-space:pre-line;display:block}
-.scene-program-card{background:#f8fafc;border:1.25px solid #718096;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:6px;color:#243044;overflow:hidden}
+.scene-program-card{background:#f8fafc;border:1.25px solid #718096;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px;color:#243044;overflow:hidden}
 .scene-program-card>strong{font-size:18px;line-height:23px;white-space:pre-line}
 .scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line}
 .scene-frame-title{padding:10px 16px;pointer-events:none}
