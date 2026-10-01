@@ -59,7 +59,7 @@ func restoredOwnedDeclarations(value any, units map[string]map[string]any, ancho
 			continue
 		}
 		unit, anchor := units[id], anchors[id]
-		restored[i] = map[string]any{"path": anchor.Path, "line": anchor.Line, "name": unit["name"], "kind": unit["kind"], "signature": unit["signature"], "author_doc": unit["author_doc"]}
+		restored[i] = map[string]any{"path": anchor.Path, "line": anchor.Line, "name": unit["name"], "kind": unit["kind"], "signature": unit["signature"]}
 	}
 	return restored
 }

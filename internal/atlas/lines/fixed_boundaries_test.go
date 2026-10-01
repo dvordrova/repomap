@@ -135,9 +135,11 @@ func TestBoundaryRowAsksAddressOnlyWithCandidatesAndNamesItsOwner(t *testing.T) 
 			t.Fatalf("%s: address catalogue rendered where no address decision exists: %+v", name, got)
 		}
 	}
+	// A row without an owner names its caller, never the caller's doc
+	// comment: model inputs are code structure (owner, 2026-09-25).
 	ownerless := fields(BoundaryRow(place, "", nil, true))
-	if ownerless["caller_doc"] != "Sends the request." || ownerless["owner_ref"] != nil {
-		t.Fatalf("row without an owner lost its documentation: %+v", ownerless)
+	if ownerless["caller_doc"] != nil || ownerless["caller"] == nil || ownerless["owner_ref"] != nil {
+		t.Fatalf("row without an owner lost its caller or carried its doc: %+v", ownerless)
 	}
 }
 
@@ -157,7 +159,7 @@ func TestBoundaryWindowSharesOwnerOnce(t *testing.T) {
 		t.Fatalf("windows: %d, %v", len(windows), err)
 	}
 	request := string(windows[0].Request)
-	if strings.Count(request, `"Publishes events."`) != 1 || strings.Count(request, `"owner_ref": "o1"`) != 2 || strings.Contains(request, "destination_catalog") {
+	if strings.Count(request, `"name":"publish"`) != 1 || strings.Contains(request, "Publishes events.") || strings.Count(request, `"owner_ref": "o1"`) != 2 || strings.Contains(request, "destination_catalog") {
 		t.Fatalf("owner not shared once per window, or a row offered destinations:\n%s", request)
 	}
 }

@@ -85,7 +85,7 @@ func TestPeerMemoCanonicalizesFullCatalogueAndRestoresCurrentEndpoints(t *testin
 	if err != nil || second[currentOut.place.ID].in != currentA || p.calls != 1 {
 		t.Fatalf("memo kept old endpoint or reordered source: %+v %v calls%d", second, err, p.calls)
 	}
-	currentB.place.Boundary.CallerDoc = "Different protocol behavior."
+	currentB.place.Boundary.Method = "POST"
 	_, err = r.chooseBlindPeers(t.Context(), []peerBatch{{outs: []*boundaryState{currentOut}, ins: []*boundaryState{currentA, currentB}}}, targets, &round)
 	if err != nil || p.calls != 2 {
 		t.Fatalf("changed unselected peer failed to invalidate: %v calls%d", err, p.calls)

@@ -74,7 +74,7 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 	for _, file := range files {
 		var units []questionUnit
 		for _, decl := range file.File.Decls {
-			facts := map[string]any{"name": decl.Name, "kind": decl.Kind, "signature": decl.Signature, "author_doc": decl.Doc}
+			facts := map[string]any{"name": decl.Name, "kind": decl.Kind, "signature": decl.Signature}
 			if decl.Aliases != "" {
 				facts["aliases"] = decl.Aliases
 			}
@@ -104,9 +104,9 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 			return units[i].anchor.Kind < units[j].anchor.Kind
 		})
 		units = append(units, observations[file.ID]...)
-		fields := []table.Field{{Name: "generated", Value: file.File.Generated}, {Name: "file_author_doc", Value: file.File.Doc}}
+		fields := []table.Field{{Name: "generated", Value: file.File.Generated}}
 		if directory := places[file.Parent]; directory.Directory != nil {
-			fields = append(fields, table.Field{Name: "directory_author_doc", Value: directory.Directory.Doc}, table.Field{Name: "directory_readme_claim", Value: directory.Directory.Readme})
+			fields = append(fields, table.Field{Name: "directory_readme_claim", Value: directory.Directory.Readme})
 		}
 		result = append(result, questionChunks(file, units, fields)...)
 	}
@@ -227,19 +227,18 @@ func documentHeadingPath(place atlas.Place) []string {
 // ownedDeclaration is the record a type's member shows in question evidence.
 // A member and a chunk anchor with equal records are one declaration.
 type ownedDeclaration struct {
-	path, name, kind, signature, aliases, doc string
-	line                                      int
+	path, name, kind, signature, aliases string
+	line                                 int
 }
 
 func unitDeclaration(unit questionUnit) ownedDeclaration {
 	signature, _ := unit.facts["signature"].(string)
 	aliases, _ := unit.facts["aliases"].(string)
-	doc, _ := unit.facts["author_doc"].(string)
-	return ownedDeclaration{path: unit.anchor.Path, name: unit.anchor.Name, kind: unit.anchor.Kind, signature: signature, aliases: aliases, doc: doc, line: unit.anchor.Line}
+	return ownedDeclaration{path: unit.anchor.Path, name: unit.anchor.Name, kind: unit.anchor.Kind, signature: signature, aliases: aliases, line: unit.anchor.Line}
 }
 
 func memberDeclaration(member atlas.TypeMember) ownedDeclaration {
-	return ownedDeclaration{path: member.Path, name: member.Decl.Name, kind: member.Decl.Kind, signature: member.Decl.Signature, aliases: member.Decl.Aliases, doc: member.Decl.Doc, line: member.Decl.LineNo}
+	return ownedDeclaration{path: member.Path, name: member.Decl.Name, kind: member.Decl.Kind, signature: member.Decl.Signature, aliases: member.Decl.Aliases, line: member.Decl.LineNo}
 }
 
 // chunkOwnedDeclarations renders a type's members for one chunk in their

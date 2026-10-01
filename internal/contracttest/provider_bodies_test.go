@@ -2,6 +2,7 @@ package contracttest
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,6 +105,92 @@ func assertNoLocalIdentities(t *testing.T, bodies [][]byte, hostPaths ...string)
 		for _, local := range append([]string{`"callee_id"`, `"callee_ids"`, `"stores"`, `"place_id"`, `"object_id"`, `sym:`}, hostPaths...) {
 			if at := strings.Index(text, local); at >= 0 {
 				t.Fatalf("a provider body carries %q: …%s…", local, text[max(0, at-200):min(len(text), at+200)])
+			}
+		}
+	}
+}
+
+// No author prose reaches a model: a docstring or comment speaks the
+// author's intent, not what the code is (owner, 2026-09-25: model inputs are
+// code structure, never docstrings), and casdoor's ApiController row had
+// carried 77 KB of swagger comments past the categorizer's envelope. Every
+// body kvd's reading sends, to the text model and to Jev, carries none of
+// the doc comments its places hold (kvd.c's "Runs every complete line of
+// the query buffer as a command.").
+func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
+	fixture := loadCFixture(t)
+	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
+	server, client := set["c:kvd"], set["c:kvcli"]
+	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: server, Root: "."}, {Index: client, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Claims carry their commit's date.
+	runFixtureGit(t, fixture.root, "-c", "user.email=fixture@example.test", "-c", "user.name=fixture", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture")
+	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: fixture.repository, RepoPath: fixture.root, Revision: "HEAD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := places.Build(places.Input{Repository: fixture.repository, Targets: []places.TargetInput{{Index: server, Root: "."}, {Index: client, Root: "."}}, Facts: layer, Claims: quoted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docs []string
+	add := func(doc string) {
+		if len(doc) >= 16 && !slices.Contains(docs, doc) {
+			docs = append(docs, doc)
+		}
+	}
+	for _, place := range graph.Places {
+		if place.Directory != nil {
+			add(place.Directory.Doc)
+		}
+		if place.File != nil {
+			add(place.File.Doc)
+			for _, decl := range place.File.Decls {
+				add(decl.Doc)
+			}
+		}
+		if place.Symbol != nil {
+			add(place.Symbol.Decl.Doc)
+			for _, member := range place.Symbol.Members {
+				add(member.Decl.Doc)
+			}
+		}
+		if place.Boundary != nil {
+			add(place.Boundary.CallerDoc)
+		}
+	}
+	if !slices.ContainsFunc(docs, func(doc string) bool { return strings.Contains(doc, "Runs every complete line") }) {
+		t.Fatalf("kvd's places hold none of its doc comments: the test no longer covers them (%q)", docs)
+	}
+	preset := &kvdPreset{roles: map[string]map[string]string{"sys/socket.h.connect": {"talks": "client_request"}}}
+	categorizer := preset.categorizer()
+	var metas []reading.TargetMeta
+	for _, index := range []programindex.Index{server, client} {
+		metas = append(metas, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."})
+	}
+	if _, err := reading.Read(t.Context(), reading.Options{
+		Graph: graph, Repository: "kvd", Revision: "test", NoCaptions: false, Targets: metas,
+		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
+		Provider: preset, Categorizer: categorizer, OwnerRunDir: t.TempDir(),
+		ReadSource: func(path string) ([]byte, error) { return fixture.source(t, path), nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	preset.mu.Lock()
+	bodies := append(slices.Clone(preset.requests), categorizer.Requests()...)
+	preset.mu.Unlock()
+	if len(bodies) == 0 {
+		t.Fatal("the reading sent nothing")
+	}
+	for _, body := range bodies {
+		text := string(body)
+		for _, doc := range docs {
+			quoted, _ := json.Marshal(doc)
+			if needle := string(quoted[1 : len(quoted)-1]); strings.Contains(text, needle) {
+				at := strings.Index(text, needle)
+				t.Fatalf("a request carries the author's doc %q: …%s…", doc, text[max(0, at-300):min(len(text), at+len(needle)+100)])
 			}
 		}
 	}

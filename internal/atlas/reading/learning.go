@@ -243,7 +243,7 @@ func (r *reader) learningEvidence() []learningEvidence {
 			appendSource(atlas.QuestionStop{PlaceID: chunk.Place.ID, SubjectID: chunk.Place.ID,
 				Path: chunk.Place.Path, Line: 1, Kind: "file", Name: chunk.Place.Path, TargetIDs: chunk.Place.TargetIDs,
 				Evidence: map[string]any{"evidence": []map[string]any{{"anchor_line": 1,
-					"author_doc": chunk.Place.File.Doc, "prior_model_hypothesis": line}}}})
+					"prior_model_hypothesis": line}}}})
 		}
 		refs := make([]string, 0, len(chunk.Anchors))
 		for ref := range chunk.Anchors {

@@ -331,9 +331,12 @@ func (p *learningResourceProvider) Complete(_ context.Context, prepared llm.Prep
 func TestLearningOrdinaryProposalsUseCompleteProviderSizedContext(t *testing.T) {
 	provider := &learningResourceProvider{}
 	r := isolatedLearningReader(t, t.TempDir(), provider)
+	// Each file's accepted line is long: the pool crosses the former
+	// boundary on what a model may read (no author prose enters it).
 	for _, place := range r.opts.Graph.Places {
-		if place.File != nil {
-			place.File.Doc = strings.Repeat("Original author explanation. ", 1000)
+		if line, ok := r.lines[place.ID]; ok && place.File != nil {
+			line.value = strings.Repeat("Reads and writes the orders table. ", 1000)
+			r.lines[place.ID] = line
 		}
 	}
 	evidence := r.learningEvidence()

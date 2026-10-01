@@ -221,12 +221,14 @@ func TestQuestionEvidenceOmitsWhatItsRowAlreadySays(t *testing.T) {
 	for _, unit := range rowEvidence(t, fileRow) {
 		byRef[unit["ref"].(string)] = unit
 	}
+	// No doc comment tells a member apart from its anchor any more: Done is
+	// given by its ref like the others.
 	wantOwned := []map[string]any{
-		{"path": path, "line": 4, "name": "items", "kind": "variable", "signature": "items []Point", "author_doc": ""},
+		{"path": path, "line": 4, "name": "items", "kind": "variable", "signature": "items []Point"},
 		{"ref": "a2"},
-		{"path": path, "line": 24, "name": "Ticket.Done", "kind": "method", "signature": "func()", "author_doc": "Done releases the ticket. The job is then forgotten."},
+		{"ref": "a3"},
 		{"ref": "a4"},
-		{"path": "queue/renew.go", "line": 5, "name": "Ticket.Reset", "kind": "method", "signature": "func()", "author_doc": ""},
+		{"path": "queue/renew.go", "line": 5, "name": "Ticket.Reset", "kind": "method", "signature": "func()"},
 	}
 	if byRef["a1"]["name"] != "Ticket" || !reflect.DeepEqual(byRef["a1"]["owned_declarations"], wantOwned) {
 		t.Fatalf("owned declarations of the type: %+v", byRef["a1"]["owned_declarations"])

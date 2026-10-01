@@ -8,6 +8,7 @@ package lines
 
 import (
 	_ "embed"
+	"fmt"
 	"path"
 	"sort"
 	"strings"
@@ -106,9 +107,6 @@ func DirectoryRow(place atlas.Place) table.Row {
 	if facts.Readme != "" {
 		fields = append(fields, table.Field{Name: "readme", Value: facts.Readme})
 	}
-	if facts.Doc != "" {
-		fields = append(fields, table.Field{Name: "doc", Value: facts.Doc})
-	}
 	fields = append(fields,
 		table.Field{Name: "dirs", Value: bounded(facts.Dirs, maxChildren)},
 		table.Field{Name: "files", Value: bounded(facts.Files, maxChildren)},
@@ -124,7 +122,31 @@ func DirectoryContext(parent *atlas.Place) []table.Field {
 	if parent == nil {
 		return nil
 	}
-	return []table.Field{{Name: "parent", Value: map[string]any{"path": parent.Path, "line": parent.Given}}}
+	return []table.Field{{Name: "parent", Value: map[string]any{"path": parent.Path, "line": directoryFacts(*parent)}}}
+}
+
+// directoryFacts is a directory's fallback line as a model reads it: its
+// README's first line, else what it holds. Never its package doc comment,
+// which the place's Given falls back to for the reader: model inputs are
+// code structure, not the authors' prose (owner, 2026-09-25).
+func directoryFacts(place atlas.Place) string {
+	facts := place.Directory
+	if facts == nil || facts.Readme != "" || facts.Doc == "" {
+		return place.Given
+	}
+	// The Given fell back to the package doc: say what it holds instead.
+	names := append(append([]string{}, facts.Dirs...), facts.Files...)
+	if len(names) > 3 {
+		names = names[:3]
+	}
+	unit := "files"
+	if facts.FileCount == 1 {
+		unit = "file"
+	}
+	if len(names) == 0 {
+		return fmt.Sprintf("%d %s", facts.FileCount, unit)
+	}
+	return fmt.Sprintf("%d %s: %s", facts.FileCount, unit, strings.Join(names, ", "))
 }
 
 // FileCallers names, per calling file, the declarations the graph saw
@@ -143,13 +165,10 @@ func FileRow(
 ) table.Row {
 	facts := place.File
 	fields := []table.Field{{Name: "path", Value: place.Path}}
-	if facts.Doc != "" {
-		fields = append(fields, table.Field{Name: "doc", Value: facts.Doc})
-	}
 	if line, ok := lines.Line(directory.ID); ok {
 		fields = append(fields, table.Field{Name: "directory_hypothesis", Value: line})
 	} else {
-		fields = append(fields, table.Field{Name: "directory_facts", Value: directory.Given})
+		fields = append(fields, table.Field{Name: "directory_facts", Value: directoryFacts(directory)})
 	}
 	callers := make([]map[string]any, 0, maxCallers)
 	for _, callerID := range facts.Callers {
@@ -158,9 +177,6 @@ func FileRow(
 			continue
 		}
 		entry := map[string]any{"path": caller.Path}
-		if caller.File.Doc != "" {
-			entry["doc"] = cut(caller.File.Doc, maxDoc)
-		}
 		if names := bounded(calling[callerID], maxCallerDecls); len(names) > 0 {
 			entry["declarations"] = names
 		}
@@ -178,9 +194,6 @@ func FileRow(
 		entry := map[string]any{"name": decl.Name, "kind": decl.Kind}
 		if decl.Signature != "" {
 			entry["signature"] = cut(decl.Signature, maxSignature)
-		}
-		if decl.Doc != "" {
-			entry["doc"] = cut(decl.Doc, maxDoc)
 		}
 		decls = append(decls, entry)
 		if len(decls) == maxDecls {

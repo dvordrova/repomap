@@ -59,7 +59,7 @@ func CallableEvidence(graph atlas.Graph, subjects map[string]bool) map[string]ma
 			continue
 		}
 		facts := map[string]any{"name": place.Symbol.Decl.Name, "path": place.Path, "line": place.LineNo,
-			"signature": place.Symbol.Decl.Signature, "author_doc": place.Symbol.Decl.Doc}
+			"signature": place.Symbol.Decl.Signature}
 		questionCallableEvidence(facts, place, places, symbols)
 		result[subject] = facts
 	}

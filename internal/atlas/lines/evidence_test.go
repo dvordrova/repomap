@@ -195,9 +195,16 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 		t.Fatalf("type context: %v", err)
 	}
 	request := string(windows[0].Request)
-	for _, want := range []string{"Tracks a pending job.", "queue/renew.go", "Renew extends the ticket's validity.", "func() error", "Ticket.Done", "items: list[Point]"} {
+	for _, want := range []string{"queue/renew.go", "func() error", "Ticket.Done", "items: list[Point]"} {
 		if !strings.Contains(request, want) {
 			t.Fatalf("lost owned context %q: %s", want, request)
+		}
+	}
+	// The type's and its members' doc comments are the authors' prose, no
+	// model input (owner, 2026-09-25).
+	for _, doc := range []string{"Tracks a pending job.", "Renew extends the ticket's validity."} {
+		if strings.Contains(request, doc) {
+			t.Fatalf("a doc comment reached the type's row: %s", request)
 		}
 	}
 	if !strings.Contains(request, `"key": "type-local"`) {

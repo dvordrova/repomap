@@ -141,6 +141,9 @@ func TestBoundaryKnownHTTPAddressSurvivesAcceptedUnknownAndPreservesSourceAnchor
 	}
 }
 
+// A boundary's purpose reads its native immediate callers and its own
+// ancestors' README claims, never an author's doc comment: model inputs are
+// code structure (owner, 2026-09-25).
 func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t *testing.T) {
 	root := atlas.Place{ID: "dir:root", Kind: atlas.PlaceDirectory, Path: ".", Directory: &atlas.DirectoryFacts{Readme: "A service that proxies partner data and refreshes snapshots."}}
 	directory := atlas.Place{ID: "dir:utils", Kind: atlas.PlaceDirectory, Path: "utils", Parent: root.ID, Directory: &atlas.DirectoryFacts{Doc: "Shared request helpers."}}
@@ -178,12 +181,12 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 		source := input["rows"].([]any)[0].(map[string]any)
 		context := windowOwner(input)["source_context"].(map[string]any)
 		ownFile := context["file"].(map[string]any)
-		if ownFile["path"] != file.Path || ownFile["author_doc"] != file.File.Doc {
-			t.Fatalf("own file evidence lost: %+v", ownFile)
+		if ownFile["path"] != file.Path || ownFile["author_doc"] != nil {
+			t.Fatalf("own file evidence lost or a doc comment sent: %+v", ownFile)
 		}
 		ancestors := context["ancestor_directories"].([]any)
-		if len(ancestors) != 2 || ancestors[0].(map[string]any)["path"] != directory.Path || ancestors[1].(map[string]any)["readme_claim"] != root.Directory.Readme {
-			t.Fatalf("actual ancestor documentation lost: %+v", ancestors)
+		if len(ancestors) != 1 || ancestors[0].(map[string]any)["path"] != root.Path || ancestors[0].(map[string]any)["readme_claim"] != root.Directory.Readme {
+			t.Fatalf("ancestor README claim lost or a doc comment sent: %+v", ancestors)
 		}
 		callers := context["immediate_callers"].([]any)
 		if len(callers) != 3 {
@@ -194,7 +197,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 			sites := caller["call_sites"].([]any)
 			switch caller["path"] {
 			case proxy.Path:
-				if caller["author_doc"] != proxy.Symbol.Decl.Doc || len(sites) != 2 || caller["callable_bindings"] == nil {
+				if caller["author_doc"] != nil || len(sites) != 2 || caller["callable_bindings"] == nil {
 					t.Fatalf("proxy purpose/registration/sites lost: %+v", caller)
 				}
 				encoded, _ := json.Marshal(caller["callable_bindings"])
@@ -202,7 +205,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 					t.Fatalf("native registration literal lost: %s", encoded)
 				}
 			case refresh.Path:
-				if caller["author_doc"] != refresh.Symbol.Decl.Doc || sites[0].(map[string]any)["resolution"] != "alternatives" {
+				if caller["author_doc"] != nil || sites[0].(map[string]any)["resolution"] != "alternatives" {
 					t.Fatalf("object identity or possible dispatch changed: %+v", caller)
 				}
 			case "another/server.go":
@@ -214,7 +217,8 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 			}
 		}
 		encoded, _ := json.Marshal(input)
-		for _, forbidden := range []string{"grandparent-marker", "grandparent-document-marker", "unexpanded-callee-marker", "unrelated-readme-marker", "symbol:proxy", "object:refresh"} {
+		for _, forbidden := range []string{"grandparent-marker", "grandparent-document-marker", "unexpanded-callee-marker", "unrelated-readme-marker", "symbol:proxy", "object:refresh",
+			directory.Directory.Doc, file.File.Doc, proxy.Symbol.Decl.Doc, refresh.Symbol.Decl.Doc} {
 			if strings.Contains(string(encoded), forbidden) {
 				t.Errorf("unrelated source or native identity leaked: %s", forbidden)
 			}

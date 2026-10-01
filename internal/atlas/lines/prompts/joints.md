@@ -40,8 +40,8 @@ Rules:
 
 - Every key from the request appears exactly once. Do not add, drop, rename
   or reorder keys, and do not add other fields.
-- The lines are written from the repository's own code and documentation.
-  `caller_signature` and `caller_doc` describe the enclosing `caller`, not
+- The lines are written from the repository's own code.
+  `caller_signature` describes the enclosing `caller`, not
   the `external` function it invokes. An outgoing command callback or helper
   need not have the same parameters or return type as the remote handler.
   A callback signature alone establishes neither a protocol match nor a

@@ -168,7 +168,15 @@ key selection to reach the report.
 File captions do not assign files to parts. Every map request sees code
 structure only (owner, 2026-09-25): paths, names, signatures, kinds and
 counts; no README or AGENTS text, docstring, package documentation or
-`author_context`.
+`author_context`. No other atlas request carries the authors' doc comments
+either (2026-10-01): symbol, type, file, directory, key, boundary, joint,
+question and Learn rows name declarations by path, name, kind and signature,
+never by a docstring, a package doc or a caller's doc; a directory with no
+README is said by what it holds. The places keep the quotes for the
+reader's fallback lines. casdoor's `ApiController` type row had carried
+77 KB of swagger comments in its owned declarations, past the categorizer's
+question envelope (`TestProviderBodiesCarryNoAuthorDocs`). README claims,
+orientation's seed rows and claims are unchanged.
 
 **The grouping unit is a whole file or a box.** Each target's role split
 (below) runs first; then one `atlas_zones` request per target
@@ -1447,13 +1455,13 @@ systems: only the walk ends above make calls one destination.
   `lines/prompts/types.md`. The atlas graph and saved reading input keep a
   type's declarations through exact native owner IDs, including cross-file
   methods and explicit Go interface method declarations; interface
-  declarations get no invented direct-call node. Type context keeps the
-  bounded author quotes, later sentences included; file/callable rows use
-  first sentences. The type table asks for a short explanation, an English
+  declarations get no invented direct-call node. Type context is the
+  declaration and its owned declarations with signatures, no author quote
+  (above). The type table asks for a short explanation, an English
   alias (below) and key flag; it cannot classify activations. Its explanation
   is prose: normalization keeps complete sentences and qualifications, never
   cutting at 240 characters; what the explanation covers is `types.md`'s. Bare
-  names without owned declarations or author documentation stay in the source
+  names without owned declarations or an author quote stay in the source
   index without an invented definition. A file's model hypothesis is not type
   evidence. Callable rows keep their own contract and memo identity. Concept
   explanations on maps project interpreted type subjects and seed the shared

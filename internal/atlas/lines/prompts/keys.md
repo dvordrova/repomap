@@ -2,7 +2,7 @@
 
 `part` and `purpose` name one part of a program; `declarations` lists
 everything the part holds. Each row is one of those declarations with its
-signature, its author's documentation and what the code observed: `entry`
+signature and what the code observed: `entry`
 marks a declaration outside requests, commands or messages start in, `reaches`
 is the kinds of other running systems it calls itself, `called_from` is the
 other parts that call it.

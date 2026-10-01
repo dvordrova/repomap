@@ -24,7 +24,7 @@ import (
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
-func TestCumulativePythonDocstringsReachTheirOwnBoundary(t *testing.T) {
+func TestCumulativePythonDocstringsStayOnTheirDeclarationsAndOutOfBoundaryRequests(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, filepath.Join(repositoryRoot(t), "testdata", "repositories", "python"))
 	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: repository, RepoPath: root, Revision: "HEAD"})
 	if err != nil {
@@ -80,9 +80,11 @@ func TestCumulativePythonDocstringsReachTheirOwnBoundary(t *testing.T) {
 	if len(seen) != len(want) {
 		t.Fatalf("native declarations missing: %v", seen)
 	}
+	// The place keeps its author's quote for the reader; the boundary
+	// request names its owner by code alone (owner, 2026-09-25).
 	owner := lines.BoundaryOwner("o1", boundaryOwner, []int{105}, nil)
-	if owner["author_doc"] != want[103] {
-		t.Fatalf("boundary request lost its original author description: %+v", owner)
+	if owner["author_doc"] != nil || owner["name"] != boundaryOwner.Symbol.Decl.Name {
+		t.Fatalf("boundary request carries an author description or lost its owner: %+v", owner)
 	}
 	// A function's author quote must not become its file's module description.
 	for _, place := range graph.Places {

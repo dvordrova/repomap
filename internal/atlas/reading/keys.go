@@ -107,9 +107,6 @@ func (r *reader) keyFields(targetID string, part *boxState, id string, title map
 	if decl.Signature != "" {
 		fields = append(fields, table.Field{Name: "signature", Value: decl.Signature})
 	}
-	if decl.Doc != "" {
-		fields = append(fields, table.Field{Name: "author_documentation", Value: decl.Doc})
-	}
 	entry, reaches := false, []string{}
 	for _, key := range sortedKeys(r.boundaries) {
 		state := r.boundaries[key]

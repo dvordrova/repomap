@@ -285,7 +285,10 @@ func duplicateHelpSymbol(t *testing.T, graph atlas.Graph, objectID string) (atla
 		graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 8, "help")
 }
 
-func TestTypeMemberDocumentationInvalidatesOnlyItsSelectionAndCaption(t *testing.T) {
+// A type member's signature is its type row's evidence: changing it asks
+// that row again and nothing else. A doc comment is no model input (owner,
+// 2026-09-25), so changing one asks nothing.
+func TestTypeMemberSignatureInvalidatesOnlyItsSelectionAndCaption(t *testing.T) {
 	graph := knowledgeGraph(t)
 	id := graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help")
 	var typePlace *atlas.Place
@@ -304,12 +307,19 @@ func TestTypeMemberDocumentationInvalidatesOnlyItsSelectionAndCaption(t *testing
 	opts.Through = lines.StageSymbols
 	first := readKnowledge(t, opts)
 	typePlace.Symbol.Members[0].Decl.Doc = "Renews validity for the supplied interval."
+	unasked := &tableProvider{}
+	opts = readOptions(t, graph, unasked, cache)
+	opts.Through = lines.StageSymbols
+	if same := readKnowledge(t, opts); unasked.calls != 0 || jevCalls(opts) != 0 || same[id].BasisID != first[id].BasisID {
+		t.Fatal("a changed doc comment asked a model again")
+	}
+	typePlace.Symbol.Members[0].Decl.Signature = "func(interval time.Duration)"
 	provider := &tableProvider{}
 	opts = readOptions(t, graph, provider, cache)
 	opts.Through = lines.StageSymbols
 	second := readKnowledge(t, opts)
 	if jevCalls(opts) != 1 || provider.calls != 1 || first[id].BasisID == second[id].BasisID {
-		t.Fatal("changed member documentation did not invalidate exactly the type row")
+		t.Fatal("changed member signature did not invalidate exactly the type row")
 	}
 	for key, record := range first {
 		if key != id && key != "selection:"+id && second[key].ID != record.ID {
@@ -389,15 +399,17 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 			t.Fatalf("knowledge changed when only its batch changed: %s", id)
 		}
 	}
-	// Edit only one leaf file's author documentation. The file's fake
-	// model wording stays identical: the symbol can reuse its answer, while
-	// its provenance must point to the newly interpreted file.
+	// Edit only one leaf file's declared signatures. The file's fake model
+	// wording stays identical: the symbol can reuse its answer, while its
+	// provenance must point to the newly interpreted file.
 	changedFile := graphPlaceID(t, graph, atlas.PlaceFile, "pkg/a/y.go", 0, "")
 	changedSymbol := graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help")
 	for i := range graph.Places {
 		place := &graph.Places[i]
 		if place.ID == changedFile {
-			place.File.Doc = "This file decodes responses."
+			for j := range place.File.Decls {
+				place.File.Decls[j].Signature += " error"
+			}
 		}
 	}
 	changed := &tableProvider{}
@@ -423,7 +435,9 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 	// When the parent's actual text changes, the symbol must be asked again.
 	for i := range graph.Places {
 		if graph.Places[i].ID == changedFile {
-			graph.Places[i].File.Doc = "This file decodes responses and validates their schema."
+			for j := range graph.Places[i].File.Decls {
+				graph.Places[i].File.Decls[j].Signature += ", bool"
+			}
 		}
 	}
 	newWording := &tableProvider{fileLineFor: map[string]string{"pkg/a/y.go": "Decodes and validates responses."}}

@@ -119,7 +119,7 @@ func Types() table.Definition {
 func TypeRow(place atlas.Place) table.Row {
 	decl := place.Symbol.Decl
 	fields := []table.Field{{Name: "path", Value: place.Path}, {Name: "name", Value: decl.Name},
-		{Name: "signature", Value: decl.Signature}, {Name: "author_doc", Value: decl.Doc}}
+		{Name: "signature", Value: decl.Signature}}
 	fields = append(fields, table.Field{Name: "owned_declarations", Value: ownedDeclarations(place.Symbol.Members)})
 	return table.Row{ID: place.ID, Fields: fields}
 }
@@ -128,7 +128,7 @@ func ownedDeclarations(declarations []atlas.TypeMember) []map[string]any {
 	members := make([]map[string]any, 0, len(declarations))
 	for _, member := range declarations {
 		entry := map[string]any{"path": member.Path, "line": member.Decl.LineNo,
-			"name": member.Decl.Name, "kind": member.Decl.Kind, "signature": member.Decl.Signature, "author_doc": member.Decl.Doc}
+			"name": member.Decl.Name, "kind": member.Decl.Kind, "signature": member.Decl.Signature}
 		if member.Decl.Aliases != "" {
 			entry["aliases"] = member.Decl.Aliases
 		}
@@ -162,9 +162,6 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	}
 	if decl.Signature != "" {
 		fields = append(fields, table.Field{Name: "signature", Value: cut(decl.Signature, maxSignature)})
-	}
-	if decl.Doc != "" {
-		fields = append(fields, table.Field{Name: "doc", Value: cut(decl.Doc, maxDoc)})
 	}
 	if fileLine != "" {
 		fields = append(fields, table.Field{Name: "file_hypothesis", Value: fileLine})
@@ -514,9 +511,6 @@ func addressCandidateLiterals(call atlas.SymbolCall) bool {
 func BoundaryRow(place atlas.Place, ownerRef string, addresses []BoundaryAddress, askAddress bool) table.Row {
 	facts := place.Boundary
 	fields := []table.Field{{Name: "path", Value: place.Path}, {Name: "line", Value: place.LineNo}, {Name: "caller", Value: facts.Caller}}
-	if ownerRef == "" && facts.CallerDoc != "" {
-		fields = append(fields, table.Field{Name: "caller_doc", Value: facts.CallerDoc})
-	}
 	fields = append(fields, table.Field{Name: "external", Value: facts.External})
 	// An entry shows the words its registration wrote, to be named by; which
 	// of them is a verb or a path is the model's reading, not a field.
@@ -568,7 +562,7 @@ func BoundaryOwner(ref string, owner atlas.Place, rowLines []int, sourceContext 
 		calls = append(calls, evidence.CallWithOrigins(call))
 	}
 	value := map[string]any{"ref": ref, "path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
-		"signature": decl.Signature, "author_doc": decl.Doc, "call_span": OwnerCallSpan, "calls": calls,
+		"signature": decl.Signature, "call_span": OwnerCallSpan, "calls": calls,
 		"callable_bindings": evidence.Bindings(owner.Symbol.Bindings), "owned_declarations": ownedDeclarations(owner.Symbol.Members)}
 	for _, field := range evidence.Fields() {
 		value[field.Name] = field.Value
@@ -618,16 +612,15 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 		file = places[owner.Parent]
 	}
 	if file.File != nil {
-		context["file"] = map[string]any{"path": file.Path, "author_doc": file.File.Doc}
+		context["file"] = map[string]any{"path": file.Path}
 		var ancestors []map[string]any
 		for parent := file.Parent; parent != ""; {
 			directory, found := places[parent]
 			if !found || directory.Directory == nil {
 				break
 			}
-			if directory.Directory.Doc != "" || directory.Directory.Readme != "" {
-				ancestors = append(ancestors, map[string]any{"path": directory.Path,
-					"author_doc": directory.Directory.Doc, "readme_claim": directory.Directory.Readme})
+			if directory.Directory.Readme != "" {
+				ancestors = append(ancestors, map[string]any{"path": directory.Path, "readme_claim": directory.Directory.Readme})
 			}
 			parent = directory.Parent
 		}
@@ -649,7 +642,6 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 			if row == nil {
 				row = map[string]any{"name": caller.Name, "signature": caller.Signature, "path": caller.Path}
 				if declaration, found := declarations[id]; found && declaration.Symbol != nil {
-					row["author_doc"] = declaration.Symbol.Decl.Doc
 					row["declaration_line"] = declaration.LineNo
 					evidence := EvidenceCatalog{OmitDefaults: true}
 					row["callable_bindings"] = evidence.Bindings(declaration.Symbol.Bindings)
@@ -890,9 +882,6 @@ func sideValue(side BoundarySide) map[string]any {
 	}
 	if side.Signature != "" {
 		value["caller_signature"] = side.Signature
-	}
-	if side.CallerDoc != "" {
-		value["caller_doc"] = side.CallerDoc
 	}
 	if side.Method != "" {
 		value["method"] = side.Method
