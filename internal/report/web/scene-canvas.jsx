@@ -33,9 +33,13 @@ const sameSet=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
 function cardWords(node,{titleFont='700 17px system-ui',titleLine=21.25,pad=14,room=0,description=''}={}){
   const width=node.rect.width/node.text-2*pad-room,height=node.rect.height/node.text-2*pad;
   if(width<=8||height<=8)return {title:[],lines:[]};
-  const title=wrapText(node.title,width,titleFont,measure);
+  // A title taller than the card keeps the lines that stand, the last cut
+  // after a whole word with "…", the whole title on hover.
+  let title=wrapText(node.title,width,titleFont,measure),cut=false;
+  const fit=Math.max(1,Math.floor(height/titleLine));
+  if(title.length>fit){title=descriptionLines(node.title,width,fit,measure,titleFont);cut=true;}
   const most=Math.max(0,Math.floor((height-title.length*titleLine-6)/18));
-  return {title,lines:description?descriptionLines(description,width,Math.min(most,4),measure,'13px system-ui'):[]};
+  return {title,cut,lines:description&&!cut?descriptionLines(description,width,Math.min(most,4),measure,'13px system-ui'):[]};
 }
 function Mark({icon,className='',label='',kind=''}){
   if(!icon)return <span className={`scene-dot ${className}`} aria-hidden={label?undefined:'true'}/>;
@@ -58,7 +62,7 @@ function CardNode({data}){
     {node.ghosts&&<svg className="scene-ghosts" width={node.rect.width/node.text} height={node.rect.height/node.text} aria-hidden="true">
       {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={9*r.width/node.text/260}/>)}</svg>}
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
-    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>
+    <div className="scene-words"><strong data-box-title={node.id} title={words.cut?node.title:undefined}>{words.title.join('\n')}</strong>
     {words.lines.length>0&&<div className="flow-description flow-description-lines" title={item?.summary||undefined}>{words.lines.join('\n')}</div>}</div>
   </Scaled></>;
 }
@@ -132,7 +136,7 @@ function DeepNode({data}){
   if(!drawn)return <CardNode data={data}/>;
   const {grid,box}=drawn,s=node.rect.width/box.width;
   return <>{handles}<div className={`flow-part flow-part-deep scene-deep ${laneClass(node.lane)}`} style={{width:box.width,height:box.height,transform:`scale(${s})`}}>
-    <strong data-box-title={node.id} style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{node.title}</strong>
+    <strong style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{node.title}</strong>
     <PartSymbols symbols={item.symbols} calls={item.symbolCalls} width={box.width} height={box.height} grid={grid} member={member}/>
   </div></>;
 }
