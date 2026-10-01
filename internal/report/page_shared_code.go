@@ -30,6 +30,11 @@ type sharedCode struct {
 	// unreachable marks the target-qualified objects their program's
 	// adapter proved it never runs (ProgramIndex unreachable).
 	unreachable map[string]bool
+	// into are, by target, its program's calls by the declaration they
+	// call (callsIntoOf), built once per program: beets' render had
+	// scanned each sharing program's every edge once per member of every
+	// part (callersElsewhere, 30 of its 64 s).
+	into map[string]map[string][]groupindex.StructuralEdge
 }
 
 type sharedHolder struct {
@@ -40,7 +45,8 @@ func (builder *pageBuilder) sharedJoin() *sharedCode {
 	if builder.shared != nil {
 		return builder.shared
 	}
-	join := &sharedCode{holders: map[string][]sharedHolder{}, keys: map[string]string{}, unreachable: map[string]bool{}, held: map[string]map[string]bool{}}
+	join := &sharedCode{holders: map[string][]sharedHolder{}, keys: map[string]string{}, unreachable: map[string]bool{}, held: map[string]map[string]bool{},
+		into: map[string]map[string][]groupindex.StructuralEdge{}}
 	builder.shared = join
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return join
@@ -155,18 +161,7 @@ func (builder *pageBuilder) callersElsewhere(targetID, subjectID string) []calle
 		if holder.targetID == targetID || join.unreachable[subjectKey(holder.targetID, holder.objectID)] {
 			continue
 		}
-		index := builder.graphIndex(holder.targetID)
-		if index == nil {
-			continue
-		}
-		for _, edge := range index.StructuralEdges {
-			// The declaration calling itself is its own call, read once in
-			// its own program (othello.ai/move's two-argument form calls its
-			// three-argument form: the app program had listed it again).
-			if edge.Role != groupindex.EdgeRelationTarget || edge.ToSubjectID != holder.objectID || edge.FromSubjectID == holder.objectID || !callsInto(edge.RelationKind) ||
-				join.unreachable[subjectKey(holder.targetID, edge.FromSubjectID)] || !builder.holdsSubject(holder.targetID, edge.FromSubjectID) {
-				continue
-			}
+		for _, edge := range builder.callsIntoOf(holder.targetID)[holder.objectID] {
 			if slices.ContainsFunc(result, func(listed callerElsewhere) bool {
 				return listed.targetID == holder.targetID && listed.caller == edge.FromSubjectID
 			}) {
@@ -180,6 +175,31 @@ func (builder *pageBuilder) callersElsewhere(targetID, subjectID string) []calle
 
 func callsInto(kind programindex.RelationKind) bool {
 	return kind == programindex.RelationCalls || kind == programindex.RelationExecutes
+}
+
+// callsIntoOf are a program's calls by the declaration they call, each
+// list in the order its index holds them: a call or execution its own
+// code makes, never a declaration's call of itself (othello.ai/move's
+// two-argument form calling its three-argument form had been listed again
+// under the app program), a caller the program never runs or a caller it
+// does not hold.
+func (builder *pageBuilder) callsIntoOf(targetID string) map[string][]groupindex.StructuralEdge {
+	join := builder.sharedJoin()
+	if calls, built := join.into[targetID]; built {
+		return calls
+	}
+	calls := map[string][]groupindex.StructuralEdge{}
+	if index := builder.graphIndex(targetID); index != nil {
+		for _, edge := range index.StructuralEdges {
+			if edge.Role != groupindex.EdgeRelationTarget || !callsInto(edge.RelationKind) || edge.FromSubjectID == edge.ToSubjectID ||
+				join.unreachable[subjectKey(targetID, edge.FromSubjectID)] || !builder.holdsSubject(targetID, edge.FromSubjectID) {
+				continue
+			}
+			calls[edge.ToSubjectID] = append(calls[edge.ToSubjectID], edge)
+		}
+	}
+	join.into[targetID] = calls
+	return calls
 }
 
 // own says whether a declaration is its program's own code: no other
@@ -201,23 +221,17 @@ func (builder *pageBuilder) ownPath(targetID, subjectID string) []string {
 	if subjectID == "" || join.own(targetID, subjectID) {
 		return []string{subjectID}
 	}
-	index := builder.graphIndex(targetID)
-	if index == nil {
+	if builder.graphIndex(targetID) == nil {
 		return nil
 	}
-	callers := map[string][]string{}
-	for _, edge := range index.StructuralEdges {
-		if edge.Role == groupindex.EdgeRelationTarget && callsInto(edge.RelationKind) && edge.FromSubjectID != edge.ToSubjectID &&
-			!join.unreachable[subjectKey(targetID, edge.FromSubjectID)] && builder.holdsSubject(targetID, edge.FromSubjectID) {
-			callers[edge.ToSubjectID] = append(callers[edge.ToSubjectID], edge.FromSubjectID)
-		}
-	}
+	calls := builder.callsIntoOf(targetID)
 	next := map[string]string{subjectID: ""}
 	queue := []string{subjectID}
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		for _, caller := range callers[current] {
+		for _, edge := range calls[current] {
+			caller := edge.FromSubjectID
 			if _, seen := next[caller]; seen {
 				continue
 			}

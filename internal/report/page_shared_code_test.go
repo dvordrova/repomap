@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -77,5 +78,48 @@ func TestACallerIsListedOnlyUnderTheProgramsHoldingIt(t *testing.T) {
 	}
 	if len(join.holders[join.keys[subjectKey("t1", "n2")]]) != 1 {
 		t.Fatalf("FreqtradeBot.process has holders %+v, want freqtrade alone", join.holders[join.keys[subjectKey("t1", "n2")]])
+	}
+}
+
+// Finding a shared declaration's callers in the other programs costs each
+// program's calls into it, not all of that program's calls: beets' render
+// had scanned every sharing program's every edge once per member of every
+// part (quadratic in its declarations, 30 of its render's 64 s). Thirty
+// thousand functions shared by four programs, each calling the next, are
+// read for all their callers in well under the bound; the quadratic scan
+// took minutes.
+func TestCallersElsewhereScaleWithTheCallsIntoADeclaration(t *testing.T) {
+	const functions, programs = 30000, 4
+	objects := make([]programindex.Object, functions)
+	edges := make([]groupindex.StructuralEdge, 0, functions)
+	for i := range objects {
+		objects[i] = programindex.Object{ID: fmt.Sprintf("n%d", i), Kind: programindex.ObjectFunction, Name: fmt.Sprintf("f%d", i),
+			Location: &programindex.Location{Path: fmt.Sprintf("pkg/f%d.py", i/50), Line: i%50 + 1, Column: 1}}
+		if i > 0 {
+			edges = append(edges, groupindex.StructuralEdge{FromSubjectID: objects[i-1].ID, ToSubjectID: objects[i].ID, Role: groupindex.EdgeRelationTarget,
+				RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact})
+		}
+	}
+	builder := &pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{}}, byProgram: map[string]*pageSection{}, subjects: map[string]subjectRef{}}
+	for p := range programs {
+		id := fmt.Sprintf("t%d", p+1)
+		builder.data.ProgramPortfolio.Entries = append(builder.data.ProgramPortfolio.Entries, programindex.Index{Target: programindex.Target{ID: id}, Objects: objects})
+		builder.indexes = append(builder.indexes, groupindex.Index{Target: programindex.Target{ID: id}, StructuralEdges: edges})
+		section := &pageSection{ID: id, programTargetID: id, ShortLabel: id}
+		builder.sections = append(builder.sections, section)
+		builder.byProgram[id] = section
+	}
+	started := time.Now()
+	listed := 0
+	for _, object := range objects {
+		listed += len(builder.callersElsewhere("t1", object.ID))
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("callers elsewhere of %d shared functions took %s", functions, elapsed)
+	}
+	// Every function but the first is called by its predecessor in each of
+	// the three other programs.
+	if listed != (functions-1)*(programs-1) {
+		t.Fatalf("listed %d callers elsewhere, want %d", listed, (functions-1)*(programs-1))
 	}
 }
