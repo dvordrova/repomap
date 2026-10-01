@@ -1299,8 +1299,9 @@ the canvas above stays the default.
   column (one meeting that edge, one bending beside the box), shown once
   the box's title reads and the stack fits beside it. A box's words fade
   out below their readable size (titles about 11px, an input's name and a
-  description 9.5px) and the pointer on such a box names it; a chip names
-  its system at any size. `store.mjs` holds the level, the pointer and the
+  description 9.5px, a chip's or a bucket's name 11px, one rule for all
+  words) and the pointer on such a box names it, as the keyboard's focus
+  names a chip, in one line. `store.mjs` holds the level, the pointer and the
   choice (useSyncExternalStore); the camera has its own store.
 - The node tests `model.test.mjs`, `scene.test.mjs` and `store.test.mjs`
   check every invariant at every level of the seeded synthetic graphs and
