@@ -1179,10 +1179,11 @@ promoted into an external communication.
 ## Scene model
 
 The canvas is rewritten as four pure stages (the accepted plan of
-2026-10-01), `internal/report/web/scene-canvas.jsx`. It is the default
-since every level held its invariants on every report (21bb81f2: twelve
-runs, 151 levels; the beets whole map's lane room excepted as data);
-`?scene=0` draws the old canvas until it is deleted.
+2026-10-01), `internal/report/web/scene-canvas.jsx`. It is the page's
+one canvas since every level held its invariants on every report
+(21bb81f2: twelve runs, 151 levels; the beets whole map's lane room
+excepted as data); the old canvas, its grid, wrapping, size floors and
+post-layout edits are deleted.
 
 - `model.mjs` `buildModel(page)` builds the display graph from the page's
   data and the saved scene: programs, areas, parts and the note keep the page's containment; a

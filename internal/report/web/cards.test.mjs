@@ -1,7 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines} from './cards.mjs';
-import {semanticLayout} from './semantic.mjs';
 
 // canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
 const column=260-2*1.5-2*16;
@@ -168,7 +167,7 @@ test('the input catalogue lists the kinds the reading column names',()=>{
   assert.deepEqual(groupInputs([{id:'one',activation:'request'}]).map(g=>g.kind),['request'],'absent types are not invented');
 });
 
-test('one root input collection retains every original input and implementation edge',async()=>{
+test('one root input collection retains every original input',()=>{
   const kinds=['command','request','interaction','scheduled','continuous'];
   const inputIDs=kinds.map((_,i)=>`input${i}`);
   const records=[
@@ -192,14 +191,6 @@ test('one root input collection retains every original input and implementation 
   assert.ok(collection.overviewHeightAtWidth(collection.overviewMinWidth)>80,'the whole type list has reserved height');
   assert.equal(cards.find(n=>n.id==='out1').subtitle.replace(/\n/g,''),'https://queue.example/work');
   assert.equal(cards.find(n=>n.id==='failed').description,'No compiler');
-  const relations=inputIDs.map(id=>({from:id,to:'part',label:'implemented in',fromSource:id+':12'}));
-  const {layout}=await semanticLayout(cards,relations,[{id:'component',nodes:['part']},{id:'inputs',nodes:inputIDs}],1200,700);
-  const placed=new Map(layout.nodes.map(n=>[n.id,n]));
-  assert.equal(placed.get('inputs').parentId,undefined,'the input collection is outside the target');
-  for(const id of inputIDs)assert.equal(placed.get(id).parentId,'inputs');
-  assert.equal(placed.get('part').parentId,'component');
-  assert.equal(placed.get('unbound').parentId,undefined,'an unowned input remains visible');
-  assert.deepEqual(layout.edges.flatMap(e=>e.relations),relations,'original endpoints and evidence are preserved');
 });
 
 // "Request" stood on 97 of Redis's 98 input tiles and "Background
