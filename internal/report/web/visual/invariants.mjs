@@ -53,6 +53,7 @@ export const invariants=[
   ['no-labels','no digit, plaque or kind label on the canvas'],
   ['text','no clipped or too small text on the canvas (chip names apart)'],
   ['chip-text','an outside chip\'s name reads at 11 px, or fades and pointing or focus names it'],
+  ['home-names','every program\'s name reads on the whole map at rest: shown whole, at 11 px or more'],
   ['outside','B′ on the whole map: in each Outside frame shared systems first and named, then one bucket per part calling two or more systems of its own, then the rest, no system twice; casdoor at most 44 top-level items'],
   ['page-errors','the page raises no error'],
 ];
@@ -275,6 +276,20 @@ export function invariantKit(){
         out.push({id,px,text:el.textContent.trim().slice(0,30)});
       }
       return out;
+    },
+    // Each program on the whole map by its name as drawn at rest: present,
+    // not faded, its size on the screen.
+    programNames(){
+      const c=canvas(),nodes=geometry()||[];
+      return nodes.filter(n=>!n.parentId&&['component','program'].includes(n.branch)).map(n=>{
+        const q=CSS.escape(n.id),held=nodeEl(n.id)?.getBoundingClientRect();
+        const el=root().querySelector(`[data-box-title="${q}"],[data-frame-title="${q}"] strong,[data-component-overview="${q}"] strong,[data-summary-area="${q}"] strong`);
+        if(!el)return {id:n.id,title:'',px:0,opacity:0,inSight:!!held&&meets(box(held),c,4)};
+        let opacity=1;for(let at=el;at&&at!==root();at=at.parentElement)opacity*=parseFloat(getComputedStyle(at).opacity);
+        const r=el.getBoundingClientRect(),px=parseFloat(getComputedStyle(el).fontSize)*(el.offsetHeight?r.height/el.offsetHeight:1);
+        const whole=el.scrollWidth<=el.clientWidth+1||getComputedStyle(el).overflow==='visible';
+        return {id:n.id,title:el.textContent.replace(/\s+/g,' ').trim(),px,opacity,whole,shown:shown(el),inSight:meets(box(r.width?r:(held||r)),c,2)};
+      }).filter(p=>p.inSight);
     },
     // Ports and markers in sight, by their screen size.
     ports(){

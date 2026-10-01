@@ -22,12 +22,12 @@ const title=flag('--title')||'Canvas invariants',notRun=flag('--not-run').split(
 const read=async from=>{const out=[];for(const name of (await readdir(from)).filter(n=>/\.(old|scene)\.json$/.test(n)).sort())out.push(JSON.parse(await readFile(join(from,name),'utf8')));return out;};
 const runs=await read(dir);
 const baseHead=flag('--head');
-for(const run of runs){run.head||=baseHead;for(const level of run.levels)for(const cell of Object.values(level.invariants))cell.head=run.head;}
+for(const run of runs){run.head||=baseHead;for(const level of run.levels)for(const cell of Object.values(level.invariants))cell.head||=run.head;}
 // A later pass laid over the table.
 const overlayDir=flag('--overlay'),overlayCells=flag('--overlay-cells').split(',').map(t=>t.trim()).filter(Boolean);
 if(overlayDir)for(const later of await read(overlayDir)){
   later.head||='';
-  for(const level of later.levels)for(const cell of Object.values(level.invariants))cell.head=later.head;
+  for(const level of later.levels)for(const cell of Object.values(level.invariants))cell.head||=later.head;
   const base=runs.find(run=>run.repo===later.repo&&run.path===later.path);
   if(!base){runs.push(later);continue;}
   base.overlays=(base.overlays||0);

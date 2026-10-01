@@ -124,6 +124,10 @@ for(const target of targets)for(const path of paths){
           add('chip-text',pointed&&focused&&named,`${chip.id} "${chip.title}" at ${chip.px.toFixed(1)}px: ${[!pointed&&'pointing names it not',!focused&&(chip.focusable?'focus names it not':'it takes no focus'),!named&&`aria-label "${chip.aria}"`].filter(Boolean).join(', ')}`);
         }
         await park(page);
+        // Every program's name reads on the whole map at rest.
+        if(level.kind==='home')for(const name of await page.evaluate(()=>window.__inv.programNames()))
+          add('home-names',!!name.title&&name.shown&&name.opacity>=.99&&name.px>=11-.05&&name.whole!==false,
+            `${name.id} "${name.title}": ${!name.title?'no name drawn':[!name.shown&&'not shown',name.opacity<.99&&`opacity ${name.opacity.toFixed(2)}`,name.px<11-.05&&`${name.px.toFixed(1)}px`,name.whole===false&&'cut'].filter(Boolean).join(', ')}`);
         // B′ on the whole map; the ~40 bound only where it was measured
         // (casdoor, PLAN B; model.test.mjs allows 44).
         if(level.kind==='home')for(const frame of await page.evaluate(cap=>window.__inv.outside(cap),/^casdoor/.test(target.repo)?44:0))
