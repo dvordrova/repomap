@@ -379,7 +379,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(initializing||event.buttons)return;
     if(onCard(event))return;
     const scene=sceneOf(store.getState()),target=hitTest(scene,worldAt(event),camera.get().zoom,shownEdge);
-    store.dispatch({type:'point',target:target?.type==='edge'?{...target,at:undefined}:target});
+    // While a card is open or kept, what is being read stays: the way to
+    // the card crosses boxes and empty canvas without changing the emphasis.
+    const reading=!!look.key||store.getState().pinned.length>0;
+    if(!reading||target?.type==='edge')store.dispatch({type:'point',target:target?.type==='edge'?{...target,at:undefined}:target});
     if(target?.type==='edge'){
       const key=`edge:${target.id}:${nearStart(target.edge,target.at)?'back':'on'}`;
       handleRect={left:event.clientX-12,top:event.clientY-12,right:event.clientX+12,bottom:event.clientY+12,width:24,height:24};
