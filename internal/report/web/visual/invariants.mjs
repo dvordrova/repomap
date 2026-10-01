@@ -53,7 +53,7 @@ export const invariants=[
   ['no-labels','no digit, plaque or kind label on the canvas'],
   ['text','no clipped or too small text on the canvas (chip names apart)'],
   ['chip-text','an outside chip\'s name reads at 11 px, or fades and pointing or focus names it'],
-  ['outside-40','the whole map Outside holds at most 40 top-level items'],
+  ['outside','B′ on the whole map: in each Outside frame shared systems first and named, then one bucket per part calling two or more systems of its own, then the rest, no system twice; casdoor at most 44 top-level items'],
   ['page-errors','the page raises no error'],
 ];
 
@@ -302,10 +302,37 @@ export function invariantKit(){
       }
       return out;
     },
-    // The whole map's Outside frames, by their top-level items.
-    outside(){
-      const nodes=geometry()||[];
-      return nodes.filter(n=>!n.parentId&&n.branch==='outside').map(n=>({id:n.id,items:nodes.filter(m=>m.parentId===n.id).length}));
+    // The whole map's Outside frames by B′ (PLAN B, model.test.mjs): its
+    // top-level items in reading order are the shared systems (two calling
+    // parts or more, by the saved scene), named, then a bucket per part
+    // calling two or more systems of its own, then the rest; each system
+    // stands once. `cap` bounds the top-level items (casdoor's ~40).
+    outside(cap=0){
+      const nodes=geometry()||[],out=[];
+      let saved={};try{saved=JSON.parse(document.getElementById('rm-scene')?.textContent||'{}').systems||{};}catch{}
+      const explorer=new Map([...document.querySelectorAll('[data-map-explorer] [data-node]')].map(n=>[n.id,(n.dataset.children||'').split(/\s+/).filter(Boolean)]));
+      const records=new Map((map().pageData?.records||[]).map(r=>[r.id,r.children||[]]));
+      const callersOf=id=>saved[id]?.parts||[];
+      for(const frame of nodes.filter(n=>!n.parentId&&n.branch==='outside')){
+        const why=[];
+        const systems=(explorer.get(frame.id)||records.get(frame.id)||[]).filter(id=>saved[id]);
+        const items=nodes.filter(n=>n.parentId===frame.id).sort((a,b)=>Math.round(a.y)-Math.round(b.y)||a.x-b.x);
+        const own=new Map();for(const id of systems){const parts=callersOf(id);if(parts.length===1)own.set(parts[0],[...(own.get(parts[0])||[]),id]);}
+        const bucketOf=item=>item.branch==='bucket'||item.id.startsWith(`${frame.id}~`);
+        const rank=item=>bucketOf(item)?1:callersOf(item.id).length>=2?0:2;
+        const ranks=items.map(rank);
+        if(ranks.some((r,i)=>i&&r<ranks[i-1]))why.push(`order ${ranks.join('')} (0 shared, 1 bucket, 2 rest)`);
+        for(const item of items.filter(item=>rank(item)===0)){const name=root().querySelector(`.react-flow__node[data-id="${CSS.escape(item.id)}"] .flow-chip-name`);if(!name||!name.textContent.trim())why.push(`shared ${item.id} unnamed`);}
+        const buckets=new Set(items.filter(bucketOf).map(item=>item.id.split('~').pop()));
+        for(const part of buckets)if((own.get(part)||[]).length<2)why.push(`bucket of ${part} holds ${(own.get(part)||[]).length} own systems`);
+        for(const [part,list] of own)if(list.length>=2&&!buckets.has(part))why.push(`${part} calls ${list.length} systems of its own and has no bucket`);
+        const top=items.filter(item=>!bucketOf(item)).map(item=>item.id),twice=top.filter(id=>buckets.has(callersOf(id)[0])&&callersOf(id).length===1);
+        if(twice.length)why.push(`${twice.length} systems outside their part's bucket (${twice.slice(0,3).join(', ')})`);
+        if(new Set(top).size!==top.length)why.push('a system twice at the top');
+        if(cap&&items.length>cap)why.push(`${items.length} top-level items`);
+        out.push({id:frame.id,items:items.length,systems:systems.length,ok:!why.length,why:why.join('; ')});
+      }
+      return out;
     },
     // Paint order: no dark arrow under a grey one it meets.
     darkOnTop(){

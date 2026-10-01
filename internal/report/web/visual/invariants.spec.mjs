@@ -122,7 +122,10 @@ for(const target of targets)for(const path of paths){
           add('chip-text',pointed&&focused&&named,`${chip.id} "${chip.title}" at ${chip.px.toFixed(1)}px: ${[!pointed&&'pointing names it not',!focused&&(chip.focusable?'focus names it not':'it takes no focus'),!named&&`aria-label "${chip.aria}"`].filter(Boolean).join(', ')}`);
         }
         await park(page);
-        if(level.kind==='home')for(const frame of await page.evaluate(()=>window.__inv.outside()))add('outside-40',frame.items<=40,`${frame.id}: ${frame.items} items`);
+        // B′ on the whole map; the ~40 bound only where it was measured
+        // (casdoor, PLAN B; model.test.mjs allows 44).
+        if(level.kind==='home')for(const frame of await page.evaluate(cap=>window.__inv.outside(cap),/^casdoor/.test(target.repo)?44:0))
+          add('outside',frame.ok,`${frame.id}: ${frame.why} (${frame.items} items, ${frame.systems} systems)`);
         // Pointed at, every port and marker draws its lines: they are
         // arrows too, checked as the ones at rest.
         const restPaths=await page.evaluate(()=>window.__inv.paths());
