@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — beets: test-only executables are test code; the glossary runaway (data 2)
+
+- **e386aac7, e1c4a221:** pytest's INI configurations (pytest.ini, tox.ini,
+  setup.cfg [tool:pytest]) select tests; a guard or shebang script in a
+  test directory no longer blocks it; target discovery offers no test file
+  as a hypothesis, required file or native row. beets (clean HEAD, exit 0):
+  133 test files now test code; programs 7 → 5 (test.testall and
+  test.rsrc.convert_stub gone). Fixture tests/run_tests.py.
+- **Glossary:** the failed names request held 467 prose sources (15.1K
+  input tokens, 68.9 KB); 64 accepted names windows answered 0.2–5.2K
+  output tokens (≤ 42.6 per source). It looped (`… plugin` repeated) to the
+  32,768 allowance, and the existing lossless split recovered it in the
+  same run (2 partitions, 306 names). No envelope was exceeded; two reruns
+  had no failure. Lowering the allowance to ~16K would halve a runaway's
+  cost: a request change, not made.
+
 ## 2026-10-01 — No author doc comments in model requests; casdoor's ApiController fits
 
 - **Diagnosis:** casdoor's atlas_symbols "554 given" rows were 2 refused
