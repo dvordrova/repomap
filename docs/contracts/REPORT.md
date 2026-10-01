@@ -1268,8 +1268,11 @@ the canvas above stays the default.
   drawing when entered) and loose parts, of both directions the one fitting
   the canvas larger, a link to another program ending on a port of the
   program's border (one port a way per box, naming its programs on hover);
-  the whole map its programs (cards of their summary), Inputs frames (their kinds' marks) and
-  Outside frames. No wrapping, grid, size floor or edit after layout.
+  the whole map its programs (cards of their name and role), Inputs frames (their kinds' marks) and
+  Outside frames. A card's title, role and description each stand whole
+  or are left out, never cut mid-text (a program's purpose in two lines at
+  most, a part's or an area's description in four; the rest reads in the
+  column), its size and its drawing by the same rule. No wrapping, grid, size floor or edit after layout.
   Arrowless collections (chips, inputs' names) are packed in rows. A graph
   ELK throws on is laid out again with ELK's own placement.
 - The whole map at rest (owner, 2026-10-01, on the skeptic's verdict):
