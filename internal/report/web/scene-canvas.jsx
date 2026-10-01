@@ -119,15 +119,18 @@ function TileNode({data}){
   const {node}=data;
   return <>{handles}<Scaled node={node} className={`scene-tile ${data.lit?'flow-lit':''}`} data={{'data-input-id':node.id}}><Mark icon={kindIcon(node.inputKind)} kind={node.inputKind}/><span>{node.title}</span></Scaled></>;
 }
+// A chip and a bucket take the keyboard's focus: focused, a chip whose name
+// does not read is named, as pointed at; Enter reads it.
+const focusable=data=>data.keys?{tabIndex:0,'aria-label':data.node.title,...data.keys}:undefined;
 function ChipNode({data}){
   const {node}=data;
-  return <>{handles}<Scaled node={node} className={`flow-chip scene-chip ${data.item?.unestablished?'flow-chip-unestablished':''}`}>
+  return <>{handles}<Scaled node={node} className={`flow-chip scene-chip ${data.item?.unestablished?'flow-chip-unestablished':''}`} data={focusable(data)}>
     <Mark icon={systemIcons[node.systemKind]}/><span className="flow-chip-name" title={node.title}>{node.title}</span></Scaled></>;
 }
 // A closed bucket: its part's name over its systems' marks, never blank.
 function BucketNode({data}){
   const {node}=data;
-  return <>{handles}<Scaled node={node} className="flow-chip scene-bucket">
+  return <>{handles}<Scaled node={node} className="flow-chip scene-bucket" data={focusable(data)}>
     <span className="flow-chip-name" title={node.title}>{node.title}</span>
     <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></Scaled></>;
 }
@@ -479,14 +482,21 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(levelKey(level)!==before&&level.length)callbacks.follow?.(level.at(-1));
   }
 
+  // The keyboard on a chip or a bucket: focus points at it, Enter reads it.
+  function keysOf(node){
+    const target={type:'box',id:node.id,node};
+    return {onFocus:()=>store.dispatch({type:'point',target}),onBlur:()=>store.dispatch({type:'point',target:null}),
+      onKeyDown:event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();clickAt(target,event);}};
+  }
   function Overlay({scene,emphasis}){
     const v=useSyncExternalStore(camera.subscribe,camera.get);
     const items=project(scene,v);
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const pointer=state.pointer;
     const tip=pointer&&(pointer.type==='marker'||pointer.type==='port')?items.find(item=>item.id===pointer.id):null;
-    // A chip or a bucket pointed at says who calls it, or what it holds;
-    // any other box whose words do not read yet is named.
+    // A chip or a bucket pointed at says who calls it, or what it holds, a
+    // chip whose name does not read naming it alone; any other box whose
+    // words do not read yet is named.
     const box=pointer?.type==='box'&&pointer.node&&(['chip','bucket'].includes(pointer.node.display)||pointer.node.text*17*v.zoom<11)?pointer.node:null;
     // The pointer reaches these through the one hit test; the keyboard
     // reaches them as buttons, Enter doing what a click does.
@@ -511,6 +521,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function BoxTip({node,camera:v}){
     const item=model.nodes.get(node.id)?.item;
     let head=node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title,names=[],about='';
+    // A chip's name reads at eleven pixels, as every word (scene.css).
+    const faded=node.text*13*v.zoom<11;
+    if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x+6,top:Math.max(4,node.rect.y*v.zoom+v.y)}}><b>{head}</b></div>;
     if(node.display==='chip')names=[...new Set([...(model.callers.get(node.id)||[])].map(part=>model.nodes.get(part)?.name||''))].map(name=>`← ${name}`);
     else if(node.display==='bucket')names=model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||'');
     else about=item?.role||item?.summary||'';
@@ -589,7 +602,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         style:{width:node.rect.width,height:node.rect.height,'--scene-text':node.text},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
         className:`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
-        data:{node,item,groups,lit:lit.has(node.id),
+        data:{node,item,groups,lit:lit.has(node.id),keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
     }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen]);

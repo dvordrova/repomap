@@ -67,9 +67,13 @@
    size; the pointer on the box names it meanwhile (scene-canvas.jsx). */
 .scene-root .react-flow__node [data-box-title]{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 2),1)}
 .scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 8.5) * 2),1)}
-/* An input's name and a kind's title fade; a chip's name never does: the
-   whole map names its systems at any size (PLAN B: named chips). */
+/* An input's name and a kind's title fade; so does a chip's or a bucket's
+   name below eleven pixels, as every word (owner, 2026-10-01: one rule for
+   all text), the pointer or the keyboard's focus naming it. */
 .scene-root .react-flow__node .scene-tile>span,.scene-root .react-flow__node .scene-group-title>strong{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 12.5 - 9) * 2),1)}
+.scene-root .react-flow__node .flow-chip-name{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 10.5) * 2),1)}
+.scene-root .scene-chip:focus-visible,.scene-root .scene-bucket:focus-visible{outline:2px solid #243044;outline-offset:2px}
+.scene-tip.scene-tip-name{white-space:nowrap;max-width:none}
 .scene-root .react-flow__node .scene-deep [data-box-title]{opacity:1}
 .scene-box-tip{white-space:normal;max-width:280px}
 .scene-box-tip>span{overflow:visible;text-overflow:clip}
