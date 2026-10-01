@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -153,6 +154,16 @@ func TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidat
 				return strings.Contains(target.Selector, "tests/run_tests")
 			}) {
 				t.Fatal("discovery no longer finds the test runner's guard: the case checks nothing")
+			}
+			// Nor is its file a hypothesis the portfolio classifies.
+			offered := func(candidates []analysistarget.FileCandidate) bool {
+				return slices.ContainsFunc(candidates, func(candidate analysistarget.FileCandidate) bool {
+					info, ok := repository.Info(candidate.FileRef)
+					return ok && info.Entry.Path == "tests/run_tests.py"
+				})
+			}
+			if hypotheses := discovery.adapters[0].Candidates; !offered(hypotheses) || offered(withoutRepositoryTestCandidates(discovery, hypotheses)) {
+				t.Fatal("the test runner's file is offered as a target hypothesis")
 			}
 			if !executable {
 				firstKey = selected.Target.Key

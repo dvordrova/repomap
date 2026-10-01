@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -320,6 +321,10 @@ func selectRepositoryTargetPlanForRun(
 	// same rule keeps the file hypotheses, the exact representatives and
 	// the native rows consistent for the one portfolio request.
 	merged = withoutRepositoryToolingCandidates(options.Repository, merged)
+	// A test-only executable (a script its language's test facts read as
+	// test code) is no target either: not offered as a file hypothesis, nor
+	// required, nor a native row (repositoryNativeCandidates).
+	merged = withoutRepositoryTestCandidates(discovery, merged)
 	if len(merged) == 0 {
 		return repositoryTargetPlan{}, fmt.Errorf("repository target discovery returned no file hypotheses")
 	}
@@ -328,6 +333,7 @@ func selectRepositoryTargetPlanForRun(
 		return repositoryTargetPlan{}, fmt.Errorf("bind exact repository target authority: %w", err)
 	}
 	requiredTargetFileRefs = withoutRepositoryToolingRefs(options.Repository, requiredTargetFileRefs)
+	requiredTargetFileRefs = slices.DeleteFunc(requiredTargetFileRefs, discovery.testFile)
 
 	native, err := repositoryNativeCandidates(options.Repository, discovery)
 	if err != nil {

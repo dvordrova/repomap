@@ -50,6 +50,22 @@ func withoutRepositoryToolingCandidates(repository *corpus.Corpus, candidates []
 	return kept
 }
 
+// testFile reports a file one adapter's test facts read as test code.
+func (discovery repositoryTargetDiscovery) testFile(fileRef corpus.FileID) bool {
+	for _, adapter := range discovery.adapters {
+		if adapter.TestFile != nil && adapter.TestFile(fileRef) {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutRepositoryTestCandidates keeps the file hypotheses no adapter reads
+// as test code: a test-only executable is no program (beets' test/testall.py).
+func withoutRepositoryTestCandidates(discovery repositoryTargetDiscovery, candidates []analysistarget.FileCandidate) []analysistarget.FileCandidate {
+	return slices.DeleteFunc(slices.Clone(candidates), func(candidate analysistarget.FileCandidate) bool { return discovery.testFile(candidate.FileRef) })
+}
+
 func withoutRepositoryToolingRefs(repository *corpus.Corpus, refs []corpus.FileID) []corpus.FileID {
 	kept := make([]corpus.FileID, 0, len(refs))
 	for _, ref := range refs {
