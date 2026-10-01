@@ -467,7 +467,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const pointer=state.pointer;
     const tip=pointer&&(pointer.type==='marker'||pointer.type==='port')?items.find(item=>item.id===pointer.id):null;
-    // A box whose words do not read yet is named by the pointer on it.
     // A chip or a bucket pointed at says who calls it, or what it holds;
     // any other box whose words do not read yet is named.
     const box=pointer?.type==='box'&&pointer.node&&(['chip','bucket'].includes(pointer.node.display)||pointer.node.text*17*v.zoom<11)?pointer.node:null;
@@ -483,8 +482,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       {box&&<BoxTip node={box} camera={v}/>}
     </div>;
   }
-  // What a box is, while its words are too small to read: its name and a
-  // line of what it does.
+  // What a box pointed at is: a chip's callers, a bucket's systems, else,
+  // while its words are too small to read, its name and what it does.
   function BoxTip({node,camera:v}){
     const item=model.nodes.get(node.id)?.item;
     let head=node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title,names=[],about='';
