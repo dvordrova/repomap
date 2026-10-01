@@ -112,6 +112,16 @@ function checkScene(name,model,geometry,scene,problems){
     }
   }
   if(narrowest*zoom<laneGap)problems.push(['gaps',`${where}: lanes ${(narrowest*zoom).toFixed(1)}px apart (${between})`]);
+  // No arrow runs through a box it does not join.
+  for(const edge of scene.edges){
+    const ends=new Set([edge.from,edge.to]);
+    for(const node of scene.nodes){
+      if(node.band!==bands.box||ends.has(node.id))continue;
+      const r=node.rect,m=px;
+      const through=segments(edge.points).some(({a,b})=>Math.max(a.x,b.x)>r.x+m&&Math.min(a.x,b.x)<r.x+r.width-m&&Math.max(a.y,b.y)>r.y+m&&Math.min(a.y,b.y)<r.y+r.height-m);
+      if(through){problems.push(['crosses',`${where} ${edge.id}: runs through ${node.id}`]);break;}
+    }
+  }
   // Titles at one level within ±10%: the boxes the level's own frame holds.
   const own=scene.nodes.filter(node=>node.band===bands.box&&(scene.inner?model.parent(node.id)===scene.inner||scene.inner===scene.program&&model.parent(node.id)===scene.program:!model.parent(node.id)));
   if(own.length){
@@ -191,6 +201,7 @@ function checkHome(name,model,geometry,problems){
 const rules={ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
+  crosses:'no arrow runs through a box it does not join',
   uses:'the whole map draws no code-use arrow between programs at rest',
   pairs:'every two programs an operation joins have exactly one arrow at rest',titles:'titles at one level are within ±10%',
   markers:'markers keep 20–28px, at most three a side, beside their box',order:'dark arrows are drawn after grey ones',
