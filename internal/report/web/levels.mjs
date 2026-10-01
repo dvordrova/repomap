@@ -58,7 +58,7 @@ export const units={
   // taller by its systems' marks.
   chip:{font:'600 12px system-ui',line:15,pad:8,mark:20,width:140,height:46,bucket:62},
   // An input's name in its kind's group.
-  input:{font:'13px system-ui',pad:10,mark:22,min:72,max:320,height:30},
+  input:{font:'600 13px system-ui',pad:10,mark:22,min:72,max:320,height:30},
   gap:12,
 };
 // A program is entered where its boxes' titles read at 12.75 pixels, which

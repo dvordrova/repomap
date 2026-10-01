@@ -136,7 +136,7 @@ function DeepNode({data}){
     <PartSymbols symbols={item.symbols} calls={item.symbolCalls} width={box.width} height={box.height} grid={grid} member={member}/>
   </div></>;
 }
-const nodeTypes={card:CardNode,area:CardNode,deep:DeepNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,group:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
+const nodeTypes={card:CardNode,area:CardNode,deep:DeepNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,kindgroup:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
 
 const arrowHead=7;
 function SceneEdge({id,data}){
@@ -542,7 +542,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       return {id:node.id,type:node.display,position:{x:node.rect.x,y:node.rect.y},width:node.rect.width,height:node.rect.height,
         style:{width:node.rect.width,height:node.rect.height},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
-        className:`scene-node scene-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
+        className:`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
         data:{node,item,groups,lit:lit.has(node.id),
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};

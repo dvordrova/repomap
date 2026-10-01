@@ -2,7 +2,7 @@
    canvas's own: no new colour, arrow kind or label. */
 .scene-root .react-flow__node{pointer-events:none!important;cursor:default}
 .scene-root .react-flow__pane{cursor:default}
-.scene-root .react-flow__node.scene-frame,.scene-root .react-flow__node.scene-group{z-index:-1!important}
+.scene-root .react-flow__node.scene-is-frame,.scene-root .react-flow__node.scene-is-kindgroup{z-index:-1!important}
 .scene-scaled{position:absolute;left:0;top:0;transform-origin:0 0;box-sizing:border-box}
 .scene-root .flow-part{padding:14px;gap:6px;overflow:hidden}
 .scene-root .flow-part>strong{white-space:pre-line;line-height:21.25px}
@@ -18,7 +18,7 @@
 .scene-inputs-card>strong{font-size:17px;line-height:22px}
 .scene-inputs-card .flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font:500 13px/18px system-ui;color:#204a7b}
 .scene-inputs-card .flow-input-types li{display:flex;gap:6px;align-items:center}
-.scene-group{box-sizing:border-box;border-radius:8px;box-shadow:inset 0 0 0 1px #9dbbe0;background:#f6faff}
+.scene-group{box-sizing:border-box;border-radius:calc(8px / var(--flow-zoom,1));box-shadow:inset 0 0 0 calc(1px / var(--flow-zoom,1)) #9dbbe0;background:#f6faff}
 .scene-group-title{display:flex;gap:6px;align-items:center;padding:8px 12px;color:#204a7b}
 .scene-group-title>strong{font-size:13.6px;line-height:18px;white-space:nowrap}
 .scene-tile{display:flex;gap:6px;align-items:center;padding:0 10px;border-radius:6px;background:#deedff;border:1.25px solid #356faa;color:#204a7b;font:600 13px/17px system-ui;overflow:hidden}

@@ -59,7 +59,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
         const t=geometry.text.get(id);
         box(id,'frame',rect,t,{title:node.name});
         for(const group of node.children){
-          box(group,'group',rectOf(group),t,{inputKind:model.nodes.get(group).inputKind});
+          box(group,'kindgroup',rectOf(group),t,{inputKind:model.nodes.get(group).inputKind});
           for(const input of model.nodes.get(group).children)box(input,'tile',rectOf(input),t,{inputKind:model.nodes.get(input).inputKind});
         }
       }
