@@ -48,7 +48,7 @@
 .scene-root .scene-scaled>*{margin:0}
 .scene-program-inside{list-style:none;padding:0;display:flex;flex-direction:column;font:500 13px/18px system-ui;color:#52647d}
 .scene-program-inside li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.scene-ghosts{position:absolute;left:0;top:0;pointer-events:none}
+.scene-ghosts{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .scene-ghosts rect{fill:#fff;fill-opacity:.55;stroke:currentColor;stroke-opacity:.25;stroke-width:1.5}
 .scene-area-card>strong,.scene-area-card>.flow-description{position:relative;z-index:1}
 .scene-words{position:relative;z-index:1;display:flex;flex-direction:column;gap:6px;background:inherit;border-radius:6px;align-self:flex-start;max-width:100%}
@@ -60,18 +60,21 @@
 .scene-kind-mark{position:absolute;display:flex;align-items:center;justify-content:center;color:#204a7b;border-radius:4px}
 .scene-kind-mark.flow-lit{outline:2px solid #243044}
 .scene-root .flow-edge .flow-edge-hit{pointer-events:none!important}
-/* Names on zoom: a box's words stand once they read (a title at eleven
-   pixels, an input's name and a description at nine and a half) and fade
-   out below, the camera's
-   zoom (--flow-zoom) times the level's text scale (--scene-text) times their
-   size; the pointer on the box names it meanwhile (scene-canvas.jsx). */
-.scene-root .react-flow__node [data-box-title]{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 2),1)}
-.scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 8.5) * 2),1)}
-/* An input's name and a kind's title fade; so does a chip's or a bucket's
-   name below eleven pixels, as every word (owner, 2026-10-01: one rule for
-   all text), the pointer or the keyboard's focus naming it. */
-.scene-root .react-flow__node .scene-tile>span,.scene-root .react-flow__node .scene-group-title>strong{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 12.5 - 9) * 2),1)}
-.scene-root .react-flow__node .flow-chip-name{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 10.5) * 2),1)}
+/* Names on zoom: each word stands once it reads and fades out below, by
+   its own drawn size: its font size (--word, in pixels, which its rule
+   also draws it at) times the camera's zoom (--flow-zoom) times its
+   level's text scale (--scene-text). A title and a chip's or a bucket's
+   name stand from eleven pixels (owner, 2026-10-01: one rule for all
+   text), an input's name, a kind's title, a role and a description from
+   nine and a half; the pointer or the keyboard's focus names a box
+   meanwhile (scene-canvas.jsx). */
+.scene-root .react-flow__node [data-box-title]{--word:17;--gone:10.5}
+.scene-root .react-flow__node .flow-chip-name{--word:12;--gone:10.5}
+.scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{--word:13;--gone:9}
+.scene-root .react-flow__node .scene-tile>span{--word:13;--gone:9}
+.scene-root .react-flow__node .scene-group-title>strong{--word:13.6;--gone:9}
+.scene-root .react-flow__node :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role,.scene-tile>span,.scene-group-title>strong){
+  font-size:calc(var(--word) * 1px);opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
 .scene-root .scene-chip:focus-visible,.scene-root .scene-bucket:focus-visible{outline:2px solid #243044;outline-offset:2px}
 .scene-tip.scene-tip-name{white-space:nowrap;max-width:none}
 .scene-root .react-flow__node .scene-deep [data-box-title]{opacity:1}
@@ -90,6 +93,10 @@
 /* Every card's border keeps its screen width at any zoom, as the arrows'
    strokes do. */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.flow-chip,.scene-root .scene-scaled.scene-tile,.scene-root .scene-scaled.scene-program-card{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
+/* A closed Inputs card is drawn at its level's text scale: its frame's
+   corner and line keep their screen size by the zoom times that scale (an
+   open frame, drawn in world units, by the zoom alone, canvas.css). */
+.scene-root .scene-scaled.flow-area{border-radius:calc(12px / (var(--flow-zoom,1) * var(--scene-text,1)));box-shadow:inset 0 0 0 calc(var(--flow-frame-width) / (var(--flow-zoom,1) * var(--scene-text,1))) var(--flow-frame-color)}
 /* The border takes its room from a card's padding, never from its words
    (levels.mjs sizes a card by its words and a 14px padding). */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}

@@ -44,19 +44,22 @@ export function sceneAt(model,geometry,level=[],selection={}){
   };
   // The boxes the reader looks at: their quiet arrows are drawn.
   const looked=new Set([inner,selection.scope].filter(Boolean));
-  let text=1;
+  // The whole map's boxes are drawn at the world's unit, a program's card
+  // at the text its name reads at (levels.mjs programText).
+  const unit=geometry.unit||1;
+  let text=unit;
   if(!program){
     const open=new Set(level);
-    text=inner?geometry.text.get(inner)||1:1;
+    text=inner?geometry.text.get(inner)||unit:unit;
     for(const id of model.roots){
       const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
       // A program's card holds its drawing's outline: where its areas and
       // loose parts stand, seen once the card is drawn large.
-      if(node.kind==='program')box(id,'program',rect,1,{ghosts:node.children.map(child=>rectOf(child)).filter(Boolean)});
+      if(node.kind==='program')box(id,'program',rect,geometry.programText||unit,{ghosts:node.children.map(child=>rectOf(child)).filter(Boolean)});
       else if(node.kind==='inputs'){
         // Closed: its kinds' marks in a row under its title, each read alone.
-        if(!open.has(id)){box(id,'inputs',rect,1,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
-          rect:{x:rect.x+16+i*22,y:rect.y+40,width:18,height:18}}))});continue;}
+        if(!open.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
+          rect:{x:rect.x+(16+i*22)*unit,y:rect.y+40*unit,width:18*unit,height:18*unit}}))});continue;}
         // Open, its frame is its box: the map's arrows end on it.
         const t=geometry.text.get(id);
         box(id,'frame',rect,t,{title:node.name});
@@ -66,21 +69,21 @@ export function sceneAt(model,geometry,level=[],selection={}){
         }
       }
       else if(node.kind==='outside'){
-        box(id,'frame',rect,1,{title:node.name});
+        box(id,'frame',rect,unit,{title:node.name});
         for(const child of node.children){
           const item=model.nodes.get(child);
-          if(item.kind==='system')box(child,'chip',rectOf(child),1,{systemKind:item.systemKind});
+          if(item.kind==='system')box(child,'chip',rectOf(child),unit,{systemKind:item.systemKind});
           else if(item.kind==='bucket'&&open.has(child)){
             const t=geometry.text.get(child);
             box(child,'frame',rectOf(child),t,{bucket:true});
             for(const system of item.children)box(system,'chip',rectOf(system),t,{systemKind:model.nodes.get(system).systemKind});
-          }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),1,{systemKinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
+          }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),unit,{systemKinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
         }
       }
-      else if(node.kind==='note')box(id,'note',rect,1);
-      else if(node.kind==='system')box(id,'chip',rect,1,{systemKind:node.systemKind});
-      else if(node.kind==='input')box(id,'tile',rect,1,{inputKind:node.inputKind});
-      else box(id,'card',rect,1);
+      else if(node.kind==='note')box(id,'note',rect,unit);
+      else if(node.kind==='system')box(id,'chip',rect,unit,{systemKind:node.systemKind});
+      else if(node.kind==='input')box(id,'tile',rect,unit,{inputKind:node.inputKind});
+      else box(id,'card',rect,unit);
     }
     // A pair of programs joined only by code use is drawn while one of them
     // is chosen, else only while one is pointed at (emphasisOf).

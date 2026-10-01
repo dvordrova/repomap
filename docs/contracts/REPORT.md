@@ -1269,7 +1269,17 @@ the canvas above stays the default.
   the canvas larger, a link to another program ending on a port of the
   program's border (one port a way per box, naming its programs on hover);
   the whole map its programs (cards of their name and role), Inputs frames (their kinds' marks) and
-  Outside frames. A card's title, role and description each stand whole
+  Outside frames. Every program is named at rest on the whole map, at
+  eleven pixels or more (owner, 2026-10-02): its card is drawn at the text
+  size its name reads at at the camera showing the whole map, the map's
+  lanes widening with it, the other boxes at their own; where the map
+  grows as its cards do (etcd), the size kept is the last that brought the
+  names a tenth larger, and the camera at rest frames the busiest program
+  with the most others a canvas holds, as close as their names read. The
+  world is drawn a power of two larger, keeping every level's entry camera
+  at most four screen pixels to a world pixel: the browser sizes a box in
+  steps of 1/64 of a pixel, and at etcd's deepest levels arrows' ends had
+  stood 2px off their boxes. A card's title, role and description each stand whole
   or are left out, never cut mid-text (a program's purpose in two lines at
   most, a part's or an area's description in four; the rest reads in the
   column), its size and its drawing by the same rule. No wrapping, grid, size floor or edit after layout.
@@ -1303,7 +1313,8 @@ the canvas above stays the default.
   the box's title reads and the stack fits beside it. A box's words fade
   out below their readable size (titles about 11px, an input's name and a
   description 9.5px, a chip's or a bucket's name 11px, one rule for all
-  words) and the pointer on such a box names it, as the keyboard's focus
+  words, each word by its own drawn size: its font size times the zoom
+  times its level's text scale) and the pointer on such a box names it, as the keyboard's focus
   names a chip, in one line. `store.mjs` holds the level, the pointer and the
   choice (useSyncExternalStore); the camera has its own store.
 - The node tests `model.test.mjs`, `scene.test.mjs` and `store.test.mjs`

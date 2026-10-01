@@ -87,7 +87,10 @@ export const units={
 // A program is entered where its boxes' titles read at 12.75 pixels, which
 // is four fifths of the zoom that fits it in the canvas; an area where its
 // parts' do (PLAN S3: by zoom, with hysteresis, never by a pan).
-export const reading={enter:.75,exit:.62,deep:860,deepExit:760};
+// A program's name reads on the whole map at rest from eleven pixels
+// (owner, 2026-10-02); its card is sized for eleven and a half, room for
+// the browser's measure.
+export const reading={enter:.75,exit:.62,deep:860,deepExit:760,title:11.5,least:11};
 
 const pairKey=(a,b)=>a<b?`${a}|${b}`:`${b}|${a}`;
 
@@ -349,11 +352,17 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // 4. The whole map: each program as a card of its own level's
   // proportion, each Inputs frame as its kinds' list, each Outside frame
   // open, with one arrow per pair of them.
+  // The whole map names every program at rest (owner, 2026-10-02:
+  // headscale's, beets' and etcd's whole maps had drawn no word that
+  // read): a program's card is drawn at the text size (`programText`) its
+  // name reads at, eleven and a half pixels, at the camera showing the
+  // whole map; the other boxes keep their own.
+  let programText=1;
   const rootBox=id=>{
     const node=nodes.get(id),inside=local.get(id);
     // A program's card holds its summary; entered, its drawing stands
     // inside the card at the scale that fits it.
-    if(node.kind==='program')return {id,width:units.programCard.width,height:programCardHeight(node,units.programCard.width,measure)};
+    if(node.kind==='program')return {id,width:units.programCard.width*programText,height:programCardHeight(node,units.programCard.width,measure)*programText};
     if(node.kind==='inputs')return {id,...inside.closed};
     if(node.kind==='outside')return {id,width:inside.width,height:inside.height};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
@@ -367,12 +376,32 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const layMap=async(aspect,direction)=>{
     packOutside(aspect);
     const roots=model.roots.map(rootBox);
-    return readNode(await native({id:'map',layoutOptions:{...outer,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
+    // Lanes widen with the programs' text, standing as far apart on the
+    // screen as the Step 1 drawing's at the camera that reads the names.
+    const lanes=Object.fromEntries(['elk.spacing.edgeNode','elk.spacing.edgeEdge','elk.layered.spacing.edgeNodeBetweenLayers','elk.layered.spacing.edgeEdgeBetweenLayers','elk.spacing.portPort']
+      .map(key=>[key,String(Number(outer[key])*programText)]));
+    return readNode(await native({id:'map',layoutOptions:{...outer,...lanes,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
       edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
   };
-  for(const aspect of hasOutside?[1,.6,1.6]:[1])for(const direction of ['RIGHT','DOWN']){
-    const laid=await layMap(aspect,direction);
-    if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen={aspect,direction};}
+  const layAll=async()=>{
+    map=null;
+    for(const aspect of hasOutside?[1,.6,1.6]:[1])for(const direction of ['RIGHT','DOWN']){
+      const laid=await layMap(aspect,direction);
+      if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen={aspect,direction};}
+    }
+  };
+  await layAll();
+  const titleAtHome=()=>17*programText*homeCamera({x:0,y:0,width:map.width,height:map.height},canvas).zoom;
+  // Where the map grows as its cards do (etcd: its programs stand in many
+  // layers), a larger card stops paying: the size kept is the last that
+  // brought the names a tenth larger, and the camera at rest then shows the
+  // part of the map it names (homeView below).
+  for(let step=0;step<8&&titleAtHome()<reading.title;step++){
+    const before={programText,map,chosen,px:titleAtHome()};
+    programText*=reading.title/before.px*1.01;
+    await layAll();
+    const now=titleAtHome();
+    if(now<reading.least&&now<before.px*1.1){({programText,map,chosen}=before);break;}
   }
   packOutside(chosen.aspect);
   local.set('',{...map,text:1,pairs:rootPairs,kind:'map'});
@@ -426,14 +455,55 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const box={width:units.part.width,height:node.item?.height||90};
     grids.set(node.id,{box,grid:tileGrid(node.item.symbols,node.item.symbolCalls||[],box,measure)});
   }
-  const bounds={x:0,y:0,width:map.width,height:map.height};
-  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,
-    home:homeCamera(bounds,canvas)};
+  // 6. The world's unit (owner, 2026-10-02: etcd's storage parts stood 1.2
+  // world pixels tall, the browser sizes a box in steps of 1/64 of a
+  // pixel, and at the camera entering them their arrows' ends had stood 2px
+  // off their borders): the world is drawn `unit` times larger, a power of
+  // two keeping every level's entry camera at most four screen pixels to a
+  // world pixel.
+  const deepest=Math.max(1,...enterZoom.values(),...[...grids].map(([id,{grid,box}])=>11/13*grid.divisor*box.width/(boxes.get(id)?.width||Infinity)));
+  const unit=2**Math.max(0,Math.ceil(Math.log2(deepest/4)));
+  const big=r=>({...r,x:r.x*unit,y:r.y*unit,width:r.width*unit,height:r.height*unit});
+  const far=p=>({...p,x:p.x*unit,y:p.y*unit});
+  for(const [id,r] of boxes)boxes.set(id,big(r));
+  for(const [id,s] of scales)scales.set(id,{scale:s.scale*unit,origin:far(s.origin),frame:big(s.frame)});
+  for(const [id,list] of routes)routes.set(id,list.map(route=>({...route,points:route.points.map(far)})));
+  for(const [id,list] of ports)ports.set(id,list.map(port=>({...port,point:far(port.point)})));
+  for(const [id,t] of text)text.set(id,t*unit);
+  for(const [id,z] of enterZoom)enterZoom.set(id,z/unit);
+  for(const [id,z] of exitZoom)exitZoom.set(id,z/unit);
+  const bounds={x:0,y:0,width:map.width*unit,height:map.height*unit};
+  // The busiest program first: the one most arrows at rest join.
+  const joins=id=>model.homePairs.filter(pair=>!pair.uses&&(pair.from===id||pair.to===id)).length;
+  const programs=model.roots.filter(id=>nodes.get(id)?.kind==='program'&&boxes.has(id))
+    .sort((a,b)=>joins(b)-joins(a)).map(id=>boxes.get(id));
+  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programText:programText*unit,
+    home:homeView(bounds,canvas,unit,programText*unit,programs)};
+}
+
+// The camera at rest on the whole map: all of it, unless its programs'
+// names would not read there (eleven pixels); then as close as they read,
+// framing the busiest program (`programs` come busiest first) with the
+// most others a canvas holds, centred on them.
+export function homeView(bounds,canvas,unit,programText,programs,pad=16){
+  const whole=homeCamera(bounds,canvas,pad,1/unit);
+  if(17*programText*whole.zoom>=reading.least||!programs.length)return whole;
+  const zoom=reading.title/(17*programText),width=(canvas.width-2*pad)/zoom,height=(canvas.height-2*pad)/zoom;
+  const within=(r,x,y)=>r.x>=x-1e-9&&r.y>=y-1e-9&&r.x+r.width<=x+width+1e-9&&r.y+r.height<=y+height+1e-9;
+  let best=null;
+  for(const a of programs)for(const b of programs){
+    const x=a.x,y=b.y,held=programs.filter(r=>within(r,x,y));
+    if(!held.includes(programs[0]))continue;
+    if(!best||held.length>best.length)best=held;
+  }
+  best||=[programs[0]];
+  const l=Math.min(...best.map(r=>r.x)),t=Math.min(...best.map(r=>r.y)),r=Math.max(...best.map(r=>r.x+r.width)),b=Math.max(...best.map(r=>r.y+r.height));
+  return {zoom,x:canvas.width/2-(l+r)/2*zoom,y:canvas.height/2-(t+b)/2*zoom};
 }
 
 // The camera that shows the whole map, centred, no closer than one unit to
 // a pixel.
-export function homeCamera(bounds,canvas,pad=16){
-  const zoom=Math.min(1,(canvas.width-2*pad)/bounds.width,(canvas.height-2*pad)/bounds.height);
+export function homeCamera(bounds,canvas,pad=16,most=1){
+  const zoom=Math.min(most,(canvas.width-2*pad)/bounds.width,(canvas.height-2*pad)/bounds.height);
   return {zoom,x:(canvas.width-bounds.width*zoom)/2-bounds.x*zoom,y:(canvas.height-bounds.height*zoom)/2-bounds.y*zoom};
 }

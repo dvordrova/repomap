@@ -149,8 +149,12 @@ function checkScene(name,model,geometry,scene,problems){
       if(through){problems.push(['crosses',`${where} ${edge.id}: runs through ${node.id}`]);break;}
     }
   }
-  // Titles at one level within ±10%: the boxes the level's own frame holds.
-  const own=scene.nodes.filter(node=>node.band===bands.box&&(scene.inner?model.parent(node.id)===scene.inner||scene.inner===scene.program&&model.parent(node.id)===scene.program:!model.parent(node.id)));
+  // Titles at one level within ±10%: the boxes the level's own frame holds,
+  // whose titles stand (one faded out below 10.5px is not drawn: on the
+  // whole map a program's card may be drawn larger than the frames beside
+  // it, levels.mjs programText).
+  const own=scene.nodes.filter(node=>node.band===bands.box&&(scene.inner?model.parent(node.id)===scene.inner||scene.inner===scene.program&&model.parent(node.id)===scene.program:!model.parent(node.id))
+    &&node.text*17*zoom>=10.5);
   if(own.length){
     const texts=own.map(node=>node.text),low=Math.min(...texts),high=Math.max(...texts);
     if(high>low*1.1)problems.push(['titles',`${where}: titles from ${low} to ${high}`]);
@@ -216,6 +220,12 @@ function checkScene(name,model,geometry,scene,problems){
 // system the other serves).
 function checkHome(name,model,geometry,problems){
   const scene=sceneAt(model,geometry,[],{});
+  // Every program is named at rest on the whole map (owner, 2026-10-02):
+  // its title whole in its card, at eleven pixels or more on the screen.
+  for(const node of scene.nodes.filter(node=>node.display==='program')){
+    const px=17*node.text*geometry.home.zoom,words=programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure);
+    if(px<11||words.title.join('').replace(/\s+/g,'')!==node.title.replace(/\s+/g,''))problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px`]);
+  }
   const program=id=>model.nodes.get(id)?.kind==='program';
   const atRest=scene.edges.filter(edge=>edge.rest!==false&&program(edge.from)&&program(edge.to));
   for(const edge of atRest){
@@ -238,7 +248,7 @@ function checkHome(name,model,geometry,problems){
 
 // Each rule's problems on every level of a page, with a box chosen too: a
 // chosen box draws its quiet arrows, and the rules hold for them.
-const rules={words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
+const rules={names:'every program is named at rest on the whole map, at eleven pixels or more',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
   crosses:'no arrow runs through a box it does not join',
@@ -278,8 +288,9 @@ for(const [name,page] of pages){
       const action=zoomAction(state.zoom,{zoom},aim);
       if(pan){assert.equal(action,null,'a pan asks for no level');continue;}
       const level=action?levelAfterZoom(model,geometry,scene,state.level,action.zoom,action.aim,action.zoomingIn):state.level;
-      // Hysteresis: zooming out leaves a level only below its exit zoom.
-      if(level.length<state.level.length)for(const id of state.level.slice(level.length))assert.ok(zoom<geometry.exitZoom.get(id),`${id} left above its exit zoom`);
+      // Hysteresis: zooming out leaves a level only below its exit zoom (a
+      // zoom in toward a sibling may leave the level for it, scene.mjs).
+      if(!action.zoomingIn&&level.length<state.level.length)for(const id of state.level.slice(level.length))assert.ok(zoom<geometry.exitZoom.get(id),`${id} left above its exit zoom`);
       if(level.length>state.level.length)for(const id of level.slice(state.level.length))assert.ok(zoom>=geometry.enterZoom.get(id),`${id} entered below its entry zoom`);
       state={level,zoom};
     }

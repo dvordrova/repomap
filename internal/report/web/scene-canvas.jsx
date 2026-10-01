@@ -49,7 +49,9 @@ const handles=<><Handle type="target" position={Position.Top} isConnectable={fal
 // blank box (PLAN B).
 function Ghosts({node,className=''}){
   if(!node.ghosts?.length)return null;
-  return <svg className={`scene-ghosts ${className}`} width={node.rect.width/node.text} height={node.rect.height/node.text} aria-hidden="true">
+  // Inside the card's border: the outline overflows nothing.
+  const w=node.rect.width/node.text,h=node.rect.height/node.text;
+  return <svg className={`scene-ghosts ${className}`} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
     {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={Math.min(9,r.width/node.text/12)}/>)}</svg>;
 }
 function CardNode({data}){
@@ -513,8 +515,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function BoxTip({node,camera:v}){
     const item=model.nodes.get(node.id)?.item;
     let head=node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title,names=[],about='';
-    // A chip's name reads at eleven pixels, as every word (scene.css).
-    const faded=node.text*13*v.zoom<11;
+    // A chip's name, drawn at twelve pixels, reads at eleven, as every word
+    // (scene.css --word).
+    const faded=node.text*12*v.zoom<11;
     if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x+6,top:Math.max(4,node.rect.y*v.zoom+v.y)}}><b>{head}</b></div>;
     if(node.display==='chip')names=[...new Set([...(model.callers.get(node.id)||[])].map(part=>model.nodes.get(part)?.name||''))].map(name=>`← ${name}`);
     else if(node.display==='bucket')names=model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||'');
@@ -629,8 +632,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     </ReactFlow>;
   }
   // Far enough into a part to read its declarations, and a little more.
-  const minZoom=()=>Math.min(.05,geometry.home.zoom*.5);
-  const maxZoom=()=>Math.max(4,...[...geometry.enterZoom.values()].map(zoom=>zoom*1.6),...[...geometry.grids.keys()].map(id=>levelZoom([id])*1.6));
+  const minZoom=()=>Math.min(.05/(geometry.unit||1),geometry.home.zoom*.5);
+  const maxZoom=()=>Math.max(4/(geometry.unit||1),...[...geometry.enterZoom.values()].map(zoom=>zoom*1.6),...[...geometry.grids.keys()].map(id=>levelZoom([id])*1.6));
 
   let restorePending=null;
   function capture(){return instance&&!initializing?{...camera.get(),level:store.getState().level,layoutKey,fit:overviewFit}:restorePending;}
