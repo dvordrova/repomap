@@ -268,8 +268,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     }
     const level=node.kind==='part'?chainOf(model,id).filter(at=>at!==id):enterLevelOf(id);
     const rect=geometry.boxes.get(id)||geometry.scales.get(id)?.frame;
+    // A thing in sight, or the level itself, is only marked: the camera
+    // moves only to what is out of sight (owner, 2026-09-28).
     const current=store.getState().level;
-    if(!center&&levelKey(current)===levelKey(level)&&rect&&inSight(rect))return;
+    if(!center&&(current.includes(id)||sceneOf(store.getState()).nodes.some(node=>node.id===id)&&rect&&inSight(rect)))return;
     store.dispatch({type:'enter',level});
     if(rect)moveCamera(frameCamera(rect,levelZoom(level)),smooth);
   }
