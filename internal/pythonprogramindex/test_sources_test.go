@@ -86,8 +86,8 @@ func TestATestDirectoryBesideTheDeclaredPackagesIsTestCode(t *testing.T) {
 		"tests/strats/test_buy.py": "def test_buy(): pass", "tools/lint.py": "def lint(): pass",
 	}
 	for _, launched := range []bool{false, true} {
-		// A program's launch file in tests/ keeps tests/ from being a test
-		// directory; the directory below it holding the test module is one.
+		// A script launched from tests/ (a `__main__` guard no build names)
+		// is test code with it, never a block: beets' test/testall.py.
 		if launched {
 			files["tests/run_checks.py"] = "if __name__ == '__main__':\n    print('checks')\n"
 		}
@@ -100,14 +100,45 @@ func TestATestDirectoryBesideTheDeclaredPackagesIsTestCode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := map[string]bool{"sample/test_cli.py": true, "tests/conftest.py": true, "tests/strats/test_buy.py": true, "tests/strats/buy.py": true}
-		if !launched {
-			for _, file := range []string{"tests/__init__.py", "tests/trades.py"} {
-				want[file] = true
-			}
+		want := map[string]bool{"sample/test_cli.py": true, "tests/conftest.py": true, "tests/strats/test_buy.py": true, "tests/strats/buy.py": true,
+			"tests/__init__.py": true, "tests/trades.py": true}
+		if launched {
+			want["tests/run_checks.py"] = true
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("launched=%v: test sources %v, want %v", launched, got, want)
 		}
+	}
+}
+
+// pytest reads its INI configurations too: setup.cfg's [tool:pytest] (beets),
+// tox.ini's and pytest.ini's [pytest], with its default patterns when the
+// project declares pytest; pytest.ini comes before a pyproject.toml table.
+func TestPytestINIConfigurationsSelectTests(t *testing.T) {
+	files := map[string]string{"test_ready.py": "def check(): pass", "check_ready.py": "def check(): pass"}
+	for _, test := range []struct {
+		name  string
+		files map[string]string
+		want  map[string]bool
+	}{
+		{"setup.cfg with a declared pytest", map[string]string{"pyproject.toml": "[project]\nname='s'\n[project.optional-dependencies]\ntest=['pytest']\n", "setup.cfg": "[tool:pytest]\naddopts =\n    -ra\n"}, map[string]bool{"test_ready.py": true}},
+		{"setup.cfg requiring pytest itself", map[string]string{"setup.cfg": "[options.extras_require]\ntest =\n    pytest>=7\n[tool:pytest]\n"}, map[string]bool{"test_ready.py": true}},
+		{"setup.cfg without a runner", map[string]string{"setup.cfg": "[tool:pytest]\n"}, map[string]bool{}},
+		{"tox.ini's own patterns", map[string]string{"tox.ini": "[pytest]\npython_files = check_*.py\n"}, map[string]bool{"check_ready.py": true}},
+		{"pytest.ini before pyproject", map[string]string{"pyproject.toml": "[project]\nname='s'\ndependencies=['pytest']\n[tool.pytest]\n", "pytest.ini": "[pytest]\npython_files = check_*.py\n"}, map[string]bool{"check_ready.py": true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			all := map[string]string{}
+			for name, content := range files {
+				all[name] = content
+			}
+			for name, content := range test.files {
+				all[name] = content
+			}
+			got, err := configuredPythonTests(pythonCorpus(t, all))
+			if err != nil || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("tests %v, want %v: %v", got, test.want, err)
+			}
+		})
 	}
 }

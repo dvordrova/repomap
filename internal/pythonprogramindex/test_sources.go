@@ -21,7 +21,12 @@ import (
 // included (freqtrade's tests/conftest_trades.py and tests/strategy/strats,
 // which had drawn "Strategy test fixtures" and "Test fixtures" parts on
 // the product map). A directory holding a declared module is never one, so
-// a test module inside a package (pandas/tests) is selected alone.
+// a test module inside a package (pandas/tests) is selected alone. A script
+// (a `__main__` guard or a shebang, whose build gives it no name) launched
+// from such a directory blocks nothing: it is test code, a stub or a runner
+// the tests start (beets' test/testall.py and test/rsrc/convert_stub.py had
+// been two of its seven programs); a program the build declares (a console
+// script, a package's `__main__`) does.
 func pythonTestSources(repository *corpus.Corpus, targets []pythontarget.Target) (map[string]bool, error) {
 	tests, owners, err := pytestSelection(repository)
 	if err != nil || len(tests) == 0 {
@@ -46,7 +51,7 @@ func pythonTestSources(repository *corpus.Corpus, targets []pythontarget.Target)
 				block(module.Path)
 			}
 		}
-		if target.Kind == pythontarget.KindExecutable {
+		if target.Kind == pythontarget.KindExecutable && !scriptLaunch(target) {
 			if info, ok := repository.Info(target.AnchorFileRef); ok {
 				block(info.Entry.Path)
 			}
@@ -87,6 +92,29 @@ func pythonTestSources(repository *corpus.Corpus, targets []pythontarget.Target)
 	return tests, nil
 }
 
+// TestSources are a Python project's test sources (pythonTestSources): the
+// files pytest's configuration selects, and every file of a test directory
+// beside the declared packages. Target discovery leaves an executable
+// launched from one out of the programs: a test-only executable is test
+// code, not a program a newcomer runs.
+func TestSources(repository *corpus.Corpus, targets []pythontarget.Target) (map[string]bool, error) {
+	return pythonTestSources(repository, targets)
+}
+
+// scriptLaunch reports an executable launched only as a script: by a
+// `__main__` guard or a shebang, which no build names.
+func scriptLaunch(target pythontarget.Target) bool {
+	if len(target.Basis) == 0 {
+		return false
+	}
+	for _, basis := range target.Basis {
+		if basis.Kind != pythontarget.BasisNameMainGuard && basis.Kind != pythontarget.BasisPythonShebang {
+			return false
+		}
+	}
+	return true
+}
+
 // configuredPythonTests records the pytest file-discovery contract, without
 // importing tests or executing configuration. An authored pytest table owns its
 // explicit patterns; default patterns also require a declared pytest dependency.
@@ -105,8 +133,13 @@ func pytestSelection(repository *corpus.Corpus) (map[string]bool, map[string]str
 		root     string
 		patterns []string
 		resolved bool
+		// iniPriority marks a configuration read from an INI file.
+		iniPriority int
 	}
 	var configs []config
+	// The directories whose pyproject.toml declares pytest: an INI
+	// configuration beside it uses pytest's default patterns too.
+	declared := map[string]bool{}
 	for _, entry := range repository.Entries() {
 		if path.Base(entry.Path) != "pyproject.toml" {
 			continue
@@ -145,6 +178,7 @@ func pytestSelection(repository *corpus.Corpus) (map[string]bool, map[string]str
 			}
 			authority = authority || name == "pytest"
 		}
+		declared[path.Dir(entry.Path)] = authority
 		settings, present := document.Tool["pytest"].(map[string]any)
 		if !present {
 			continue
@@ -185,6 +219,51 @@ func pytestSelection(repository *corpus.Corpus) (map[string]bool, map[string]str
 		configs[configPosition].patterns = patterns
 		configs[configPosition].resolved = resolved
 	}
+	// pytest's INI configurations: pytest.ini's [pytest] before a
+	// pyproject.toml table, tox.ini's [pytest] and setup.cfg's
+	// [tool:pytest] after one (beets configures pytest in setup.cfg).
+	byRoot := map[string]int{}
+	for position, config := range configs {
+		byRoot[config.root] = position
+	}
+	for _, name := range []string{"pytest.ini", "tox.ini", "setup.cfg"} {
+		section := "pytest"
+		if name == "setup.cfg" {
+			section = "tool:pytest"
+		}
+		for _, entry := range repository.Entries() {
+			if path.Base(entry.Path) != name {
+				continue
+			}
+			root := path.Dir(entry.Path)
+			if at, known := byRoot[root]; known && !(name == "pytest.ini" && configs[at].iniPriority == 0) {
+				continue
+			}
+			content, err := repository.ReadFileAll(entry.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+			values, present := iniSection(string(content.Bytes), section)
+			if !present {
+				continue
+			}
+			authority := declared[root] || name == "setup.cfg" && setupCFGRequiresPytest(string(content.Bytes))
+			patterns, explicit := strings.Fields(values["python_files"]), false
+			if _, explicit = values["python_files"]; !explicit {
+				if !authority {
+					continue
+				}
+				patterns = []string{"test_*.py", "*_test.py"}
+			}
+			found := config{root: root, patterns: patterns, resolved: true, iniPriority: 1}
+			if at, known := byRoot[root]; known {
+				configs[at] = found
+			} else {
+				byRoot[root] = len(configs)
+				configs = append(configs, found)
+			}
+		}
+	}
 	// The nearest authored configuration owns a file; an unresolved nearer
 	// configuration never falls through to a broader parent rule.
 	sort.Slice(configs, func(i, j int) bool { return len(configs[i].root) > len(configs[j].root) })
@@ -216,4 +295,60 @@ func pytestSelection(repository *corpus.Corpus) (map[string]bool, map[string]str
 		}
 	}
 	return tests, owners, nil
+}
+
+// iniSection is one INI section's keys and values, a value's indented
+// continuation lines joined to it by a space; whether the section exists.
+func iniSection(text, name string) (map[string]string, bool) {
+	values, inside, present, key := map[string]string{}, false, false, ""
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";"):
+		case strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]"):
+			inside = strings.TrimSpace(trimmed[1:len(trimmed)-1]) == name
+			present = present || inside
+			key = ""
+		case !inside:
+		case key != "" && (line[0] == ' ' || line[0] == '\t'):
+			values[key] = strings.TrimSpace(values[key] + " " + trimmed)
+		default:
+			name, value, found := strings.Cut(trimmed, "=")
+			if !found {
+				name, value, found = strings.Cut(trimmed, ":")
+			}
+			if found {
+				key = strings.TrimSpace(name)
+				values[key] = strings.TrimSpace(value)
+			}
+		}
+	}
+	return values, present
+}
+
+// setupCFGRequiresPytest reports a setup.cfg whose options require pytest:
+// install_requires, tests_require or an extra listing it.
+func setupCFGRequiresPytest(text string) bool {
+	requires := func(value string) bool {
+		for _, requirement := range strings.Fields(strings.ReplaceAll(value, ",", " ")) {
+			name := strings.ToLower(requirement)
+			if cut := strings.IndexAny(name, "[<>=!~;@"); cut >= 0 {
+				name = name[:cut]
+			}
+			if name == "pytest" {
+				return true
+			}
+		}
+		return false
+	}
+	if options, ok := iniSection(text, "options"); ok && (requires(options["install_requires"]) || requires(options["tests_require"])) {
+		return true
+	}
+	extras, _ := iniSection(text, "options.extras_require")
+	for _, value := range extras {
+		if requires(value) {
+			return true
+		}
+	}
+	return false
 }

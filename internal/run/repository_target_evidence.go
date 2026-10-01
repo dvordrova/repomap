@@ -83,7 +83,7 @@ func repositoryNativeCandidates(repository *corpus.Corpus, discovery repositoryT
 					break
 				}
 			}
-			if repositoryToolingFileRef(repository, representative) {
+			if repositoryToolingFileRef(repository, representative) || adapter.TestFile != nil && adapter.TestFile(representative) {
 				tooling[row.Target.Key] = struct{}{}
 				continue
 			}

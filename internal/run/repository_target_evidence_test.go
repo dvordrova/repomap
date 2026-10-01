@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
 
@@ -139,6 +140,19 @@ func TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidat
 			}
 			if selected.Row.Ref == "" || selected.Row.Kind != "executable" {
 				t.Fatal("source facts removed the author-shebang candidate")
+			}
+			// A script in the test directory is test code, no program a
+			// newcomer runs (beets' test/testall.py): tests/run_tests.py is
+			// no candidate, though discovery finds its guard.
+			for _, candidate := range native {
+				if strings.Contains(candidate.Target.Selector, "tests/run_tests") {
+					t.Fatalf("a test-only executable is a program candidate: %s", candidate.Target.Selector)
+				}
+			}
+			if !slices.ContainsFunc(discovery.adapters[0].Authority.(pythontarget.Catalog).Entries, func(target pythontarget.Target) bool {
+				return strings.Contains(target.Selector, "tests/run_tests")
+			}) {
+				t.Fatal("discovery no longer finds the test runner's guard: the case checks nothing")
 			}
 			if !executable {
 				firstKey = selected.Target.Key

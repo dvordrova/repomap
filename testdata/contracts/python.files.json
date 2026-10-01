@@ -231,22 +231,26 @@
     },
     {
       "id": "f58",
-      "path": "tests/sample_orders.py"
+      "path": "tests/run_tests.py"
     },
     {
       "id": "f59",
-      "path": "tests/test_facade.py"
+      "path": "tests/sample_orders.py"
     },
     {
       "id": "f60",
-      "path": "workspace/pyproject.toml"
+      "path": "tests/test_facade.py"
     },
     {
       "id": "f61",
-      "path": "workspace/src/fixture_shared/local/__init__.py"
+      "path": "workspace/pyproject.toml"
     },
     {
       "id": "f62",
+      "path": "workspace/src/fixture_shared/local/__init__.py"
+    },
+    {
+      "id": "f63",
       "path": "workspace/src/fixture_shared/local/consumer.py"
     }
   ]

@@ -9,6 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/jstsproject"
+	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
@@ -175,6 +176,16 @@ func discoverPythonRepositoryTargets(
 		Key: repositoryTargetAdapterPython, Candidates: candidates,
 		RequiredFileRefs: required, Authority: catalog,
 		ResolvesFile: resolver.Resolves,
+	}
+	// beets' test/testall.py and test/rsrc/convert_stub.py, scripts in its
+	// test directory, had been two of its seven programs.
+	tests, err := pythonprogramindex.TestSources(options.Repository, catalog.Entries)
+	if err != nil {
+		return repositoryTargetAdapterDiscovery{}, false, fmt.Errorf("read Python test sources: %w", err)
+	}
+	discovery.TestFile = func(fileRef corpus.FileID) bool {
+		info, ok := options.Repository.Info(fileRef)
+		return ok && tests[info.Entry.Path]
 	}
 	discovery.NativeEvidence = func(target repositoryTypedTarget) (repositoryNativeEvidence, error) {
 		native, ok := repositoryPythonTarget(target)

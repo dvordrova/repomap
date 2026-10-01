@@ -119,6 +119,10 @@ type repositoryTargetAdapterDiscovery struct {
 	RequiredFileRefs []corpus.FileID
 	Authority        any
 	NativeEvidence   func(repositoryTypedTarget) (repositoryNativeEvidence, error)
+	// TestFile, when set, reports a file the language's test facts read as
+	// test code: a target launched from one is no program (a test-only
+	// executable), left out as a tooling directory's are.
+	TestFile func(corpus.FileID) bool
 
 	ResolvesFile      func(corpus.FileID) bool
 	RestoreFiles      func([]corpus.FileID) ([]repositoryTargetFileRestoration, error)

@@ -824,7 +824,13 @@ own launch boundary instead of folding into both launches (READING).
 ## Test sources
 
 A resolved pytest table in `pyproject.toml` (`[tool.pytest]` or
-`[tool.pytest.ini_options]`) owns the Python files below it. Its
+`[tool.pytest.ini_options]`), or pytest's INI configuration (`pytest.ini`'s
+`[pytest]`, which comes before a `pyproject.toml` table, then `tox.ini`'s
+`[pytest]` and `setup.cfg`'s `[tool:pytest]`; 2026-10-01: beets configures
+pytest in `setup.cfg` and none of its 133 test files had been test code),
+owns the Python files below it. An INI configuration uses pytest's default
+patterns when pytest is declared by the `pyproject.toml` beside it or
+required by that `setup.cfg`'s options. Its
 `python_files` patterns select test modules. Without that setting, pytest's
 default patterns apply only when pytest is a declared dependency. Every
 `conftest.py` under a resolved table is test code too: it is pytest's own
@@ -843,8 +849,17 @@ distribution folds into `freqtrade` (DISCOVERY), so `tests/` is its; its
 selected by no pattern, had drawn "Strategy test fixtures" and "Test
 fixtures" parts on the product map (READING's test-only part rule reads
 this fact). A test module inside a declared package (`pandas/tests`) is
-selected alone, and a directory holding a program's launch file is none
-(its test-module subdirectory may be). The cumulative fixture's `tests/`
+selected alone, and a directory holding the launch file of a program the
+build declares (a console or GUI script, a package's `__main__`) is none
+(its test-module subdirectory may be). A script launched from a test
+directory (a `__main__` guard or a shebang, which no build names) is test
+code with it, never a block: a stub or a runner the tests start (beets'
+`test/testall.py` and `test/rsrc/convert_stub.py`), and target discovery
+leaves such a test-only executable out of the programs, as it does a
+tooling directory's (DISCOVERY). The cumulative fixture's
+`tests/run_tests.py`, a guard script, is test code and no program
+candidate (`TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidate`).
+The cumulative fixture's `tests/`
 beside `src/` is a test directory: `tests/__init__.py` and
 `tests/sample_orders.py`, which no pattern names, are test code;
 `src/fixture_app/test_market.py` inside the declared package is selected

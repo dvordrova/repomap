@@ -205,7 +205,15 @@ Regression comparisons preserve every materialized byte while checking that repe
   exact file candidates and resolvable repository-guidance candidates into one
   repository-wide `TargetPortfolio` request, leaving out any candidate under a
   `.claude`, `.github`, `.vscode` or `testdata` directory (hooks, workflows,
-  editor settings and test inputs are never a product); the presence of one supported
+  editor settings and test inputs are never a product), and any executable
+  launched from a file its language's test facts read as test code (a
+  test-only executable: Python's scripts in a test directory, PYTHON § Test
+  sources; 2026-10-01, beets' `test.testall` and `test.rsrc.convert_stub`
+  had been two of its seven programs). Go's test code is `_test.go`, which
+  builds no program; Clojure's `:test` alias runs the test runner, no
+  candidate; C's and JS/TS's test programs (a Makefile test target, a
+  package's test runner) have no test-source fact yet, recorded missing;
+  the presence of one supported
   language must never suppress another. Bind one canonical required file
   representative for every exact native target, deduplicating a shared
   representative and never requiring every alternative file for the same
