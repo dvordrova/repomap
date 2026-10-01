@@ -1,5 +1,29 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — No author doc comments in model requests; casdoor's ApiController fits
+
+- **Diagnosis:** casdoor's atlas_symbols "554 given" rows were 2 refused
+  rows plus 552 Jev answers under the margin. The 2 refusals were one-row
+  windows already isolated by `FitClassifierWindows`, over Jev's question
+  envelope (about 32k tokens for state plus the longest question; the
+  largest accepted was 59.5 KB): `InitAPI` 162.6 KB (327 route calls,
+  56 KB of bindings) and `ApiController` 131.8 KB (351 owned declarations,
+  77 KB of them swagger comments). Splitting cannot help one row.
+- **Rule** (1300d794, owner's standing rule: model inputs are code
+  structure): no atlas or Jev request carries a docstring, package doc or
+  caller doc; places keep the quotes for the reader's fallback lines;
+  README claims, orientation's seed rows and claims are unchanged.
+  `TestProviderBodiesCarryNoAuthorDocs` fails if kvd's doc comments reach
+  any body.
+- **casdoor** (clean HEAD 1300d794; a first attempt lost the Go target to
+  "unavailable for SSA" with 3.6 GB of disk free, the second ran whole):
+  refused rows 2 → 1 (ApiController answered, InitAPI still over the
+  envelope: honest); 162 live calls, atlas_symbols 63 windows; key_symbol
+  flipped on 552 of 6,064 compared rows (357 no→yes, 195 yes→no; yes 957 →
+  1,120); boundary names 159 reorderings of the same words, addresses 3.
+- **freqtrade:** 155 live calls, atlas_symbols 98 windows, refused 0 → 0;
+  key_symbol flipped on 205 of 5,647 rows; boundary names 3.
+
 ## 2026-10-01 — An entered program's ports keep one screen size and stay in sight
 
 - **Ports** (`placePorts`, `fitPortLines`): closer than the program was
