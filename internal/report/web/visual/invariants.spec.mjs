@@ -49,7 +49,7 @@ for(const target of targets)for(const path of paths){
   test(`invariants of ${target.repo} (${path})`,async({page})=>{
     test.setTimeout(Number(process.env.REPOMAP_INVARIANT_TIMEOUT||4*3600_000));
     // Each page error names the step that raised it.
-    let phase='loading';const errors=[];page.on('pageerror',error=>errors.push(`${error.message} (${phase})`));
+    let phase='loading';const errors=[],stacks=[];page.on('pageerror',error=>{errors.push(`${error.message} (${phase})`);stacks.push(`${phase}: ${error.stack||error.message}`);});
     const sep=target.url.includes('?')?'&':'?';
     await page.goto(path==='scene'?`${target.url}${sep}scene=1`:target.url);
     await page.waitForFunction(()=>{const m=document.querySelector('[data-map]');return m&&m.classList.contains('flow-enabled')&&!m.classList.contains('flow-initializing')&&document.querySelector('.flow-root');},null,{timeout:180_000});
@@ -195,6 +195,7 @@ for(const target of targets)for(const path of paths){
       }
       const raised=errors.slice(errorsBefore);
       add('page-errors',!raised.length,raised.slice(0,3).join(' | '));
+      if(raised.length)info.errorStacks=stacks.slice(errorsBefore,errorsBefore+3);
       info.seconds=Math.round((Date.now()-started)/1000);
       result.levels.push({...level,info,invariants:r});
       console.log(`${target.repo} ${path} · ${level.name}: ${invariants.filter(([n])=>r[n].failed).map(([n])=>`${n} ${r[n].failed}/${r[n].checked}`).join(', ')||'all pass'} (${info.seconds}s${info.error?`; error ${info.error}`:''})`);
