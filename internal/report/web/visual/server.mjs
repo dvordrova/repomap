@@ -6,7 +6,9 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const here = new URL('./', import.meta.url);
-const templates = new URL('../../templates/', here);
+// REPOMAP_FIXTURE_TEMPLATES draws the fixture with another report's
+// templates directory (a clean export of a commit), not this tree's.
+const templates = process.env.REPOMAP_FIXTURE_TEMPLATES?new URL(`file://${process.env.REPOMAP_FIXTURE_TEMPLATES.replace(/\/?$/,'/')}`):new URL('../../templates/', here);
 const css = (await Promise.all((await readdir(new URL('css/',templates))).sort()
   .filter(n=>n.endsWith('.css')).map(n=>readFile(new URL('css/'+n,templates),'utf8')))).join('\n');
 const html = await readFile(new URL('fixture.html',here));
@@ -31,13 +33,30 @@ const renderReal=()=>real||=(async()=>{
 // Reports already rendered, named by REPOMAP_GEOMETRY_REPORTS, served as
 // /geometry-<n>.html for the geometry checks (geometry.spec.mjs).
 const geometryReports=(process.env.REPOMAP_GEOMETRY_REPORTS||'').split(',').filter(Boolean);
+// Reports named by REPOMAP_INVARIANT_REPORTS, served as /invariant-<n>.html
+// for the invariant table (invariants.spec.mjs).
+const invariantReports=(process.env.REPOMAP_INVARIANT_REPORTS||'').split(',').filter(Boolean);
 // Reports named by REPOMAP_JOURNEY_REPORTS, served as /journey-<n>.html for
 // the journey check and the reading lints (journeys.spec.mjs).
 const journeyReports=(process.env.REPOMAP_JOURNEY_REPORTS||'').split(',').filter(Boolean);
-// This test-only server exposes only this fixture, ordinary report assets and
-// those rendered reports.
+// This test-only server exposes only this fixture, its synthetic graphs,
+// ordinary report assets and those rendered reports.
 createServer(async(request,response)=>{
   const path=new URL(request.url,'http://127.0.0.1').pathname;
+  const invariant=/^\/invariant-(\d+)\.html$/.exec(path);
+  if(invariant&&invariantReports[Number(invariant[1])]){
+    try{response.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'}).end(await readFile(invariantReports[Number(invariant[1])]));}
+    catch(error){response.writeHead(500).end(String(error));}
+    return;
+  }
+  // The seeded synthetic graphs (fixtures/synthetic-*.json), drawn by the
+  // fixture page as /?graph=<name>.
+  const graph=/^\/fixtures\/(synthetic-[a-z0-9-]+)\.json$/.exec(path);
+  if(graph){
+    try{response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(await readFile(new URL(`../fixtures/${graph[1]}.json`,here)));}
+    catch{response.writeHead(404).end();}
+    return;
+  }
   const journey=/^\/journey-(\d+)\.html$/.exec(path);
   if(journey&&journeyReports[Number(journey[1])]){
     try{response.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'}).end(await readFile(journeyReports[Number(journey[1])]));}

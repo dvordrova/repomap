@@ -1,7 +1,11 @@
 import * as prepared from './two-systems-five-externals.mjs';
 
 const options=new URLSearchParams(location.search);
-const {records,relations,areas,inputOwner}=options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory({matchedPeer:options.has('matched-peer')}):options.has('many-external')
+// A seeded synthetic graph (fixtures/synthetic-*.json, page data as the
+// report hands it to the canvas), named by ?graph=.
+const graph=options.get('graph')?await (await fetch(`/fixtures/${options.get('graph')}.json`)).json():null;
+if(graph)document.querySelector('h1').textContent=graph.title||options.get('graph');
+const {records,relations,areas,inputOwner}=graph?graph:options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory({matchedPeer:options.has('matched-peer')}):options.has('many-external')
   ?prepared.manyExternalInventory({inputs:!options.has('no-inputs')}):options.has('dense')?prepared.denseInventory():prepared;
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';
 if(options.has('short-names'))document.querySelector('h1').textContent='Short component names · complete initial inventories';

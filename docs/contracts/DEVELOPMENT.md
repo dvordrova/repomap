@@ -191,6 +191,28 @@ lone number. It runs on the fixture always,
 and on rendered reports named by `REPOMAP_GEOMETRY_REPORTS` (a comma list of
 HTML files from `repomap render`), printing each finding with its level.
 
+`visual/invariants.spec.mjs` (`visual/invariants.mjs`) is the canvas
+rewrite's invariant table (REPORT, canvas invariants). On each rendered report
+named by `REPOMAP_INVARIANT_REPORTS` (served as `/invariant-<n>.html`) and
+each seeded synthetic graph named by `REPOMAP_INVARIANT_GRAPHS` (`all`, or
+names of `fixtures/synthetic-*.json`: no inputs, 150 outside systems,
+cycles, 40 loose parts; written by `visual/synthetic-graphs.mjs` in the page
+data shape the canvas receives, for node scene tests too), it visits the
+whole map, every program and every area of the two largest programs, on the
+old path and on `?scene=1` (`REPOMAP_INVARIANT_PATHS`). At each level it
+checks the arrows at rest, makes 24 random pans and 50 random pointer moves,
+points at every arrow and measures ports and markers at every camera; it
+writes `<repo>.<path>.json` to `REPOMAP_INVARIANT_OUT`, and
+`node visual/invariant-table.mjs DIR` writes `table.md` and `table.json`
+(repo × level × invariant, pass or fail with counts). It fails a run only
+with `REPOMAP_INVARIANT_STRICT`. Run it with one browser:
+
+    REPOMAP_INVARIANT_REPORTS=a.html,b.html REPOMAP_INVARIANT_OUT=dir \
+      npx playwright test invariants --workers=1
+
+`REPOMAP_FIXTURE_TEMPLATES` draws the synthetic graphs with another templates
+directory (a clean `git archive` export) instead of the working tree's.
+
 `visual/journeys.spec.mjs` (`visual/journeys.mjs`) runs on rendered reports
 named by `REPOMAP_JOURNEY_REPORTS` (a comma list, served as
 `/journey-<n>.html`; no provider call):
