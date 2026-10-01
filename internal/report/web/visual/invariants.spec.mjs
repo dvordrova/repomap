@@ -73,7 +73,7 @@ for(const target of targets)for(const path of paths){
     const largest=[...programs].sort((a,b)=>b.parts-a.parts).slice(0,2);
     const levels=[{kind:'home',id:'',name:'home'},...programs.map(p=>({kind:'program',id:p.id,name:`program ${p.title}`})),
       ...largest.flatMap(p=>p.areas.map(a=>({kind:'area',id:a.id,frame:a.id,name:`area ${p.title} / ${a.title}`})))];
-    const result={repo:target.repo,file:target.file,path,sceneOn,viewport:page.viewportSize(),pans,moves,generated:new Date().toISOString(),levels:[]};
+    const result={repo:target.repo,file:target.file,path,head:process.env.REPOMAP_INVARIANT_HEAD||'',sceneOn,viewport:page.viewportSize(),pans,moves,generated:new Date().toISOString(),levels:[]};
     for(const level of levels.filter(level=>!only||only.test(level.name))){
       const started=Date.now(),errorsBefore=errors.length;
       const r={};for(const [name] of invariants)r[name]={checked:0,failed:0,examples:[]};
