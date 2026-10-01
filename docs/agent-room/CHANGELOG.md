@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — A call into the repository's own Go package is offered its programs (data 2)
+
+- **fb6e599c (this run's one request change):** etcd's "etcd" / "Etcd
+  Server" were never a declined program offer: client/v3's KV.Get (db) and
+  the api module's gRPC stubs are repository packages called as outside
+  symbols, and the systems question named them as outside systems. A Go
+  package a Go program's module path names is no longer asked to the
+  systems question, and its destination is offered the programs whatever
+  its kind. etcd 20261001-165700: rows naming the server program 111 →
+  522; "etcd" (7 programs) and "Etcd Server" (2) gone; shared destination
+  names 6 → 5 (DNS resolver, Etcd [cache, etcd-dump-metrics: free names
+  left], GitHub, bbolt, the server); benchmark → server joins. redis-cli
+  → redis-server, freqtrade-client → freqtrade and casdoor's web →
+  casdoor kept.
+
 ## 2026-10-01 — etcd: a program uses only code it links; one spelling per system (data 2)
 
 - **f0a35160:** places edges carry `Static` (an import, a direct exact
