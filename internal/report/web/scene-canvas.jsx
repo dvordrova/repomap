@@ -466,7 +466,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const pointer=state.pointer;
     const tip=pointer&&(pointer.type==='marker'||pointer.type==='port')?items.find(item=>item.id===pointer.id):null;
     // A box whose words do not read yet is named by the pointer on it.
-    const box=pointer?.type==='box'&&pointer.node&&pointer.node.text*17*v.zoom<11?pointer.node:null;
+    // A chip or a bucket pointed at says who calls it, or what it holds;
+    // any other box whose words do not read yet is named.
+    const box=pointer?.type==='box'&&pointer.node&&(['chip','bucket'].includes(pointer.node.display)||pointer.node.text*17*v.zoom<11)?pointer.node:null;
     return <div className="scene-overlay" aria-hidden="true">
       {items.filter(item=>item.type==='zoom').map(item=><span key={item.id} className="scene-zoom" data-zoom-into={item.box}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></span>)}
@@ -482,14 +484,18 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // What a box is, while its words are too small to read: its name and a
   // line of what it does.
   function BoxTip({node,camera:v}){
-    const item=model.nodes.get(node.id)?.item,about=item?.role||item?.summary||'';
+    const item=model.nodes.get(node.id)?.item;
+    let head=node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title,names=[],about='';
+    if(node.display==='chip')names=[...(model.edges.filter(edge=>edge.to===node.id&&model.nodes.get(edge.from)?.kind==='part').map(edge=>model.nodes.get(edge.from).name))].filter((name,i,all)=>all.indexOf(name)===i).map(name=>`← ${name}`);
+    else if(node.display==='bucket')names=model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||'');
+    else about=item?.role||item?.summary||'';
     const left=(node.rect.x+node.rect.width)*v.zoom+v.x+6,top=node.rect.y*v.zoom+v.y;
-    return <div className="scene-tip scene-box-tip" style={{left,top:Math.max(4,top)}}>
-      <b>{node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title}</b>{about&&<span>{about}</span>}</div>;
+    return <div className={`scene-tip scene-box-tip ${names.length>12?'scene-tip-columns':''}`} style={{left,top:Math.max(4,top)}}>
+      <b>{head}</b>{about&&<span>{about}</span>}{names.map((name,i)=><span key={i}>{name}</span>)}</div>;
   }
   // What a marker or a port stands for, one name to a line.
   function MarkTip({item}){
-    const most=8;
+    const most=30;
     let head='',names=[];
     if(item.type==='port')head=`${item.way==='out'?'→':'←'} ${nameOf(item.program)}`;
     else if(item.side==='in'){
@@ -500,7 +506,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       names=item.systems.map(id=>model.nodes.get(id)?.name||'');
     }
     const right=item.side!=='in';
-    return <div className={`scene-tip ${right?'scene-tip-right':''}`} style={{left:right?item.left+item.px/2+6:undefined,right:right?undefined:`calc(100% - ${item.left-item.px/2-6}px)`,top:item.top-item.px/2}}>
+    return <div className={`scene-tip ${right?'scene-tip-right':''} ${names.length>12?'scene-tip-columns':''}`} style={{left:right?item.left+item.px/2+6:undefined,right:right?undefined:`calc(100% - ${item.left-item.px/2-6}px)`,top:item.top-item.px/2}}>
       <b>{head}</b>{names.slice(0,most).map((name,i)=><span key={i}>{name}</span>)}{names.length>most&&<span>…</span>}</div>;
   }
   function ArrowCard({edgeKey,scene}){

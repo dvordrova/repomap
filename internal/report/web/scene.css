@@ -73,3 +73,6 @@
 .scene-root .react-flow__node .scene-deep [data-box-title]{opacity:1}
 .scene-box-tip{white-space:normal;max-width:280px}
 .scene-box-tip>span{overflow:visible;text-overflow:clip}
+/* A long list in a tip stands in two columns, its heading over both. */
+.scene-tip.scene-tip-columns{display:grid;grid-template-columns:auto auto;column-gap:14px;max-width:520px}
+.scene-tip.scene-tip-columns>b{grid-column:1/-1}
