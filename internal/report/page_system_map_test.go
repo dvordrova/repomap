@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"math/rand/v2"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -858,5 +860,38 @@ func TestAProgramDependencyAlreadyDrawnIsNotASecondArrow(t *testing.T) {
 	}
 	if !slices.Equal(between, []string{"n-ws>ws-in", "system-component-docs>system-component-bot"}) {
 		t.Fatalf("a drawn dependency gained a second arrow, or an undrawn one was lost: %v", between)
+	}
+}
+
+// An operation map's arrows come from a map, so their order is total: two
+// joints from one input into one handler, alike but for their connection,
+// sort the same way whatever order they arrive in, and so do the calls
+// the system map merges from them (etcd's had swapped on every render).
+func TestOperationArrowsSortTheSameWhateverOrderTheyArriveIn(t *testing.T) {
+	arrow := func(connection, caller string, possible bool) pageMapEdge {
+		return pageMapEdge{From: "op-put", To: "peer-server-g1", Label: "calls", Operations: "op-put", Possible: possible, ConnectionID: connection,
+			Calls: []pageEdgeCall{{Label: caller + " calls Put", Caller: caller, Callee: "server.go:154"}}}
+	}
+	edges := []pageMapEdge{arrow("t1:c9", "AuthStatus", false), arrow("t1:c2", "AuthEnable", false), arrow("t1:c5", "AuthDisable", true),
+		arrow("t1:c7", "Txn", false), {From: "op-get", To: "g2", Label: "implemented in", Operations: "op-get"}}
+	var want []string
+	random := rand.New(rand.NewPCG(1, 2))
+	for round := range 50 {
+		shuffled := slices.Clone(edges)
+		random.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+		sort.Slice(shuffled, func(i, j int) bool { return operationEdgeBefore(shuffled[i], shuffled[j]) })
+		var calls []string
+		for _, edge := range collapseSystemMapEdges(shuffled) {
+			for _, call := range edge.Calls {
+				calls = append(calls, call.Label)
+			}
+		}
+		if round == 0 {
+			want = calls
+			continue
+		}
+		if !slices.Equal(calls, want) {
+			t.Fatalf("round %d: calls %q, first round %q", round, calls, want)
+		}
 	}
 }

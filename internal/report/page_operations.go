@@ -380,13 +380,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		}
 		result.Edges = append(result.Edges, drawn)
 	}
-	sort.Slice(result.Edges, func(i, j int) bool {
-		a, b := result.Edges[i], result.Edges[j]
-		if a.From+a.To+a.Label+a.Operations == b.From+b.To+b.Label+b.Operations {
-			return !a.Possible && b.Possible
-		}
-		return a.From+a.To+a.Label+a.Operations < b.From+b.To+b.Label+b.Operations
-	})
+	sort.Slice(result.Edges, func(i, j int) bool { return operationEdgeBefore(result.Edges[i], result.Edges[j]) })
 	result.Width, result.MinWidth = 540, 540
 	if len(remoteKeys) > 0 {
 		result.Width = 780
@@ -395,6 +389,21 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	}
 	result.Lanes = append(result.Lanes, pageMapLane{Label: "Operations", X: mapPadding}, pageMapLane{Label: "Implementation", X: 246})
 	return result
+}
+
+// operationEdgeBefore orders an operation map's arrows, which come from a
+// map, totally: by their ends, label and inputs, an exact arrow before a
+// possible one, then by their connection, which tells apart two joints
+// from one input into one handler. etcd's two had swapped on every render,
+// and so had the calls the system map merged from them.
+func operationEdgeBefore(a, b pageMapEdge) bool {
+	if ka, kb := a.From+a.To+a.Label+a.Operations, b.From+b.To+b.Label+b.Operations; ka != kb {
+		return ka < kb
+	}
+	if a.Possible != b.Possible {
+		return !a.Possible
+	}
+	return a.ConnectionID < b.ConnectionID
 }
 
 func operationLocationKey(location programindex.Location) string {
