@@ -1,5 +1,43 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — Canvas invariant harness and the S0 tables (old path, ?scene=1)
+
+- **Harness** (`visual/invariants.mjs`, `invariants.spec.mjs`,
+  `invariant-table.mjs`): every level a reader reaches (the whole map, each
+  program, every area of the two largest programs), 24 random wheel/drag
+  pans and 50 random pointer moves per level, every arrow pointed at, every
+  port and marker pointed at, faded chips pointed at and focused. 23
+  invariants (REPORT, canvas invariants); the table marks each cell with
+  the commit it ran on and lays later passes over earlier ones. Lanes are
+  checked against Step 1's 7.5 px (`step1-gap`), not counted; the Outside
+  frames by B′'s structure, the ~40 bound only for casdoor.
+- **Synthetic graphs** (`fixtures/synthetic-*.json`, `synthetic-graphs.mjs`):
+  no inputs, 150 outside systems, cycles, 40 loose parts, seeded, in the
+  page data shape plus the saved scene (scene.go's rules, ported). B′ gives
+  outside-150's casdoor-like frame 45 top items (18 shared, 25 buckets, 2
+  singles), which is why the count bound stays casdoor's.
+- **Runs** (binary of 5b9c192f, `--no-serve --no-open`): casdoor 150124
+  (183 s, 4 live; 2 atlas_symbols windows refused locally by the context
+  limit, 554 rows without an answer), headscale 150427 (211 s, 1091 live),
+  beets 150758 (835 s, 1609 live; 475 s in publication, one glossary
+  request over its output limit), etcd 152153 (648 s, 2649 live); all exit
+  0, all targets analyzed.
+- **Old path** (a54845ab renders; othello, redis, litestream, headscale;
+  the rest not run, superseded): pans flip the entered program and drop
+  Inputs/Outside (othello app, litestream cmd/litestream and -vfs,
+  headscale cmd/dev, synthetic cycles), pans drop quiet arrows, shared runs
+  on 19 of 32 levels, arrows unreachable under another's hit path, ports
+  18.8–24 px by camera, up to 15 lanes in a gap. Table:
+  scratchpad canvas-rewrite/table/table.md.
+- **?scene=1** (base 03a5bb3f, re-run cells on 5904dfa7; 8 repos + 4
+  graphs, 151 levels): green but for beets and etcd home lanes 4.2/2.7 px,
+  an etcd home arrow covered by its neighbour's hit path, etcd Storage
+  layer's ends 1.5–2.2 px off their boxes at entry zoom 105.75, and three
+  freqtrade chips drawn at 10.6 px unfaded. Earlier passes found and the
+  lead fixed: a member without a rect crashing hitTest after a drag pan,
+  program cards clipping their words. Table: scratchpad
+  canvas-rewrite/table/scene/table.md.
+
 ## 2026-10-01 — What Derive computes is saved with the GroupsIndex (data 1)
 
 - **ada29625 (GroupsIndex 27, report.json 95):** analysis derives each
