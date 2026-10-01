@@ -5,6 +5,9 @@ const options=new URLSearchParams(location.search);
 // report hands it to the canvas), named by ?graph=.
 const graph=options.get('graph')?await (await fetch(`/fixtures/${options.get('graph')}.json`)).json():null;
 if(graph)document.querySelector('h1').textContent=graph.title||options.get('graph');
+// Its saved scene, where a report carries it (#rm-scene), before the canvas
+// reads it.
+if(graph?.scene){const saved=document.createElement('script');saved.type='application/json';saved.id='rm-scene';saved.textContent=JSON.stringify(graph.scene);document.body.appendChild(saved);}
 const {records,relations,areas,inputOwner}=graph?graph:options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory({matchedPeer:options.has('matched-peer')}):options.has('many-external')
   ?prepared.manyExternalInventory({inputs:!options.has('no-inputs')}):options.has('dense')?prepared.denseInventory():prepared;
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';

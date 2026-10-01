@@ -141,19 +141,7 @@
   },
   {
    "id": "t1-o1",
-   "title": "index webhook",
-   "activation": "command",
-   "lane": "triggers",
-   "sourceKind": "fact",
-   "trace": [],
-   "componentOwner": "system-component-t1",
-   "componentName": "alpha",
-   "kind": "Inputs",
-   "category": "input"
-  },
-  {
-   "id": "t1-o2",
-   "title": "POST /api/plugin/report",
+   "title": "GET /api/token/audit",
    "activation": "request",
    "lane": "triggers",
    "sourceKind": "fact",
@@ -164,9 +152,9 @@
    "category": "input"
   },
   {
-   "id": "t1-o3",
-   "title": "ledger-invoice",
-   "activation": "interaction",
+   "id": "t1-o2",
+   "title": "replica-alert",
+   "activation": "continuous",
    "lane": "triggers",
    "sourceKind": "fact",
    "trace": [],
@@ -177,13 +165,25 @@
    "unestablished": true
   },
   {
+   "id": "t1-o3",
+   "title": "GET /api/ledger/cache",
+   "activation": "request",
+   "lane": "triggers",
+   "sourceKind": "fact",
+   "trace": [],
+   "componentOwner": "system-component-t1",
+   "componentName": "alpha",
+   "kind": "Inputs",
+   "category": "input"
+  },
+  {
    "id": "system-outside-t1",
    "title": "alpha",
    "branch": "outside",
    "lane": "dependencies",
    "children": [
     "system-outside-t1-b1-destination",
-    "system-outside-t1-b5-destination"
+    "system-outside-t1-b4-destination"
    ],
    "kind": "External communication",
    "category": "external"
@@ -196,51 +196,13 @@
    "destinationKind": "database",
    "children": [
     "system-outside-t1-b2",
-    "system-outside-t1-b3",
-    "system-outside-t1-b4"
+    "system-outside-t1-b3"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
    "id": "system-outside-t1-b2",
-   "title": "deviceOpen",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t1-b3",
-   "title": "cacheSend",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t1-b4",
-   "title": "ledgerQuery",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t1-b5-destination",
-   "title": "Kafka",
-   "branch": "communication",
-   "lane": "dependencies",
-   "destinationKind": "queue",
-   "children": [
-    "system-outside-t1-b6",
-    "system-outside-t1-b7"
-   ],
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t1-b6",
    "title": "pluginQuery",
    "lane": "dependencies",
    "sourceKind": "fact",
@@ -248,8 +210,37 @@
    "category": "external"
   },
   {
-   "id": "system-outside-t1-b7",
+   "id": "system-outside-t1-b3",
    "title": "importOpen",
+   "lane": "dependencies",
+   "sourceKind": "fact",
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
+   "id": "system-outside-t1-b4-destination",
+   "title": "Kafka",
+   "branch": "communication",
+   "lane": "dependencies",
+   "destinationKind": "queue",
+   "children": [
+    "system-outside-t1-b5",
+    "system-outside-t1-b6"
+   ],
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
+   "id": "system-outside-t1-b5",
+   "title": "billingQuery",
+   "lane": "dependencies",
+   "sourceKind": "fact",
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
+   "id": "system-outside-t1-b6",
+   "title": "backupOpen",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -274,10 +265,10 @@
   },
   {
    "id": "t2-area-k4",
-   "title": "Index billing",
+   "title": "Invoice snapshot",
    "branch": "area",
    "lane": "core",
-   "summary": "Groups the index billing parts.",
+   "summary": "Groups the invoice snapshot parts.",
    "children": [
     "n-t2-g10",
     "n-t2-g11",
@@ -288,31 +279,31 @@
   },
   {
    "id": "n-t2-g10",
-   "title": "Schema router",
-   "summary": "Handles schema router for its program.",
+   "title": "Profile router",
+   "summary": "Handles profile router for its program.",
    "kind": "Entrypoints",
    "category": "part",
    "lane": "triggers"
   },
   {
    "id": "n-t2-g11",
-   "title": "Replica backup",
-   "summary": "Handles replica backup for its program.",
+   "title": "Gateway cache",
+   "summary": "Handles gateway cache for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g12",
-   "title": "Metrics ledger",
-   "summary": "Handles metrics ledger for its program.",
+   "title": "Config device",
+   "summary": "Handles config device for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "t2-area-k5",
-   "title": "Audit invoice",
+   "title": "Search session",
    "branch": "area",
-   "summary": "Groups the audit invoice parts.",
+   "summary": "Groups the search session parts.",
    "children": [
     "n-t2-g13",
     "n-t2-g14",
@@ -323,30 +314,30 @@
   },
   {
    "id": "n-t2-g13",
-   "title": "Snapshot profile",
-   "summary": "Handles snapshot profile for its program.",
+   "title": "Token device",
+   "summary": "Handles token device for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g14",
-   "title": "Router gateway",
-   "summary": "Handles router gateway for its program.",
+   "title": "Audit plugin",
+   "summary": "Handles audit plugin for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g15",
-   "title": "Cache config",
-   "summary": "Handles cache config for its program.",
+   "title": "Import account",
+   "summary": "Handles import account for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "t2-area-k6",
-   "title": "Device search",
+   "title": "Ledger metrics",
    "branch": "area",
-   "summary": "Groups the device search parts.",
+   "summary": "Groups the ledger metrics parts.",
    "children": [
     "n-t2-g16",
     "n-t2-g17",
@@ -357,22 +348,22 @@
   },
   {
    "id": "n-t2-g16",
-   "title": "Session token",
-   "summary": "Handles session token for its program.",
+   "title": "Export search",
+   "summary": "Handles export search for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g17",
-   "title": "Device audit",
-   "summary": "Handles device audit for its program.",
+   "title": "Snapshot backup",
+   "summary": "Handles snapshot backup for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g18",
-   "title": "Plugin import",
-   "summary": "Handles plugin import for its program.",
+   "title": "Gateway search",
+   "summary": "Handles gateway search for its program.",
    "kind": "Part",
    "category": "part"
   },
@@ -393,7 +384,7 @@
   },
   {
    "id": "t2-o4",
-   "title": "invoice-token",
+   "title": "storage-config",
    "activation": "interaction",
    "lane": "triggers",
    "sourceKind": "fact",
@@ -405,8 +396,8 @@
   },
   {
    "id": "t2-o5",
-   "title": "PUT /api/report/storage",
-   "activation": "request",
+   "title": "billing account",
+   "activation": "command",
    "lane": "triggers",
    "sourceKind": "fact",
    "trace": [],
@@ -417,8 +408,8 @@
   },
   {
    "id": "t2-o6",
-   "title": "cache snapshot",
-   "activation": "command",
+   "title": "account-tenant",
+   "activation": "continuous",
    "lane": "triggers",
    "sourceKind": "fact",
    "trace": [],
@@ -433,56 +424,47 @@
    "branch": "outside",
    "lane": "dependencies",
    "children": [
-    "system-outside-t2-b8-destination",
-    "system-outside-t2-b10-destination"
+    "system-outside-t2-b7-destination",
+    "system-outside-t2-b9-destination"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b8-destination",
+   "id": "system-outside-t2-b7-destination",
    "title": "SQS",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
    "children": [
-    "system-outside-t2-b9"
+    "system-outside-t2-b8"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b9",
-   "title": "snapshotPut",
+   "id": "system-outside-t2-b8",
+   "title": "gatewayQuery",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b10-destination",
+   "id": "system-outside-t2-b9-destination",
    "title": "Kafka",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "queue",
    "children": [
-    "system-outside-t2-b11",
-    "system-outside-t2-b12"
+    "system-outside-t2-b10"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b11",
-   "title": "configQuery",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t2-b12",
-   "title": "tenantSend",
+   "id": "system-outside-t2-b10",
+   "title": "policyPut",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -507,10 +489,10 @@
   },
   {
    "id": "t3-area-k7",
-   "title": "Alert device",
+   "title": "Webhook plugin",
    "branch": "area",
    "lane": "core",
-   "summary": "Groups the alert device parts.",
+   "summary": "Groups the webhook plugin parts.",
    "children": [
     "n-t3-g19",
     "n-t3-g20",
@@ -521,31 +503,31 @@
   },
   {
    "id": "n-t3-g19",
-   "title": "Device account",
-   "summary": "Handles device account for its program.",
+   "title": "Device report",
+   "summary": "Handles device report for its program.",
    "kind": "Entrypoints",
    "category": "part",
    "lane": "triggers"
   },
   {
    "id": "n-t3-g20",
-   "title": "Tenant snapshot",
-   "summary": "Handles tenant snapshot for its program.",
+   "title": "Router session",
+   "summary": "Handles router session for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t3-g21",
-   "title": "Device token",
-   "summary": "Handles device token for its program.",
+   "title": "Export policy",
+   "summary": "Handles export policy for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "t3-area-k8",
-   "title": "Tenant gateway",
+   "title": "Index token",
    "branch": "area",
-   "summary": "Groups the tenant gateway parts.",
+   "summary": "Groups the index token parts.",
    "children": [
     "n-t3-g22",
     "n-t3-g23",
@@ -556,30 +538,30 @@
   },
   {
    "id": "n-t3-g22",
-   "title": "Index export",
-   "summary": "Handles index export for its program.",
+   "title": "Plugin replica",
+   "summary": "Handles plugin replica for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t3-g23",
-   "title": "Policy report",
-   "summary": "Handles policy report for its program.",
+   "title": "Token audit",
+   "summary": "Handles token audit for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t3-g24",
-   "title": "Policy queue",
-   "summary": "Handles policy queue for its program.",
+   "title": "Token alert",
+   "summary": "Handles token alert for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "t3-area-k9",
-   "title": "Alert policy",
+   "title": "Schema ledger",
    "branch": "area",
-   "summary": "Groups the alert policy parts.",
+   "summary": "Groups the schema ledger parts.",
    "children": [
     "n-t3-g25",
     "n-t3-g26",
@@ -590,22 +572,22 @@
   },
   {
    "id": "n-t3-g25",
-   "title": "Webhook plugin",
-   "summary": "Handles webhook plugin for its program.",
+   "title": "Token alert",
+   "summary": "Handles token alert for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t3-g26",
-   "title": "Device report",
-   "summary": "Handles device report for its program.",
+   "title": "Invoice report",
+   "summary": "Handles invoice report for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t3-g27",
-   "title": "Router session",
-   "summary": "Handles router session for its program.",
+   "title": "Gateway token",
+   "summary": "Handles gateway token for its program.",
    "kind": "Part",
    "category": "part"
   },
@@ -626,7 +608,20 @@
   },
   {
    "id": "t3-o7",
-   "title": "GET /api/gateway/token",
+   "title": "DELETE /api/webhook/device",
+   "activation": "request",
+   "lane": "triggers",
+   "sourceKind": "fact",
+   "trace": [],
+   "componentOwner": "system-component-t3",
+   "componentName": "gamma",
+   "kind": "Inputs",
+   "category": "input",
+   "unestablished": true
+  },
+  {
+   "id": "t3-o8",
+   "title": "POST /api/alert/audit",
    "activation": "request",
    "lane": "triggers",
    "sourceKind": "fact",
@@ -637,20 +632,8 @@
    "category": "input"
   },
   {
-   "id": "t3-o8",
-   "title": "import-gateway",
-   "activation": "continuous",
-   "lane": "triggers",
-   "sourceKind": "fact",
-   "trace": [],
-   "componentOwner": "system-component-t3",
-   "componentName": "gamma",
-   "kind": "Inputs",
-   "category": "input"
-  },
-  {
    "id": "t3-o9",
-   "title": "ledger-gateway",
+   "title": "device-search",
    "activation": "interaction",
    "lane": "triggers",
    "sourceKind": "fact",
@@ -666,65 +649,47 @@
    "branch": "outside",
    "lane": "dependencies",
    "children": [
-    "system-outside-t3-b13-destination",
-    "system-outside-t3-b16-destination"
+    "system-outside-t3-b11-destination",
+    "system-outside-t3-b13-destination"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t3-b13-destination",
+   "id": "system-outside-t3-b11-destination",
    "title": "SQS",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
    "children": [
-    "system-outside-t3-b14",
-    "system-outside-t3-b15"
+    "system-outside-t3-b12"
+   ],
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
+   "id": "system-outside-t3-b12",
+   "title": "auditOpen",
+   "lane": "dependencies",
+   "sourceKind": "fact",
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
+   "id": "system-outside-t3-b13-destination",
+   "title": "Kafka",
+   "branch": "communication",
+   "lane": "dependencies",
+   "destinationKind": "queue",
+   "children": [
+    "system-outside-t3-b14"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
    "id": "system-outside-t3-b14",
-   "title": "tokenPut",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t3-b15",
-   "title": "indexOpen",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t3-b16-destination",
-   "title": "Kafka",
-   "branch": "communication",
-   "lane": "dependencies",
-   "destinationKind": "queue",
-   "children": [
-    "system-outside-t3-b17",
-    "system-outside-t3-b18"
-   ],
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t3-b17",
-   "title": "replicaPut",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t3-b18",
-   "title": "accountList",
+   "title": "routerPut",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -735,7 +700,7 @@
   {
    "from": "n-t1-g1",
    "to": "n-t1-g2",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -744,7 +709,7 @@
    "calls": [
     {
      "label": "Import policy calls Profile profile",
-     "at": "n-t1-g1.go:156",
+     "at": "n-t1-g1.go:338",
      "callee": ""
     }
    ],
@@ -762,7 +727,7 @@
    "calls": [
     {
      "label": "Profile profile calls Index policy",
-     "at": "n-t1-g2.go:338",
+     "at": "n-t1-g2.go:147",
      "callee": ""
     }
    ],
@@ -771,7 +736,7 @@
   {
    "from": "n-t1-g3",
    "to": "n-t1-g1",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -780,7 +745,7 @@
    "calls": [
     {
      "label": "Index policy calls Import policy",
-     "at": "n-t1-g3.go:396",
+     "at": "n-t1-g3.go:112",
      "callee": ""
     }
    ],
@@ -798,7 +763,7 @@
    "calls": [
     {
      "label": "Router invoice calls Export metrics",
-     "at": "n-t1-g4.go:147",
+     "at": "n-t1-g4.go:294",
      "callee": ""
     }
    ],
@@ -816,7 +781,7 @@
    "calls": [
     {
      "label": "Export metrics calls Snapshot config",
-     "at": "n-t1-g5.go:230",
+     "at": "n-t1-g5.go:154",
      "callee": ""
     }
    ],
@@ -825,7 +790,7 @@
   {
    "from": "n-t1-g6",
    "to": "n-t1-g4",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -834,7 +799,7 @@
    "calls": [
     {
      "label": "Snapshot config calls Router invoice",
-     "at": "n-t1-g6.go:112",
+     "at": "n-t1-g6.go:195",
      "callee": ""
     }
    ],
@@ -852,7 +817,7 @@
    "calls": [
     {
      "label": "Import queue calls Webhook report",
-     "at": "n-t1-g7.go:317",
+     "at": "n-t1-g7.go:155",
      "callee": ""
     }
    ],
@@ -861,7 +826,7 @@
   {
    "from": "n-t1-g8",
    "to": "n-t1-g9",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -870,7 +835,7 @@
    "calls": [
     {
      "label": "Webhook report calls Plugin policy",
-     "at": "n-t1-g8.go:294",
+     "at": "n-t1-g8.go:151",
      "callee": ""
     }
    ],
@@ -879,7 +844,7 @@
   {
    "from": "n-t1-g9",
    "to": "n-t1-g7",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -888,7 +853,7 @@
    "calls": [
     {
      "label": "Plugin policy calls Import queue",
-     "at": "n-t1-g9.go:280",
+     "at": "n-t1-g9.go:161",
      "callee": ""
     }
    ],
@@ -897,7 +862,7 @@
   {
    "from": "n-t1-g1",
    "to": "n-t1-g5",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -906,7 +871,7 @@
    "calls": [
     {
      "label": "Import policy calls Export metrics",
-     "at": "n-t1-g1.go:154",
+     "at": "n-t1-g1.go:168",
      "callee": ""
     }
    ],
@@ -915,7 +880,7 @@
   {
    "from": "n-t1-g4",
    "to": "n-t1-g8",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -924,7 +889,7 @@
    "calls": [
     {
      "label": "Router invoice calls Webhook report",
-     "at": "n-t1-g4.go:256",
+     "at": "n-t1-g4.go:184",
      "callee": ""
     }
    ],
@@ -942,7 +907,7 @@
    "calls": [
     {
      "label": "Import queue calls Profile profile",
-     "at": "n-t1-g7.go:195",
+     "at": "n-t1-g7.go:95",
      "callee": ""
     }
    ],
@@ -951,7 +916,7 @@
   {
    "from": "n-t1-g3",
    "to": "n-t1-g6",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -960,7 +925,7 @@
    "calls": [
     {
      "label": "Index policy calls Snapshot config",
-     "at": "n-t1-g3.go:352",
+     "at": "n-t1-g3.go:111",
      "callee": ""
     }
    ],
@@ -969,7 +934,7 @@
   {
    "from": "n-t1-g6",
    "to": "n-t1-g3",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -978,29 +943,15 @@
    "calls": [
     {
      "label": "Snapshot config calls Index policy",
-     "at": "n-t1-g6.go:155",
+     "at": "n-t1-g6.go:254",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "t1-o1",
-   "to": "n-t1-g4",
-   "scope": "operation",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [
-    "t1-o1"
-   ],
-   "possible": false,
-   "init": false,
-   "calls": [],
-   "label": "implemented in"
-  },
-  {
    "from": "t1-o2",
-   "to": "n-t1-g1",
+   "to": "n-t1-g6",
    "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1013,76 +964,8 @@
    "label": "implemented in"
   },
   {
-   "from": "t1-o3",
-   "to": "n-t1-g4",
-   "scope": "operation",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [
-    "t1-o3"
-   ],
-   "possible": false,
-   "init": false,
-   "calls": [],
-   "label": "implemented in"
-  },
-  {
-   "from": "n-t1-g7",
+   "from": "n-t1-g5",
    "to": "system-outside-t1-b2",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Import queue calls deviceOpen",
-     "at": "n-t1-g7.go:50",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g2",
-   "to": "system-outside-t1-b3",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Profile profile calls cacheSend",
-     "at": "n-t1-g2.go:31",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g5",
-   "to": "system-outside-t1-b4",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Export metrics calls ledgerQuery",
-     "at": "n-t1-g5.go:353",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g5",
-   "to": "system-outside-t1-b6",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1100,7 +983,7 @@
   },
   {
    "from": "n-t1-g1",
-   "to": "system-outside-t1-b7",
+   "to": "system-outside-t1-b3",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1117,8 +1000,8 @@
    "label": ""
   },
   {
-   "from": "n-t2-g10",
-   "to": "n-t2-g11",
+   "from": "n-t1-g9",
+   "to": "system-outside-t1-b5",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1127,8 +1010,44 @@
    "init": false,
    "calls": [
     {
-     "label": "Schema router calls Replica backup",
-     "at": "n-t2-g10.go:9",
+     "label": "Plugin policy calls billingQuery",
+     "at": "n-t1-g9.go:331",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g1",
+   "to": "system-outside-t1-b6",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Import policy calls backupOpen",
+     "at": "n-t1-g1.go:117",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g10",
+   "to": "n-t2-g11",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Profile router calls Gateway cache",
+     "at": "n-t2-g10.go:29",
      "callee": ""
     }
    ],
@@ -1137,7 +1056,7 @@
   {
    "from": "n-t2-g11",
    "to": "n-t2-g12",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1145,8 +1064,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Replica backup calls Metrics ledger",
-     "at": "n-t2-g11.go:51",
+     "label": "Gateway cache calls Config device",
+     "at": "n-t2-g11.go:279",
      "callee": ""
     }
    ],
@@ -1155,7 +1074,7 @@
   {
    "from": "n-t2-g12",
    "to": "n-t2-g10",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1163,8 +1082,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Metrics ledger calls Schema router",
-     "at": "n-t2-g12.go:291",
+     "label": "Config device calls Profile router",
+     "at": "n-t2-g12.go:310",
      "callee": ""
     }
    ],
@@ -1173,7 +1092,7 @@
   {
    "from": "n-t2-g13",
    "to": "n-t2-g14",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1181,8 +1100,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Snapshot profile calls Router gateway",
-     "at": "n-t2-g13.go:182",
+     "label": "Token device calls Audit plugin",
+     "at": "n-t2-g13.go:27",
      "callee": ""
     }
    ],
@@ -1191,7 +1110,7 @@
   {
    "from": "n-t2-g14",
    "to": "n-t2-g15",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1199,8 +1118,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Router gateway calls Cache config",
-     "at": "n-t2-g14.go:277",
+     "label": "Audit plugin calls Import account",
+     "at": "n-t2-g14.go:182",
      "callee": ""
     }
    ],
@@ -1209,7 +1128,7 @@
   {
    "from": "n-t2-g15",
    "to": "n-t2-g13",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1217,8 +1136,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Cache config calls Snapshot profile",
-     "at": "n-t2-g15.go:342",
+     "label": "Import account calls Token device",
+     "at": "n-t2-g15.go:60",
      "callee": ""
     }
    ],
@@ -1227,7 +1146,7 @@
   {
    "from": "n-t2-g16",
    "to": "n-t2-g17",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1235,8 +1154,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Session token calls Device audit",
-     "at": "n-t2-g16.go:309",
+     "label": "Export search calls Snapshot backup",
+     "at": "n-t2-g16.go:104",
      "callee": ""
     }
    ],
@@ -1245,7 +1164,7 @@
   {
    "from": "n-t2-g17",
    "to": "n-t2-g18",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1253,8 +1172,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device audit calls Plugin import",
-     "at": "n-t2-g17.go:392",
+     "label": "Snapshot backup calls Gateway search",
+     "at": "n-t2-g17.go:303",
      "callee": ""
     }
    ],
@@ -1271,8 +1190,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Plugin import calls Session token",
-     "at": "n-t2-g18.go:273",
+     "label": "Gateway search calls Export search",
+     "at": "n-t2-g18.go:134",
      "callee": ""
     }
    ],
@@ -1281,7 +1200,7 @@
   {
    "from": "n-t2-g10",
    "to": "n-t2-g14",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1289,8 +1208,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Schema router calls Router gateway",
-     "at": "n-t2-g10.go:41",
+     "label": "Profile router calls Audit plugin",
+     "at": "n-t2-g10.go:139",
      "callee": ""
     }
    ],
@@ -1307,8 +1226,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Snapshot profile calls Device audit",
-     "at": "n-t2-g13.go:29",
+     "label": "Token device calls Snapshot backup",
+     "at": "n-t2-g13.go:173",
      "callee": ""
     }
    ],
@@ -1317,7 +1236,7 @@
   {
    "from": "n-t2-g16",
    "to": "n-t2-g11",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1325,8 +1244,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Session token calls Replica backup",
-     "at": "n-t2-g16.go:35",
+     "label": "Export search calls Gateway cache",
+     "at": "n-t2-g16.go:77",
      "callee": ""
     }
    ],
@@ -1335,7 +1254,7 @@
   {
    "from": "n-t2-g12",
    "to": "n-t2-g15",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1343,8 +1262,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Metrics ledger calls Cache config",
-     "at": "n-t2-g12.go:279",
+     "label": "Config device calls Import account",
+     "at": "n-t2-g12.go:334",
      "callee": ""
     }
    ],
@@ -1353,7 +1272,7 @@
   {
    "from": "n-t2-g15",
    "to": "n-t2-g12",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1361,8 +1280,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Cache config calls Metrics ledger",
-     "at": "n-t2-g15.go:180",
+     "label": "Import account calls Config device",
+     "at": "n-t2-g15.go:293",
      "callee": ""
     }
    ],
@@ -1384,7 +1303,7 @@
   },
   {
    "from": "t2-o5",
-   "to": "n-t2-g13",
+   "to": "n-t2-g15",
    "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1398,7 +1317,7 @@
   },
   {
    "from": "t2-o6",
-   "to": "n-t2-g11",
+   "to": "n-t2-g10",
    "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1411,8 +1330,26 @@
    "label": "implemented in"
   },
   {
+   "from": "n-t2-g14",
+   "to": "system-outside-t2-b8",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Audit plugin calls gatewayQuery",
+     "at": "n-t2-g14.go:75",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
    "from": "n-t2-g16",
-   "to": "system-outside-t2-b9",
+   "to": "system-outside-t2-b10",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1421,44 +1358,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Session token calls snapshotPut",
-     "at": "n-t2-g16.go:266",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g13",
-   "to": "system-outside-t2-b11",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Snapshot profile calls configQuery",
-     "at": "n-t2-g13.go:203",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g10",
-   "to": "system-outside-t2-b12",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Schema router calls tenantSend",
-     "at": "n-t2-g10.go:127",
+     "label": "Export search calls policyPut",
+     "at": "n-t2-g16.go:72",
      "callee": ""
     }
    ],
@@ -1467,7 +1368,7 @@
   {
    "from": "n-t3-g19",
    "to": "n-t3-g20",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1475,8 +1376,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device account calls Tenant snapshot",
-     "at": "n-t3-g19.go:183",
+     "label": "Device report calls Router session",
+     "at": "n-t3-g19.go:147",
      "callee": ""
     }
    ],
@@ -1493,8 +1394,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Tenant snapshot calls Device token",
-     "at": "n-t3-g20.go:74",
+     "label": "Router session calls Export policy",
+     "at": "n-t3-g20.go:191",
      "callee": ""
     }
    ],
@@ -1503,7 +1404,7 @@
   {
    "from": "n-t3-g21",
    "to": "n-t3-g19",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1511,8 +1412,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device token calls Device account",
-     "at": "n-t3-g21.go:150",
+     "label": "Export policy calls Device report",
+     "at": "n-t3-g21.go:390",
      "callee": ""
     }
    ],
@@ -1529,8 +1430,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Index export calls Policy report",
-     "at": "n-t3-g22.go:40",
+     "label": "Plugin replica calls Token audit",
+     "at": "n-t3-g22.go:377",
      "callee": ""
     }
    ],
@@ -1539,7 +1440,7 @@
   {
    "from": "n-t3-g23",
    "to": "n-t3-g24",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1547,8 +1448,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Policy report calls Policy queue",
-     "at": "n-t3-g23.go:372",
+     "label": "Token audit calls Token alert",
+     "at": "n-t3-g23.go:51",
      "callee": ""
     }
    ],
@@ -1565,8 +1466,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Policy queue calls Index export",
-     "at": "n-t3-g24.go:322",
+     "label": "Token alert calls Plugin replica",
+     "at": "n-t3-g24.go:176",
      "callee": ""
     }
    ],
@@ -1583,8 +1484,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Webhook plugin calls Device report",
-     "at": "n-t3-g25.go:27",
+     "label": "Token alert calls Invoice report",
+     "at": "n-t3-g25.go:229",
      "callee": ""
     }
    ],
@@ -1593,7 +1494,7 @@
   {
    "from": "n-t3-g26",
    "to": "n-t3-g27",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1601,8 +1502,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device report calls Router session",
-     "at": "n-t3-g26.go:119",
+     "label": "Invoice report calls Gateway token",
+     "at": "n-t3-g26.go:39",
      "callee": ""
     }
    ],
@@ -1611,7 +1512,7 @@
   {
    "from": "n-t3-g27",
    "to": "n-t3-g25",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1619,8 +1520,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Router session calls Webhook plugin",
-     "at": "n-t3-g27.go:39",
+     "label": "Gateway token calls Token alert",
+     "at": "n-t3-g27.go:158",
      "callee": ""
     }
    ],
@@ -1629,7 +1530,7 @@
   {
    "from": "n-t3-g19",
    "to": "n-t3-g23",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1637,8 +1538,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device account calls Policy report",
-     "at": "n-t3-g19.go:305",
+     "label": "Device report calls Token audit",
+     "at": "n-t3-g19.go:159",
      "callee": ""
     }
    ],
@@ -1655,8 +1556,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Index export calls Device report",
-     "at": "n-t3-g22.go:161",
+     "label": "Plugin replica calls Invoice report",
+     "at": "n-t3-g22.go:53",
      "callee": ""
     }
    ],
@@ -1665,7 +1566,7 @@
   {
    "from": "n-t3-g25",
    "to": "n-t3-g20",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1673,8 +1574,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Webhook plugin calls Tenant snapshot",
-     "at": "n-t3-g25.go:43",
+     "label": "Token alert calls Router session",
+     "at": "n-t3-g25.go:195",
      "callee": ""
     }
    ],
@@ -1691,8 +1592,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device token calls Policy queue",
-     "at": "n-t3-g21.go:36",
+     "label": "Export policy calls Token alert",
+     "at": "n-t3-g21.go:84",
      "callee": ""
     }
    ],
@@ -1701,7 +1602,7 @@
   {
    "from": "n-t3-g24",
    "to": "n-t3-g21",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1709,8 +1610,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Policy queue calls Device token",
-     "at": "n-t3-g24.go:295",
+     "label": "Token alert calls Export policy",
+     "at": "n-t3-g24.go:272",
      "callee": ""
     }
    ],
@@ -1718,7 +1619,7 @@
   },
   {
    "from": "t3-o7",
-   "to": "n-t3-g26",
+   "to": "n-t3-g25",
    "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1731,8 +1632,22 @@
    "label": "implemented in"
   },
   {
+   "from": "t3-o8",
+   "to": "n-t3-g26",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [
+    "t3-o8"
+   ],
+   "possible": false,
+   "init": false,
+   "calls": [],
+   "label": "implemented in"
+  },
+  {
    "from": "t3-o9",
-   "to": "n-t3-g24",
+   "to": "n-t3-g20",
    "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1745,7 +1660,25 @@
    "label": "implemented in"
   },
   {
-   "from": "n-t3-g22",
+   "from": "n-t3-g27",
+   "to": "system-outside-t3-b12",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Gateway token calls auditOpen",
+     "at": "n-t3-g27.go:140",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t3-g24",
    "to": "system-outside-t3-b14",
    "scope": "structure",
    "fromNoSource": false,
@@ -1755,62 +1688,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Index export calls tokenPut",
-     "at": "n-t3-g22.go:195",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t3-g20",
-   "to": "system-outside-t3-b15",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Tenant snapshot calls indexOpen",
-     "at": "n-t3-g20.go:66",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t3-g24",
-   "to": "system-outside-t3-b17",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Policy queue calls replicaPut",
-     "at": "n-t3-g24.go:272",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t3-g24",
-   "to": "system-outside-t3-b18",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Policy queue calls accountList",
-     "at": "n-t3-g24.go:237",
+     "label": "Token alert calls routerPut",
+     "at": "n-t3-g24.go:315",
      "callee": ""
     }
    ],
@@ -1827,8 +1706,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Profile profile calls Router gateway",
-     "at": "n-t1-g2.go:19",
+     "label": "Profile profile calls Audit plugin",
+     "at": "n-t1-g2.go:307",
      "callee": ""
     }
    ],
@@ -1845,8 +1724,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Replica backup calls Policy report",
-     "at": "n-t2-g11.go:141",
+     "label": "Gateway cache calls Token audit",
+     "at": "n-t2-g11.go:379",
      "callee": ""
     }
    ],
@@ -1863,8 +1742,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Tenant snapshot calls Export metrics",
-     "at": "n-t3-g20.go:312",
+     "label": "Router session calls Export metrics",
+     "at": "n-t3-g20.go:50",
      "callee": ""
     }
    ],
@@ -1881,8 +1760,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Device audit calls Webhook report",
-     "at": "n-t2-g17.go:44",
+     "label": "Snapshot backup calls Webhook report",
+     "at": "n-t2-g17.go:339",
      "callee": ""
     }
    ],
@@ -1891,7 +1770,7 @@
   {
    "from": "n-t1-g8",
    "to": "n-t2-g17",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1899,8 +1778,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Webhook report calls Device audit",
-     "at": "n-t1-g8.go:112",
+     "label": "Webhook report calls Snapshot backup",
+     "at": "n-t1-g8.go:188",
      "callee": ""
     }
    ],
@@ -1952,22 +1831,21 @@
    "id": "system-outside-t1",
    "nodes": [
     "system-outside-t1-b1-destination",
-    "system-outside-t1-b5-destination"
+    "system-outside-t1-b4-destination"
    ]
   },
   {
    "id": "system-outside-t1-b1-destination",
    "nodes": [
     "system-outside-t1-b2",
-    "system-outside-t1-b3",
-    "system-outside-t1-b4"
+    "system-outside-t1-b3"
    ]
   },
   {
-   "id": "system-outside-t1-b5-destination",
+   "id": "system-outside-t1-b4-destination",
    "nodes": [
-    "system-outside-t1-b6",
-    "system-outside-t1-b7"
+    "system-outside-t1-b5",
+    "system-outside-t1-b6"
    ]
   },
   {
@@ -2013,21 +1891,20 @@
   {
    "id": "system-outside-t2",
    "nodes": [
-    "system-outside-t2-b8-destination",
-    "system-outside-t2-b10-destination"
+    "system-outside-t2-b7-destination",
+    "system-outside-t2-b9-destination"
    ]
   },
   {
-   "id": "system-outside-t2-b8-destination",
+   "id": "system-outside-t2-b7-destination",
    "nodes": [
-    "system-outside-t2-b9"
+    "system-outside-t2-b8"
    ]
   },
   {
-   "id": "system-outside-t2-b10-destination",
+   "id": "system-outside-t2-b9-destination",
    "nodes": [
-    "system-outside-t2-b11",
-    "system-outside-t2-b12"
+    "system-outside-t2-b10"
    ]
   },
   {
@@ -2073,33 +1950,235 @@
   {
    "id": "system-outside-t3",
    "nodes": [
-    "system-outside-t3-b13-destination",
-    "system-outside-t3-b16-destination"
+    "system-outside-t3-b11-destination",
+    "system-outside-t3-b13-destination"
+   ]
+  },
+  {
+   "id": "system-outside-t3-b11-destination",
+   "nodes": [
+    "system-outside-t3-b12"
    ]
   },
   {
    "id": "system-outside-t3-b13-destination",
    "nodes": [
-    "system-outside-t3-b14",
-    "system-outside-t3-b15"
-   ]
-  },
-  {
-   "id": "system-outside-t3-b16-destination",
-   "nodes": [
-    "system-outside-t3-b17",
-    "system-outside-t3-b18"
+    "system-outside-t3-b14"
    ]
   }
  ],
  "inputOwner": {
-  "t1-o1": "n-t1-g4",
-  "t1-o2": "n-t1-g1",
-  "t1-o3": "n-t1-g4",
+  "t1-o2": "n-t1-g6",
   "t2-o4": "n-t2-g14",
-  "t2-o5": "n-t2-g13",
-  "t2-o6": "n-t2-g11",
-  "t3-o7": "n-t3-g26",
-  "t3-o9": "n-t3-g24"
+  "t2-o5": "n-t2-g15",
+  "t2-o6": "n-t2-g10",
+  "t3-o7": "n-t3-g25",
+  "t3-o8": "n-t3-g26",
+  "t3-o9": "n-t3-g20"
+ },
+ "scene": {
+  "inputs": {
+   "t1-o1": {
+    "kind": "request",
+    "program": "system-component-t1",
+    "parts": [],
+    "handled": false
+   },
+   "t1-o2": {
+    "kind": "continuous",
+    "program": "system-component-t1",
+    "parts": [
+     "n-t1-g6"
+    ],
+    "handled": true
+   },
+   "t1-o3": {
+    "kind": "request",
+    "program": "system-component-t1",
+    "parts": [],
+    "handled": false
+   },
+   "t2-o4": {
+    "kind": "interaction",
+    "program": "system-component-t2",
+    "parts": [
+     "n-t2-g14"
+    ],
+    "handled": true
+   },
+   "t2-o5": {
+    "kind": "command",
+    "program": "system-component-t2",
+    "parts": [
+     "n-t2-g15"
+    ],
+    "handled": true
+   },
+   "t2-o6": {
+    "kind": "continuous",
+    "program": "system-component-t2",
+    "parts": [
+     "n-t2-g10"
+    ],
+    "handled": true
+   },
+   "t3-o7": {
+    "kind": "request",
+    "program": "system-component-t3",
+    "parts": [
+     "n-t3-g25"
+    ],
+    "handled": true
+   },
+   "t3-o8": {
+    "kind": "request",
+    "program": "system-component-t3",
+    "parts": [
+     "n-t3-g26"
+    ],
+    "handled": true
+   },
+   "t3-o9": {
+    "kind": "interaction",
+    "program": "system-component-t3",
+    "parts": [
+     "n-t3-g20"
+    ],
+    "handled": true
+   }
+  },
+  "systems": {
+   "system-outside-t1-b1-destination": {
+    "kind": "database",
+    "parts": [
+     "n-t1-g5",
+     "n-t1-g1"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t1-b4-destination": {
+    "kind": "queue",
+    "parts": [
+     "n-t1-g9",
+     "n-t1-g1"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t2-b7-destination": {
+    "kind": "database",
+    "parts": [
+     "n-t2-g14"
+    ],
+    "programs": [
+     "system-component-t2"
+    ]
+   },
+   "system-outside-t2-b9-destination": {
+    "kind": "queue",
+    "parts": [
+     "n-t2-g16"
+    ],
+    "programs": [
+     "system-component-t2"
+    ]
+   },
+   "system-outside-t3-b11-destination": {
+    "kind": "database",
+    "parts": [
+     "n-t3-g27"
+    ],
+    "programs": [
+     "system-component-t3"
+    ]
+   },
+   "system-outside-t3-b13-destination": {
+    "kind": "queue",
+    "parts": [
+     "n-t3-g24"
+    ],
+    "programs": [
+     "system-component-t3"
+    ]
+   }
+  },
+  "calls": {
+   "n-t1-g5": [
+    {
+     "system": "system-outside-t1-b1-destination"
+    }
+   ],
+   "n-t1-g1": [
+    {
+     "system": "system-outside-t1-b1-destination"
+    },
+    {
+     "system": "system-outside-t1-b4-destination"
+    }
+   ],
+   "n-t1-g9": [
+    {
+     "system": "system-outside-t1-b4-destination"
+    }
+   ],
+   "n-t2-g14": [
+    {
+     "system": "system-outside-t2-b7-destination"
+    }
+   ],
+   "n-t2-g16": [
+    {
+     "system": "system-outside-t2-b9-destination"
+    }
+   ],
+   "n-t3-g27": [
+    {
+     "system": "system-outside-t3-b11-destination"
+    }
+   ],
+   "n-t3-g24": [
+    {
+     "system": "system-outside-t3-b13-destination"
+    }
+   ]
+  },
+  "programPairs": [
+   {
+    "from": "system-component-t1",
+    "to": "system-component-t2",
+    "runtime": true,
+    "relations": [
+     57,
+     61
+    ]
+   },
+   {
+    "from": "system-component-t2",
+    "to": "system-component-t3",
+    "runtime": false,
+    "relations": [
+     58
+    ]
+   },
+   {
+    "from": "system-component-t3",
+    "to": "system-component-t1",
+    "runtime": false,
+    "relations": [
+     59
+    ]
+   },
+   {
+    "from": "system-component-t2",
+    "to": "system-component-t1",
+    "runtime": false,
+    "relations": [
+     60
+    ]
+   }
+  ]
  }
 }

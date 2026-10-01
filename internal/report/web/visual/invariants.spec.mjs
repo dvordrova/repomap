@@ -48,7 +48,8 @@ const park=async page=>{await page.mouse.move(3,3);await page.waitForTimeout(60)
 for(const target of targets)for(const path of paths){
   test(`invariants of ${target.repo} (${path})`,async({page})=>{
     test.setTimeout(Number(process.env.REPOMAP_INVARIANT_TIMEOUT||4*3600_000));
-    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    // Each page error names the step that raised it.
+    let phase='loading';const errors=[];page.on('pageerror',error=>errors.push(`${error.message} (${phase})`));
     const sep=target.url.includes('?')?'&':'?';
     await page.goto(path==='scene'?`${target.url}${sep}scene=1`:target.url);
     await page.waitForFunction(()=>{const m=document.querySelector('[data-map]');return m&&m.classList.contains('flow-enabled')&&!m.classList.contains('flow-initializing')&&document.querySelector('.flow-root');},null,{timeout:180_000});
@@ -80,7 +81,7 @@ for(const target of targets)for(const path of paths){
       const merge=(name,part)=>{if(!part)return;r[name].checked+=part.checked;r[name].failed+=part.failed;r[name].examples.push(...part.examples.slice(0,8-r[name].examples.length));};
       const info={};
       try{
-        await go(level.id);
+        phase='entering';await go(level.id);phase='at rest';
         const rng=random(hash(`${target.repo}|${level.name}`));
         const rest=await page.evaluate(()=>window.__inv.snapshot());
         info.level=rest.level;info.zoom=rest.cam.zoom;
@@ -114,7 +115,7 @@ for(const target of targets)for(const path of paths){
         const handles=await page.evaluate(()=>window.__inv.handles());
         info.handles=handles.length;
         for(const handle of handles){
-          await page.mouse.move(handle.x,handle.y,{steps:2});await page.waitForTimeout(160);
+          phase=`pointing at ${handle.id}`;await page.mouse.move(handle.x,handle.y,{steps:2});await page.waitForTimeout(160);
           const pointed=await page.evaluate(([frame,skip])=>window.__inv.arrows(frame,skip),[level.kind==='home'?'':level.id,restPaths]);
           for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses','step1-gap'])
             merge(name,pointed[name]&&{...pointed[name],examples:pointed[name].examples.map(e=>`pointing at ${handle.id}: ${e}`)});
@@ -131,7 +132,7 @@ for(const target of targets)for(const path of paths){
           const spot=await page.evaluate(seed=>window.__inv.emptySpot(seed),Math.floor(rng()*2**31));
           await page.mouse.move(spot.x,spot.y,{steps:2});await page.waitForTimeout(80);
           const before=await page.evaluate(()=>window.__inv.snapshot());
-          const how=rng()<.75?'wheel':'drag';
+          const how=rng()<.75?'wheel':'drag';phase=`${how} pan ${i+1} (${vector.dx},${vector.dy})`;
           if(how==='wheel')await page.mouse.wheel(vector.dx,vector.dy);
           else{await page.mouse.down();await page.mouse.move(spot.x-vector.dx,spot.y-vector.dy,{steps:6});await page.mouse.up();}
           await settle(page,{first:300});
@@ -151,7 +152,7 @@ for(const target of targets)for(const path of paths){
         const canvas=still.canvas;
         for(let i=0;i<moves;i++){
           const x=canvas.l+4+rng()*(canvas.r-canvas.l-8),y=canvas.t+4+rng()*(canvas.b-canvas.t-8);
-          await page.mouse.move(x,y,{steps:3});await page.waitForTimeout(70);
+          phase=`pointer at (${x.toFixed(0)},${y.toFixed(0)})`;await page.mouse.move(x,y,{steps:3});await page.waitForTimeout(70);
           const now=await page.evaluate(()=>window.__inv.snapshot());
           const diff=compare(still,now);
           add('point-keeps',!diff.lost.length,`at (${x.toFixed(0)},${y.toFixed(0)}): lost ${diff.lost.slice(0,5).join(', ')}${diff.lost.length>5?` and ${diff.lost.length-5} more`:''}`);
@@ -170,7 +171,7 @@ for(const target of targets)for(const path of paths){
           if(point.outOfSight){outOfSight++;continue;}
           if(point.missing)continue;
           if(point.covered){add('cards',false,`${id}: covered wherever it is in sight (by ${point.by})`);continue;}
-          await page.mouse.move(point.x-14,point.y-14,{steps:2});await page.mouse.move(point.x,point.y,{steps:4});
+          phase=`pointing at arrow ${id}`;await page.mouse.move(point.x-14,point.y-14,{steps:2});await page.mouse.move(point.x,point.y,{steps:4});
           let opened=false;for(let k=0;k<22&&!opened;k++){await page.waitForTimeout(90);opened=await page.evaluate(()=>window.__inv.cardOpen());}
           add('cards',opened,`${id}: no card`);
           const order=await page.evaluate(()=>window.__inv.darkOnTop());dark.checked+=order.checked;dark.bad.push(...order.bad);
@@ -182,7 +183,7 @@ for(const target of targets)for(const path of paths){
         // A few zooms about the level: ports and markers keep their size.
         for(const factor of [1.25,.8,1.5]){
           await go(level.id);
-          await page.evaluate(f=>{const b=[...document.querySelectorAll('[data-map-zoom]')].find(b=>Number(b.dataset.mapZoom)===(f>1?1.25:.8));b?.click();},factor);
+          phase=`zoom ${factor}`;await page.evaluate(f=>{const b=[...document.querySelectorAll('[data-map-zoom]')].find(b=>Number(b.dataset.mapZoom)===(f>1?1.25:.8));b?.click();},factor);
           await settle(page,{first:450});await measure(`zoomed ${factor>1?'in':'out'}`);
         }
         for(const [id,seen] of sizes){

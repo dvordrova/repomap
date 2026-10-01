@@ -201,7 +201,7 @@
     "system-outside-t1-b4-destination",
     "system-outside-t1-b6-destination",
     "system-outside-t1-b10-destination",
-    "system-outside-t1-b13-destination"
+    "system-outside-t1-b12-destination"
    ],
    "kind": "External communication",
    "category": "external"
@@ -229,7 +229,7 @@
   },
   {
    "id": "system-outside-t1-b3",
-   "title": "auditQuery",
+   "title": "gatewayQuery",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -249,7 +249,7 @@
   },
   {
    "id": "system-outside-t1-b5",
-   "title": "tokenOpen",
+   "title": "exportOpen",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -271,7 +271,7 @@
   },
   {
    "id": "system-outside-t1-b7",
-   "title": "profileSend",
+   "title": "billingQuery",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -279,7 +279,7 @@
   },
   {
    "id": "system-outside-t1-b8",
-   "title": "backupPut",
+   "title": "profileSend",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -287,7 +287,7 @@
   },
   {
    "id": "system-outside-t1-b9",
-   "title": "invoiceSend",
+   "title": "billingGet",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -300,43 +300,52 @@
    "lane": "dependencies",
    "destinationKind": "queue",
    "children": [
-    "system-outside-t1-b11",
-    "system-outside-t1-b12"
+    "system-outside-t1-b11"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
    "id": "system-outside-t1-b11",
-   "title": "backupList",
+   "title": "queuePut",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t1-b12",
-   "title": "indexPut",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t1-b13-destination",
+   "id": "system-outside-t1-b12-destination",
    "title": "Google Cloud Storage",
    "branch": "communication",
    "lane": "dependencies",
-   "destinationKind": "program",
+   "destinationKind": "started",
    "children": [
-    "system-outside-t1-b14"
+    "system-outside-t1-b13",
+    "system-outside-t1-b14",
+    "system-outside-t1-b15"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
+   "id": "system-outside-t1-b13",
+   "title": "searchSend",
+   "lane": "dependencies",
+   "sourceKind": "fact",
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
    "id": "system-outside-t1-b14",
-   "title": "exportOpen",
+   "title": "storageGet",
+   "lane": "dependencies",
+   "sourceKind": "fact",
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
+   "id": "system-outside-t1-b15",
+   "title": "invoiceGet",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -356,18 +365,18 @@
     "t2-area-k6",
     "t2-area-k7",
     "t2-area-k8",
-    "n-t2-g32",
-    "n-t2-g33"
+    "n-t2-g34",
+    "n-t2-g35"
    ],
    "kind": "Component",
    "category": "component"
   },
   {
    "id": "t2-area-k5",
-   "title": "Replica queue",
+   "title": "Queue config",
    "branch": "area",
    "lane": "core",
-   "summary": "Groups the replica queue parts.",
+   "summary": "Groups the queue config parts.",
    "children": [
     "n-t2-g17",
     "n-t2-g18",
@@ -378,163 +387,179 @@
   },
   {
    "id": "n-t2-g17",
-   "title": "Profile metrics",
-   "summary": "Handles profile metrics for its program.",
+   "title": "Queue schema",
+   "summary": "Handles queue schema for its program.",
    "kind": "Entrypoints",
    "category": "part",
    "lane": "triggers"
   },
   {
    "id": "n-t2-g18",
-   "title": "Billing account",
-   "summary": "Handles billing account for its program.",
+   "title": "Gateway config",
+   "summary": "Handles gateway config for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g19",
-   "title": "Tenant report",
-   "summary": "Handles tenant report for its program.",
+   "title": "Device config",
+   "summary": "Handles device config for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "t2-area-k6",
-   "title": "Queue config",
+   "title": "Gateway router",
    "branch": "area",
-   "summary": "Groups the queue config parts.",
+   "summary": "Groups the gateway router parts.",
    "children": [
     "n-t2-g20",
     "n-t2-g21",
-    "n-t2-g22"
+    "n-t2-g22",
+    "n-t2-g23",
+    "n-t2-g24"
    ],
    "kind": "Area",
    "category": "part"
   },
   {
    "id": "n-t2-g20",
-   "title": "Backup search",
-   "summary": "Handles backup search for its program.",
+   "title": "Alert invoice",
+   "summary": "Handles alert invoice for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g21",
-   "title": "Webhook audit",
-   "summary": "Handles webhook audit for its program.",
+   "title": "Webhook queue",
+   "summary": "Handles webhook queue for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g22",
-   "title": "Session export",
-   "summary": "Handles session export for its program.",
+   "title": "Ledger queue",
+   "summary": "Handles ledger queue for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
-   "id": "t2-area-k7",
-   "title": "Invoice invoice",
-   "branch": "area",
-   "summary": "Groups the invoice invoice parts.",
-   "children": [
-    "n-t2-g23",
-    "n-t2-g24",
-    "n-t2-g25",
-    "n-t2-g26",
-    "n-t2-g27"
-   ],
-   "kind": "Area",
-   "category": "part"
-  },
-  {
    "id": "n-t2-g23",
-   "title": "Config queue",
-   "summary": "Handles config queue for its program.",
+   "title": "Audit webhook",
+   "summary": "Handles audit webhook for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g24",
-   "title": "Audit queue",
-   "summary": "Handles audit queue for its program.",
+   "title": "Queue export",
+   "summary": "Handles queue export for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
-   "id": "n-t2-g25",
-   "title": "Webhook gateway",
-   "summary": "Handles webhook gateway for its program.",
-   "kind": "Part",
-   "category": "part"
-  },
-  {
-   "id": "n-t2-g26",
-   "title": "Device device",
-   "summary": "Handles device device for its program.",
-   "kind": "Part",
-   "category": "part"
-  },
-  {
-   "id": "n-t2-g27",
-   "title": "Session gateway",
-   "summary": "Handles session gateway for its program.",
-   "kind": "Part",
-   "category": "part"
-  },
-  {
-   "id": "t2-area-k8",
-   "title": "Cache alert",
+   "id": "t2-area-k7",
+   "title": "Index token",
    "branch": "area",
-   "summary": "Groups the cache alert parts.",
+   "summary": "Groups the index token parts.",
    "children": [
+    "n-t2-g25",
+    "n-t2-g26",
+    "n-t2-g27",
     "n-t2-g28",
-    "n-t2-g29",
-    "n-t2-g30",
-    "n-t2-g31"
+    "n-t2-g29"
    ],
    "kind": "Area",
    "category": "part"
   },
   {
+   "id": "n-t2-g25",
+   "title": "Gateway config",
+   "summary": "Handles gateway config for its program.",
+   "kind": "Part",
+   "category": "part"
+  },
+  {
+   "id": "n-t2-g26",
+   "title": "Tenant router",
+   "summary": "Handles tenant router for its program.",
+   "kind": "Part",
+   "category": "part"
+  },
+  {
+   "id": "n-t2-g27",
+   "title": "Index audit",
+   "summary": "Handles index audit for its program.",
+   "kind": "Part",
+   "category": "part"
+  },
+  {
    "id": "n-t2-g28",
-   "title": "Config webhook",
-   "summary": "Handles config webhook for its program.",
+   "title": "Report ledger",
+   "summary": "Handles report ledger for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g29",
-   "title": "Billing ledger",
-   "summary": "Handles billing ledger for its program.",
+   "title": "Audit gateway",
+   "summary": "Handles audit gateway for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
+   "id": "t2-area-k8",
+   "title": "Metrics schema",
+   "branch": "area",
+   "summary": "Groups the metrics schema parts.",
+   "children": [
+    "n-t2-g30",
+    "n-t2-g31",
+    "n-t2-g32",
+    "n-t2-g33"
+   ],
+   "kind": "Area",
+   "category": "part"
+  },
+  {
    "id": "n-t2-g30",
-   "title": "Config audit",
-   "summary": "Handles config audit for its program.",
+   "title": "Tenant device",
+   "summary": "Handles tenant device for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g31",
-   "title": "Alert queue",
-   "summary": "Handles alert queue for its program.",
+   "title": "Search alert",
+   "summary": "Handles search alert for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g32",
-   "title": "Storage index",
-   "summary": "Handles storage index for its program.",
+   "title": "Replica plugin",
+   "summary": "Handles replica plugin for its program.",
    "kind": "Part",
    "category": "part"
   },
   {
    "id": "n-t2-g33",
-   "title": "Token router",
-   "summary": "Handles token router for its program.",
+   "title": "Token invoice",
+   "summary": "Handles token invoice for its program.",
+   "kind": "Part",
+   "category": "part"
+  },
+  {
+   "id": "n-t2-g34",
+   "title": "Billing import",
+   "summary": "Handles billing import for its program.",
+   "kind": "Part",
+   "category": "part"
+  },
+  {
+   "id": "n-t2-g35",
+   "title": "Billing schema",
+   "summary": "Handles billing schema for its program.",
    "kind": "Part",
    "category": "part"
   },
@@ -544,22 +569,21 @@
    "branch": "outside",
    "lane": "dependencies",
    "children": [
-    "system-outside-t2-b15-destination",
+    "system-outside-t2-b16-destination",
     "system-outside-t2-b19-destination",
-    "system-outside-t2-b22-destination",
+    "system-outside-t2-b21-destination",
     "system-outside-t2-b24-destination"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b15-destination",
+   "id": "system-outside-t2-b16-destination",
    "title": "Azure Blob Storage",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
    "children": [
-    "system-outside-t2-b16",
     "system-outside-t2-b17",
     "system-outside-t2-b18"
    ],
@@ -567,16 +591,8 @@
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b16",
-   "title": "pluginPut",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
    "id": "system-outside-t2-b17",
-   "title": "cacheGet",
+   "title": "accountGet",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -584,7 +600,7 @@
   },
   {
    "id": "system-outside-t2-b18",
-   "title": "queueOpen",
+   "title": "routerList",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -597,43 +613,43 @@
    "lane": "dependencies",
    "destinationKind": "request",
    "children": [
-    "system-outside-t2-b20",
-    "system-outside-t2-b21"
+    "system-outside-t2-b20"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
    "id": "system-outside-t2-b20",
-   "title": "indexList",
+   "title": "metricsQuery",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
    "category": "external"
   },
   {
-   "id": "system-outside-t2-b21",
-   "title": "replicaList",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t2-b22-destination",
+   "id": "system-outside-t2-b21-destination",
    "title": "RabbitMQ",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
    "children": [
+    "system-outside-t2-b22",
     "system-outside-t2-b23"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
+   "id": "system-outside-t2-b22",
+   "title": "indexQuery",
+   "lane": "dependencies",
+   "sourceKind": "fact",
+   "kind": "External communication",
+   "category": "external"
+  },
+  {
    "id": "system-outside-t2-b23",
-   "title": "exportList",
+   "title": "pluginPut",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -646,23 +662,14 @@
    "lane": "dependencies",
    "destinationKind": "queue",
    "children": [
-    "system-outside-t2-b25",
-    "system-outside-t2-b26"
+    "system-outside-t2-b25"
    ],
    "kind": "External communication",
    "category": "external"
   },
   {
    "id": "system-outside-t2-b25",
-   "title": "schemaList",
-   "lane": "dependencies",
-   "sourceKind": "fact",
-   "kind": "External communication",
-   "category": "external"
-  },
-  {
-   "id": "system-outside-t2-b26",
-   "title": "replicaQuery",
+   "title": "metricsOpen",
    "lane": "dependencies",
    "sourceKind": "fact",
    "kind": "External communication",
@@ -673,7 +680,7 @@
   {
    "from": "n-t1-g2",
    "to": "n-t1-g4",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -682,16 +689,16 @@
    "calls": [
     {
      "label": "Device snapshot calls Search profile",
-     "at": "n-t1-g2.go:158",
+     "at": "n-t1-g2.go:177",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g8",
-   "to": "n-t1-g1",
-   "scope": "structure",
+   "from": "n-t1-g1",
+   "to": "n-t1-g8",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -699,8 +706,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing replica calls Queue storage",
-     "at": "n-t1-g8.go:199",
+     "label": "Queue storage calls Billing replica",
+     "at": "n-t1-g1.go:108",
      "callee": ""
     }
    ],
@@ -709,7 +716,7 @@
   {
    "from": "n-t1-g3",
    "to": "n-t1-g5",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -718,25 +725,7 @@
    "calls": [
     {
      "label": "Cache invoice calls Backup gateway",
-     "at": "n-t1-g3.go:52",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g5",
-   "to": "n-t1-g6",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Backup gateway calls Device audit",
-     "at": "n-t1-g5.go:342",
+     "at": "n-t1-g3.go:342",
      "callee": ""
     }
    ],
@@ -745,7 +734,7 @@
   {
    "from": "n-t1-g7",
    "to": "n-t1-g14",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -754,43 +743,7 @@
    "calls": [
     {
      "label": "Billing session calls Schema import",
-     "at": "n-t1-g7.go:43",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g5",
-   "to": "n-t1-g6",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Backup gateway calls Device audit",
-     "at": "n-t1-g5.go:87",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g14",
-   "to": "n-t1-g13",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Schema import calls Router invoice",
-     "at": "n-t1-g14.go:361",
+     "at": "n-t1-g7.go:108",
      "callee": ""
     }
    ],
@@ -798,7 +751,7 @@
   },
   {
    "from": "n-t1-g6",
-   "to": "n-t1-g11",
+   "to": "n-t1-g4",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -807,8 +760,26 @@
    "init": false,
    "calls": [
     {
-     "label": "Device audit calls Account gateway",
-     "at": "n-t1-g6.go:372",
+     "label": "Device audit calls Search profile",
+     "at": "n-t1-g6.go:315",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g15",
+   "to": "n-t1-g6",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Plugin tenant calls Device audit",
+     "at": "n-t1-g15.go:372",
      "callee": ""
     }
    ],
@@ -826,79 +797,7 @@
    "calls": [
     {
      "label": "Webhook router calls Billing session",
-     "at": "n-t1-g12.go:334",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g13",
-   "to": "n-t1-g16",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Router invoice calls Config cache",
-     "at": "n-t1-g13.go:208",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g16",
-   "to": "n-t1-g1",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Config cache calls Queue storage",
-     "at": "n-t1-g16.go:248",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g12",
-   "to": "n-t1-g3",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Webhook router calls Cache invoice",
-     "at": "n-t1-g12.go:352",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g13",
-   "to": "n-t1-g3",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Router invoice calls Cache invoice",
-     "at": "n-t1-g13.go:258",
+     "at": "n-t1-g12.go:303",
      "callee": ""
     }
    ],
@@ -916,16 +815,34 @@
    "calls": [
     {
      "label": "Config cache calls Schema alert",
-     "at": "n-t1-g16.go:376",
+     "at": "n-t1-g16.go:21",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g4",
+   "from": "n-t1-g10",
+   "to": "n-t1-g12",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Billing schema calls Webhook router",
+     "at": "n-t1-g10.go:352",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g13",
    "to": "n-t1-g3",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -933,17 +850,17 @@
    "init": false,
    "calls": [
     {
-     "label": "Search profile calls Cache invoice",
-     "at": "n-t1-g4.go:71",
+     "label": "Router invoice calls Cache invoice",
+     "at": "n-t1-g13.go:400",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g1",
-   "to": "n-t1-g5",
-   "scope": "structure",
+   "from": "n-t1-g9",
+   "to": "n-t1-g16",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -951,8 +868,26 @@
    "init": false,
    "calls": [
     {
-     "label": "Queue storage calls Backup gateway",
-     "at": "n-t1-g1.go:162",
+     "label": "Schema alert calls Config cache",
+     "at": "n-t1-g9.go:57",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g3",
+   "to": "n-t1-g1",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Cache invoice calls Queue storage",
+     "at": "n-t1-g3.go:162",
      "callee": ""
     }
    ],
@@ -961,7 +896,7 @@
   {
    "from": "n-t1-g13",
    "to": "n-t1-g2",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -970,16 +905,16 @@
    "calls": [
     {
      "label": "Router invoice calls Device snapshot",
-     "at": "n-t1-g13.go:74",
+     "at": "n-t1-g13.go:124",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g5",
-   "to": "n-t1-g7",
-   "scope": "structure",
+   "from": "n-t1-g7",
+   "to": "n-t1-g5",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -987,17 +922,17 @@
    "init": false,
    "calls": [
     {
-     "label": "Backup gateway calls Billing session",
-     "at": "n-t1-g5.go:115",
+     "label": "Billing session calls Backup gateway",
+     "at": "n-t1-g7.go:287",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g4",
-   "to": "n-t1-g12",
-   "scope": "structure",
+   "from": "n-t1-g2",
+   "to": "n-t1-g14",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1005,26 +940,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Search profile calls Webhook router",
-     "at": "n-t1-g4.go:36",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g14",
-   "to": "n-t1-g9",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Schema import calls Schema alert",
-     "at": "n-t1-g14.go:39",
+     "label": "Device snapshot calls Schema import",
+     "at": "n-t1-g2.go:39",
      "callee": ""
     }
    ],
@@ -1042,7 +959,61 @@
    "calls": [
     {
      "label": "Queue storage calls Billing schema",
-     "at": "n-t1-g1.go:306",
+     "at": "n-t1-g1.go:164",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g10",
+   "to": "n-t1-g11",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Billing schema calls Account gateway",
+     "at": "n-t1-g10.go:41",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g12",
+   "to": "n-t1-g4",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Webhook router calls Search profile",
+     "at": "n-t1-g12.go:69",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g9",
+   "to": "n-t1-g7",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Schema alert calls Billing session",
+     "at": "n-t1-g9.go:60",
      "callee": ""
     }
    ],
@@ -1050,6 +1021,60 @@
   },
   {
    "from": "n-t1-g7",
+   "to": "n-t1-g5",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Billing session calls Backup gateway",
+     "at": "n-t1-g7.go:282",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g11",
+   "to": "n-t1-g4",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Account gateway calls Search profile",
+     "at": "n-t1-g11.go:317",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g2",
+   "to": "n-t1-g13",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Device snapshot calls Router invoice",
+     "at": "n-t1-g2.go:215",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g9",
    "to": "n-t1-g10",
    "scope": "structure",
    "fromNoSource": false,
@@ -1059,17 +1084,17 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing session calls Billing schema",
-     "at": "n-t1-g7.go:274",
+     "label": "Schema alert calls Billing schema",
+     "at": "n-t1-g9.go:309",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g16",
+   "from": "n-t1-g5",
    "to": "n-t1-g2",
-   "scope": "structure",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1077,33 +1102,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Config cache calls Device snapshot",
-     "at": "n-t1-g16.go:291",
+     "label": "Backup gateway calls Device snapshot",
+     "at": "n-t1-g5.go:56",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g4",
-   "to": "n-t1-g8",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Search profile calls Billing replica",
-     "at": "n-t1-g4.go:69",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g3",
+   "from": "n-t1-g9",
    "to": "system-outside-t1-b2",
    "scope": "structure",
    "fromNoSource": false,
@@ -1113,15 +1120,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Cache invoice calls schemaQuery",
-     "at": "n-t1-g3.go:152",
+     "label": "Schema alert calls schemaQuery",
+     "at": "n-t1-g9.go:310",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g12",
+   "from": "n-t1-g2",
    "to": "system-outside-t1-b3",
    "scope": "structure",
    "fromNoSource": false,
@@ -1131,15 +1138,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Webhook router calls auditQuery",
-     "at": "n-t1-g12.go:263",
+     "label": "Device snapshot calls gatewayQuery",
+     "at": "n-t1-g2.go:160",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g2",
+   "from": "n-t1-g3",
    "to": "system-outside-t1-b5",
    "scope": "structure",
    "fromNoSource": false,
@@ -1149,15 +1156,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Device snapshot calls tokenOpen",
-     "at": "n-t1-g2.go:311",
+     "label": "Cache invoice calls exportOpen",
+     "at": "n-t1-g3.go:176",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g10",
+   "from": "n-t1-g13",
    "to": "system-outside-t1-b7",
    "scope": "structure",
    "fromNoSource": false,
@@ -1167,15 +1174,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing schema calls profileSend",
-     "at": "n-t1-g10.go:335",
+     "label": "Router invoice calls billingQuery",
+     "at": "n-t1-g13.go:130",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g2",
+   "from": "n-t1-g12",
    "to": "system-outside-t1-b8",
    "scope": "structure",
    "fromNoSource": false,
@@ -1185,15 +1192,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Device snapshot calls backupPut",
-     "at": "n-t1-g2.go:262",
+     "label": "Webhook router calls profileSend",
+     "at": "n-t1-g12.go:171",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g7",
+   "from": "n-t1-g12",
    "to": "system-outside-t1-b9",
    "scope": "structure",
    "fromNoSource": false,
@@ -1203,15 +1210,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing session calls invoiceSend",
-     "at": "n-t1-g7.go:163",
+     "label": "Webhook router calls billingGet",
+     "at": "n-t1-g12.go:81",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g7",
+   "from": "n-t1-g15",
    "to": "system-outside-t1-b11",
    "scope": "structure",
    "fromNoSource": false,
@@ -1221,16 +1228,16 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing session calls backupList",
-     "at": "n-t1-g7.go:40",
+     "label": "Plugin tenant calls queuePut",
+     "at": "n-t1-g15.go:338",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g8",
-   "to": "system-outside-t1-b12",
+   "from": "n-t1-g11",
+   "to": "system-outside-t1-b13",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1239,15 +1246,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing replica calls indexPut",
-     "at": "n-t1-g8.go:320",
+     "label": "Account gateway calls searchSend",
+     "at": "n-t1-g11.go:112",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t1-g9",
+   "from": "n-t1-g8",
    "to": "system-outside-t1-b14",
    "scope": "structure",
    "fromNoSource": false,
@@ -1257,8 +1264,332 @@
    "init": false,
    "calls": [
     {
-     "label": "Schema alert calls exportOpen",
-     "at": "n-t1-g9.go:177",
+     "label": "Billing replica calls storageGet",
+     "at": "n-t1-g8.go:77",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t1-g11",
+   "to": "system-outside-t1-b15",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Account gateway calls invoiceGet",
+     "at": "n-t1-g11.go:352",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g23",
+   "to": "n-t2-g31",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Audit webhook calls Search alert",
+     "at": "n-t2-g23.go:94",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g24",
+   "to": "n-t2-g18",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Queue export calls Gateway config",
+     "at": "n-t2-g24.go:379",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g26",
+   "to": "n-t2-g31",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Tenant router calls Search alert",
+     "at": "n-t2-g26.go:334",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g27",
+   "to": "n-t2-g26",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Index audit calls Tenant router",
+     "at": "n-t2-g27.go:253",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g34",
+   "to": "n-t2-g22",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Billing import calls Ledger queue",
+     "at": "n-t2-g34.go:287",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g29",
+   "to": "n-t2-g22",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Audit gateway calls Ledger queue",
+     "at": "n-t2-g29.go:386",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g26",
+   "to": "n-t2-g27",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Tenant router calls Index audit",
+     "at": "n-t2-g26.go:313",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g24",
+   "to": "n-t2-g30",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Queue export calls Tenant device",
+     "at": "n-t2-g24.go:156",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g30",
+   "to": "n-t2-g23",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Tenant device calls Audit webhook",
+     "at": "n-t2-g30.go:319",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g21",
+   "to": "n-t2-g22",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Webhook queue calls Ledger queue",
+     "at": "n-t2-g21.go:6",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g27",
+   "to": "n-t2-g34",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Index audit calls Billing import",
+     "at": "n-t2-g27.go:104",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g33",
+   "to": "n-t2-g29",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Token invoice calls Audit gateway",
+     "at": "n-t2-g33.go:41",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g28",
+   "to": "n-t2-g34",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Report ledger calls Billing import",
+     "at": "n-t2-g28.go:316",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g27",
+   "to": "n-t2-g30",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Index audit calls Tenant device",
+     "at": "n-t2-g27.go:156",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g33",
+   "to": "n-t2-g23",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Token invoice calls Audit webhook",
+     "at": "n-t2-g33.go:328",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g33",
+   "to": "n-t2-g28",
+   "scope": "structure",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Token invoice calls Report ledger",
+     "at": "n-t2-g33.go:129",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g25",
+   "to": "n-t2-g32",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Gateway config calls Replica plugin",
+     "at": "n-t2-g25.go:89",
      "callee": ""
     }
    ],
@@ -1275,26 +1606,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Token router calls Alert queue",
-     "at": "n-t2-g33.go:394",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g20",
-   "to": "n-t2-g32",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Backup search calls Storage index",
-     "at": "n-t2-g20.go:54",
+     "label": "Token invoice calls Search alert",
+     "at": "n-t2-g33.go:326",
      "callee": ""
     }
    ],
@@ -1302,8 +1615,8 @@
   },
   {
    "from": "n-t2-g23",
-   "to": "n-t2-g21",
-   "scope": "structure",
+   "to": "n-t2-g25",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1311,87 +1624,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Config queue calls Webhook audit",
-     "at": "n-t2-g23.go:387",
+     "label": "Audit webhook calls Gateway config",
+     "at": "n-t2-g23.go:255",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g21",
-   "to": "n-t2-g18",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Webhook audit calls Billing account",
-     "at": "n-t2-g21.go:368",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g21",
-   "to": "n-t2-g33",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Webhook audit calls Token router",
-     "at": "n-t2-g21.go:166",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g29",
-   "to": "n-t2-g24",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Billing ledger calls Audit queue",
-     "at": "n-t2-g29.go:371",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g20",
-   "to": "n-t2-g26",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Backup search calls Device device",
-     "at": "n-t2-g20.go:152",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g28",
+   "from": "n-t2-g23",
    "to": "n-t2-g29",
    "scope": "structure",
    "fromNoSource": false,
@@ -1401,26 +1642,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Config webhook calls Billing ledger",
-     "at": "n-t2-g28.go:102",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g31",
-   "to": "n-t2-g32",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Alert queue calls Storage index",
-     "at": "n-t2-g31.go:310",
+     "label": "Audit webhook calls Audit gateway",
+     "at": "n-t2-g23.go:159",
      "callee": ""
     }
    ],
@@ -1428,8 +1651,8 @@
   },
   {
    "from": "n-t2-g18",
-   "to": "n-t2-g19",
-   "scope": "structure",
+   "to": "n-t2-g32",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1437,260 +1660,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Billing account calls Tenant report",
-     "at": "n-t2-g18.go:200",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g25",
-   "to": "n-t2-g23",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Webhook gateway calls Config queue",
-     "at": "n-t2-g25.go:140",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g29",
-   "to": "n-t2-g31",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Billing ledger calls Alert queue",
-     "at": "n-t2-g29.go:94",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g23",
-   "to": "n-t2-g18",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Config queue calls Billing account",
-     "at": "n-t2-g23.go:74",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g33",
-   "to": "n-t2-g25",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Token router calls Webhook gateway",
-     "at": "n-t2-g33.go:305",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g25",
-   "to": "n-t2-g31",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Webhook gateway calls Alert queue",
-     "at": "n-t2-g25.go:219",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g25",
-   "to": "n-t2-g22",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Webhook gateway calls Session export",
-     "at": "n-t2-g25.go:253",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g32",
-   "to": "n-t2-g22",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Storage index calls Session export",
-     "at": "n-t2-g32.go:126",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g29",
-   "to": "n-t2-g27",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Billing ledger calls Session gateway",
-     "at": "n-t2-g29.go:120",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g27",
-   "to": "n-t2-g33",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Session gateway calls Token router",
-     "at": "n-t2-g27.go:295",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g30",
-   "to": "n-t2-g25",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Config audit calls Webhook gateway",
-     "at": "n-t2-g30.go:227",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g17",
-   "to": "n-t2-g30",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Profile metrics calls Config audit",
-     "at": "n-t2-g17.go:157",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g29",
-   "to": "n-t2-g20",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Billing ledger calls Backup search",
-     "at": "n-t2-g29.go:156",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g28",
-   "to": "n-t2-g23",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Config webhook calls Config queue",
-     "at": "n-t2-g28.go:199",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g30",
-   "to": "n-t2-g21",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Config audit calls Webhook audit",
-     "at": "n-t2-g30.go:126",
+     "label": "Gateway config calls Replica plugin",
+     "at": "n-t2-g18.go:57",
      "callee": ""
     }
    ],
@@ -1698,7 +1669,97 @@
   },
   {
    "from": "n-t2-g21",
+   "to": "n-t2-g31",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Webhook queue calls Search alert",
+     "at": "n-t2-g21.go:33",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g29",
+   "to": "n-t2-g35",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Audit gateway calls Billing schema",
+     "at": "n-t2-g29.go:263",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g22",
+   "to": "n-t2-g30",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Ledger queue calls Tenant device",
+     "at": "n-t2-g22.go:291",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g24",
    "to": "n-t2-g17",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Queue export calls Queue schema",
+     "at": "n-t2-g24.go:335",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g20",
+   "to": "n-t2-g29",
+   "scope": "operation",
+   "fromNoSource": false,
+   "toNoSource": false,
+   "operations": [],
+   "possible": false,
+   "init": false,
+   "calls": [
+    {
+     "label": "Alert invoice calls Audit gateway",
+     "at": "n-t2-g20.go:197",
+     "callee": ""
+    }
+   ],
+   "label": ""
+  },
+  {
+   "from": "n-t2-g22",
+   "to": "n-t2-g31",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1707,33 +1768,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Webhook audit calls Profile metrics",
-     "at": "n-t2-g21.go:213",
+     "label": "Ledger queue calls Search alert",
+     "at": "n-t2-g22.go:205",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g32",
-   "to": "system-outside-t2-b16",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Storage index calls pluginPut",
-     "at": "n-t2-g32.go:270",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t2-g27",
+   "from": "n-t2-g30",
    "to": "system-outside-t2-b17",
    "scope": "structure",
    "fromNoSource": false,
@@ -1743,15 +1786,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Session gateway calls cacheGet",
-     "at": "n-t2-g27.go:366",
+     "label": "Tenant device calls accountGet",
+     "at": "n-t2-g30.go:4",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g26",
+   "from": "n-t2-g29",
    "to": "system-outside-t2-b18",
    "scope": "structure",
    "fromNoSource": false,
@@ -1761,15 +1804,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Device device calls queueOpen",
-     "at": "n-t2-g26.go:295",
+     "label": "Audit gateway calls routerList",
+     "at": "n-t2-g29.go:344",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g22",
+   "from": "n-t2-g24",
    "to": "system-outside-t2-b20",
    "scope": "structure",
    "fromNoSource": false,
@@ -1779,16 +1822,16 @@
    "init": false,
    "calls": [
     {
-     "label": "Session export calls indexList",
-     "at": "n-t2-g22.go:196",
+     "label": "Queue export calls metricsQuery",
+     "at": "n-t2-g24.go:397",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g26",
-   "to": "system-outside-t2-b21",
+   "from": "n-t2-g18",
+   "to": "system-outside-t2-b22",
    "scope": "structure",
    "fromNoSource": false,
    "toNoSource": false,
@@ -1797,15 +1840,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Device device calls replicaList",
-     "at": "n-t2-g26.go:282",
+     "label": "Gateway config calls indexQuery",
+     "at": "n-t2-g18.go:101",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g22",
+   "from": "n-t2-g34",
    "to": "system-outside-t2-b23",
    "scope": "structure",
    "fromNoSource": false,
@@ -1815,15 +1858,15 @@
    "init": false,
    "calls": [
     {
-     "label": "Session export calls exportList",
-     "at": "n-t2-g22.go:89",
+     "label": "Billing import calls pluginPut",
+     "at": "n-t2-g34.go:325",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g30",
+   "from": "n-t2-g31",
    "to": "system-outside-t2-b25",
    "scope": "structure",
    "fromNoSource": false,
@@ -1833,17 +1876,17 @@
    "init": false,
    "calls": [
     {
-     "label": "Config audit calls schemaList",
-     "at": "n-t2-g30.go:279",
+     "label": "Search alert calls metricsOpen",
+     "at": "n-t2-g31.go:8",
      "callee": ""
     }
    ],
    "label": ""
   },
   {
-   "from": "n-t2-g24",
-   "to": "system-outside-t2-b26",
-   "scope": "structure",
+   "from": "n-t1-g1",
+   "to": "n-t2-g34",
+   "scope": "operation",
    "fromNoSource": false,
    "toNoSource": false,
    "operations": [],
@@ -1851,26 +1894,8 @@
    "init": false,
    "calls": [
     {
-     "label": "Audit queue calls replicaQuery",
-     "at": "n-t2-g24.go:90",
-     "callee": ""
-    }
-   ],
-   "label": ""
-  },
-  {
-   "from": "n-t1-g11",
-   "to": "n-t2-g22",
-   "scope": "structure",
-   "fromNoSource": false,
-   "toNoSource": false,
-   "operations": [],
-   "possible": false,
-   "init": false,
-   "calls": [
-    {
-     "label": "Account gateway calls Session export",
-     "at": "n-t1-g11.go:257",
+     "label": "Queue storage calls Billing import",
+     "at": "n-t1-g1.go:326",
      "callee": ""
     }
    ],
@@ -1930,7 +1955,7 @@
     "system-outside-t1-b4-destination",
     "system-outside-t1-b6-destination",
     "system-outside-t1-b10-destination",
-    "system-outside-t1-b13-destination"
+    "system-outside-t1-b12-destination"
    ]
   },
   {
@@ -1957,14 +1982,15 @@
   {
    "id": "system-outside-t1-b10-destination",
    "nodes": [
-    "system-outside-t1-b11",
-    "system-outside-t1-b12"
+    "system-outside-t1-b11"
    ]
   },
   {
-   "id": "system-outside-t1-b13-destination",
+   "id": "system-outside-t1-b12-destination",
    "nodes": [
-    "system-outside-t1-b14"
+    "system-outside-t1-b13",
+    "system-outside-t1-b14",
+    "system-outside-t1-b15"
    ]
   },
   {
@@ -1974,8 +2000,8 @@
     "t2-area-k6",
     "t2-area-k7",
     "t2-area-k8",
-    "n-t2-g32",
-    "n-t2-g33"
+    "n-t2-g34",
+    "n-t2-g35"
    ]
   },
   {
@@ -1991,41 +2017,42 @@
    "nodes": [
     "n-t2-g20",
     "n-t2-g21",
-    "n-t2-g22"
+    "n-t2-g22",
+    "n-t2-g23",
+    "n-t2-g24"
    ]
   },
   {
    "id": "t2-area-k7",
    "nodes": [
-    "n-t2-g23",
-    "n-t2-g24",
     "n-t2-g25",
     "n-t2-g26",
-    "n-t2-g27"
+    "n-t2-g27",
+    "n-t2-g28",
+    "n-t2-g29"
    ]
   },
   {
    "id": "t2-area-k8",
    "nodes": [
-    "n-t2-g28",
-    "n-t2-g29",
     "n-t2-g30",
-    "n-t2-g31"
+    "n-t2-g31",
+    "n-t2-g32",
+    "n-t2-g33"
    ]
   },
   {
    "id": "system-outside-t2",
    "nodes": [
-    "system-outside-t2-b15-destination",
+    "system-outside-t2-b16-destination",
     "system-outside-t2-b19-destination",
-    "system-outside-t2-b22-destination",
+    "system-outside-t2-b21-destination",
     "system-outside-t2-b24-destination"
    ]
   },
   {
-   "id": "system-outside-t2-b15-destination",
+   "id": "system-outside-t2-b16-destination",
    "nodes": [
-    "system-outside-t2-b16",
     "system-outside-t2-b17",
     "system-outside-t2-b18"
    ]
@@ -2033,23 +2060,195 @@
   {
    "id": "system-outside-t2-b19-destination",
    "nodes": [
-    "system-outside-t2-b20",
-    "system-outside-t2-b21"
+    "system-outside-t2-b20"
    ]
   },
   {
-   "id": "system-outside-t2-b22-destination",
+   "id": "system-outside-t2-b21-destination",
    "nodes": [
+    "system-outside-t2-b22",
     "system-outside-t2-b23"
    ]
   },
   {
    "id": "system-outside-t2-b24-destination",
    "nodes": [
-    "system-outside-t2-b25",
-    "system-outside-t2-b26"
+    "system-outside-t2-b25"
    ]
   }
  ],
- "inputOwner": {}
+ "inputOwner": {},
+ "scene": {
+  "inputs": {},
+  "systems": {
+   "system-outside-t1-b1-destination": {
+    "kind": "database",
+    "parts": [
+     "n-t1-g9",
+     "n-t1-g2"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t1-b4-destination": {
+    "kind": "request",
+    "parts": [
+     "n-t1-g3"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t1-b6-destination": {
+    "kind": "sdk",
+    "parts": [
+     "n-t1-g13",
+     "n-t1-g12"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t1-b10-destination": {
+    "kind": "queue",
+    "parts": [
+     "n-t1-g15"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t1-b12-destination": {
+    "kind": "started",
+    "parts": [
+     "n-t1-g11",
+     "n-t1-g8"
+    ],
+    "programs": [
+     "system-component-t1"
+    ]
+   },
+   "system-outside-t2-b16-destination": {
+    "kind": "database",
+    "parts": [
+     "n-t2-g30",
+     "n-t2-g29"
+    ],
+    "programs": [
+     "system-component-t2"
+    ]
+   },
+   "system-outside-t2-b19-destination": {
+    "kind": "request",
+    "parts": [
+     "n-t2-g24"
+    ],
+    "programs": [
+     "system-component-t2"
+    ]
+   },
+   "system-outside-t2-b21-destination": {
+    "kind": "sdk",
+    "parts": [
+     "n-t2-g18",
+     "n-t2-g34"
+    ],
+    "programs": [
+     "system-component-t2"
+    ]
+   },
+   "system-outside-t2-b24-destination": {
+    "kind": "queue",
+    "parts": [
+     "n-t2-g31"
+    ],
+    "programs": [
+     "system-component-t2"
+    ]
+   }
+  },
+  "calls": {
+   "n-t1-g9": [
+    {
+     "system": "system-outside-t1-b1-destination"
+    }
+   ],
+   "n-t1-g2": [
+    {
+     "system": "system-outside-t1-b1-destination"
+    }
+   ],
+   "n-t1-g3": [
+    {
+     "system": "system-outside-t1-b4-destination"
+    }
+   ],
+   "n-t1-g13": [
+    {
+     "system": "system-outside-t1-b6-destination"
+    }
+   ],
+   "n-t1-g12": [
+    {
+     "system": "system-outside-t1-b6-destination"
+    }
+   ],
+   "n-t1-g15": [
+    {
+     "system": "system-outside-t1-b10-destination"
+    }
+   ],
+   "n-t1-g11": [
+    {
+     "system": "system-outside-t1-b12-destination"
+    }
+   ],
+   "n-t1-g8": [
+    {
+     "system": "system-outside-t1-b12-destination"
+    }
+   ],
+   "n-t2-g30": [
+    {
+     "system": "system-outside-t2-b16-destination"
+    }
+   ],
+   "n-t2-g29": [
+    {
+     "system": "system-outside-t2-b16-destination"
+    }
+   ],
+   "n-t2-g24": [
+    {
+     "system": "system-outside-t2-b19-destination"
+    }
+   ],
+   "n-t2-g18": [
+    {
+     "system": "system-outside-t2-b21-destination"
+    }
+   ],
+   "n-t2-g34": [
+    {
+     "system": "system-outside-t2-b21-destination"
+    }
+   ],
+   "n-t2-g31": [
+    {
+     "system": "system-outside-t2-b24-destination"
+    }
+   ]
+  },
+  "programPairs": [
+   {
+    "from": "system-component-t1",
+    "to": "system-component-t2",
+    "runtime": true,
+    "relations": [
+     67
+    ]
+   }
+  ]
+ }
 }
