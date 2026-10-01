@@ -24,6 +24,77 @@
 - **freqtrade:** 155 live calls, atlas_symbols 98 windows, refused 0 → 0;
   key_symbol flipped on 205 of 5,647 rows; boundary names 3.
 
+## 2026-10-01 — REPORT.md's canvas case law moved here
+
+These are the dated examples and incidents removed from REPORT.md's canvas
+rules (contract cleanup, step S0 of the canvas rewrite); the grid-packing
+rules were removed because the owner rejected the grid.
+
+- **A click in a closed Inputs group reads the input's kind** (owner,
+  2026-09-30: "я в колонке не вижу, что я тыкнул на канвасе инпут
+  какой-то"): Redis's acceptHandler, clicked in the closed Client I/O group,
+  had read the handler's part.
+- **A collection lists its kinds as the column names its sections**:
+  Redis's Inputs had listed three kinds beside a column of four.
+- **The Outside arrow's card reads destinations, not calls**: litestream's
+  had listed 89 calls over half the map.
+- **A system several programs call stands once** (owner, 2026-09-30: "both
+  targets use the database"): litestream's SQLite had stood twice.
+- **The port lines of the area the camera stands in stay drawn**: the
+  pointer coming onto one over the program's empty space had taken it away
+  with its card (owner, 2026-09-30: arrows no longer opened cards).
+- **Ports keep one screen size, placed where the camera comes to rest**
+  (owner, 2026-10-01): zoomed into redis's Core they had grown with the map
+  to icons a hundred pixels tall.
+- **Entering an input path frames its destination first** (reviewer,
+  2026-09-30): freqtrade's forceenter had cut its destination at the edge.
+- **Leaving a path returns to what was read before the first path**: one
+  search after another had returned to the first path.
+- **Dark arrows are drawn over grey ones** (owner, 2026-09-30): redis's Core
+  with Core data structures pointed at had its dark arrows cut by grey ones
+  crossing and running over them, "you can't tell where it comes from".
+- **An arrow between two parts of one frame opens its card**: othello's Game
+  logic had opened none.
+- **An arrow's card on the canvas answers what it is** (reviewer,
+  2026-09-30): Litestream's CLI → Core database engine card had listed 174
+  caller → callee rows.
+- **No wrap runs its arrows half again as long as unwrapped**: measured: a
+  wrap that changes anything runs 2.2 to 4.3 times as long; Redis's Core
+  server infrastructure had looped 16 of its 27 arrows round the whole area.
+- **An area that does not fit is never packed into a grid**: packed, Redis's
+  Core had run its arrows through shared gutters between rigid rows, and
+  the owner judged the layered Core "ахуенно" and the grid "пиздец"
+  (2026-09-30, e9513614 removed).
+- **A program's title grows only within its band**: grown past it,
+  "freqtrade" had stood over its first area.
+- **A platform handle is no tile**: freqtrade's Trading bot core had three
+  "logger" tiles.
+- **Where the reader is is said once** (owner, 2026-09-29): the canvas's own
+  location row, the breadcrumb and the column had named three places, and
+  "System map" stood three times on the home.
+- **A path never breaks before its extension**: "scripts/ rest_client. py"
+  had read on freqtrade's map, 2026-09-30.
+- **The targets not read are one "Not analysed" note**: one pale card
+  apiece, litestream's two failed packages had read at four pixels.
+
+**Grid packing, removed** (verbatim from REPORT.md's layout rules):
+
+> A component whose arrangements all leave its smallest card under 64
+> pixels tall where it is entered whole packs its cards instead (owner's
+> review, 2026-09-30: freqtrade's fourteen areas had covered 7% of their
+> frame inside a hundred crossing arrows): a grid toward the canvas's
+> proportion, in the reading order of the first arrangement, its arrows
+> orthogonal in the gutters between rows and columns, never over a card.
+> Every arrow at one side of a card meets it at one point and runs in that
+> card's one lane of the gutter, a trunk until they part, one arrowhead; a
+> gutter is wide enough for its lanes ten pixels apart and sixteen from the
+> cards where the program is entered (an arrowhead crosses no lane), the
+> frame's padding kept outside its outer lanes. In a layered arrangement the
+> arrows into one side of an area likewise merge (ELK `mergeEdges`), unless
+> the component's cards call round a cycle: the arrow closing it, forced
+> through the others' point, had gone round a third card (redis-server's
+> Data type commands).
+
 ## 2026-10-01 — An entered program's ports keep one screen size and stay in sight
 
 - **Ports** (`placePorts`, `fitPortLines`): closer than the program was

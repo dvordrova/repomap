@@ -83,6 +83,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   embedded with the ordinary templates: no CDN, Node runtime or external
   asset directory.
 
+- The dated examples behind this contract's canvas rules are in the
+  CHANGELOG entry of 2026-10-01, ["REPORT.md's canvas case law moved
+  here"](../agent-room/CHANGELOG.md#2026-10-01--reportmds-canvas-case-law-moved-here).
+- At every level the canvas keeps these invariants, checked by
+  `internal/report/web/visual/invariants.spec.mjs`: each drawn arrow is one
+  polyline from its own source to its own target, its head pointing in; no
+  two arrows share a run longer than 6 px unless they are the two
+  directions of one pair; every arrow end lies on its box, on a port or in
+  the level's frame, never off the canvas; a pan never changes the level or
+  removes an element; pointing changes only emphasis and drawing order;
+  dark arrows are drawn after grey ones; every arrow opens its card; ports
+  keep 20–28 screen pixels at every camera; titles at one level read within
+  ±10% of each other; no digit and no label (a badge, an arrow's caption)
+  is printed on the canvas.
+
 - The home page has one common System map built from the translated
   component maps; components and saved areas are frames holding their
   parts. Every selected target is present; unread components keep their
@@ -121,9 +136,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   reads that part, but a click where one of its inputs stands while the group
   is closed reads that input's kind in the collection, as choosing the kind
   does (owner, 2026-09-30: "я в колонке не вижу, что я тыкнул на канвасе
-  инпут какой-то": Redis's acceptHandler, clicked in the closed Client I/O
-  group, had read the handler's part). The collection opens to its groups first, each closed like
-  a closed area with a zoom mark entering it, no smaller than a card its
+  инпут какой-то"). The collection opens to its groups first, each closed
+  like a closed area with a zoom mark entering it, no smaller than a card its
   title reads in where the collection is entered whole; a collection's
   groups open to their inputs together when its own inputs' headings read
   (14px to open, 12px to stay open), whatever another collection's do.
@@ -138,11 +152,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   no mark of its own (an entry whose kind is not established) wears a
   neutral dot. A collection lists its kinds as the column names its
   sections (Scheduled tasks apart from Background work, Queue consumers,
-  Extension points, Kind not established): Redis's Inputs had listed three
-  kinds beside a column of four. A tile names a callable written inline as
-  the column does, "anonymous function in {function}". A program's Inputs
-  and Outside frames are named with their program in Connections and cards
-  ("← Inputs · redis-server"), and a part's reading is headed "Part".
+  Extension points, Kind not established). A tile names a callable written
+  inline as the column does, "anonymous function in {function}". A program's
+  Inputs and Outside frames are named with their program in Connections and
+  cards ("← Inputs · redis-server"), and a part's reading is headed "Part".
 - An input whose handler is not established (GroupsIndex `handler_unknown`:
   an option a call declares, a value handed over) has no owner: it stands
   loose, no implementation arrow binds it, and such a request is no route and
@@ -173,20 +186,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the camera staying; no call tile is drawn, and the program's arrows to
   its destinations are one arrow to its Outside frame, the calls behind it
   in its card. That card reads the destinations the arrow reaches, each
-  under the parts calling it, not the calls one to a line: litestream's
-  had listed 89 calls over half the map; the calls are read in the column.
-  One call written once (the same destination and symbol at the same saved
-  path and line, owner, 2026-09-28) is one call, in the first program's
-  destination, with an arrow from each program making it. A system several
-  programs call (the same destination name in each: the reading names one
-  service behind a package alike in every program) stands once too, each
-  program's calls its own tiles and arrows (owner, 2026-09-30: "both
-  targets use the database"; litestream's SQLite had stood twice). Such
-  systems stand in an Outside frame of the programs calling them, named
-  after them, its first program first ("cmd/litestream,
-  cmd/litestream-test"), in its arrow cards, reading and breadcrumb; a
-  system one program calls stays in that program's frame. An Outside frame
-  and its chips are display collections, not inferred components.
+  under the parts calling it, not the calls one to a line; the calls are
+  read in the column. One call written once (the same destination and
+  symbol at the same saved path and line, owner, 2026-09-28) is one call, in
+  the first program's destination, with an arrow from each program making
+  it. A system several programs call (the same destination name in each:
+  the reading names one service behind a package alike in every program)
+  stands once too, each program's calls its own tiles and arrows (owner,
+  2026-09-30: "both targets use the database"). Such systems stand in an
+  Outside frame of the programs calling them, named after them, its first
+  program first ("cmd/litestream, cmd/litestream-test"), in its arrow
+  cards, reading and breadcrumb; a system one program calls stays in that
+  program's frame. An Outside frame and its chips are display collections,
+  not inferred components.
 - A program entered (the location names it, its frame across or down three
   quarters of the canvas, the camera not on the whole map, which leaves
   room beside it) stands its Inputs and every Outside frame it calls into
@@ -204,22 +216,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   only while their mark or part is pointed at, focused or chosen, the parts
   behind the mark outlined (owner: hover answers what is this). Those of the
   area or part the camera stands in, and of the mark or system chosen, stay
-  drawn whatever the pointer crosses, grey unless pointed at: the pointer
-  coming onto one over the program's empty space had taken it away with its
-  card (owner, 2026-09-30: arrows no longer opened cards). The ports keep
+  drawn whatever the pointer crosses, grey unless pointed at; the pointer
+  coming onto one keeps it and its card (owner, 2026-09-30). The ports keep
   one screen size at every level, each item 24 pixels and its icon 16, the
   capsule hugging them: closer than the program was laid out for, they
   stand on its border where the camera shows it, else on the canvas's edge
   nearest that border, in their order and inside the canvas, each line cut
   where it crosses its item's lane by that edge (six pixels apart per item)
   and run along it to its item; a line wholly beyond the canvas is not
-  drawn. They are placed where the camera comes to rest (owner, 2026-10-01:
-  zoomed into redis's Core they had grown with the map to icons a hundred
-  pixels tall). The geometry lint reports a port item off that size
-  (`port-size`). A mark is
-  named in one line when pointed at or reached by the keyboard; a click
-  reads that kind, system or program, a capsule elsewhere all of them, the
-  camera staying.
+  drawn. They are placed where the camera comes to rest and never grow with
+  the map (owner, 2026-10-01). The geometry lint reports a port item off
+  that size (`port-size`). A mark is named in one line when pointed at or
+  reached by the keyboard; a click reads that kind, system or program, a
+  capsule elsewhere all of them, the camera staying.
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay
@@ -352,12 +361,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   open); when they do not, it frames the destination first, the part the
   trace reaches in most steps (the first of equals in call order), then
   the handler's part and the others as fit, at that scale, so the dark
-  arrows leaving the frame show the way back (reviewer, 2026-09-30:
-  freqtrade's forceenter had cut its destination at the edge). Leaving the
-  path returns to what was read before the first path entered, camera and
-  all (one search after another had returned to the first path); with
-  nothing read before it (a link, a reload), to the whole map the column
-  then names. The path's parts, and a closed
+  arrows leaving the frame show the way back. Leaving the path returns to
+  what was read before the first path entered, camera and all, never to an
+  earlier path; with nothing read before it (a link, a reload), to the
+  whole map the column then names. The path's parts, and a closed
   frame standing for parts hidden in it, are outlined in the path's dark. An
   input without a trace is entered as its tile, and such a tile clicked keeps
   the camera. "Show input" stands in the reading card while the camera may be
@@ -383,9 +390,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   parts at the arrow's other end stay as they are.
   Dark arrows are drawn over every grey one in a halo of the canvas's
   colour, and while one is dark the grey ones fade, but for those between
-  the parts looked at; boxes are untouched (owner, 2026-09-30: redis's Core
-  with Core data structures pointed at had its dark arrows cut by grey ones
-  crossing and running over them, "you can't tell where it comes from").
+  the parts looked at; boxes are untouched (owner, 2026-09-30: "you can't
+  tell where it comes from").
 
 - A card (a label's calls) opens on intent, only after the pointer pauses on
   its handle; a handle crossed on the way elsewhere opens nothing. A
@@ -400,12 +406,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   beyond the canvas, for that part's connection. A part's short arrows are
   thirty screen pixels, their heads in sight, and its magnifier leaves room
   for them. An arrow between two parts of one frame is the calling part's
-  connection to the other and opens its card (othello's Game logic had
-  opened none). An arrow crossing no border of the frame its head names (a
-  port's line into a part) opens that connection's card at its head. The
-  geometry lint rests the pointer on sampled arrows at every level and
-  reports one that opens no card (`no-card`). An
-  arrowhead stands outside its frame's border. A card stands flush with its
+  connection to the other and opens its card. An arrow crossing no border
+  of the frame its head names (a port's line into a part) opens that
+  connection's card at its head. The geometry lint rests the pointer on
+  sampled arrows at every level and reports one that opens no card
+  (`no-card`). An arrowhead stands outside its frame's border. A card stands flush with its
   handle, outside the frame being read so it covers none of its parts, clear
   of the handle, on the side with room and wholly inside the canvas; a label's
   card goes out through the border its label stands on. Without room outside
@@ -426,15 +431,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   are rows of it, never drawn over its rows, and the card prints no count. The pause, the
   linger and the triangle are interaction timing, not evidence limits.
 
-  On the canvas an arrow's card answers what it is (reviewer, 2026-09-30):
-  headed by the two frames its arrow joins, it names each part the arrow
-  goes into (not the one its heading names) and under it what it reaches
-  there, one name to a line, each name once (a callee, a
-  field, the inputs a handler takes; a call leaving its program as the
-  function asking on one side and the one answering on the other,
-  "cliConnect ⇢ acceptHandler"), the first dozen then "…"; every call and its caller are read in the column, a
-  click on the arrow away. Litestream's CLI → Core database engine card had
-  listed 174 caller → callee rows.
+  On the canvas an arrow's card answers what it is: headed by the two
+  frames its arrow joins, it names each part the arrow goes into (not the
+  one its heading names) and under it what it reaches there, one name to a
+  line, each name once (a callee, a field, the inputs a handler takes; a
+  call leaving its program as the function asking on one side and the one
+  answering on the other, "cliConnect ⇢ acceptHandler"), the first dozen
+  then "…", never a list of caller → callee rows; every call and its caller
+  are read in the column, a click on the arrow away.
   In the column a connection (owner, 2026-09-27) is headed by the two frames its arrow
   joins, from → into, and one line of counts: calls of each kind, from how
   many parts of one frame into how many of the other ("{n} calls, from all
@@ -469,19 +473,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   status and source relations stay distinct in the reading data and
   operation paths, and every original edge ID and relation survives the
   bundling.
-  An area's layout fits the initial canvas with its part headings readable
-  at the size their layer stays open at, then takes the fewest detours, then
-  the squarer box; when none fits, the one shrinking least, but never a
-  wrapped arrangement whose arrows run more than half again as long as the
-  same direction unwrapped (measured: a wrap that changes anything runs 2.2
-  to 4.3 times as long; Redis's Core server infrastructure had looped 16 of
-  its 27 arrows round the whole area). An area none of whose arrangements
-  fits keeps its layered arrangement and the camera handles it (entered at
-  its first parts, the rest a pan away); it is never packed into a grid:
-  packed, Redis's Core had run its arrows through shared gutters between
-  rigid rows, and the owner judged the layered Core "ахуенно" and the grid
-  "пиздец" (2026-09-30, e9513614 removed). Its parts keep their own size, that of the loose parts
-  beside it, so an area is as large as what it holds, with no second
+  Each area and each program is laid out by ELK layered. Nothing on the
+  canvas is packed into a grid; what does not fit the canvas is the
+  camera's job (owner, 2026-09-30, who judged the layered Core "ахуенно"
+  and the grid "пиздец"). An area's layout fits the initial canvas with its
+  part headings readable at the size their layer stays open at, then takes
+  the fewest detours, then the squarer box; when none fits, the one
+  shrinking least, but never a wrapped arrangement whose arrows run more
+  than half again as long as the same direction unwrapped. An area none of
+  whose arrangements fits keeps its layered arrangement and the camera
+  handles it (entered at its first parts, the rest a pan away). Its parts
+  keep their own size, that of the loose parts beside it, so an area is as
+  large as what it holds, with no second
   member-list height; but no closed card of a component (an area or a loose
   part) is smaller than nine twentieths of its largest area on either side,
   or half again its own size, an area so grown holding its parts in its
@@ -499,10 +502,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   smaller, its title still eleven pixels where its program is entered, if
   that lets it read whole, or else in two lines. A program's
   title grows as the camera leaves it only within the band its frame keeps
-  for it: grown past it, "freqtrade" had stood over its first area. The
-  magnifier frames a part whole only while
-  its declarations still read at eleven pixels there; else at that size,
-  its head and first column in sight. A closed group shows its name and nested-content hint,
+  for it, never over its first area. The magnifier frames a part whole only
+  while its declarations still read at eleven pixels there; else at that
+  size, its head and first column in sight. A closed group shows its name and nested-content hint,
   then reveals its objects directly at the next common layer; there is no
   intermediate member-list view. An architectural area holds at least two
   parts (reading draws none smaller; GroupsIndex keeps no container of fewer
@@ -555,10 +557,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a type with its fields and methods under it, a function or a module's
   variable alone. A module variable its file keeps only as its handle on the
   platform is no tile (GroupsIndex `PlatformHandles`: a standard-library
-  call's result only its file's functions read, Python's module logger;
-  freqtrade's Trading bot core had three "logger" tiles); the reading still
-  lists it. A tile keeps its link column, the longest chain of calls,
-  returns and takes leading to it, so a caller stands left of what it calls.
+  call's result only its file's functions read, Python's module logger);
+  the reading still lists it. A tile keeps its link column, the longest
+  chain of calls, returns and takes leading to it, so a caller stands left
+  of what it calls.
   Tiles stand by file, the files in the order their first declaration is
   listed, each file's declarations in the page's order: the model's keys,
   then the types, then the rest (owner, 2026-09-28); the file is a hint.
@@ -613,10 +615,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   controls stay inside their own frame; viewport clipping never moves them
   to another corner. Where the reader is is said once, by the page's
   breadcrumb, with the reading column's heading naming what is read and the
-  frame holding it (owner, 2026-09-29: the canvas's own location row, the
-  breadcrumb and the column had named three places, and "System map" stood
-  three times on the home). The canvas keeps its location only for
-  assistive technology and for a layout that failed. Root summaries and revealed interiors are exclusive.
+  frame holding it (owner, 2026-09-29). The canvas keeps its location only
+  for assistive technology and for a layout that failed. Root summaries and
+  revealed interiors are exclusive.
 
   Arrows between groups and participants stop at their boundaries, open or
   closed; routes inside one group keep their part-to-part endpoints, and
@@ -664,11 +665,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   than the line, after a separator or between camelCase words when it can,
   never before closing punctuation; a path breaks only after a "/", a
   segment itself only when it alone is wider than the line, and never
-  before its extension ("scripts/ rest_client. py" had read on freqtrade's
-  map, 2026-09-30). Map titles are drawn as those measured
-  lines, never broken again by the browser. A heading still short of its
-  longest word shrinks its type until it fits; a part's title leaves room for
-  its zoom button. A part's description takes at most three lines, the third
+  before its extension. Map titles are drawn as those measured lines, never
+  broken again by the browser. A heading still short of its longest word
+  shrinks its type until it fits; a part's title leaves room for its zoom
+  button. A part's description takes at most three lines, the third
   cut with an ellipsis, and never leaves the card an empty line. When the
   whole-map fit cannot give a summary its room, the summary is drawn scaled
   down whole, its zoom mark with it until zoom gives the mark its ordinary
@@ -706,24 +706,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   zoom-time layout. A component grows whole, in the arrangement of its areas
   (of both directions, with and without unzipping, all prepared once) nearest
   the box it grows to, so its open areas fill its frame with no empty band.
-  A component whose arrangements all leave its smallest card under 64
-  pixels tall where it is entered whole packs its cards instead (owner's
-  review, 2026-09-30: freqtrade's fourteen areas had covered 7% of their
-  frame inside a hundred crossing arrows): a grid toward the canvas's
-  proportion, in the reading order of the first arrangement, its arrows
-  orthogonal in the gutters between rows and columns, never over a card.
-  Every arrow at one side of a card meets it at one point and runs in that
-  card's one lane of the gutter, a trunk until they part, one arrowhead; a
-  gutter is wide enough for its lanes ten pixels apart and sixteen from the
-  cards where the program is entered (an arrowhead crosses no lane), the
-  frame's padding kept outside its outer lanes. In a
-  layered arrangement the arrows into one side of an area likewise merge
-  (ELK `mergeEdges`), unless the component's cards call round a cycle: the
-  arrow closing it, forced through the others' point, had gone round a
-  third card (redis-server's Data type commands). Cross-participant labels take no interior
-  space; their cards belong to the outer endpoints. Components and input
-  collections show no empty padding around a long column and keep short
-  catalogues compact. Their reserves are measured from the text, never a fixed
+  Cross-participant labels take no interior space; their cards belong to
+  the outer endpoints. Components and input collections show no empty
+  padding around a long column and keep short catalogues compact. Their reserves are measured from the text, never a fixed
   wider frame for every participant, and the fit that sizes them frames
   exactly what the whole-map camera frames. Initial placement and resize use the same
   inner canvas dimensions. Layout runs off the main thread, inside the
@@ -1214,8 +1199,8 @@ components, their areas and inputs are on the canvas and are not listed
 again (owner, 2026-09-28); the targets the run could not read are named
 there with why. On the canvas they are one note, "Not analysed", naming
 them, sized with its words as a summary among the programs' and taking
-their connections: one pale card apiece, litestream's two failed packages
-had read at four pixels. The introductory sentence has no model badge or source popover;
+their connections. The introductory sentence has no model badge or source
+popover;
 its saved citations and model attribution live in Repository summary
 sources, reachable from the home reading. The summary and useful links
 remain, with no "Understand this repository" or visible "Starting points"
