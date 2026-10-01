@@ -110,12 +110,12 @@ for(const target of targets)for(const path of paths){
           if(into){into.failed++;if(into.examples.length<8)into.examples.push(`${finding.kind} ${finding.element}`);}
         }
         // A chip whose name fades is named when pointed at and when focused,
-        // and carries its name for assistive technology; a name drawn under
-        // 9.5 px and not faded reads too small.
+        // and carries its name for assistive technology.
         const chipCheck=async where=>{
           for(const chip of await page.evaluate(()=>window.__inv.chips())){
-            if(chip.small){add('chip-text',false,`${where}: ${chip.id} "${chip.title}" drawn at ${chip.px.toFixed(1)}px, not faded`);continue;}
-            if(!chip.faded){add('chip-text',true,'');continue;}
+            // From 9.5 px a chip's name stands whole; below, it fades and the
+            // tip names it.
+            if(chip.px>=9.5-.05){add('chip-text',chip.opacity>=.99,`${where}: ${chip.id} "${chip.title}" at ${chip.px.toFixed(1)}px faded to ${chip.opacity.toFixed(2)}`);continue;}
             phase=`pointing at chip ${chip.id} (${where})`;
             await page.mouse.move(chip.x,chip.y,{steps:2});await page.waitForTimeout(180);
             const pointed=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);
