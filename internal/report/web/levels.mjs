@@ -47,7 +47,10 @@ export const units={
   // A program's card on the whole map.
   programCard:{width:300,minHeight:120,font:'700 18px system-ui',line:23,role:'600 13px system-ui',text:'13px system-ui',textLine:18,pad:16},
   // A chip names an outside system in at most two lines.
-  chip:{font:'600 13px system-ui',line:17,pad:12,min:96,max:220,height:44},
+  // A chip names an outside system in one cell of its frame's grid, its
+  // name in at most two lines after its kind's mark; a bucket is a cell
+  // taller by its systems' marks.
+  chip:{font:'600 12px system-ui',line:15,pad:8,mark:20,width:140,height:46,bucket:62},
   // An input's name in its kind's group.
   input:{font:'13px system-ui',pad:10,mark:22,min:72,max:320,height:30},
   gap:12,
@@ -173,11 +176,9 @@ export function areaCard(node,inside,measure,k=1){
   const box=boxOf(inside.width/inside.height,units.part.width,content);
   return {id:node.id,width:box.width*k,height:box.height*k};
 }
-// A chip's box: its name in at most two lines.
-export function chipBox(node,measure){
-  const c=units.chip,width=Math.min(c.max,Math.max(c.min,Math.ceil(measure(node.name,c.font))+2*c.pad));
-  const lines=wrapText(node.name,width-2*c.pad,c.font,measure).length;
-  return {id:node.id,width:lines>2?c.max+40:width,height:c.height+(Math.min(lines,3)>2?c.line:0)};
+// A chip's box: one cell of its frame's grid.
+export function chipBox(node){
+  return {id:node.id,width:units.chip.width,height:units.chip.height};
 }
 // An input's tile: its kind's mark and its name on one line, or two when long.
 export function inputBox(node,measure){
@@ -261,17 +262,16 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(tiles.map(tile=>[tile.id,{...laid.at.get(tile.id),width:tile.width,height:tile.height}])),routes:new Map(),ports:[],text:1,kind:'kind'});
     }
     if(node.kind==='bucket'){
-      const chips=node.children.map(id=>chipBox(nodes.get(id),measure));
+      const chips=node.children.map(id=>chipBox(nodes.get(id)));
       const laid=pack(chips,{top:units.band(.8),aspect:1.6});
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(chips.map(chip=>[chip.id,{...laid.at.get(chip.id),width:chip.width,height:chip.height}])),routes:new Map(),ports:[],text:1,kind:'bucket'});
     }
   }
   // A closed bucket: its part's name over its systems' marks, at the size
   // of a chip of that name, grown to the proportion of its open drawing.
-  const closedBucket=node=>{
-    const open=local.get(node.id),name=chipBox({name:node.name},measure);
-    return {id:node.id,...boxOf(open.width/open.height,Math.max(name.width,140),()=>name.height+30)};
-  };
+  // A closed bucket: its part's name over its systems' marks, a cell of
+  // its frame's grid; entered, its systems stand inside it.
+  const closedBucket=node=>({id:node.id,width:units.chip.width,height:units.chip.bucket});
   for(const node of nodes.values()){
     if(node.kind==='inputs'){
       // Closed, it lists its kinds (canvas: the collection's summary); open,
@@ -282,7 +282,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       local.set(node.id,{width:laid.width,height:laid.height,closed,children:new Map(groups.map(group=>[group.id,{...laid.at.get(group.id),width:group.width,height:group.height}])),routes:new Map(),ports:[],text:1,kind:'inputs'});
     }
     if(node.kind==='outside'){
-      const items=node.children.map(id=>nodes.get(id)?.kind==='bucket'?closedBucket(nodes.get(id)):chipBox(nodes.get(id),measure));
+      const items=node.children.map(id=>nodes.get(id)?.kind==='bucket'?closedBucket(nodes.get(id)):chipBox(nodes.get(id)));
       const laid=pack(items,{top:units.band(1),aspect:1});
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(items.map(item=>[item.id,{...laid.at.get(item.id),width:item.width,height:item.height}])),routes:new Map(),ports:[],text:1,kind:'outside'});
     }
@@ -293,11 +293,13 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // open, with one arrow per pair of them.
   const rootBox=id=>{
     const node=nodes.get(id),inside=local.get(id);
-    if(node.kind==='program')return {id,...boxOf(inside.width/inside.height,units.programCard.width,w=>programCardHeight(node,w,measure,node.children.map(id=>nodes.get(id)?.name||'')))};
+    // A program's card holds its summary; entered, its drawing stands
+    // inside the card at the scale that fits it.
+    if(node.kind==='program')return {id,width:units.programCard.width,height:programCardHeight(node,units.programCard.width,measure,node.children.map(id=>nodes.get(id)?.name||''))};
     if(node.kind==='inputs')return {id,...inside.closed};
     if(node.kind==='outside')return {id,width:inside.width,height:inside.height};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
-    if(node.kind==='system')return chipBox(node,measure);
+    if(node.kind==='system')return chipBox(node);
     if(node.kind==='input')return inputBox(node,measure);
     return partBox(node);
   };
