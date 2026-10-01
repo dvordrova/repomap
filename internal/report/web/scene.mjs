@@ -84,7 +84,9 @@ export function sceneAt(model,geometry,level=[],selection={}){
     // is chosen, else only while one is pointed at (emphasisOf).
     for(const route of geometry.routes.get('')||[]){
       const edge=edgeOf(route,model,looked);
-      if(route.uses&&!looked.has(route.from)&&!looked.has(route.to))edge.rest=false;
+      // A part read chooses its program here.
+      const chosen=selection.scope?model.rootOf(model.shown(selection.scope)):'';
+      if(route.uses&&!looked.has(route.from)&&!looked.has(route.to)&&chosen!==route.from&&chosen!==route.to)edge.rest=false;
       edges.push(edge);
     }
     return finish();
