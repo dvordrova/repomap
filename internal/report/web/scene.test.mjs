@@ -220,12 +220,21 @@ function checkScene(name,model,geometry,scene,problems){
 // system the other serves).
 function checkHome(name,model,geometry,problems){
   const scene=sceneAt(model,geometry,[],{});
-  // Every program is named at rest on the whole map (owner, 2026-10-02):
-  // its title whole in its card, at eleven pixels or more on the screen.
-  for(const node of scene.nodes.filter(node=>node.display==='program')){
-    const px=17*node.text*geometry.home.zoom,words=programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure);
-    if(px<11||words.title.join('').replace(/\s+/g,'')!==node.title.replace(/\s+/g,''))problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px`]);
+  // At rest on the whole map every program and every outside system in
+  // sight is named, at eleven pixels or more (owner, 2026-10-02): a
+  // program's title whole in its card, a chip's and a closed bucket's name.
+  // The camera at rest shows them all wherever their names read there
+  // (levels.mjs homeView); "Show whole map" shows the whole map.
+  const rest=geometry.home,inSight=r=>{const l=r.x*rest.zoom+rest.x,t=r.y*rest.zoom+rest.y;return l>=-.5&&t>=-.5&&l+r.width*rest.zoom<=canvas.width+.5&&t+r.height*rest.zoom<=canvas.height+.5;};
+  const named=scene.nodes.filter(node=>['program','chip','bucket'].includes(node.display));
+  for(const node of named.filter(node=>inSight(node.rect))){
+    const px=(node.display==='program'?17:12)*node.text*rest.zoom;
+    const whole=node.display!=='program'||programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure).title.join('').replace(/\s+/g,'')===node.title.replace(/\s+/g,'');
+    if(px<11||!whole)problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px${whole?'':', cut'}`]);
   }
+  if(rest.zoom!==geometry.whole.zoom&&named.filter(node=>inSight(node.rect)).length<1)problems.push(['names',`${name}: the camera at rest frames no name`]);
+  const all=geometry.whole,b=geometry.bounds;
+  if(b.x*all.zoom+all.x<-.5||b.y*all.zoom+all.y<-.5||(b.x+b.width)*all.zoom+all.x>canvas.width+.5||(b.y+b.height)*all.zoom+all.y>canvas.height+.5)problems.push(['names',`${name}: "Show whole map" does not show the whole map`]);
   const program=id=>model.nodes.get(id)?.kind==='program';
   const atRest=scene.edges.filter(edge=>edge.rest!==false&&program(edge.from)&&program(edge.to));
   for(const edge of atRest){
@@ -248,7 +257,7 @@ function checkHome(name,model,geometry,problems){
 
 // Each rule's problems on every level of a page, with a box chosen too: a
 // chosen box draws its quiet arrows, and the rules hold for them.
-const rules={names:'every program is named at rest on the whole map, at eleven pixels or more',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
+const rules={names:'every program and outside system in sight is named at rest on the whole map, at eleven pixels or more',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
   crosses:'no arrow runs through a box it does not join',

@@ -56,11 +56,13 @@ function placeAt(scene,zoom){
   }
   for(const port of scene.ports)items.push({...port,type:'port',x:port.point.x,y:port.point.y,size,shown:true});
   // A box that can be entered has its magnifier in its top right corner,
-  // once its title reads: the only thing on the canvas that zooms.
+  // once its title reads: the only thing on the canvas that zooms. A closed
+  // bucket's stands in its bottom right corner, beside its systems' marks,
+  // its name's lines the bucket's whole width.
   for(const node of scene.nodes){
     if(!node.enter||node.display==='frame'||node.display==='deep'||node.band!==3)continue;
-    const r=node.rect;
-    items.push({id:`zoom:${node.id}`,type:'zoom',box:node.id,x:r.x+r.width-inset-size/2,y:r.y+inset+size/2,size,
+    const r=node.rect,low=node.display==='bucket';
+    items.push({id:`zoom:${node.id}`,type:'zoom',box:node.id,x:r.x+r.width-inset-size/2,y:low?r.y+r.height-inset-size/2:r.y+inset+size/2,size,
       shown:readable(node)&&r.width*zoom>=4*mark.size&&r.height*zoom>=2*mark.size});
   }
   return items;

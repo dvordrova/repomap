@@ -80,7 +80,7 @@ function FrameNode({data}){
     :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   return <>{handles}<div className={`flow-area ${tone}`} style={{width:node.rect.width,height:node.rect.height}}>
-    <Scaled node={{...node,text:node.titleText||node.text,rect:{...node.rect,height:units.band(1)*(node.titleText||node.text)}}} className="scene-frame-title">
+    <Scaled node={{...node,text:node.titleText||node.text,rect:{...node.rect,height:units.band(1)*(node.titleText||node.text)}}} className="scene-frame-title" style={{'--scene-text':node.titleText||node.text}}>
       <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled>
   </div></>;
 }
@@ -189,7 +189,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   };
   const store=createStore(sceneReducer({model,geometry:()=>geometry,scene:()=>sceneOf(store.getState())}),initialState);
   const camera=createCamera(geometry.home);
-  let instance=null,initializing=true,overviewFit=true;
+  let instance=null,initializing=true,overviewFit='rest';
   const look=createLook();
   let lookTimer,handleRect=null;
   const pump=()=>{
@@ -240,11 +240,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const scene=sceneOf(store.getState());
     return moveCamera(frameCamera(rect||scene.focus,levelZoom(level)),smooth);
   }
-  function fitOverview(duration=0){
-    overviewFit=true;
+  // The whole map's two cameras (levels.mjs homeView): at rest, as close as
+  // its names read; "Show whole map", all of it. They are one where the
+  // whole map's names read (all but etcd's).
+  function fitOverview(duration=0,view='rest'){
+    overviewFit=view;
     store.dispatch({type:'enter',level:[]});
     if(!instance)return Promise.resolve();
-    return Promise.resolve(instance.setViewport(geometry.home,{duration})).then(()=>{camera.set(instance.getViewport());map.dispatchEvent(new Event('repomap:viewport'));});
+    return Promise.resolve(instance.setViewport(view==='whole'?geometry.whole:geometry.home,{duration})).then(()=>{camera.set(instance.getViewport());map.dispatchEvent(new Event('repomap:viewport'));});
   }
   // Whether a world rectangle is wholly in sight.
   function inSight(rect,margin=16){
@@ -640,7 +643,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function restore(saved){
     if(!saved)return;
     if(!instance||initializing){restorePending=saved;return;}
-    if(saved.fit||saved.layoutKey!==layoutKey||!Number.isFinite(saved.zoom)){fitOverview();return;}
+    if(saved.fit||saved.layoutKey!==layoutKey||!Number.isFinite(saved.zoom)){fitOverview(0,saved.fit==='whole'?'whole':'rest');return;}
     store.dispatch({type:'enter',level:(saved.level||[]).filter(id=>model.nodes.has(id))});
     moveCamera({x:saved.x,y:saved.y,zoom:saved.zoom},false);
   }
@@ -662,12 +665,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   map.sceneState=()=>({level:store.getState().level,scene:sceneOf(store.getState()),camera:camera.get()});
   // Enter the level showing `id`, as its magnifier does (probes and checks).
   map.sceneEnter=id=>enter(chainOf(model,id));
+  // The whole map at rest, as the page opens on it (checks).
+  map.sceneRest=()=>fitOverview(0,'rest');
   map.querySelector('[data-map-controls]')&&(map.querySelector('[data-map-controls]').hidden=false);
   const overviewButton=map.querySelector('[data-map-fit]');
   if(overviewButton){overviewButton.textContent=t('Show whole map');overviewButton.removeAttribute('title');}
   map.querySelector('[data-map-controls]')?.addEventListener('click',event=>{
     const button=event.target.closest('button');if(!button||!instance)return;
-    if(button.hasAttribute('data-map-fit'))fitOverview(420);
+    if(button.hasAttribute('data-map-fit'))fitOverview(420,'whole');
     else if(button.hasAttribute('data-map-zoom')&&Number(button.dataset.mapZoom)<1)stepOut();
     else if(button.hasAttribute('data-map-zoom')){
       // "+" is a zoom at the canvas's centre: it may enter a level.
@@ -689,7 +694,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       // The whole map is fitted again; a level entered is framed again in
       // its new place.
       const level=store.getState().level;
-      if(overviewFit||!level.length)fitOverview();
+      if(overviewFit||!level.length)fitOverview(0,overviewFit||'rest');
       else moveCamera(frameCamera(sceneOf(store.getState()).focus,levelZoom(level)),false);
     },250);
   }).observe(host);
@@ -711,7 +716,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     clearMember(){store.dispatch({type:'member',member:{chosen:null}});},
     mountConnections,frameConnections,
     light(ids){store.dispatch({type:'lit',ids});},
-    overview:()=>fitOverview(420),
+    overview:()=>fitOverview(420,'whole'),
     update(next){
       const chosen=store.getState().member.chosen;
       if(chosen&&model.shown(next.scope||'')!==chosen.part)store.dispatch({type:'member',member:{chosen:null}});

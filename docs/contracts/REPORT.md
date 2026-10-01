@@ -1269,13 +1269,18 @@ the canvas above stays the default.
   the canvas larger, a link to another program ending on a port of the
   program's border (one port a way per box, naming its programs on hover);
   the whole map its programs (cards of their name and role), Inputs frames (their kinds' marks) and
-  Outside frames. Every program is named at rest on the whole map, at
-  eleven pixels or more (owner, 2026-10-02): its card is drawn at the text
-  size its name reads at at the camera showing the whole map, the map's
-  lanes widening with it, the other boxes at their own; where the map
-  grows as its cards do (etcd), the size kept is the last that brought the
-  names a tenth larger, and the camera at rest frames the busiest program
-  with the most others a canvas holds, as close as their names read. The
+  Outside frames. Every program and every outside system in sight is
+  named at rest on the whole map, at eleven pixels or more (owner,
+  2026-10-02): a program's card is drawn at the text size its name reads
+  at at the camera showing the whole map, an Outside frame's chips and
+  buckets at the size theirs do (its title at the programs'), the map's
+  lanes widening with the programs, an Inputs frame (its kinds are icons)
+  and a loose box at their own. Where the map grows as its names do (etcd,
+  beets, headscale, casdoor, the 150-system graph), the sizes kept are the
+  last that brought the smallest name a tenth larger, and the camera at
+  rest frames the busiest program with the most other names a canvas
+  holds, as close as they read; "Show whole map" shows all of it, the
+  names that do not read faded and named on pointing. The
   world is drawn a power of two larger, keeping every level's entry camera
   at most four screen pixels to a world pixel: the browser sizes a box in
   steps of 1/64 of a pixel, and at etcd's deepest levels arrows' ends had

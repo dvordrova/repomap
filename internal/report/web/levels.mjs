@@ -352,19 +352,22 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // 4. The whole map: each program as a card of its own level's
   // proportion, each Inputs frame as its kinds' list, each Outside frame
   // open, with one arrow per pair of them.
-  // The whole map names every program at rest (owner, 2026-10-02:
-  // headscale's, beets' and etcd's whole maps had drawn no word that
-  // read): a program's card is drawn at the text size (`programText`) its
-  // name reads at, eleven and a half pixels, at the camera showing the
-  // whole map; the other boxes keep their own.
-  let programText=1;
+  // The whole map names at rest every program and every outside system
+  // (owner, 2026-10-02: headscale's, beets' and etcd's whole maps had
+  // drawn no word that read, their chips blank): a program's card is drawn
+  // at the text size (`programText`) its name reads at, an Outside frame's
+  // systems at the size (`systemText`) theirs do, eleven and a half pixels
+  // at the camera showing the whole map; an Inputs frame, whose kinds are
+  // icons, and a loose box keep their own.
+  let programText=1,systemText=1;
+  const systems=model.roots.some(id=>nodes.get(id)?.kind==='outside'&&nodes.get(id).children.length);
   const rootBox=id=>{
     const node=nodes.get(id),inside=local.get(id);
     // A program's card holds its summary; entered, its drawing stands
     // inside the card at the scale that fits it.
     if(node.kind==='program')return {id,width:units.programCard.width*programText,height:programCardHeight(node,units.programCard.width,measure)*programText};
     if(node.kind==='inputs')return {id,...inside.closed};
-    if(node.kind==='outside')return {id,width:inside.width,height:inside.height};
+    if(node.kind==='outside')return {id,width:inside.width*systemText,height:inside.height*systemText};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
     if(node.kind==='system')return chipBox(node);
     if(node.kind==='input')return inputBox(node,measure);
@@ -385,23 +388,28 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   };
   const layAll=async()=>{
     map=null;
-    for(const aspect of hasOutside?[1,.6,1.6]:[1])for(const direction of ['RIGHT','DOWN']){
+    for(const aspect of hasOutside?[1,.6,1.6,2.4]:[1])for(const direction of ['RIGHT','DOWN']){
       const laid=await layMap(aspect,direction);
       if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen={aspect,direction};}
     }
   };
   await layAll();
-  const titleAtHome=()=>17*programText*homeCamera({x:0,y:0,width:map.width,height:map.height},canvas).zoom;
-  // Where the map grows as its cards do (etcd: its programs stand in many
-  // layers), a larger card stops paying: the size kept is the last that
-  // brought the names a tenth larger, and the camera at rest then shows the
-  // part of the map it names (homeView below).
-  for(let step=0;step<8&&titleAtHome()<reading.title;step++){
-    const before={programText,map,chosen,px:titleAtHome()};
-    programText*=reading.title/before.px*1.01;
+  // The names' sizes on the screen at the camera showing the whole map.
+  const sizes=()=>{
+    const zoom=homeCamera({x:0,y:0,width:map.width,height:map.height},canvas).zoom;
+    return {program:17*programText*zoom,system:systems?12*systemText*zoom:Infinity};
+  };
+  const least=()=>Math.min(sizes().program,sizes().system);
+  // Where the map grows as its names do (etcd: its programs stand in many
+  // layers), a larger size stops paying: the sizes kept are the last that
+  // brought the smallest name a tenth larger, and the camera at rest then
+  // shows the part of the map it names (homeView below).
+  for(let step=0;step<8&&least()<reading.title;step++){
+    const before={programText,systemText,map,chosen,px:least()},now=sizes();
+    if(now.program<reading.title)programText*=reading.title/now.program*1.01;
+    if(now.system<reading.title)systemText*=reading.title/now.system*1.01;
     await layAll();
-    const now=titleAtHome();
-    if(now<reading.least&&now<before.px*1.1){({programText,map,chosen}=before);break;}
+    if(least()<reading.least&&least()<before.px*1.1){({programText,systemText,map,chosen}=before);break;}
   }
   packOutside(chosen.aspect);
   local.set('',{...map,text:1,pairs:rootPairs,kind:'map'});
@@ -477,26 +485,32 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const joins=id=>model.homePairs.filter(pair=>!pair.uses&&(pair.from===id||pair.to===id)).length;
   const programs=model.roots.filter(id=>nodes.get(id)?.kind==='program'&&boxes.has(id))
     .sort((a,b)=>joins(b)-joins(a)).map(id=>boxes.get(id));
+  // Every name the whole map shows at rest: its programs' and its outside
+  // systems' (a chip, a closed bucket).
+  const names=[...programs,...model.roots.filter(id=>nodes.get(id)?.kind==='outside').flatMap(id=>nodes.get(id).children).map(id=>boxes.get(id)).filter(Boolean)];
   return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programText:programText*unit,
-    home:homeView(bounds,canvas,unit,programText*unit,programs)};
+    home:homeView(bounds,canvas,unit,Math.min(17*programText,systems?12*systemText:Infinity)*unit,names),whole:homeCamera(bounds,canvas,16,1/unit)};
 }
 
-// The camera at rest on the whole map: all of it, unless its programs'
-// names would not read there (eleven pixels); then as close as they read,
-// framing the busiest program (`programs` come busiest first) with the
-// most others a canvas holds, centred on them.
-export function homeView(bounds,canvas,unit,programText,programs,pad=16){
+// The camera at rest on the whole map: all of it, unless its names would
+// not read there (eleven pixels; `word` the smallest name's world size);
+// then as close as they read, framing the busiest program (`names` come
+// with the programs first, busiest first) with the most other names a
+// canvas holds, centred on them. "Show whole map" shows all of it
+// (geometry.whole).
+export function homeView(bounds,canvas,unit,word,names,pad=16){
   const whole=homeCamera(bounds,canvas,pad,1/unit);
-  if(17*programText*whole.zoom>=reading.least||!programs.length)return whole;
-  const zoom=reading.title/(17*programText),width=(canvas.width-2*pad)/zoom,height=(canvas.height-2*pad)/zoom;
+  if(word*whole.zoom>=reading.least||!names.length)return whole;
+  const zoom=reading.title/word,width=(canvas.width-2*pad)/zoom,height=(canvas.height-2*pad)/zoom;
   const within=(r,x,y)=>r.x>=x-1e-9&&r.y>=y-1e-9&&r.x+r.width<=x+width+1e-9&&r.y+r.height<=y+height+1e-9;
+  const xs=[...new Set(names.map(r=>r.x))],ys=[...new Set(names.map(r=>r.y))];
   let best=null;
-  for(const a of programs)for(const b of programs){
-    const x=a.x,y=b.y,held=programs.filter(r=>within(r,x,y));
-    if(!held.includes(programs[0]))continue;
+  for(const x of xs)for(const y of ys){
+    if(!within(names[0],x,y))continue;
+    const held=names.filter(r=>within(r,x,y));
     if(!best||held.length>best.length)best=held;
   }
-  best||=[programs[0]];
+  best||=[names[0]];
   const l=Math.min(...best.map(r=>r.x)),t=Math.min(...best.map(r=>r.y)),r=Math.max(...best.map(r=>r.x+r.width)),b=Math.max(...best.map(r=>r.y+r.height));
   return {zoom,x:canvas.width/2-(l+r)/2*zoom,y:canvas.height/2-(t+b)/2*zoom};
 }
