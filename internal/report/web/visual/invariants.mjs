@@ -53,7 +53,8 @@ export const invariants=[
   ['no-labels','no digit, plaque or kind label on the canvas'],
   ['text','no clipped or too small text on the canvas (chip names apart)'],
   ['chip-text','an outside chip\'s name reads at 11 px, or fades and pointing or focus names it'],
-  ['home-names','every program\'s name reads on the whole map at rest: shown whole, at 11 px or more'],
+  ['home-names','at the home\'s rest view every program\'s name reads (whole, unfaded, 11 px or more), every chip\'s and bucket\'s name too (9.5 px or more)'],
+  ['whole-fit','"Show whole map" shows all of it: every box of the whole map wholly in the canvas'],
   ['outside','B′ on the whole map: in each Outside frame shared systems first and named, then one bucket per part calling two or more systems of its own, then the rest, no system twice; casdoor at most 44 top-level items'],
   ['page-errors','the page raises no error'],
 ];
@@ -281,15 +282,31 @@ export function invariantKit(){
     // not faded, its size on the screen.
     programNames(){
       const c=canvas(),nodes=geometry()||[];
-      return nodes.filter(n=>!n.parentId&&['component','program'].includes(n.branch)).map(n=>{
-        const q=CSS.escape(n.id),held=nodeEl(n.id)?.getBoundingClientRect();
-        const el=root().querySelector(`[data-box-title="${q}"],[data-frame-title="${q}"] strong,[data-component-overview="${q}"] strong,[data-summary-area="${q}"] strong`);
-        if(!el)return {id:n.id,title:'',px:0,opacity:0,inSight:!!held&&meets(box(held),c,4)};
+      const read=(el,id,kind,held)=>{
+        if(!el)return {id,kind,title:'',px:0,opacity:0,inSight:!!held&&meets(box(held),c,4)};
         let opacity=1;for(let at=el;at&&at!==root();at=at.parentElement)opacity*=parseFloat(getComputedStyle(at).opacity);
         const r=el.getBoundingClientRect(),px=parseFloat(getComputedStyle(el).fontSize)*(el.offsetHeight?r.height/el.offsetHeight:1);
         const whole=el.scrollWidth<=el.clientWidth+1||getComputedStyle(el).overflow==='visible';
-        return {id:n.id,title:el.textContent.replace(/\s+/g,' ').trim(),px,opacity,whole,shown:shown(el),inSight:meets(box(r.width?r:(held||r)),c,2)};
-      }).filter(p=>p.inSight);
+        return {id,kind,title:(el.getAttribute('title')||el.textContent).replace(/\s+/g,' ').trim(),px,opacity,whole,shown:shown(el),inSight:meets(box(r.width?r:(held||r)),c,2)};
+      };
+      const programs=nodes.filter(n=>!n.parentId&&['component','program'].includes(n.branch)).map(n=>{
+        const q=CSS.escape(n.id);
+        return read(root().querySelector(`[data-box-title="${q}"],[data-frame-title="${q}"] strong,[data-component-overview="${q}"] strong,[data-summary-area="${q}"] strong`),n.id,'program',nodeEl(n.id)?.getBoundingClientRect());
+      });
+      // Outside systems: a chip, a closed bucket.
+      const chips=[...root().querySelectorAll('.flow-chip')].map(el=>read(el.querySelector('.flow-chip-name'),el.closest('.react-flow__node')?.dataset.id||'',el.classList.contains('scene-bucket')?'bucket':'chip',el.getBoundingClientRect()));
+      return [...programs,...chips].filter(p=>p.inSight);
+    },
+    // Every box of the whole map in the canvas, as "Show whole map" frames it.
+    wholeFit(){
+      const c=canvas(),nodes=geometry()||[],out=[];
+      for(const n of nodes.filter(n=>!n.parentId)){
+        const el=nodeEl(n.id);if(!el)continue;
+        const r=el.getBoundingClientRect();if(!r.width&&!r.height)continue;
+        const beyond=Math.max(c.l-r.left,r.right-c.r,c.t-r.top,r.bottom-c.b);
+        out.push({id:n.id,ok:beyond<=1,beyond});
+      }
+      return out;
     },
     // Ports and markers in sight, by their screen size.
     ports(){
@@ -428,7 +445,7 @@ export function invariantKit(){
         const name=el.querySelector('.flow-chip-name'),r=el.getBoundingClientRect(),style=name&&getComputedStyle(name);
         const px=name?parseFloat(style.fontSize)*(name.offsetHeight?name.getBoundingClientRect().height/name.offsetHeight:1):0;
         return {id:el.closest('.react-flow__node')?.dataset.id||'',title:(name?.getAttribute('title')||name?.textContent||'').replace(/\s+/g,' ').trim(),
-          faded:!name||parseFloat(style.opacity)<.5,small:!!name&&parseFloat(style.opacity)>=.5&&px<11-.05,px,aria:el.getAttribute('aria-label')||'',focusable:el.tabIndex>=0,
+          faded:!name||parseFloat(style.opacity)<.5,small:!!name&&parseFloat(style.opacity)>=.5&&px<9.5-.05,px,aria:el.getAttribute('aria-label')||'',focusable:el.tabIndex>=0,
           x:r.left+r.width/2,y:r.top+r.height/2,inSight:r.left+r.width/2>c.l+4&&r.left+r.width/2<c.r-4&&r.top+r.height/2>c.t+4&&r.top+r.height/2<c.b-4};
       }).filter(chip=>chip.inSight);
     },

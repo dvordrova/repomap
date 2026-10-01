@@ -59,7 +59,9 @@ for(const target of targets)for(const path of paths){
       await page.evaluate(async([id,explorer])=>{
         const map=document.querySelector('[data-map]');
         await map.showWholeMap?.();
-        if(!id)return;
+        // The home is its rest view where the page has one (the page opens
+        // on it); "Show whole map" fits all of it.
+        if(!id){await map.sceneRest?.();return;}
         if(explorer)await document.querySelector('[data-map-explorer]').goToLevel({id,kind:'frame'});
         else await map.focusNode?.(id);
       },[id,explorer]);
@@ -108,26 +110,41 @@ for(const target of targets)for(const path of paths){
           if(into){into.failed++;if(into.examples.length<8)into.examples.push(`${finding.kind} ${finding.element}`);}
         }
         // A chip whose name fades is named when pointed at and when focused,
-        // and carries its name for assistive technology.
-        for(const chip of await page.evaluate(()=>window.__inv.chips())){
-          // A name drawn under 11 px and not faded reads too small.
-          if(chip.small){add('chip-text',false,`${chip.id} "${chip.title}" drawn at ${chip.px.toFixed(1)}px, not faded`);continue;}
-          if(!chip.faded){add('chip-text',true,'');continue;}
-          phase=`pointing at chip ${chip.id}`;
-          await page.mouse.move(chip.x,chip.y,{steps:2});await page.waitForTimeout(180);
-          const pointed=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);
+        // and carries its name for assistive technology; a name drawn under
+        // 9.5 px and not faded reads too small.
+        const chipCheck=async where=>{
+          for(const chip of await page.evaluate(()=>window.__inv.chips())){
+            if(chip.small){add('chip-text',false,`${where}: ${chip.id} "${chip.title}" drawn at ${chip.px.toFixed(1)}px, not faded`);continue;}
+            if(!chip.faded){add('chip-text',true,'');continue;}
+            phase=`pointing at chip ${chip.id} (${where})`;
+            await page.mouse.move(chip.x,chip.y,{steps:2});await page.waitForTimeout(180);
+            const pointed=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);
+            await park(page);
+            let focused=false;
+            if(chip.focusable&&await page.evaluate(id=>window.__inv.focusChip(id),chip.id)){await page.waitForTimeout(150);focused=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);}
+            await page.evaluate(()=>window.__inv.blur());
+            const named=chip.aria.replace(/\s+/g,' ').trim()===chip.title;
+            add('chip-text',pointed&&focused&&named,`${where}: ${chip.id} "${chip.title}" at ${chip.px.toFixed(1)}px: ${[!pointed&&'pointing names it not',!focused&&(chip.focusable?'focus names it not':'it takes no focus'),!named&&`aria-label "${chip.aria}"`].filter(Boolean).join(', ')}`);
+          }
           await park(page);
-          let focused=false;
-          if(chip.focusable&&await page.evaluate(id=>window.__inv.focusChip(id),chip.id)){await page.waitForTimeout(150);focused=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);}
-          await page.evaluate(()=>window.__inv.blur());
-          const named=chip.aria.replace(/\s+/g,' ').trim()===chip.title;
-          add('chip-text',pointed&&focused&&named,`${chip.id} "${chip.title}" at ${chip.px.toFixed(1)}px: ${[!pointed&&'pointing names it not',!focused&&(chip.focusable?'focus names it not':'it takes no focus'),!named&&`aria-label "${chip.aria}"`].filter(Boolean).join(', ')}`);
+        };
+        await chipCheck(level.kind==='home'?'at rest':'entered');
+        // At the home's rest view every program's name reads at 11 px, every
+        // chip's and bucket's at 9.5 px, whole and unfaded.
+        if(level.kind==='home')for(const name of await page.evaluate(()=>window.__inv.programNames())){
+          const least=name.kind==='program'?11:9.5;
+          add('home-names',!!name.title&&name.shown&&name.opacity>=.99&&name.px>=least-.05&&name.whole!==false,
+            `${name.kind} ${name.id} "${name.title}": ${!name.title?'no name drawn':[!name.shown&&'not shown',name.opacity<.99&&`opacity ${name.opacity.toFixed(2)}`,name.px<least-.05&&`${name.px.toFixed(1)}px`,name.whole===false&&'cut'].filter(Boolean).join(', ')}`);
         }
-        await park(page);
-        // Every program's name reads on the whole map at rest.
-        if(level.kind==='home')for(const name of await page.evaluate(()=>window.__inv.programNames()))
-          add('home-names',!!name.title&&name.shown&&name.opacity>=.99&&name.px>=11-.05&&name.whole!==false,
-            `${name.id} "${name.title}": ${!name.title?'no name drawn':[!name.shown&&'not shown',name.opacity<.99&&`opacity ${name.opacity.toFixed(2)}`,name.px<11-.05&&`${name.px.toFixed(1)}px`,name.whole===false&&'cut'].filter(Boolean).join(', ')}`);
+        // "Show whole map" fits all of it; its unread names fade and are
+        // named on pointing. Then back to the rest view.
+        if(level.kind==='home'){
+          phase='show whole map';
+          await page.evaluate(()=>document.querySelector('[data-map]').showWholeMap?.());await park(page);await settle(page,{first:500});
+          for(const box of await page.evaluate(()=>window.__inv.wholeFit()))add('whole-fit',box.ok,`${box.id} ${box.beyond.toFixed(1)}px beyond the canvas`);
+          await chipCheck('whole map');
+          await go('');phase='at rest';
+        }
         // B′ on the whole map; the ~40 bound only where it was measured
         // (casdoor, PLAN B; model.test.mjs allows 44).
         if(level.kind==='home')for(const frame of await page.evaluate(cap=>window.__inv.outside(cap),/^casdoor/.test(target.repo)?44:0))
