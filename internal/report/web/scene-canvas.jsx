@@ -8,13 +8,12 @@
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
-import {ReactFlow,Handle,Position} from '@xyflow/react';
+import {ReactFlow,Handle,Position,useStore} from '@xyflow/react';
 import {buildModel,inputKindTitles} from './model.mjs';
-import {layoutLevels,homeCamera,units} from './levels.mjs';
+import {layoutLevels,homeCamera,units,cardWords,programWords} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit} from './scene.mjs';
 import {project,mark} from './overlay.mjs';
 import {createStore,sceneReducer,initialState,createCamera,zoomAction} from './store.mjs';
-import {wrapText,descriptionLines} from './cards.mjs';
 import {kindIcon,kindNames,systemIcons} from './kind-icons.mjs';
 import {callCard} from './call-card.mjs';
 import {BriefRows,FrameConnections} from './call-card-view.jsx';
@@ -28,19 +27,10 @@ const context2d=document.createElement('canvas').getContext('2d');
 const measure=(text,font)=>{context2d.font=font;return context2d.measureText(String(text??'')).width;};
 const sameSet=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
 
-// The words a box shows at its level's text size: its title in whole
-// lines and as many whole lines of its description as stand under it.
-function cardWords(node,{titleFont='700 17px system-ui',titleLine=21.25,pad=14,room=0,description=''}={}){
-  const width=node.rect.width/node.text-2*pad-room,height=node.rect.height/node.text-2*pad;
-  if(width<=8||height<=8)return {title:[],lines:[]};
-  // A title taller than the card keeps the lines that stand, the last cut
-  // after a whole word with "…", the whole title on hover.
-  let title=wrapText(node.title,width,titleFont,measure),cut=false;
-  const fit=Math.max(1,Math.floor(height/titleLine));
-  if(title.length>fit){title=descriptionLines(node.title,width,fit,measure,titleFont);cut=true;}
-  const most=Math.max(0,Math.floor((height-title.length*titleLine-6)/18));
-  return {title,cut,lines:description&&!cut?descriptionLines(description,width,Math.min(most,4),measure,'13px system-ui'):[]};
-}
+// The words a box shows at its level's text size, each of its title, role
+// and description whole or not at all (levels.mjs cardWords, programWords).
+const wordsOf=(node,item)=>node.display==='program'?programWords({...node,item},node.rect.width/node.text,measure)
+  :cardWords(node,item?.summary||'',measure,{room:node.enter?24:0});
 function Mark({icon,className='',label='',kind=''}){
   if(!icon)return <span className={`scene-dot ${className}`} aria-hidden={label?undefined:'true'}/>;
   return <svg className={`flow-kind-mark ${className}`} data-kind-mark={kind||undefined} viewBox="0 0 16 16" width="14" height="14" aria-hidden={label?undefined:'true'} role={label?'img':undefined} aria-label={label||undefined}>
@@ -64,28 +54,22 @@ function Ghosts({node,className=''}){
 }
 function CardNode({data}){
   const {node}=data,item=data.item;
-  const words=useMemo(()=>cardWords(node,{description:item?.summary||'',room:node.enter?24:0}),[node.rect.width,node.rect.height,node.text,node.title]);
+  const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title]);
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     <Ghosts node={node}/>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
-    <div className="scene-words"><strong data-box-title={node.id} title={words.cut?node.title:undefined}>{words.title.join('\n')}</strong>
-    {words.lines.length>0&&<div className="flow-description flow-description-lines" title={item?.summary||undefined}>{words.lines.join('\n')}</div>}</div>
+    <div className="scene-words">{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
+    {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>
   </Scaled></>;
 }
 function ProgramNode({data}){
-  const {node}=data,item=data.item,c=units.programCard;
-  const words=useMemo(()=>{
-    const inner=node.rect.width/node.text-2*c.pad;
-    const title=wrapText(node.title,inner,c.font,measure);
-    const role=item?.role?descriptionLines(item.role,inner,2,measure,c.role):[];
-    const room=node.rect.height/node.text-2*c.pad-title.length*c.line-role.length*c.textLine-12;
-    return {title,role,purpose:item?.summary?descriptionLines(item.summary,inner,Math.max(0,Math.min(2,Math.floor(room/c.textLine))),measure,c.text):[]};
-  },[node.rect.width,node.rect.height,node.title]);
+  const {node}=data,item=data.item;
+  const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.title]);
   return <>{handles}<Scaled node={node} className="scene-program-card" data={{'data-component-overview':node.id}}>
     <Ghosts node={node} className="scene-program-ghosts"/>
-    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>
-    {words.role.length>0&&<div className="flow-component-role" title={item.role}>{words.role.join('\n')}</div>}
-    {words.purpose.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{words.purpose.join('\n')}</p>}</div>
+    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
+    {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}{' '}
+    {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}</div>
   </Scaled></>;
 }
 function FrameNode({data}){
@@ -466,7 +450,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   },{capture:true,passive:false});
   function moved(event,viewport){
     camera.set(viewport);
-    host.style.setProperty('--flow-zoom',String(viewport.zoom));
     const previous=lastZoom;lastZoom=viewport.zoom;
     if(event)levelForZoom(previous,viewport);
   }
@@ -488,6 +471,13 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     return {onFocus:()=>store.dispatch({type:'point',target}),onBlur:()=>store.dispatch({type:'point',target:null}),
       onKeyDown:event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();clickAt(target,event);}};
   }
+  // The zoom words fade by (scene.css) is the one React Flow draws at,
+  // whatever moved the camera: a gesture, a button, an entry, a resize.
+  function ZoomVar(){
+    const zoom=useStore(state=>state.transform[2]);
+    useLayoutEffect(()=>{host.style.setProperty('--flow-zoom',String(zoom));},[zoom]);
+    return null;
+  }
   function Overlay({scene,emphasis}){
     const v=useSyncExternalStore(camera.subscribe,camera.get);
     const items=project(scene,v);
@@ -497,7 +487,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // A chip or a bucket pointed at says who calls it, or what it holds, a
     // chip whose name does not read naming it alone; any other box whose
     // words do not read yet is named.
-    const box=pointer?.type==='box'&&pointer.node&&(['chip','bucket'].includes(pointer.node.display)||pointer.node.text*17*v.zoom<11)?pointer.node:null;
+    const pointed=pointer?.type==='box'?pointer.node:null;
+    const unread=pointed&&(pointed.text*17*v.zoom<11||['card','area','program'].includes(pointed.display)&&wordsOf(pointed,model.nodes.get(pointed.id)?.item).title.length===0);
+    const box=pointed&&(['chip','bucket'].includes(pointed.display)||unread)?pointed:null;
     // The pointer reaches these through the one hit test; the keyboard
     // reaches them as buttons, Enter doing what a click does.
     const press=target=>event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();clickAt(target,event);};
@@ -631,6 +623,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         <marker id="scene-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowHead} markerHeight={arrowHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
         <marker id="scene-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowHead*1.5/2.5} markerHeight={arrowHead*1.5/2.5} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
+      <ZoomVar/>
       <Overlay scene={scene} emphasis={emphasis}/>
       {cards.map(key=><ArrowCard key={key} edgeKey={key} scene={scene}/>)}
     </ReactFlow>;

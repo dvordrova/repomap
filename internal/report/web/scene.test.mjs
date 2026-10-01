@@ -9,7 +9,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
-import {layoutLevels} from './levels.mjs';
+import {layoutLevels,cardWords,programWords,units} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
@@ -70,6 +70,21 @@ function checkScene(name,model,geometry,scene,problems){
     catch(error){problems.push(['rects',`${where}: pointing at ${node.id} throws ${error.message}`]);}
   }
   for(const member of scene.members||[])if(!finite(member.rect))problems.push(['rects',`${where}: ${member.part}#${member.index} has no place`]);
+  // A card's words stand whole or not at all, in its box (owner,
+  // 2026-10-01: casdoor's card had read "Serves the Casd…"); a card is
+  // laid out to hold its title.
+  const bare=text=>String(text||'').replace(/\s+/g,'');
+  for(const node of scene.nodes){
+    if(!['card','area','program'].includes(node.display)||!finite(node.rect))continue;
+    const item=model.nodes.get(node.id)?.item,program=node.display==='program';
+    const words=program?programWords({...node,item},node.rect.width/node.text,measure):cardWords(node,item?.summary||'',measure,{room:node.enter?24:0});
+    if(!words.title.length){problems.push(['words',`${where}: ${node.id}'s title does not stand in its card`]);continue;}
+    const blocks=program?[[words.title,node.title],[words.role,item?.role],[words.purpose,item?.summary]]:[[words.title,node.title],[words.lines,item?.summary]];
+    for(const [lines,text] of blocks)if(lines.length&&bare(lines.join(''))!==bare(text))problems.push(['words',`${where}: ${node.id} cuts "${lines.join(' ').slice(0,40)}"`]);
+    const c=units.programCard,height=program?2*c.pad+words.title.length*c.line+(words.role.length?words.role.length*c.textLine+6:0)+(words.purpose.length?words.purpose.length*c.textLine+6:0)
+      :28+words.title.length*21.25+(words.lines.length?6+words.lines.length*18:0);
+    if(height>node.rect.height/node.text+1)problems.push(['words',`${where}: ${node.id}'s words take ${height.toFixed(0)} of ${(node.rect.height/node.text).toFixed(0)}`]);
+  }
   const rect=new Map(scene.nodes.map(node=>[node.id,node.rect]));
   const portAt=new Map(scene.ports.map(port=>[port.id,port.point]));
   const frame=scene.frame;
@@ -223,7 +238,7 @@ function checkHome(name,model,geometry,problems){
 
 // Each rule's problems on every level of a page, with a box chosen too: a
 // chosen box draws its quiet arrows, and the rules hold for them.
-const rules={rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
+const rules={words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
   crosses:'no arrow runs through a box it does not join',

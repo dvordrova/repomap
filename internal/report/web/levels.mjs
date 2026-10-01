@@ -181,14 +181,40 @@ async function layered(id,boxes,pairs,{band=units.band(1),spacing=1,ports=[],por
 // The box a part's card takes at its level, `k` times its own size.
 const partBox=(node,k=1)=>({id:node.id,width:units.part.width*k,height:(node.item?.height||90)*k});
 
-// A program's card on the whole map: its title, its role and up to two
-// lines of its purpose; what it holds reads where it is entered.
-export function programCardHeight(node,width,measure){
+// A card's words stand whole or not at all (owner, 2026-10-01: a card
+// never cuts its text mid-way; what does not stand is read on pointing and
+// in the column): a block's lines at `width`, none when it takes more than
+// `most` lines.
+export function wholeLines(text,width,font,measure,most=Infinity){
+  if(!text||most<=0)return [];
+  const lines=wrapText(text,width,font,measure);
+  return lines.length<=most?lines:[];
+}
+// A program's card on the whole map: its title, its role and its purpose,
+// each of them whole in two lines at most or left out; what it holds reads
+// where it is entered.
+export function programWords(node,width,measure){
   const card=units.programCard,inner=width-2*card.pad;
-  const title=wrapText(node.name,inner,card.font,measure).length*card.line;
-  const role=node.item?.role?Math.min(2,wrapText(node.item.role,inner,card.role,measure).length)*card.textLine+6:0;
-  const purpose=node.item?.summary?Math.min(2,wrapText(node.item.summary,inner,card.text,measure).length)*card.textLine+6:0;
-  return Math.max(card.minHeight,2*card.pad+title+role+purpose);
+  return {title:wrapText(node.name??node.title,inner,card.font,measure),role:wholeLines(node.item?.role,inner,card.role,measure,2),
+    purpose:wholeLines(node.item?.summary,inner,card.text,measure,2)};
+}
+export function programCardHeight(node,width,measure){
+  const card=units.programCard,words=programWords(node,width,measure);
+  return Math.max(card.minHeight,2*card.pad+words.title.length*card.line+
+    (words.role.length?words.role.length*card.textLine+6:0)+(words.purpose.length?words.purpose.length*card.textLine+6:0));
+}
+// A part's or a closed area's card: its title whole in its lines and its
+// description whole under it, in at most four lines that stand in the
+// card, or left out. A title the card cannot hold whole is not drawn (it is
+// named on pointing). `node` {title, rect, text}; `room` the width its
+// magnifier takes.
+export function cardWords(node,description,measure,{room=0,pad=14,titleFont='700 17px system-ui',titleLine=21.25}={}){
+  const width=node.rect.width/node.text-2*pad-room,height=node.rect.height/node.text-2*pad;
+  if(width<=8||height<=8)return {title:[],lines:[],hidden:true};
+  const title=wrapText(node.title,width,titleFont,measure);
+  if(title.length*titleLine>height+1)return {title:[],lines:[],hidden:true};
+  const most=Math.max(0,Math.floor((height-title.length*titleLine-6)/18));
+  return {title,lines:wholeLines(description,width,'13px system-ui',measure,Math.min(most,4)),hidden:false};
 }
 // A closed area's card at its program's level, `k` times a part's: its
 // title and up to three lines of its purpose, in the proportion of its
@@ -197,7 +223,7 @@ export function areaCard(node,inside,measure,k=1){
   const content=width=>{
     const inner=width-2*14-24;
     const title=wrapText(node.name,inner,'700 17px system-ui',measure).length*21.25;
-    const purpose=node.item?.summary?Math.min(3,wrapText(node.item.summary,inner,'13px system-ui',measure).length)*18+6:0;
+    const lines=wholeLines(node.item?.summary,inner,'13px system-ui',measure,3).length,purpose=lines?lines*18+6:0;
     return 28+title+purpose;
   };
   const box=boxOf(inside.width/inside.height,units.part.width,content);
