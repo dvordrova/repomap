@@ -83,3 +83,6 @@
 /* An entered part's border keeps its screen width however far its card is
    drawn up: scaled with the card, it had stood 12px thick. */
 .scene-root .flow-part.scene-deep{border-width:calc(1.5px / (var(--flow-zoom,1) * var(--scene-card-scale,1)));border-radius:calc(9px / (var(--flow-zoom,1) * var(--scene-card-scale,1)))}
+/* Every card's border keeps its screen width at any zoom, as the arrows'
+   strokes do. */
+.scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.flow-chip,.scene-root .scene-scaled.scene-tile,.scene-root .scene-scaled.scene-program-card{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
