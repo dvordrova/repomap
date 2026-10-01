@@ -114,7 +114,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
   const lookedHere=new Set([...looked,...(level[1]?[level[1]]:[])]);
   for(const route of geometry.routes.get(program)||[])edges.push(edgeOf(route,model,lookedHere));
   for(const port of geometry.ports.get(program)||[])
-    ports.push({id:port.id,program:port.program,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
+    ports.push({id:port.id,programs:port.programs,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
   return finish();
 
   // A part entered: its declarations' tiles, each a member the pointer

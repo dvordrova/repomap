@@ -289,11 +289,12 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       if(fromInside===toInside)continue;
       const other=model.programOf(fromInside?edge.to:edge.from);
       if(!other||other===program.id||nodes.get(other)?.kind!=='program')continue;
-      // Each box its own port for each program it links with: arrows
-      // converging on one port had run on one line into it.
-      const way=fromInside?'out':'in',child=inner(fromInside?edge.from:edge.to),port=`port:${program.id}:${way}:${other}:${child||'-'}`;
-      if(!portMap.has(port))portMap.set(port,{id:port,side:way==='out'?'EAST':'WEST',way,program:other,edges:[]});
-      portMap.get(port).edges.push(edge.id);
+      // Each box one port a way for the programs it links with: arrows
+      // converging on one port had run on one line into it, and a port per
+      // program and box had stood forty to a border (etcd's server).
+      const way=fromInside?'out':'in',child=inner(fromInside?edge.from:edge.to),port=`port:${program.id}:${way}:${child||'-'}`;
+      if(!portMap.has(port))portMap.set(port,{id:port,side:way==='out'?'EAST':'WEST',way,programs:[],edges:[]});
+      const entry=portMap.get(port);entry.edges.push(edge.id);if(!entry.programs.includes(other))entry.programs.push(other);
       if(!child)continue;
       const key=`${child}|${port}`;
       if(!portPairs.has(key))portPairs.set(key,{key,child,port,out:way==='out',forward:[],backward:[]});

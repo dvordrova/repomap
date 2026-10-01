@@ -202,7 +202,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const node=model.nodes.get(id);
     if(node?.kind==='inputs')return [t('Inputs'),model.nodes.get(node.program)?.name].filter(Boolean).join(' · ');
     if(node?.kind==='outside')return [t('Outside'),node.name].filter(Boolean).join(' · ');
-    if(String(id).startsWith('port:'))return model.nodes.get(String(id).split(':')[3])?.name||'';
+    if(String(id).startsWith('port:'))return (sceneOf(store.getState()).ports.find(port=>port.id===id)?.programs||[]).map(program=>model.nodes.get(program)?.name||'').join(', ');
     return node?.name||'';
   };
   // A frame's connections as the reading column reads them, each with the
@@ -343,7 +343,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       }else read(marker.systems.length===1?marker.systems[0]:model.rootOf(marker.systems[0]),event);
       return;
     }
-    if(target.type==='port'){read(target.item.program,event);return;}
+    if(target.type==='port'){read(target.item.programs[0],event);return;}
     if(target.type==='edge'){
       const edge=target.edge,backward=nearStart(edge,target.at);
       const group=connectionOf(model,edge,backward);
@@ -498,7 +498,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function MarkTip({item}){
     const most=30;
     let head='',names=[];
-    if(item.type==='port')head=`${item.way==='out'?'→':'←'} ${nameOf(item.program)}`;
+    if(item.type==='port'){head=item.way==='out'?'→':'←';names=item.programs.map(nameOf);}
     else if(item.side==='in'){
       head=t(inputKindTitles[item.kind]||'Inputs');
       names=item.members.map(id=>`${model.nodes.get(id)?.name||''}${item.handled.includes(id)?'':` · ${t('declared here')}`}`);
