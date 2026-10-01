@@ -372,19 +372,14 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const rootPairs=homePairs(model);
   let map=null,chosen={aspect:1,direction:'RIGHT'};
   const hasOutside=[...nodes.values()].some(node=>node.kind==='outside');
-  const spaced=factor=>{
-    const options={...outer};
-    for(const name of ['elk.spacing.edgeEdge','elk.spacing.edgeNode','elk.layered.spacing.edgeEdgeBetweenLayers','elk.layered.spacing.edgeNodeBetweenLayers'])options[name]=String(Math.round(Number(outer[name])*factor));
-    return options;
-  };
-  const layMap=async(aspect,direction,factor)=>{
+  const layMap=async(aspect,direction)=>{
     packOutside(aspect);
     const roots=model.roots.map(rootBox);
-    return readNode(await native({id:'map',layoutOptions:{...spaced(factor),'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
+    return readNode(await native({id:'map',layoutOptions:{...outer,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
       edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
   };
   for(const aspect of hasOutside?[1,.6,1.6]:[1])for(const direction of ['RIGHT','DOWN']){
-    const laid=await layMap(aspect,direction,1);
+    const laid=await layMap(aspect,direction);
     if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen={aspect,direction};}
   }
   packOutside(chosen.aspect);
