@@ -585,11 +585,13 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
     }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen]);
-    const edges=useMemo(()=>emphasis.order.filter(id=>!emphasis.edgeState.get(id).hidden).map(id=>{
-      const edge=scene.edges.find(e=>e.id===id),flags=emphasis.edgeState.get(id);
-      const ends=[edge.from,edge.to].map(end=>scene.nodes.some(node=>node.id===end)?end:scene.program||scene.nodes[0]?.id);
+    const edges=useMemo(()=>{
+      const byID=new Map(scene.edges.map(edge=>[edge.id,edge])),drawn=new Set(scene.nodes.map(node=>node.id));
+      return emphasis.order.filter(id=>!emphasis.edgeState.get(id).hidden).map(id=>{
+      const edge=byID.get(id),flags=emphasis.edgeState.get(id);
+      const ends=[edge.from,edge.to].map(end=>drawn.has(end)?end:scene.program||scene.nodes[0]?.id);
       return {id,source:ends[0],target:ends[1],type:'scene',zIndex:flags.on?1:0,selectable:false,focusable:false,data:{...edge,...flags}};
-    }),[scene,emphasis]);
+    });},[scene,emphasis]);
     const cards=[...new Set([state.look,...state.pinned].filter(key=>key.startsWith('edge:')))];
     return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
       nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} nodesFocusable={false} edgesFocusable={false} disableKeyboardA11y
