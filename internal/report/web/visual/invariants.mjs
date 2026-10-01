@@ -134,7 +134,9 @@ export function invariantKit(){
     },
     // The arrows at rest: one path each, from its own source to its own
     // target, its head pointing in, sharing no run, in the level's frame.
-    arrows(frame){
+    // `skip` maps the arrows already checked to their paths: pointed at a
+    // port or marker, only the lines it adds or redraws are checked again.
+    arrows(frame,skip=null){
       const cam=camera(),c=canvas(),nodes=geometry(),parent=new Map((nodes||[]).map(n=>[n.id,n.parentId||'']));
       const result={};const add=(name,ok,example)=>{const r=result[name]||={checked:0,failed:0,examples:[]};r.checked++;if(!ok){r.failed++;if(r.examples.length<8)r.examples.push(example);}};
       const rectOf=id=>{const el=nodeEl(id);return el&&shown(el)?box(el.getBoundingClientRect()):null;};
@@ -153,8 +155,9 @@ export function invariantKit(){
         const ends=(g.dataset.edgeEnds||'').split(/\s+/).filter(Boolean),from=ends[0]||'',to=ends.at(-1)||'';
         const marked=a=>{const v=path.getAttribute(a)||getComputedStyle(path)[a==='marker-end'?'markerEnd':'markerStart'];return !!v&&v!=='none';};
         const head=g.dataset.edgeHead||(marked('marker-end')&&marked('marker-start')?'both':marked('marker-end')?'end':marked('marker-start')?'start':'none');
-        const id=g.dataset.edgeId,name=`${id} (${from}→${to})`;
-        drawn.push({id,name,from,to,subs,points:subs.flat(),dark:g.classList.contains('flow-edge-active')||g.hasAttribute('data-edge-dark')});
+        const id=g.dataset.edgeId,name=`${id} (${from}→${to})`,fresh=!skip||skip[id]!==path.getAttribute('d');
+        drawn.push({id,name,from,to,subs,fresh,points:subs.flat(),dark:g.classList.contains('flow-edge-active')||g.hasAttribute('data-edge-dark')});
+        if(!fresh)continue;
         add('one-path',subs.length===1,`${name}: ${subs.length} pieces`);
         const first=subs[0][0],last=subs.at(-1).at(-1);
         const fromRect=rectOf(from),toRect=rectOf(to),fromEnds=endRects(from),toEnds=endRects(to);
@@ -207,6 +210,7 @@ export function invariantKit(){
       const pairs=[];
       for(let i=0;i<drawn.length;i++)for(let j=i+1;j<drawn.length;j++){
         const a=drawn[i],b=drawn[j];
+        if(!a.fresh&&!b.fresh)continue;
         if(a.from&&a.to&&((a.from===b.to&&a.to===b.from)||(a.from===b.from&&a.to===b.to)))continue;
         let shared=0;
         for(const [p,q] of segs(a))for(const [r,s] of segs(b)){
@@ -235,6 +239,7 @@ export function invariantKit(){
           }
         }
       }
+      if(skip)return result;
       result.lanes={checked:drawn.length?1:0,failed:widest>4?1:0,examples:widest>4?[where]:[],widest};
       const bends=drawn.map(a=>a.points.length-2);
       result.bends={max:bends.length?Math.max(...bends):0,mean:bends.length?bends.reduce((s,b)=>s+b,0)/bends.length:0,arrows:drawn.length};
@@ -321,6 +326,14 @@ export function invariantKit(){
       const named=el=>{const at=el.closest?.('[data-edge-hit],.react-flow__node,[data-port],.flow-floating-card,[data-frame-title],[data-summary-area],[data-component-overview]')||el;
         return `${at.tagName.toLowerCase()}${at.classList.length?'.'+[...at.classList].slice(0,2).join('.'):''}${at.dataset?.edgeHit?` (arrow ${at.dataset.edgeHit})`:at.dataset?.id?` (${at.dataset.id})`:''}`;};
       return {covered:true,by:over?named(over):'nothing'};
+    },
+    // The arrows drawn now, by their paths.
+    paths(){return Object.fromEntries(edges().map(g=>[g.dataset.edgeId,line(g)?.getAttribute('d')||''])) ;},
+    // Every port item and marker in sight, by its middle.
+    handles(){
+      const c=canvas();
+      return [...root().querySelectorAll('[data-port-end],[data-marker]')].filter(shown).map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.portEnd||el.dataset.marker,x:r.left+r.width/2,y:r.top+r.height/2};})
+        .filter(h=>h.x>c.l+2&&h.x<c.r-2&&h.y>c.t+2&&h.y<c.b-2&&document.elementFromPoint(h.x,h.y)?.closest?.('[data-port-end],[data-marker]'));
     },
     hitIds(){return [...root().querySelectorAll('[data-edge-hit]')].filter(path=>shown(path.closest('g[data-edge-id]')||path)).map(path=>path.dataset.edgeHit);},
     // The texts drawn on the canvas in sight, which the label and text

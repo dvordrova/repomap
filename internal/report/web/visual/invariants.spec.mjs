@@ -103,6 +103,18 @@ for(const target of targets)for(const path of paths){
           if(finding.kind==='small'||finding.kind==='clipped'){r.text.failed++;if(r.text.examples.length<8)r.text.examples.push(`${finding.kind} ${finding.element}`);}
         }
         if(level.kind==='home')for(const frame of await page.evaluate(()=>window.__inv.outside()))add('outside-40',frame.items<=40,`${frame.id}: ${frame.items} items`);
+        // Pointed at, every port and marker draws its lines: they are
+        // arrows too, checked as the ones at rest.
+        const restPaths=await page.evaluate(()=>window.__inv.paths());
+        const handles=await page.evaluate(()=>window.__inv.handles());
+        info.handles=handles.length;
+        for(const handle of handles){
+          await page.mouse.move(handle.x,handle.y,{steps:2});await page.waitForTimeout(160);
+          const pointed=await page.evaluate(([frame,skip])=>window.__inv.arrows(frame,skip),[level.kind==='home'?'':level.id,restPaths]);
+          for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses'])
+            merge(name,pointed[name]&&{...pointed[name],examples:pointed[name].examples.map(e=>`pointing at ${handle.id}: ${e}`)});
+        }
+        if(handles.length){await page.keyboard.press('Escape');await park(page);}
         // Ports and markers by camera.
         const sizes=new Map();
         const measure=async where=>{for(const p of await page.evaluate(()=>window.__inv.ports())){if(!sizes.has(p.id))sizes.set(p.id,[]);sizes.get(p.id).push([p.w,where]);}};
