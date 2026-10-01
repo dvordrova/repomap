@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — etcd: a program uses only code it links; one spelling per system (data 2)
+
+- **f0a35160:** places edges carry `Static` (an import, a direct exact
+  call or execution) and `Targets` (the programs whose index observes the
+  edge); a code-use joint stands for a program only when the edge is
+  static or observed in its own index. etcd's rafthttp and mvcc (server
+  code) call raftexample's raftNode and etcdutl's lessor through interface
+  fields only inside those programs. Run 20261001-164239 (clean HEAD, exit
+  0): program pairs with code-use joints 66 → 53; server → raftexample and
+  server → etcdutl gone; the tools → server uses stay. Go fixture
+  `hookedRun.fire` / cmd/worker's hook.
+- Destination names equal but for case are one spelling across programs:
+  etcd's names 19 → 16 ("DNS Resolver"/"DNS resolver", "Etcd Server"/
+  "Etcd server", "Etcd"/"etcd" folded). Still split by words, not by code:
+  "etcd" (clients), "Etcd Server" (tools) and the server program's own ref
+  name one system; joining them needs the naming request.
+
 ## 2026-10-01 — beets: test-only executables are test code; the glossary runaway (data 2)
 
 - **e386aac7, e1c4a221:** pytest's INI configurations (pytest.ini, tox.ini,
