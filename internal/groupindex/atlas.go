@@ -130,11 +130,13 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 	for ref := range sourceRefs {
 		sourceRefs[ref] = keys.byRef[ref]
 	}
+	witnessed := make(map[string]bool)
 	for _, target := range value.Targets {
 		program, err := read(target.ID)
 		if err != nil {
 			return nil, err
 		}
+		addTestWitnessPaths(program, witnessed)
 		one, err := projectTarget(program, target, sourceRefs)
 		if err != nil {
 			return nil, err
@@ -249,18 +251,23 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 		})
 		index.Connections = dedupeConnections(index.Connections)
 		assignConnectionIDs(index.Connections, 0)
-		// Derived after the joints are in, as Hydrate derives them, so the
-		// ordinary run and a saved rendering phase the same connections.
+		// Derived once, after the joints are in, and saved with the index:
+		// a rendering applies it (Overlay.Hydrate) and never derives.
 		Derive(&index)
-		seal, err := indexDigest(index)
+		result = append(result, index)
+	}
+	// The overview's test-free views cross programs (a connection into a
+	// part only tests fill is none): derived over the whole set.
+	WithTestFreeViews(result, witnessed)
+	for position := range result {
+		seal, err := indexDigest(result[position])
 		if err != nil {
 			return nil, err
 		}
-		index.SHA256 = seal
-		if err := index.Validate(); err != nil {
-			return nil, fmt.Errorf("group index: project atlas target %s: %w", index.Target.Name, err)
+		result[position].SHA256 = seal
+		if err := result[position].Validate(); err != nil {
+			return nil, fmt.Errorf("group index: project atlas target %s: %w", result[position].Target.Name, err)
 		}
-		result = append(result, index)
 	}
 	if err := ValidateSet(result); err != nil {
 		return nil, fmt.Errorf("group index: project atlas: %w", err)

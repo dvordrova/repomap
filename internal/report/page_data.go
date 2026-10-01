@@ -224,6 +224,11 @@ func appendDataReference(rows []pageDataReference, ref pageDataReference) []page
 	return append(rows, ref)
 }
 
+// dataOperationLinks are, by data owner, the inputs whose saved reach
+// (GroupsIndex Reach) calls into one of the owner's functions or a method
+// of the table type it owns, each with the declaration entering it and
+// whether the walk got there only through a call it could not pin to one
+// callee.
 // These are source call paths into model declarations or the exact callable
 // containing a SQL occurrence, not an assertion that every method does I/O.
 func dataOperationLinks(index *groupindex.Index) map[string][]dataOperationLink {
@@ -238,52 +243,48 @@ func dataOperationLinks(index *groupindex.Index) map[string][]dataOperationLink 
 			}
 		}
 	}
-	if len(owners) == 0 {
+	if len(owners) == 0 || len(index.Reach) != len(index.Operations) {
 		return result
 	}
 	subjects := map[string]groupindex.Subject{}
 	for _, subject := range index.Subjects {
 		subjects[subject.ID] = subject
 	}
-	calls := map[string][]groupindex.StructuralEdge{}
-	for _, edge := range index.StructuralEdges {
-		if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationCalls {
-			calls[edge.FromSubjectID] = append(calls[edge.FromSubjectID], edge)
-		}
-	}
-	for _, operation := range index.Operations {
-		type step struct {
-			id       string
-			possible bool
-		}
-		queue := []step{{id: operation.SubjectID}}
-		seen := map[string]bool{}
-		matched := map[string]bool{}
-		for len(queue) > 0 {
-			current := queue[0]
-			queue = queue[1:]
-			if current.id == "" || seen[current.id] {
+	for position, operation := range index.Operations {
+		reach := index.Reach[position]
+		// Only the reach's calls lead into a model's code (a read of a
+		// field calls nothing), in the walk's own order: a declaration is
+		// possible when the call first reaching it is not exact or leaves a
+		// possible one.
+		possible := map[string]bool{operation.SubjectID: false}
+		for _, edge := range reach.Edges {
+			relation := index.StructuralEdges[edge]
+			if relation.RelationKind != programindex.RelationCalls {
 				continue
 			}
-			seen[current.id] = true
-			subject := subjects[current.id]
-			if subject.Object != nil && subject.Object.Location != nil {
-				var matches []string
-				if owners[current.id] && (subject.Object.Kind == programindex.ObjectFunction || subject.Object.Kind == programindex.ObjectMethod || subject.Object.Kind == programindex.ObjectLambda) {
-					matches = append(matches, current.id)
-				}
-				if tables[subject.Object.OwnerID] {
-					matches = append(matches, subject.Object.OwnerID)
-				}
-				for _, owner := range matches {
-					if !matched[owner] {
-						matched[owner] = true
-						result[owner] = append(result[owner], dataOperationLink{operation: operation, subject: subject, possible: current.possible})
-					}
-				}
+			from, reached := possible[relation.FromSubjectID]
+			if _, seen := possible[relation.ToSubjectID]; reached && !seen {
+				possible[relation.ToSubjectID] = from || relation.Resolution != programindex.ResolutionExact
 			}
-			for _, edge := range calls[current.id] {
-				queue = append(queue, step{id: edge.ToSubjectID, possible: current.possible || edge.Resolution != programindex.ResolutionExact})
+		}
+		matched := map[string]bool{}
+		for _, reached := range reach.Subjects {
+			subject := subjects[reached.SubjectID]
+			if _, called := possible[reached.SubjectID]; !called || subject.Object == nil || subject.Object.Location == nil {
+				continue
+			}
+			var matches []string
+			if owners[reached.SubjectID] && (subject.Object.Kind == programindex.ObjectFunction || subject.Object.Kind == programindex.ObjectMethod || subject.Object.Kind == programindex.ObjectLambda) {
+				matches = append(matches, reached.SubjectID)
+			}
+			if tables[subject.Object.OwnerID] {
+				matches = append(matches, subject.Object.OwnerID)
+			}
+			for _, owner := range matches {
+				if !matched[owner] {
+					matched[owner] = true
+					result[owner] = append(result[owner], dataOperationLink{operation: operation, subject: subject, possible: possible[reached.SubjectID]})
+				}
 			}
 		}
 	}

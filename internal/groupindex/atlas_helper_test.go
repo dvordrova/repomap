@@ -73,8 +73,9 @@ func helperTestAtlas(p programindex.Index) atlas.Atlas {
 
 // A relation into a declaration the helper question marked is a connection
 // to a helper, and no other is. The mark is saved as the subject's
-// interpretation and derived again on decoding, so a report rendered from
-// the saved index quiets the same arrows as the ordinary run.
+// interpretation, and the connection's derived mark with the index's other
+// derivations (GroupsIndex 27), so a report rendered from the saved index
+// quiets the same arrows as the ordinary run without deriving them again.
 func TestAConnectionIntoAHelperIsMarkedAfterDecoding(t *testing.T) {
 	p := helperTestProgram(t)
 	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, helperTestAtlas(p))
@@ -96,8 +97,8 @@ func TestAConnectionIntoAHelperIsMarkedAfterDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"helper":true`) || strings.Contains(string(encoded), "to_helper") {
-		t.Fatalf("the saved index does not carry the helper interpretation alone:\n%s", encoded)
+	if !strings.Contains(string(encoded), `"helper":true`) || !strings.Contains(string(encoded), `"to_helper":true`) {
+		t.Fatalf("the saved index does not carry the helper interpretation and the derived mark:\n%s", encoded)
 	}
 	decoded, err := Decode(encoded, p)
 	if err != nil {

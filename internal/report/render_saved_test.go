@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
@@ -167,5 +168,41 @@ func TestSavedHTMLReusesExactTranslationsAfterDisplayTraversalChanges(t *testing
 		if err != nil || !bytes.Equal(got, want) {
 			t.Fatalf("render changed saved publication %s: %v", name, err)
 		}
+	}
+}
+
+// A rendering only presents what analysis saved (owner, 2026-10-01: "у
+// html должна быть простая задача — вот данные, показываю"): rendering a
+// saved run, and rendering a report's data in memory, never runs
+// GroupsIndex's Derive. Its reaches, spines, dispatch sites, catalogues,
+// launch walk and phases, and those of the overview's test-free views,
+// are hydrated from the saved index.
+func TestARenderingNeverDerivesTheGroupsIndex(t *testing.T) {
+	runDir := t.TempDir()
+	data := reportProgramShellDataFixture(t, "example.com/team/server")
+	data.ArtifactsDir, data.defaultProgramIndexArtifactFilename = runDir, "program-index.json"
+	manifest := validRunManifestFixture(t)
+	runSource, err := NewRunSource(manifest.AnalysisRoot, manifest.RepositoryState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Generate(runDir, runSource, GenerateOptions{Data: &data, PublishHTML: true}); err != nil {
+		t.Fatal(err)
+	}
+	before := groupindex.Derivations()
+	if _, err := RenderSavedHTML(runDir); err != nil {
+		t.Fatal(err)
+	}
+	if derived := groupindex.Derivations() - before; derived != 0 {
+		t.Fatalf("rendering a saved run derived the GroupsIndex %d times", derived)
+	}
+	memory := reportProgramShellDataFixture(t, "example.com/team/server")
+	options := reportSingleTargetRenderOptionsFixture(t, &memory)
+	before = groupindex.Derivations()
+	if _, err := RenderHTMLWithOptions(&memory, options); err != nil {
+		t.Fatal(err)
+	}
+	if derived := groupindex.Derivations() - before; derived != 0 {
+		t.Fatalf("rendering a report's data derived the GroupsIndex %d times", derived)
 	}
 }

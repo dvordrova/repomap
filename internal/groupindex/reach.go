@@ -251,6 +251,7 @@ func executionEdge(edge StructuralEdge) bool {
 // deterministic and idempotent; ProjectAtlas, Hydrate and Build call it, so
 // the ordinary run and a saved rendering derive the same values.
 func Derive(index *Index) {
+	derivations.Add(1)
 	graph := newReachGraph(index)
 	index.Reach = make([]Reach, len(index.Operations))
 	for position, operation := range index.Operations {

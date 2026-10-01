@@ -781,7 +781,8 @@ parts as "Words its handler checks"; the Python fixture's `bare_variant`).
 
 A flag belongs to its subcommand (owner, 2026-09-29): GroupsIndex nests a
 handler-less input under an input of the same kind, as its option
-(`Reach.Options`, `Launch.Nested`; derived, never persisted), by three code
+(`Reach.Options`, `Launch.Nested`; derived at analysis and saved with the
+index, `Overlay.Derived`), by three code
 facts. It is declared on the object that input's own call made (argparse's
 `init.add_argument("--force")` on `commands.add_parser("init")`: the
 catalogue's `OnOperationID`), unless an input with its own handler is declared

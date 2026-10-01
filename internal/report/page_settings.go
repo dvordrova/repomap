@@ -48,39 +48,19 @@ func (builder *pageBuilder) settingSets(index *groupindex.Index, operation group
 	return string(raw)
 }
 
-// branchAt is the branch a declaring function's call at a place guards, from
-// its program's index: the pattern written exactly there, or the case of one
-// of the function's comparisons whose first word is written there (a
-// switch's case body, the block an if/elif condition guards).
+// branchAt is the branch a declaring function's call at a place guards: the
+// one its program's GroupsIndex saved for that function at that place
+// (Index.Branches, a comparison's case before a guarding call's pattern).
 func (builder *pageBuilder) branchAt(programTargetID, fromID string, at programindex.Location) *programindex.LineRange {
-	if builder.data == nil || builder.data.ProgramPortfolio == nil {
+	index := builder.graphIndex(programTargetID)
+	if index == nil {
 		return nil
 	}
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
-		if entry.Target.ID != programTargetID {
-			continue
-		}
-		for _, object := range entry.Objects {
-			if object.ID != fromID {
-				continue
-			}
-			for _, comparison := range object.Comparisons {
-				for _, item := range comparison.Cases {
-					if item.Branch != nil && item.Location != nil && *item.Location == at {
-						return item.Branch
-					}
-				}
-			}
-		}
-		for _, relation := range entry.Relations {
-			if relation.FromID != fromID {
-				continue
-			}
-			for _, pattern := range relation.Patterns {
-				if pattern.Branch != nil && pattern.Location != nil && *pattern.Location == at {
-					return pattern.Branch
-				}
-			}
+	// Saved branches keep a column of at least one, as their places do.
+	at.Column = max(1, at.Column)
+	for position := range index.Branches {
+		if branch := &index.Branches[position]; branch.SubjectID == fromID && branch.Location == at {
+			return &branch.Branch
 		}
 	}
 	return nil

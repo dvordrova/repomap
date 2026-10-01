@@ -43,7 +43,7 @@ func TestAnInputWhoseHandlerIsNotEstablishedIsTakenInWhereItsCodeReadsIt(t *test
 			RelationKind: programindex.RelationReads, Resolution: programindex.ResolutionExact, Location: &lookupAt}},
 	}
 	section := &pageSection{ID: "tool", programTargetID: target, ShortLabel: "Tool"}
-	builder := &pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, byProgram: map[string]*pageSection{target: section}, subjects: map[string]subjectRef{}}
+	builder := &pageBuilder{data: &ReportData{}, indexes: analyzedIndexes(index), byProgram: map[string]*pageSection{target: section}, subjects: map[string]subjectRef{}}
 	for _, subject := range index.Subjects {
 		builder.subjects[subject.ID] = subjectRef{subject: subject}
 	}

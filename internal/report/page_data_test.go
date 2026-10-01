@@ -22,13 +22,17 @@ func TestDataCataloguePreservesScopeSourceAndActualModelCallAssociations(t *test
 	index.Data = append(index.Data, groupindex.DataRecord{DataRecord: atlas.DataRecord{ID: "y7", Path: "queries.py", Line: 3, References: []string{"y1"},
 		Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "orm:Base0", Name: "ReadTrades", SQL: "SELECT * FROM trades WHERE note='<script>'", Statement: "SELECT", Partial: true}}})
 	index.Operations = []groupindex.Operation{{ID: "get-trades", SubjectID: "handler", Name: "GET /trades", Kind: "request"}, {ID: "retry", SubjectID: "unknown", Name: "Retry", Kind: "scheduled"}}
-	index.Subjects = []groupindex.Subject{{ID: "method", Object: &groupindex.ObjectFacts{Name: "Trade.get_trades", OwnerID: "model-0", Location: &programindex.Location{Path: "models.py", Line: 30, Column: 5}}}, {ID: "other-method", Object: &groupindex.ObjectFacts{Name: "Archive.get_trades", OwnerID: "model-1", Location: &programindex.Location{Path: "models.py", Line: 50, Column: 5}}}}
+	index.Subjects = []groupindex.Subject{{ID: "handler", Object: &groupindex.ObjectFacts{Name: "get_trades", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "api.py", Line: 5, Column: 1}}},
+		{ID: "helper", Object: &groupindex.ObjectFacts{Name: "load", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "api.py", Line: 15, Column: 1}}},
+		{ID: "method", Object: &groupindex.ObjectFacts{Name: "Trade.get_trades", OwnerID: "model-0", Location: &programindex.Location{Path: "models.py", Line: 30, Column: 5}}}, {ID: "other-method", Object: &groupindex.ObjectFacts{Name: "Archive.get_trades", OwnerID: "model-1", Location: &programindex.Location{Path: "models.py", Line: 50, Column: 5}}}}
 	index.StructuralEdges = []groupindex.StructuralEdge{
 		{FromSubjectID: "handler", ToSubjectID: "helper", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact},
 		{FromSubjectID: "helper", ToSubjectID: "method", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives},
 		{FromSubjectID: "method", ToSubjectID: "handler", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact},
 		{FromSubjectID: "handler", ToSubjectID: "other-method", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationReads, Resolution: programindex.ResolutionExact},
 	}
+	// The reach analysis saved (GroupsIndex Reach): the page reads it.
+	groupindex.Derive(&index)
 	section := &pageSection{ID: "service", programTargetID: "service", Map: &pageMap{}}
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, links: pageLinks{sourceIDs: map[string]string{"models.py": "models", "queries.py": "queries"}}}
 	builder.fillSectionData(section)
@@ -77,6 +81,7 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}}
 	location := &programindex.Location{Path: "queries.py", Line: 10, Column: 1}
 	index.Subjects = []groupindex.Subject{
+		{ID: "handler", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectFunction, Name: "getTrades", Location: &programindex.Location{Path: "api.py", Line: 3, Column: 1}}},
 		{ID: "query-owner", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectFunction, Name: "readTrades", Location: location}},
 		{ID: "unrelated", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectMethod, Name: "other", OwnerID: "query-class", Location: location}},
 		{ID: "query-class", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectType, Name: "LegacyQueryClass", Location: location}},
@@ -92,6 +97,7 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 		{FromSubjectID: "handler", ToSubjectID: "query-owner", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives},
 		{FromSubjectID: "handler", ToSubjectID: "unrelated", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact},
 	}
+	groupindex.Derive(&index)
 	href := "#" + operationNodeID("service", "get")
 	section := &pageSection{ID: "service", programTargetID: "service", Requests: []pageGroupOperation{{Name: "GET /trades", Kind: "request", Href: href}}, RouteGroups: []pageRouteGroup{{Rows: []pageRouteRow{{Paths: []pageRoutePath{{Path: "/trades", OperationHrefs: []string{href}}}}}}}}
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, links: pageLinks{sourceIDs: map[string]string{"queries.py": "queries", "schema.sql": "schema"}}}

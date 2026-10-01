@@ -1754,7 +1754,7 @@ manifest and the files the JSON names in the run's own target directories:
 the owner run directory and the target run directories beside it named by its
 `program-page-portfolio.json`.
 The common JSON contains the exact selected ProgramIndexes, not a copied
-presentation graph. It is compact JSON (format 94) and writes each
+presentation graph. It is compact JSON (format 95) and writes each
 ProgramIndex in its `program-index.json` encoding. A section byte for byte
 equal to a file of those directories (the owner's `program-index.json`,
 `facts.json`, `claims.json`, `orientation.json`, `glossary.json`; another
@@ -1767,6 +1767,14 @@ file holds stays in the JSON. The group-graph field holds only thin
 GroupsIndex overlays; native subjects and structural edges are joined from
 the ProgramIndexes in memory before rendering, so `report.json` has one
 native graph schema and one semantic overlay schema, with no `ProgramView`.
+Each overlay saves what analysis derived from its index (GroupsIndex 27,
+`Overlay.Derived`: every input's reach and spine, the dispatch sites,
+entries, catalogues, launch walk and phases) and from its test-free view
+(`Overlay.TestFree`, the overview's view without known testing material,
+derived over the whole program set). A rendering applies them and never
+runs `Derive` (owner, 2026-10-01: "у html должна быть простая задача — вот
+данные, показываю"; `TestARenderingNeverDerivesTheGroupsIndex`); a saved run
+of an older format is incompatible and is not rendered.
 
 UI iteration uses `repomap render RUN_DIR --output FILE.html` (owner,
 2026-09-08). It restores the current common report and completed display

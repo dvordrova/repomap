@@ -64,9 +64,9 @@ func TestAProgramsFilesAreItsDataWithTheFunctionsReachingThemByPart(t *testing.T
 			record("w2", "{env:KVD_CONFIG}", "", []facts.DataCall{call("stdio.h.fopen", 321)}, []string{"n3"}, nil, nil),
 			record("w3", "", "", []facts.DataCall{call("stdio.h.fopen", 505)}, []string{"n6"}, nil, nil),
 		}}
-	builder.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Relations: []programindex.Relation{
-		{ID: "r1", FromID: "n3", Patterns: []programindex.RelationPattern{{Selector: "strcasecmp", Location: setting, Branch: &programindex.LineRange{Line: 328, EndLine: 328}}}},
-	}}}
+	// The branch the setting's comparison guards, as the GroupsIndex saves it.
+	index.Branches = []groupindex.InputBranch{{SubjectID: "n3", Location: *setting, Branch: programindex.LineRange{Line: 328, EndLine: 328}}}
+	builder.indexes = []groupindex.Index{index}
 	section := &pageSection{ID: "t1", programTargetID: "t1"}
 	builder.fillSectionFiles(section, &index)
 

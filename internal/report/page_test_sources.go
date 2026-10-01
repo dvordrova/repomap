@@ -1,9 +1,6 @@
 package report
 
 import (
-	"slices"
-
-	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -14,112 +11,29 @@ import (
 func (builder *pageBuilder) overviewBuilder() *pageBuilder {
 	view := *builder
 	view.sourceIndexes = builder.indexes
-	view.testPaths = make(map[string]bool)
-	for _, index := range builder.indexes {
-		for _, source := range index.Target.TestSources {
-			view.testPaths[source] = true
-		}
-	}
-	// Older current-format Go producers already retained this native witness.
-	// It is a build-selected test declaration, never a guessed filename role.
+	var programs []programindex.Index
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
-			for _, relation := range entry.Relations {
-				for _, witness := range relation.Witnesses {
-					if witness.Kind == "go_test_declaration" && witness.Location != nil {
-						view.testPaths[witness.Location.Path] = true
-					}
-				}
-			}
-		}
+		programs = builder.data.ProgramPortfolio.Entries
 	}
-	testSubjects := make(map[groupindex.SubjectEndpoint]bool)
-	testLocation := func(location *programindex.Location) bool { return location != nil && view.testPaths[location.Path] }
-	for _, index := range builder.indexes {
-		for _, subject := range index.Subjects {
-			test := subject.Object != nil && testLocation(subject.Object.Location) || subject.Pattern != nil && testLocation(subject.Pattern.Location)
-			if test {
-				testSubjects[groupindex.SubjectEndpoint{TargetID: index.Target.ID, SubjectID: subject.ID}] = true
-			}
-		}
-	}
-	view.indexes = make([]groupindex.Index, len(builder.indexes))
-	visibleGroups := make(map[groupindex.Endpoint]bool)
-	for i, index := range builder.indexes {
-		projected := index
-		testSubject := func(id string) bool {
-			return testSubjects[groupindex.SubjectEndpoint{TargetID: index.Target.ID, SubjectID: id}]
-		}
-		projected.Subjects = slices.DeleteFunc(slices.Clone(index.Subjects), func(subject groupindex.Subject) bool { return testSubject(subject.ID) })
-		projected.Groups = nil
-		for _, group := range index.Groups {
-			members := slices.DeleteFunc(slices.Clone(group.MemberSubjectIDs), testSubject)
-			if len(members) == 0 && len(group.MemberSubjectIDs) > 0 {
+	view.testPaths = groupindex.TestPaths(builder.indexes, programs)
+	// The test-free views and what they derive were computed once at
+	// analysis (groupindex.WithTestFreeViews): the page applies them and
+	// never derives.
+	view.indexes = groupindex.TestFreeViews(builder.indexes, view.testPaths)
+	for i := range view.indexes {
+		if saved := builder.indexes[i].TestFree; saved != nil {
+			if err := view.indexes[i].ApplyDerived(*saved); err == nil {
 				continue
 			}
-			group.MemberSubjectIDs = members
-			group.EvidenceSubjectIDs = slices.DeleteFunc(slices.Clone(group.EvidenceSubjectIDs), testSubject)
-			projected.Groups = append(projected.Groups, group)
-			visibleGroups[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: group.ID}] = true
 		}
-		projected.Operations = slices.DeleteFunc(slices.Clone(index.Operations), func(operation groupindex.Operation) bool {
-			return testSubject(operation.SubjectID) || testLocation(&operation.Location)
-		})
-		projected.Outbound = nil
-		for _, call := range index.Outbound {
-			if testSubject(call.SubjectID) || testLocation(&call.Location) {
-				continue
-			}
-			if len(call.Uses) > 0 {
-				call.Uses = slices.DeleteFunc(slices.Clone(call.Uses), func(use atlas.DestinationUse) bool {
-					return slices.ContainsFunc(use.Steps, func(step atlas.DestinationStep) bool { return view.testPaths[step.Path] })
-				})
-				if len(call.Uses) == 0 {
-					continue
-				}
-			}
-			projected.Outbound = append(projected.Outbound, call)
+		// A view without its saved derivations has none: each input
+		// reaches nothing the page could show, and the page computes
+		// nothing.
+		reach := make([]groupindex.Reach, len(view.indexes[i].Operations))
+		for position, operation := range view.indexes[i].Operations {
+			reach[position].OperationID = operation.ID
 		}
-		projected.Data = slices.DeleteFunc(slices.Clone(index.Data), func(record groupindex.DataRecord) bool {
-			return view.testPaths[record.Path] || testSubject(record.OwnerSubjectID) ||
-				record.Data != nil && record.Data.Owner != nil && view.testPaths[record.Data.Owner.Path]
-		})
-		projected.StructuralEdges = slices.DeleteFunc(slices.Clone(index.StructuralEdges), func(edge groupindex.StructuralEdge) bool {
-			return testSubject(edge.FromSubjectID) || testSubject(edge.ToSubjectID)
-		})
-		projected.Containers = nil
-		for _, container := range index.Containers {
-			container.GroupIDs = slices.DeleteFunc(slices.Clone(container.GroupIDs), func(id string) bool {
-				return !visibleGroups[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: id}]
-			})
-			if len(container.GroupIDs) > 0 {
-				projected.Containers = append(projected.Containers, container)
-			}
-		}
-		view.indexes[i] = projected
-	}
-	for i, index := range view.indexes {
-		view.indexes[i].Connections = slices.DeleteFunc(slices.Clone(index.Connections), func(connection groupindex.Connection) bool {
-			if !visibleGroups[connection.From] || !visibleGroups[connection.To] || testLocation(connection.FromLocation) || testLocation(connection.ToLocation) {
-				return true
-			}
-			if testSubjects[groupindex.SubjectEndpoint{TargetID: connection.From.TargetID, SubjectID: connection.FromSubjectID}] ||
-				testSubjects[groupindex.SubjectEndpoint{TargetID: connection.To.TargetID, SubjectID: connection.ToSubjectID}] {
-				return true
-			}
-			// Mixed production/test support still supports an overview relation.
-			// Unknown evidence never becomes a test merely by association.
-			for _, evidence := range connection.Evidence {
-				if !testSubjects[evidence] {
-					return false
-				}
-			}
-			return len(connection.Evidence) > 0
-		})
-		// What GroupsIndex derives (reach, dispatch sites, catalogues, the
-		// launch walk) names positions in the structural edges, which the
-		// overview has just filtered: derive it again over what it keeps.
-		groupindex.Derive(&view.indexes[i])
+		view.indexes[i].Reach, view.indexes[i].Dispatch, view.indexes[i].Entries, view.indexes[i].Catalogues, view.indexes[i].Launch = reach, nil, nil, nil, groupindex.Launch{}
 	}
 	return &view
 }

@@ -40,10 +40,10 @@ func TestASettingNamesTheFieldsItsBranchWrites(t *testing.T) {
 		write("masterhost", "server.masterhost", 1711, programindex.RelationWrites),
 		write("port", "server.port", 1711, programindex.RelationReads),
 	}}
+	// The branch the comparison guards, as the GroupsIndex saves it.
 	comparison := at(1708, 21)
-	builder.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Relations: []programindex.Relation{
-		{ID: "r1", FromID: "load", Patterns: []programindex.RelationPattern{{Selector: "strcasecmp", Location: comparison, Branch: &programindex.LineRange{Line: 1708, EndLine: 1712}}}},
-	}}}
+	index.Branches = []groupindex.InputBranch{{SubjectID: "load", Location: *comparison, Branch: programindex.LineRange{Line: 1708, EndLine: 1712}}}
+	builder.indexes = []groupindex.Index{index}
 	decls := builder.pathDecls("t1", func(id string) string {
 		if id == "server" {
 			return "t1-core"

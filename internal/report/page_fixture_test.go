@@ -191,3 +191,14 @@ func TestSectionLabelsDistinguishRepeatedTargetNames(t *testing.T) {
 		}
 	}
 }
+
+// analyzedIndexes are hand-built GroupsIndexes as analysis leaves them:
+// derived once, with their test-free views derived (groupindex.ProjectAtlas
+// does both). A rendering only applies what they carry.
+func analyzedIndexes(indexes ...groupindex.Index) []groupindex.Index {
+	for position := range indexes {
+		groupindex.Derive(&indexes[position])
+	}
+	groupindex.WithTestFreeViews(indexes, nil)
+	return indexes
+}

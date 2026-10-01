@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 26
+	Version          = 27
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -436,6 +436,10 @@ type Index struct {
 	// call (handed.go). Compiled from the bound ProgramIndex, never
 	// persisted.
 	Handed Handed `json:"-"`
+	// TestFree are the derivations of the index's test-free view
+	// (TestFreeViews), derived once at analysis and saved with the index
+	// (Overlay.TestFree): the overview applies them, never Derive.
+	TestFree *Derived `json:"-"`
 }
 
 // UnresolvedCall is one call whose callee the ProgramIndex does not know.
@@ -772,6 +776,9 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		Handed:             compileHanded(program, allSubjectIDs),
 	}
 	Derive(&index)
+	built := []Index{index}
+	WithTestFreeViews(built, TestPaths(nil, []programindex.Index{program}))
+	index = built[0]
 	seal, err := indexDigest(index)
 	if err != nil {
 		return Index{}, nil, err
@@ -1118,6 +1125,10 @@ func Empty(program programindex.Index) (Index, error) {
 		StructuralEdges:    []StructuralEdge{},
 		Connections:        []Connection{},
 	}
+	Derive(&index)
+	built := []Index{index}
+	WithTestFreeViews(built, TestPaths(nil, []programindex.Index{program}))
+	index = built[0]
 	seal, err := indexDigest(index)
 	if err != nil {
 		return Index{}, err
@@ -2377,7 +2388,14 @@ type Overlay struct {
 	MapFailure         string              `json:"map_failure,omitempty"`
 	Unsure             []UnsureCall        `json:"unsure,omitempty"`
 	Idioms             []Idiom             `json:"idioms,omitempty"`
-	SHA256             string              `json:"sha256"`
+	// Derived is what Derive computed from the index at analysis, and
+	// TestFree what it computed from the index's test-free view: saved, so
+	// hydrating applies them and never derives (GroupsIndex 27). TestFree
+	// is absent when the view derives exactly what the index does (a
+	// program with no testing material), saving a second copy.
+	Derived  Derived  `json:"derived"`
+	TestFree *Derived `json:"test_free,omitempty"`
+	SHA256   string   `json:"sha256"`
 }
 
 // validateOffMap checks the off-map record: known reasons, repository paths,
@@ -2419,6 +2437,10 @@ func offMapKey(file OffMapFile) string {
 }
 
 func OverlayFromIndex(index Index) Overlay {
+	derived, testFree := DerivedOf(index), index.TestFree
+	if testFree != nil && reflect.DeepEqual(*testFree, derived) {
+		testFree = nil
+	}
 	subjects := make([]SubjectAnnotation, len(index.Subjects))
 	for position, subject := range index.Subjects {
 		categories := make([]programindex.Category, len(subject.Categories))
@@ -2436,7 +2458,7 @@ func OverlayFromIndex(index Index) Overlay {
 		Role: index.Role, SharedCode: index.SharedCode, Summary: index.Summary, Data: index.Data,
 		Subjects: subjects, Groups: index.Groups, Operations: index.Operations, Outbound: index.Outbound,
 		Containers: index.Containers, Connections: index.Connections, OffMap: index.OffMap, MapFailure: index.MapFailure,
-		Unsure: index.Unsure, Idioms: index.Idioms, SHA256: index.SHA256,
+		Unsure: index.Unsure, Idioms: index.Idioms, Derived: derived, TestFree: testFree, SHA256: index.SHA256,
 	}
 }
 
@@ -2444,6 +2466,9 @@ func (artifact Overlay) Validate() error {
 	if artifact.Version != Version || !validTargetID(artifact.TargetID) || !validSHA256(artifact.ProgramIndexSHA256) ||
 		artifact.Subjects == nil || artifact.Groups == nil || artifact.Containers == nil || artifact.Connections == nil {
 		return fmt.Errorf("group index: invalid semantic overlay")
+	}
+	if len(artifact.Derived.Reach) != len(artifact.Operations) || len(artifact.Derived.Connections) != len(artifact.Connections) {
+		return fmt.Errorf("group index: semantic overlay without its saved derivations")
 	}
 	seen := make(map[string]struct{}, len(artifact.Subjects))
 	for _, subject := range artifact.Subjects {
@@ -2507,10 +2532,18 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Unresolved: compileUnresolvedCalls(program, retained),
 		Branches:   compileInputBranches(program, retained),
 		Handed:     compileHanded(program, retained),
+		TestFree:   artifact.TestFree,
 	}
-	// Derive writes the connections' derived fields: on a copy, so hydrating
-	// never changes the overlay it reads.
-	Derive(&index)
+	if index.TestFree == nil {
+		// The test-free view derives what the index does.
+		derived := artifact.Derived
+		index.TestFree = &derived
+	}
+	// What analysis derived is applied, never derived again: on a copy of
+	// the connections, so hydrating never changes the overlay it reads.
+	if err := index.ApplyDerived(artifact.Derived); err != nil {
+		return Index{}, err
+	}
 	if err := index.Validate(); err != nil {
 		return Index{}, err
 	}
