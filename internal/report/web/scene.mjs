@@ -49,7 +49,9 @@ export function sceneAt(model,geometry,level=[],selection={}){
     text=inner?geometry.text.get(inner)||1:1;
     for(const id of model.roots){
       const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
-      if(node.kind==='program')box(id,'program',rect,1);
+      // A program's card holds its drawing's outline: where its areas and
+      // loose parts stand, seen once the card is drawn large.
+      if(node.kind==='program')box(id,'program',rect,1,{ghosts:node.children.map(child=>rectOf(child)).filter(Boolean)});
       else if(node.kind==='inputs'){
         // Closed: its kinds' marks in a row under its title, each read alone.
         if(!open.has(id)){box(id,'inputs',rect,1,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,

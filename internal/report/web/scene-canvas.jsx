@@ -55,12 +55,18 @@ function Scaled({node,className='',children,style,data}){
 }
 const handles=<><Handle type="target" position={Position.Top} isConnectable={false}/><Handle type="source" position={Position.Bottom} isConnectable={false}/></>;
 
+// Where the boxes inside a closed box stand, as faint outlines: never a
+// blank box (PLAN B).
+function Ghosts({node,className=''}){
+  if(!node.ghosts?.length)return null;
+  return <svg className={`scene-ghosts ${className}`} width={node.rect.width/node.text} height={node.rect.height/node.text} aria-hidden="true">
+    {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={Math.min(9,r.width/node.text/12)}/>)}</svg>;
+}
 function CardNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>cardWords(node,{description:item?.summary||'',room:node.enter?24:0}),[node.rect.width,node.rect.height,node.text,node.title]);
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
-    {node.ghosts&&<svg className="scene-ghosts" width={node.rect.width/node.text} height={node.rect.height/node.text} aria-hidden="true">
-      {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={9*r.width/node.text/260}/>)}</svg>}
+    <Ghosts node={node}/>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
     <div className="scene-words"><strong data-box-title={node.id} title={words.cut?node.title:undefined}>{words.title.join('\n')}</strong>
     {words.lines.length>0&&<div className="flow-description flow-description-lines" title={item?.summary||undefined}>{words.lines.join('\n')}</div>}</div>
@@ -76,9 +82,10 @@ function ProgramNode({data}){
     return {title,role,purpose:item?.summary?descriptionLines(item.summary,inner,Math.max(0,Math.min(2,Math.floor(room/c.textLine))),measure,c.text):[]};
   },[node.rect.width,node.rect.height,node.title]);
   return <>{handles}<Scaled node={node} className="scene-program-card" data={{'data-component-overview':node.id}}>
-    <strong data-box-title={node.id}>{words.title.join('\n')}</strong>
+    <Ghosts node={node} className="scene-program-ghosts"/>
+    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>
     {words.role.length>0&&<div className="flow-component-role" title={item.role}>{words.role.join('\n')}</div>}
-    {words.purpose.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{words.purpose.join('\n')}</p>}
+    {words.purpose.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{words.purpose.join('\n')}</p>}</div>
   </Scaled></>;
 }
 function FrameNode({data}){

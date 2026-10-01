@@ -86,3 +86,7 @@
 /* Every card's border keeps its screen width at any zoom, as the arrows'
    strokes do. */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.flow-chip,.scene-root .scene-scaled.scene-tile,.scene-root .scene-scaled.scene-program-card{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
+/* A program's card shows its drawing's outline only once drawn large, its
+   words over it. */
+.scene-program-ghosts{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1)}
+.scene-program-card>.scene-words{background:#f8fafc}
