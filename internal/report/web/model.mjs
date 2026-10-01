@@ -2,30 +2,36 @@
 // page's data: what stands in what, the arrows between the things drawn,
 // the Outside frames grouped by part (B′), the markers every box carries,
 // the whole map's arrows and a frame's connections. It is pure: no layout,
-// no camera, no DOM. It is the one place facts are derived in the browser
-// (owner, 2026-10-01): levels, scene and overlay read only the model, and
-// the facts' saved shapes are in REPORT.md's Scene model. The page's
-// records, relations and readings are unchanged.
+// no camera, no DOM. The facts it draws are saved with the report and
+// read here as saved (owner, 2026-10-01: "у html должна быть простая
+// задача — вот данные, показываю"; REPORT.md's Scene model): where each
+// input takes effect, who calls each outside system, each part's calls and
+// the pairs of programs. It groups, caps and folds them for drawing and
+// derives none. Levels, scene and overlay read only the model.
 import {prepareCards} from './cards.mjs';
 import {connections} from './layout.mjs';
 
-// An input's kind, as the reading column names its sections.
+// An input's kind as saved (scene.go sceneInputKinds), in the order the
+// reading column names its sections; an input the saved scene does not
+// know is of a kind not established.
 export const inputKinds=['request','command','setting','scheduled','continuous','interaction','consumer','extension','entry'];
 export const inputKindTitles={request:'Incoming requests',command:'Commands',setting:'Settings',scheduled:'Scheduled tasks',
   continuous:'Background work',interaction:'User interactions',consumer:'Queue consumers',extension:'Extension points',entry:'Kind not established'};
-export function inputKind(activation){
-  if(activation==='background')return 'continuous';
-  if(activation==='queue_consumer')return 'consumer';
-  return inputKinds.includes(activation)?activation:'entry';
-}
-// An outside system's kind, as its calls' facts give it
-// (page_system_map.go destinationKind); 'other' when they give none.
+const inputKind=kind=>inputKinds.includes(kind)?kind:'entry';
+// An outside system's kind as saved (scene.go sceneSystemKinds); 'other'
+// when none is.
 export const systemKinds=['database','request','sdk','queue','started','other'];
-export const systemKind=kind=>systemKinds.includes(kind)&&kind!=='other'?kind:'other';
-// Inputs whose handler is not established are taken in where these say.
-const takenIn=new Set(['declared in','looked up in']);
+const systemKind=kind=>systemKinds.includes(kind)?kind:'other';
 // At most this many markers stand on a side of a box (PLAN B).
 export const markersPerSide=3;
+
+// The saved scene (report.json `scene`, the page's #rm-scene), every field
+// present: {inputs, systems, calls, programPairs}.
+function savedScene(scene){
+  const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
+  return {inputs:object(scene?.inputs),systems:object(scene?.systems),calls:object(scene?.calls),
+    programPairs:Array.isArray(scene?.programPairs)?scene.programPairs:[]};
+}
 
 // What a page record is on the canvas.
 function kindOf(item){
@@ -40,13 +46,14 @@ function kindOf(item){
   return 'part';
 }
 
-// `page` {items, relations, areas, inputOwner} as the page hands them to
-// rmCreateFlow; `measure(text, font)` measures text; `t` translates fixed
-// words. Returns the model (see the fields at the end).
+// `page` {items, relations, areas} as the page hands them to rmCreateFlow,
+// and `scene` the saved facts; `measure(text, font)`
+// measures text; `t` translates fixed words. Returns the model (see the
+// fields at the end).
 export function buildModel(page,{measure,t=text=>text}={}){
-  const items=prepareCards(page.items||[],page.inputOwner||{},measure,t);
+  const saved=savedScene(page.scene);
+  const items=prepareCards(page.items||[],{},measure,t);
   const record=new Map(items.map(item=>[item.id,item]));
-  const inputOwner=page.inputOwner||{};
   const parentOf=new Map();
   for(const item of items)for(const child of item.children||[])if(record.has(child))parentOf.set(child,item.id);
   for(const area of page.areas||[])for(const child of area.nodes||[])if(record.has(child)&&record.has(area.id))parentOf.set(child,area.id);
@@ -59,15 +66,18 @@ export function buildModel(page,{measure,t=text=>text}={}){
 
   // One edge per directed pair of drawn things and certainty, holding
   // every original relation (split-layout.mjs prepareInteriors did the same).
-  const folded=new Map();
-  for(const relation of page.relations||[]){
+  // An edge keeps the positions of its relations in the page's list, as
+  // the saved pairs of programs name them.
+  const folded=new Map(),edgesAt=new Map();
+  (page.relations||[]).forEach((relation,position)=>{
     const from=shown(relation.displayFrom||relation.from),to=shown(relation.displayTo||relation.to);
-    if(from===to||!record.has(from)||!record.has(to))continue;
-    if(kind.get(from)==='call'||kind.get(to)==='call')continue;
+    if(from===to||!record.has(from)||!record.has(to))return;
+    if(kind.get(from)==='call'||kind.get(to)==='call')return;
     const key=JSON.stringify([from,to,!!relation.possible]);
     if(!folded.has(key))folded.set(key,{id:`e${folded.size}`,from,to,possible:!!relation.possible,init:true,relations:[]});
     const edge=folded.get(key);edge.relations.push(relation);edge.init&&=!!relation.init;
-  }
+    edgesAt.set(position,edge.id);
+  });
   const edges=[...folded.values()];
 
   const nodes=new Map();
@@ -95,7 +105,7 @@ export function buildModel(page,{measure,t=text=>text}={}){
     const leaves=id=>{const at=record.get(id);return kind.get(id)==='input'?[id]:(at?.children||[]).flatMap(leaves);};
     const groups=new Map();
     for(const id of (item.children||[]).flatMap(leaves)){
-      const k=inputKind(record.get(id).activation);
+      const k=inputKind(saved.inputs[id]?.kind);
       if(!groups.has(k))groups.set(k,[]);
       if(!groups.get(k).includes(id))groups.get(k).push(id);
     }
@@ -104,24 +114,20 @@ export function buildModel(page,{measure,t=text=>text}={}){
       collection.children.push(group.id);
       for(const id of group.children){
         kindGroupOf.set(id,group.id);
-        add({id,kind:'input',name:name(record.get(id)),item:record.get(id),parent:group.id,inputKind:k,program:collection.program});
+        add({id,kind:'input',name:name(record.get(id)),item:record.get(id),parent:group.id,inputKind:k,program:saved.inputs[id]?.program||collection.program});
       }
     }
   }
   // An input no collection holds stands alone.
   for(const item of items)if(kind.get(item.id)==='input'&&!nodes.has(item.id))
-    add({id:item.id,kind:'input',name:name(item),item,parent:'',inputKind:inputKind(item.activation),program:item.componentOwner||''});
+    add({id:item.id,kind:'input',name:name(item),item,parent:'',inputKind:inputKind(saved.inputs[item.id]?.kind),program:saved.inputs[item.id]?.program||item.componentOwner||''});
 
-  const partProgram=id=>{let at=id;while(nodes.get(at)?.parent)at=nodes.get(at).parent;return nodes.get(at)?.kind==='program'?at:'';};
-  // Who calls each system: the parts whose arrows go into it, and the
-  // programs (a call from a program's own code or another drawn thing).
+  // Who calls each system, as saved: its parts and its programs.
   const callers=new Map(),callingPrograms=new Map();
-  for(const edge of edges){
-    if(kind.get(edge.to)!=='system')continue;
-    if(!callers.has(edge.to))callers.set(edge.to,new Set());
-    if(kind.get(edge.from)==='part')callers.get(edge.to).add(edge.from);
-    const program=partProgram(edge.from)||(kind.get(edge.from)==='program'?edge.from:'');
-    if(program){if(!callingPrograms.has(edge.to))callingPrograms.set(edge.to,new Set());callingPrograms.get(edge.to).add(program);}
+  for(const [id,system] of Object.entries(saved.systems)){
+    if(kind.get(id)!=='system')continue;
+    callers.set(id,new Set((system.parts||[]).filter(part=>kind.get(part)==='part')));
+    callingPrograms.set(id,new Set((system.programs||[]).filter(program=>kind.get(program)==='program')));
   }
   // Outside frames grouped by part (B′): first the systems two or more
   // parts call, the most called first (casdoor's PostgreSQL); then one
@@ -145,7 +151,7 @@ export function buildModel(page,{measure,t=text=>text}={}){
     const bucketed=new Set(buckets.flatMap(([,list])=>list));
     const rest=systems.filter(id=>!shared.includes(id)&&!bucketed.has(id)).sort((a,b)=>(record.get(a).unestablished?1:0)-(record.get(b).unestablished?1:0)||order.get(a)-order.get(b));
     const chip=(id,parent)=>add({id,kind:'system',name:name(record.get(id)),item:record.get(id),parent,
-      systemKind:systemKind(record.get(id).destinationKind),unestablished:!!record.get(id).unestablished});
+      systemKind:systemKind(saved.systems[id]?.kind),unestablished:!!record.get(id).unestablished});
     for(const id of shared){chip(id,frame.id);frame.children.push(id);}
     for(const [part,list] of buckets){
       const bucket=add({id:`${frame.id}~${part}`,kind:'bucket',name:name(record.get(part)),part,parent:frame.id,children:list});
@@ -156,7 +162,7 @@ export function buildModel(page,{measure,t=text=>text}={}){
   }
   // A system no frame holds stands alone.
   for(const item of items)if(kind.get(item.id)==='system'&&!nodes.has(item.id))
-    add({id:item.id,kind:'system',name:name(item),item,parent:'',systemKind:systemKind(item.destinationKind)});
+    add({id:item.id,kind:'system',name:name(item),item,parent:'',systemKind:systemKind(saved.systems[item.id]?.kind)});
 
   const roots=[...nodes.values()].filter(node=>!node.parent||!nodes.has(node.parent)).map(node=>node.id);
   for(const id of roots)nodes.get(id).parent='';
@@ -178,25 +184,23 @@ export function buildModel(page,{measure,t=text=>text}={}){
     const root=rootOf(id);return nodes.get(root)?.kind==='program'?root:'';
   };
 
-  // Where each input takes effect: the part holding its handler, else the
-  // parts its code takes it in (declared in, looked up in), else its
-  // program. `handled` says which.
+  // Where each input takes effect, as saved: the part holding its handler
+  // (`handled`, the handler's place), else the parts its code takes it in,
+  // else, no part, its program.
   const anchors=new Map();
   for(const node of nodes.values()){
     if(node.kind!=='input')continue;
-    const owner=inputOwner[node.id];
-    if(owner&&nodes.get(owner)?.kind==='part'){anchors.set(node.id,{parts:[owner],handled:true});continue;}
-    const parts=[...new Set(edges.filter(edge=>edge.from===node.id&&nodes.get(edge.to)?.kind==='part'&&edge.relations.some(r=>takenIn.has(r.label))).map(edge=>edge.to))];
-    if(parts.length){anchors.set(node.id,{parts,handled:false});continue;}
-    const reached=[...new Set(edges.filter(edge=>edge.from===node.id&&nodes.get(edge.to)?.kind==='part').map(edge=>edge.to))];
-    anchors.set(node.id,reached.length?{parts:reached,handled:true}:{parts:[],handled:false,program:node.program||''});
+    const fact=saved.inputs[node.id],parts=[...new Set((fact?.parts||[]).filter(part=>nodes.get(part)?.kind==='part'))];
+    anchors.set(node.id,parts.length?{parts,handled:!!fact.handled,handler:fact.handled&&fact.handler||null}:{parts:[],handled:false,program:fact?.program||''});
   }
-  // The systems each part calls.
-  const calls=new Map();
-  for(const edge of edges){
-    if(kind.get(edge.to)!=='system'||nodes.get(edge.from)?.kind!=='part')continue;
-    if(!calls.has(edge.from))calls.set(edge.from,new Set());
-    calls.get(edge.from).add(edge.to);
+  // The systems each part calls, as saved, and the places of the
+  // declarations making the calls.
+  const calls=new Map(),callPlaces=new Map();
+  for(const [part,list] of Object.entries(saved.calls)){
+    if(nodes.get(part)?.kind!=='part'||!Array.isArray(list))continue;
+    const made=list.filter(call=>nodes.get(call?.system)?.kind==='system');
+    calls.set(part,new Set(made.map(call=>call.system)));
+    callPlaces.set(part,made);
   }
   // A box's markers: the kinds of the inputs taking effect anywhere in it on
   // its left, the kinds of the systems anything in it calls on its right
@@ -239,44 +243,33 @@ export function buildModel(page,{measure,t=text=>text}={}){
     return [...kept.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind)),last];
   }
   // Inside a part drawn as its declarations, a marker stands on the
-  // declaration handling or declaring the input, or making the outside
-  // call; what names no declaration of the part stays on the part's edge.
+  // declaration handling the input, or making the outside call, by its
+  // saved place {path, line}; an input with no known handler, and what
+  // names no declaration of the part, stays on the part's edge.
   // {members: Map symbol index → {in, out}, rest: {in, out}}.
   const memberCache=new Map();
   function memberMarkersOf(part){
     if(memberCache.has(part))return memberCache.get(part);
     const symbols=nodes.get(part)?.item?.symbols||[],at=new Map();
-    symbols.forEach((symbol,i)=>{for(const key of [symbol.href,symbol.open])if(key&&!at.has(key))at.set(key,i);});
+    symbols.forEach((symbol,i)=>{const key=symbol.path&&symbol.line?`${symbol.path}:${symbol.line}`:'';if(key&&!at.has(key))at.set(key,i);});
+    const placeOf=source=>source?.path&&source.line?at.get(`${source.path}:${source.line}`):undefined;
     const byMember=new Map(),rest={in:new Map(),out:new Map()};
     const side=(i,way)=>{
       if(i===undefined)return rest[way];
       if(!byMember.has(i))byMember.set(i,{in:new Map(),out:new Map()});
       return byMember.get(i)[way];
     };
-    for(const edge of edges){
-      if(edge.to===part&&nodes.get(edge.from)?.kind==='input'){
-        const input=nodes.get(edge.from),anchor=anchors.get(input.id);
-        // An input with no known handler stays on the part's edge.
-        const handled=anchor?.handled&&anchor.parts.includes(part);
-        const places=new Set(handled?edge.relations.filter(r=>!takenIn.has(r.label)).flatMap(r=>(r.calls||[]).map(call=>at.get(call.to||call.callee))):[]);
-        places.delete(undefined);
-        for(const i of places.size?places:[undefined]){
-          const list=side(i,'in');
-          if(!list.has(input.inputKind))list.set(input.inputKind,{kind:input.inputKind,members:[],systems:[],handled:[]});
-          const marker=list.get(input.inputKind);
-          if(!marker.members.includes(input.id)){marker.members.push(input.id);if(handled)marker.handled.push(input.id);}
-        }
-      }
-      if(edge.from===part&&kind.get(edge.to)==='system'){
-        const k=nodes.get(edge.to)?.systemKind||'other';
-        const places=new Set(edge.relations.flatMap(r=>(r.calls||[]).map(call=>at.get(call.caller))));
-        places.delete(undefined);
-        for(const i of places.size?places:[undefined]){
-          const list=side(i,'out');
-          if(!list.has(k))list.set(k,{kind:k,members:[part],systems:[],handled:[]});
-          const marker=list.get(k);if(!marker.systems.includes(edge.to))marker.systems.push(edge.to);
-        }
-      }
+    for(const [input,anchor] of anchors){
+      if(!anchor.parts.includes(part))continue;
+      const k=nodes.get(input).inputKind,list=side(anchor.handled?placeOf(anchor.handler):undefined,'in');
+      if(!list.has(k))list.set(k,{kind:k,members:[],systems:[],handled:[]});
+      const marker=list.get(k);
+      if(!marker.members.includes(input)){marker.members.push(input);if(anchor.handled)marker.handled.push(input);}
+    }
+    for(const call of callPlaces.get(part)||[]){
+      const k=nodes.get(call.system).systemKind,list=side(placeOf(call.caller),'out');
+      if(!list.has(k))list.set(k,{kind:k,members:[part],systems:[],handled:[]});
+      const marker=list.get(k);if(!marker.systems.includes(call.system))marker.systems.push(call.system);
     }
     const finish=sides=>({in:capped([...sides.in.values()],m=>m.members.length,inputKinds),out:capped([...sides.out.values()],m=>m.systems.length,systemKinds)});
     const result={members:new Map([...byMember].map(([i,sides])=>[i,finish(sides)])),rest:finish(rest)};
@@ -285,46 +278,48 @@ export function buildModel(page,{measure,t=text=>text}={}){
   }
 
   const model={
-    nodes,roots,edges,record,inputOwner,anchors,calls,callers,callingPrograms,
+    nodes,roots,edges,record,anchors,calls,callers,callingPrograms,
     shown,parent,ancestors,rootOf,leaves,within,programOf,markersOf,memberMarkersOf,
     kindGroupOf,
   };
-  model.homePairs=homePairsOf(model);
+  model.homePairs=homePairsOf(model,saved.programPairs,edgesAt);
   model.frameGroups=id=>frameGroupsOf(model,id);
   return model;
 }
 
-// The whole map's pairs (owner, 2026-10-01, on the skeptic's verdict):
-// each program's Inputs frame into it, a program into each Outside frame it
-// calls, and one arrow per pair of programs. A program reaching another
-// program's input reaches that program; a call through an outside system
-// served by another program's input (connects_to) is the caller's arrow to
-// the served program. A pair of programs joined only by code use
-// (scope=structure) is `uses`: drawn only while one of them is pointed at
-// or chosen.
-function homePairsOf(model){
-  const {nodes}=model,pairs=new Map();
-  const add=(a,b,edge)=>{
+// The whole map's pairs (owner, 2026-10-01, on the skeptic's verdict): one
+// arrow per saved pair of programs, both ways on it, each way holding the
+// edges of the relations saved for it; then, folded by the boxes the map
+// draws, each program's Inputs frame into it and a program into each
+// Outside frame it calls. A pair of programs joined only by code use (no
+// way `runtime`) is `uses`: drawn only while one of them is pointed at or
+// chosen. An edge from an outside system into an input stands only in the
+// pairs saved for it, its callers' (connects_to).
+function homePairsOf(model,programPairs,edgesAt){
+  const {nodes}=model,pairs=new Map(),program=id=>nodes.get(id)?.kind==='program';
+  const add=(a,b,id,runtime)=>{
     if(!a||!b||a===b)return;
     const key=a<b?`${a}|${b}`:`${b}|${a}`;
     if(!pairs.has(key))pairs.set(key,{key,from:a,to:b,forward:[],backward:[],operation:false});
-    const pair=pairs.get(key);
-    (pair.from===a?pair.forward:pair.backward).push(edge.id);
-    pair.operation||=edge.relations.some(relation=>relation.scope!=='structure');
+    const pair=pairs.get(key),way=pair.from===a?pair.forward:pair.backward;
+    if(!way.includes(id))way.push(id);
+    pair.operation||=runtime;
   };
-  for(const edge of model.edges){
-    const from=nodes.get(edge.from),to=nodes.get(edge.to);
-    let sources=[model.rootOf(edge.from)],target=model.rootOf(edge.to);
-    if(to?.kind==='input'&&to.program&&model.rootOf(edge.from)!==to.program)target=to.program;
-    if(from?.kind==='input'&&from.program&&model.rootOf(edge.to)!==from.program)sources=[from.program];
-    if(from?.kind==='system'&&to?.kind==='input'){
-      sources=[...(model.callingPrograms.get(edge.from)||[])];target=to.program||target;
-      for(const source of sources)add(source,target,{...edge,relations:[{scope:'operation'}]});
-      continue;
+  const saved=new Set();
+  for(const pair of programPairs){
+    if(!program(pair?.from)||!program(pair?.to)||pair.from===pair.to)continue;
+    for(const position of pair.relations||[]){
+      const id=edgesAt.get(position);
+      if(id){saved.add(id);add(pair.from,pair.to,id,!!pair.runtime);}
     }
-    for(const source of sources)add(source,target,edge);
   }
-  for(const pair of pairs.values())pair.uses=nodes.get(pair.from)?.kind==='program'&&nodes.get(pair.to)?.kind==='program'&&!pair.operation;
+  for(const edge of model.edges){
+    if(saved.has(edge.id)||nodes.get(edge.from)?.kind==='system'&&nodes.get(edge.to)?.kind==='input')continue;
+    const from=model.rootOf(edge.from),to=model.rootOf(edge.to);
+    if(program(from)&&program(to))continue;
+    add(from,to,edge.id,false);
+  }
+  for(const pair of pairs.values())pair.uses=program(pair.from)&&program(pair.to)&&!pair.operation;
   return [...pairs.values()];
 }
 
