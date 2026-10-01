@@ -470,14 +470,20 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // A chip or a bucket pointed at says who calls it, or what it holds;
     // any other box whose words do not read yet is named.
     const box=pointer?.type==='box'&&pointer.node&&(['chip','bucket'].includes(pointer.node.display)||pointer.node.text*17*v.zoom<11)?pointer.node:null;
-    return <div className="scene-overlay" aria-hidden="true">
-      {items.filter(item=>item.type==='zoom').map(item=><span key={item.id} className="scene-zoom" data-zoom-into={item.box}
-        style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></span>)}
-      {items.filter(item=>item.type!=='zoom').map(item=><span key={item.id} className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
+    // The pointer reaches these through the one hit test; the keyboard
+    // reaches them as buttons, Enter doing what a click does.
+    const press=target=>event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();clickAt(target,event);};
+    return <div className="scene-overlay">
+      {items.filter(item=>item.type==='zoom').map(item=><button type="button" key={item.id} className="scene-zoom" data-zoom-into={item.box}
+        aria-label={t('Zoom into {0}',nameOf(item.box))} onKeyDown={press({type:'zoom',id:item.box})}
+        style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></button>)}
+      {items.filter(item=>item.type!=='zoom').map(item=><button type="button" key={item.id} className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
+        aria-label={item.type==='port'?`${item.way==='out'?'→':'←'} ${nameOf(item.id)}`:item.side==='in'?t(inputKindTitles[item.kind]||'Inputs'):t('Outside')}
+        onKeyDown={press({type:item.type,id:item.id,box:item.box||'',item})}
         data-marker={item.type==='marker'?item.id:undefined} data-marker-box={item.type==='marker'?item.box:undefined} data-marker-side={item.type==='marker'?item.side:undefined}
         data-marker-end={item.type==='marker'?(item.side==='out'?item.systems:item.members).join(' '):undefined} data-port={item.type==='port'?item.id:undefined} data-port-end={item.type==='port'?item.id:undefined}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}>
-        <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></span>)}
+        <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></button>)}
       {tip&&<MarkTip item={tip}/>}
       {box&&<BoxTip node={box} camera={v}/>}
     </div>;

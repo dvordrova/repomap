@@ -76,3 +76,7 @@
 /* A long list in a tip stands in two columns, its heading over both. */
 .scene-tip.scene-tip-columns{display:grid;grid-template-columns:auto auto;column-gap:14px;max-width:520px}
 .scene-tip.scene-tip-columns>b{grid-column:1/-1}
+/* Overlay buttons take the keyboard's focus; the pointer reaches them
+   through the canvas's hit test. */
+.scene-overlay button{padding:0;font:inherit;pointer-events:none}
+.scene-overlay button:focus-visible{outline:2px solid #243044;outline-offset:2px}
