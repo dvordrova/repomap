@@ -284,7 +284,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // (owner, 2026-09-28): its arrows run out of its own border toward the
   // part or area at their other end, each end marked by its plaque, and
   // the location names it.
-  let deepPart='',shownNodes=null,enteredProgram='',ports=null,portHot='';
+  let deepPart='',shownNodes=null,enteredProgram='',ports=null,portHot='',portCamera=null;
   function deepPartAt(v){
     const width=host.clientWidth,height=host.clientHeight,centre={x:(width/2-v.x)/v.zoom,y:(height/2-v.y)/v.zoom};
     let best='',nearest=Infinity;
@@ -315,6 +315,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     placeLocation(event,subject);
     const next=instance&&!layoutError?programEntered(instance.getViewport()):'';
     if(next!==enteredProgram){enteredProgram=next;if(next)map.dataset.enteredProgram=next;else delete map.dataset.enteredProgram;update?.();}
+    // Where the camera came to rest, in the map's units: an entered
+    // program's ports keep their screen size and stay in sight by it
+    // (placePorts).
+    if(!instance||!next){portCamera=null;return;}
+    const v=instance.getViewport(),camera={zoom:v.zoom,left:-v.x/v.zoom,top:-v.y/v.zoom,right:(host.clientWidth-v.x)/v.zoom,bottom:(host.clientHeight-v.y)/v.zoom};
+    if(!portCamera||['zoom','left','top','right','bottom'].some(key=>Math.abs(camera[key]-portCamera[key])*v.zoom>.5)){portCamera=camera;update?.();}
   }
   function placeLocation(event,subject){
     if(!instance)return;
@@ -610,6 +616,64 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       for(const entry of pill.items)for(const member of entry.members)ends.set(member,{pill,entry});
     }
     return {program,inputs,pills,ends,unit,hidden};
+  }
+  // An entered program's ports as the camera at rest shows them: each item
+  // 24 screen pixels, its icon 16, the capsule hugging them, wherever the
+  // camera is (owner, 2026-10-01: entered at redis's Core and zoomed to a
+  // part, they had grown with the map to icons a hundred pixels tall).
+  // Closer than the program was laid out for, they stand on its border
+  // where the camera shows it, else on the canvas's edge nearest it, in
+  // their order, inside the canvas; on a border in sight with none of them
+  // beside it, they slide along it into the canvas. Returns the pills to
+  // draw.
+  function placePorts(ports,camera){
+    if(!ports||!camera)return ports?.pills||[];
+    const s=24/camera.zoom;if(s>=ports.unit-1e-6)return ports.pills;
+    const margin=6/camera.zoom;
+    return ports.pills.map(pill=>{
+      const across=pill.border>=camera.left+s/2+margin&&pill.border<=camera.right-s/2-margin;
+      const x=across?pill.border:pill.border>camera.right?camera.right-s/2-margin:camera.left+s/2+margin;
+      let ys=pill.items.map(entry=>entry.y);
+      // Its items out of sight along a border in sight slide along it too.
+      const seen=across&&ys.some(y=>y>=camera.top+s&&y<=camera.bottom-s);
+      if(!seen){
+        const low=camera.top+s,high=camera.bottom-s,order=ys.map((y,k)=>k).sort((a,b)=>ys[a]-ys[b]||a-b),out=new Array(ys.length);
+        order.forEach((k,i)=>{out[k]=Math.max(low,ys[k],i?out[order[i-1]]+s:-Infinity);});
+        for(let i=order.length-1;i>=0;i--)out[order[i]]=Math.min(out[order[i]],i<order.length-1?out[order[i+1]]-s:high);
+        ys=out;
+      }
+      return {...pill,x,unit:s,edge:x+(pill.east?-1:1)*s/2,pinned:!seen,items:pill.items.map((entry,k)=>({...entry,y:ys[k]})),
+        top:Math.min(...ys)-s*.75,height:Math.max(...ys)-Math.min(...ys)+s*1.5};
+    });
+  }
+  // The ports' lines ending on their items as placePorts stands them: on the
+  // border, the run from the item reaches the item's new edge; pinned to the
+  // canvas's edge, each line is cut where it crosses its item's lane by
+  // that edge, six pixels apart per item, and runs along the lane to its
+  // item. A line wholly beyond the canvas is not drawn.
+  function fitPortLines(edges,ports,pills){
+    if(pills===ports.pills)return edges;
+    const at=new Map();pills.forEach(pill=>pill.items.forEach((entry,k)=>at.set(entry.id,{pill,entry,k})));
+    return edges.flatMap(edge=>{
+      const id=ports.legs.has(edge.id)?[edge.outerFrom,edge.outerTo].find(end=>at.has(end)):'';
+      if(!id||!edge.outerSegments?.[0]?.length)return [edge];
+      const {pill,entry,k}=at.get(id),first=edge.outerFrom===id,points=first?edge.outerSegments[0]:edge.outerSegments[0].slice().reverse();
+      const inward=pill.east?-1:1,start={x:pill.edge,y:entry.y};
+      let line;
+      if(!pill.pinned){
+        line=points.map(point=>({...point}));line[0]=start;
+        // A lane beyond the item's new edge comes in to it.
+        if(line.length>2&&(line[1].x-pill.edge)*inward<0){const lane=pill.edge+inward*pill.unit/4;if(Math.abs(line[2].x-line[1].x)<1e-6)line[2].x=lane;line[1].x=lane;}
+      }else{
+        const lane=pill.edge+inward*pill.unit/4*(k+1);
+        let i=0;while(i<points.length-1&&!((points[i].x-lane)*inward<=0&&(points[i+1].x-lane)*inward>=0&&points[i].x!==points[i+1].x))i++;
+        if(i>=points.length-1)return [];
+        const a=points[i],b=points[i+1],cut={x:lane,y:a.y+(lane-a.x)/(b.x-a.x)*(b.y-a.y)};
+        line=[start,{x:lane,y:entry.y},cut,...points.slice(i+1)];
+      }
+      line=straightened(line);
+      return [{...edge,outerSegments:[first?line:line.reverse()]}];
+    });
   }
   // A route as one line of points, no point repeated and no turn that goes
   // on along the same line.
@@ -1325,7 +1389,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // program, the camera staying.
     const read=(entry,event)=>{event.stopPropagation();if(entry.program)select(entry.program,event,false);else if(pill.east)select(entry.id,event,false);else readKind(pill.frame,entry.activations,event);};
     return <div className={`flow-port nopan ${pill.east?'flow-port-outside':'flow-port-inputs'} ${chosen?'flow-port-chosen':''} ${muted?'flow-node-muted':''}`}
-      data-port={pill.key} data-port-frame={pill.frame||undefined} role="group" aria-label={pill.title} tabIndex={0} onClick={all}
+      data-port={pill.key} data-port-frame={pill.frame||undefined} data-port-pinned={pill.pinned?'':undefined} role="group" aria-label={pill.title} tabIndex={0} onClick={all}
       onKeyDown={event=>{if(event.target===event.currentTarget&&(event.key==='Enter'||event.key===' ')){event.preventDefault();all(event);}}}
       style={{transform:`translate(${pill.x-pill.unit/2}px,${pill.top}px) scale(${scale})`,height:pill.height/scale}}>
       {portSegments(pill).map(([top,bottom])=><span key={top} className="flow-port-segment" style={{top:(top-pill.top)/scale,height:(bottom-top)/scale}}/>)}
@@ -1378,7 +1442,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // anchored where the program's arrow enters it (outsideShrink).
     const shrunk=new Map([...outsideFits].filter(([id,fit])=>openComponents.has(fit.program)&&!ports?.hidden.has(id)));
     const shrunkDrawn=shrunk.size?shrinkOutside(layout,shrunk,rootOf):layout;
-    const outsideDrawn=ports?{...shrunkDrawn,edges:portEdges(shrunkDrawn.edges,ports)}:shrunkDrawn;
+    const portPills=placePorts(ports,portCamera);
+    const outsideDrawn=ports?{...shrunkDrawn,edges:fitPortLines(portEdges(shrunkDrawn.edges,ports),ports,portPills)}:shrunkDrawn;
     // A loose part among open areas' parts is drawn as tall as its card.
     const looseCards=new Map(detailed.size?outsideDrawn.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&!byID.get(n.id)?.note&&byID.get(n.parentId)?.branch==='component'&&(children.get(n.parentId)||[]).some(id=>byID.get(id)?.branch==='area'))
       .map(n=>[n.id,(byID.get(n.id)?.originalHeight||n.height)*(byID.get(n.id)?.contentScale||1)]):[]);
@@ -1670,7 +1735,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>closedGroup(n.id)&&visible(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} muted={muted(n.id)}
           select={(id,event)=>{hover.remember(event.clientX,event.clientY);focus(id);}}/>)}
-        {(ports?.pills||[]).map(pill=><PortPill key={pill.key} pill={pill} chosen={!!pill.frame&&view.scope===pill.frame||pill.items.some(entry=>view.scope===entry.id)} muted={!!pill.frame&&muted(pill.frame)}/>)}
+        {portPills.map(pill=><PortPill key={pill.key} pill={pill} chosen={!!pill.frame&&view.scope===pill.frame||pill.items.some(entry=>view.scope===entry.id)} muted={!!pill.frame&&muted(pill.frame)}/>)}
         {cardLabels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)} labels={cardLabels}/>)}
       </ViewportPortal>
     </ReactFlow>;

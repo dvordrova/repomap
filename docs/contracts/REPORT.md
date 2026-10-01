@@ -206,7 +206,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   area or part the camera stands in, and of the mark or system chosen, stay
   drawn whatever the pointer crosses, grey unless pointed at: the pointer
   coming onto one over the program's empty space had taken it away with its
-  card (owner, 2026-09-30: arrows no longer opened cards). A mark is
+  card (owner, 2026-09-30: arrows no longer opened cards). The ports keep
+  one screen size at every level, each item 24 pixels and its icon 16, the
+  capsule hugging them: closer than the program was laid out for, they
+  stand on its border where the camera shows it, else on the canvas's edge
+  nearest that border, in their order and inside the canvas, each line cut
+  where it crosses its item's lane by that edge (six pixels apart per item)
+  and run along it to its item; a line wholly beyond the canvas is not
+  drawn. They are placed where the camera comes to rest (owner, 2026-10-01:
+  zoomed into redis's Core they had grown with the map to icons a hundred
+  pixels tall). The geometry lint reports a port item off that size
+  (`port-size`). A mark is
   named in one line when pointed at or reached by the keyboard; a click
   reads that kind, system or program, a capsule elsewhere all of them, the
   camera staying.

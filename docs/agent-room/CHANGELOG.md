@@ -1,5 +1,29 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — An entered program's ports keep one screen size and stay in sight
+
+- **Ports** (`placePorts`, `fitPortLines`): closer than the program was
+  laid out for, its items are 24 px with 16 px icons, the capsule hugging
+  them, on its border where the camera shows it, else on the canvas's edge
+  nearest that border (sliding along a border in sight when none is beside
+  it), in order and inside the canvas; each line is cut where it crosses its
+  item's lane by that edge, 6 px apart per item, and runs along it to the
+  item. Placed where the camera comes to rest. Redis entered at Core: items
+  101 px, none in sight → 24 px, 9/9 in sight; at Event loop's declarations
+  likewise; freqtrade's areas 72–95 px → 24 px, 16/16 in sight.
+- **Geometry lint `port-size`**: a port item in sight off 20–28 px (icon
+  14–18), or none in sight with a program entered. bb65746c's redis render:
+  "no port of system-component-t1 in sight" at Core and Data type commands;
+  now none. A pinned pill's band at the canvas's edge is an overlay: its
+  lines' runs there crowd and coincide with nothing (freqtrade's Command and
+  configuration and Market data handling had 3 crowded, 1 coincide there).
+- **Checks** on the newest runs (redis 172218, litestream 172225, freqtrade
+  172239, othello 172542): geometry lint only the pre-existing small titles
+  (redis 2, litestream 2) and othello's clipped tile; web unit 140; visual
+  suite 59 passed, 5 skipped; go test and vet ./internal/report pass;
+  journeys 13/16, reading lints failing only on the column's 104 long folds.
+  Crops: scratchpad/eye14-canvas/compare/.
+
 ## 2026-10-01 — The area grid removed; every arrow opens its card; dark arrows on top; an input's place reads its kind
 
 - **Grid packing removed** (e9513614's `packedArea`/`packCards` and its

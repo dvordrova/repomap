@@ -20,8 +20,12 @@
 //   small     a name on the canvas reads under 11 CSS pixels, a part's
 //             description under 9;
 //   head      an arrowhead is as large as the box it points into;
-//   no-card   an arrow the pointer rests on opens no card.
-export const checks={near:3,font:11,head:10};
+//   no-card   an arrow the pointer rests on opens no card;
+//   port-size an entered program's port item on the canvas is not 20 to 28
+//             screen pixels, its icon 14 to 18, or none is in sight (owner,
+//             2026-10-01: zoomed to an area they had grown with the map to
+//             icons 100px tall, off the canvas).
+export const checks={near:3,font:11,head:10,port:[20,28],portIcon:[14,18]};
 
 // Runs in the page. `level` names where the camera stands.
 export function lintCanvas(level,near=3,readNames=true){
@@ -95,6 +99,14 @@ export function lintCanvas(level,near=3,readNames=true){
     const x1=Math.min(a.x,b.x),x2=Math.max(a.x,b.x),y1=Math.min(a.y,b.y),y2=Math.max(a.y,b.y);
     return Math.hypot(Math.max(0,r.left-x2,x1-r.right),Math.max(0,r.top-y2,y1-r.bottom));
   };
+  // An entered program's ports pinned to the canvas's edge, and their lanes
+  // beside them, are an overlay there (canvas.jsx placePorts): a line's run
+  // in that band to its item crowds and coincides with nothing.
+  const bands=[...root.querySelectorAll('[data-port-pinned]')].map(pill=>{
+    const r=pill.getBoundingClientRect(),items=new Set([...pill.querySelectorAll('[data-port-end]')].map(item=>item.dataset.portEnd)),lanes=6*(items.size+1)+2;
+    return {items,left:pill.dataset.port==='outside'?r.left-lanes:canvas.left-1,right:pill.dataset.port==='outside'?canvas.right+1:r.right+lanes};
+  });
+  const banded=(route,[a,b])=>bands.some(band=>route.ends.some(id=>band.items.has(id))&&[a,b].every(p=>p.x>=band.left&&p.x<=band.right));
   for(const route of routes){
     if(!route.hit)out.push({kind:'label',element:`arrow ${route.id} has no hit path`,level});
     const own=new Set(route.ends.flatMap(id=>[...ancestors(id)]));
@@ -102,7 +114,7 @@ export function lintCanvas(level,near=3,readNames=true){
       // Its ends, what holds them, and what they hold, are its own.
       if(own.has(box.id)||route.ends.some(id=>within(box.id,id)))continue;
       const r=rect(box);
-      if(segments(route).some(segment=>inside({left:Math.min(segment[0].x,segment[1].x),right:Math.max(segment[0].x,segment[1].x)+1,top:Math.min(segment[0].y,segment[1].y),bottom:Math.max(segment[0].y,segment[1].y)+1})&&distance(segment,r)<near))
+      if(segments(route).some(segment=>!banded(route,segment)&&inside({left:Math.min(segment[0].x,segment[1].x),right:Math.max(segment[0].x,segment[1].x)+1,top:Math.min(segment[0].y,segment[1].y),bottom:Math.max(segment[0].y,segment[1].y)+1})&&distance(segment,r)<near))
         out.push({kind:'crowded',element:`${route.id} (${route.ends.join('→')}) at ${box.id}`,level});
     }
     // 4b: an arrow ends on the border of the boxes at its ends, or of the
@@ -141,7 +153,7 @@ export function lintCanvas(level,near=3,readNames=true){
   for(let i=0;i<routes.length;i++)for(let j=i+1;j<routes.length;j++){
     const first=segments(routes[i]),second=segments(routes[j]);
     for(const [a,b,si] of first)for(const [c,d,sj] of second){
-      if(trunk(routes[i],routes[j],si,sj))continue;
+      if(trunk(routes[i],routes[j],si,sj)||banded(routes[i],[a,b])||banded(routes[j],[c,d]))continue;
       const flat=(p,q)=>Math.abs(p.y-q.y)<.5,upright=(p,q)=>Math.abs(p.x-q.x)<.5;
       const span=(p,q,r,s,axis)=>Math.min(Math.max(p[axis],q[axis]),Math.max(r[axis],s[axis]))-Math.max(Math.min(p[axis],q[axis]),Math.min(r[axis],s[axis]));
       if(flat(a,b)&&flat(c,d)&&Math.abs(a.y-c.y)<1&&span(a,b,c,d,'x')>6||upright(a,b)&&upright(c,d)&&Math.abs(a.x-c.x)<1&&span(a,b,c,d,'y')>6){
@@ -164,6 +176,17 @@ export function lintCanvas(level,near=3,readNames=true){
     const into=placed.get(route.ends.at(-1));if(!into||!into.shown)continue;
     const r=rect(into);
     if(Math.min(r.right-r.left,r.bottom-r.top)<=10&&inside(r))out.push({kind:'head',element:`${route.id} into ${into.id}`,level});
+  }
+  // 9: an entered program's ports stand in sight at one screen size at
+  // every level.
+  const portItems=[...root.querySelectorAll('[data-port-end]')].filter(shown);
+  if(map.dataset.enteredProgram&&portItems.length&&!portItems.some(item=>inside(item.getBoundingClientRect())))out.push({kind:'port-size',element:`no port of ${map.dataset.enteredProgram} in sight`,level});
+  for(const item of portItems){
+    const r=item.getBoundingClientRect(),icon=item.querySelector('svg')?.getBoundingClientRect();
+    if(!inside(r))continue;
+    // checks.port and checks.portIcon: this runs serialized in the page.
+    if(r.width<19.5||r.width>28.5||icon&&(icon.width<13.5||icon.width>18.5))
+      out.push({kind:'port-size',element:`${item.dataset.portEnd} ${r.width.toFixed(0)}px, icon ${icon?icon.width.toFixed(0):0}px`,level});
   }
   // 6: no kind label, plaque or lone number on the canvas.
   for(const el of root.querySelectorAll('.flow-kind,.flow-connection-label,.flow-boundary-label,.flow-inside-counts'))if(shown(el))out.push({kind:'label',element:name(el),level});
