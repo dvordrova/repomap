@@ -638,7 +638,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       geometry=next;sceneCache={key:'',scene:null};
       layoutKey=String(Math.round(geometry.bounds.width))+'x'+String(Math.round(geometry.bounds.height));
       store.dispatch({type:'relayout'});
-      if(overviewFit)fitOverview();
+      // The whole map is fitted again; a level entered is framed again in
+      // its new place.
+      const level=store.getState().level;
+      if(overviewFit||!level.length)fitOverview();
+      else moveCamera(frameCamera(sceneOf(store.getState()).focus,levelZoom(level)),false);
     },250);
   }).observe(host);
 

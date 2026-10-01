@@ -12,7 +12,30 @@ import {wrapText} from './cards.mjs';
 import {tileGrid} from './symbols.mjs';
 
 let engine;
-const native=graph=>(engine||=new ELK()).layout(graph);
+// ELK can throw on a graph it places with one option and not another
+// (old canvas: a NullPointerException with native ports, RIGHT and layer
+// unzipping on Redis). A graph that fails is laid out again with ELK's own
+// node placement and layering, then without separating its components;
+// the map fails only when none of these places it.
+const fallbacks=[
+  {},
+  {'elk.layered.nodePlacement.bk.fixedAlignment':undefined,'elk.layered.layering.strategy':undefined},
+  {'elk.layered.nodePlacement.bk.fixedAlignment':undefined,'elk.separateConnectedComponents':'false'},
+];
+const without=(options,change)=>{
+  const out={...options};
+  for(const [name,value] of Object.entries(change))if(value===undefined)delete out[name];else out[name]=value;
+  return out;
+};
+const relaid=(node,change)=>({...node,layoutOptions:node.layoutOptions&&without(node.layoutOptions,change),children:node.children?.map(child=>relaid(child,change))});
+async function native(graph){
+  let failure;
+  for(const [i,change] of fallbacks.entries()){
+    try{return await (engine||=new ELK()).layout(i?structuredClone(relaid(graph,change)):graph);}
+    catch(error){failure||=error;}
+  }
+  throw failure;
+}
 
 // Inside a program arrows run down: their ends stand on the boxes' tops
 // and bottoms, leaving the left and right edges to the markers (PLAN B).
