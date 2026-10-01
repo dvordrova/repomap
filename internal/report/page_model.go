@@ -28,6 +28,8 @@ type pageView struct {
 	Language         DisplayLanguage
 	UIVocabularyJSON template.JS
 	TermMentionsJSON template.JS
+	// SceneJSON is the report's saved scene (scene.go) as the page reads it.
+	SceneJSON template.JS
 	RepoName         string
 	Revision         string
 	ShortRevision    string

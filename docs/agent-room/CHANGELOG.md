@@ -1,5 +1,29 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — The scene canvas's facts are saved with the report (data 2)
+
+- report.json format 94 saves `scene` (`internal/report/scene.go`): where
+  each input takes effect (`inputs`: kind, program, parts, handled, the
+  handler's place), who calls each outside system (`systems`), each part's
+  outside calls by the declaration making them (`calls`) and one record
+  per directed pair of programs (`program_pairs`: runtime, the relation
+  positions it stands for, connects_to folded into its caller's pair). It
+  is read once when the report is assembled, off the system map the page
+  draws with every declaration keyed by its place, so it holds whatever
+  links a later render gives; the page carries it verbatim as
+  `#rm-scene`, a render deriving nothing. A handler and a caller are
+  `{path, line}`, the place a part's `symbols` entries now also carry
+  (`line`). Fixture: `TestThePageShowsTheSavedSceneWhateverItsLinks`
+  (none, GitHub, GitHub without the files, served).
+- Ordinary runs (exit 0): redis 20261001-174152, litestream
+  20261001-174326, casdoor 20261001-174535. buildModel's own derivation on
+  each captured page agrees with the saved scene with no difference:
+  inputs 242 / 172 / 1,116, systems 2 / 9 / 95, calling parts 3 / 9 / 29,
+  program pairs 2 / 2 / 1. Page size +40 KB on redis (3.95 MB, 1.0%:
+  scene 28 KB, symbol lines 12 KB), +48 KB on litestream (0.8%), +279 KB
+  on casdoor (22.3 MB, 1.3%). Publication builds the page once more:
+  redis 11.9 s → 13.5 s under load 20–30.
+
 ## 2026-10-01 — A call into the repository's own Go package is offered its programs (data 2)
 
 - **fb6e599c (this run's one request change):** etcd's "etcd" / "Etcd

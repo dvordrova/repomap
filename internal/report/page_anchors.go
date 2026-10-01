@@ -34,10 +34,12 @@ type pageLinks struct {
 	pathPrefix    string
 	sourceIDs     map[string]string
 	unavailable   map[string]bool
+	// keyed opens every path, keyed by its place (sceneKey).
+	keyed bool
 }
 
 func newPageLinks(data *ReportData) pageLinks {
-	links := pageLinks{sourceIDs: data.SourceIDs, unavailable: make(map[string]bool, len(data.UnavailableSourcePaths))}
+	links := pageLinks{sourceIDs: data.SourceIDs, unavailable: make(map[string]bool, len(data.UnavailableSourcePaths)), keyed: data.sceneKeys}
 	for _, sourcePath := range data.UnavailableSourcePaths {
 		links.unavailable[sourcePath] = true
 	}
@@ -79,6 +81,8 @@ func (links pageLinks) anchor(path string, line, column int) pageAnchor {
 		return anchor
 	}
 	switch {
+	case links.keyed:
+		anchor.Open = sceneKey(path, max(line, 0), max(column, 0))
 	case links.static() && links.unavailable[path]:
 		anchor.NoSource = true
 	case links.static():

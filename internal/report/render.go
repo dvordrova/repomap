@@ -171,6 +171,9 @@ func executeProgramReport(data *ReportData, options RenderOptions, localRoots []
 		return nil, err
 	}
 	view.UIVocabularyJSON = template.JS(encodedVocabulary)
+	if view.SceneJSON, err = sceneJSON(data.Scene); err != nil {
+		return nil, err
+	}
 	styles, err := bundledTemplateAssets("templates/css")
 	if err != nil {
 		return nil, err
@@ -597,6 +600,11 @@ func generate(
 		}
 	}
 
+	// What the scene canvas draws is read once here, off the page the
+	// report draws, and saved: the page shows it and derives nothing.
+	if data.Scene, err = deriveScene(data); err != nil {
+		return RunReceipt{}, fmt.Errorf("report: scene: %w", err)
+	}
 	reportJSON, err := encodeReportJSON(data, 0)
 	if err != nil {
 		return RunReceipt{}, err

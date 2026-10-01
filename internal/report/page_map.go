@@ -2059,6 +2059,10 @@ type pageNodeSymbol struct {
 	// by file. Open is its source in a served report, as Href is in a static
 	// one: the reading names a declaration by the same source.
 	Path string `json:"path,omitempty"`
+	// Line is the declaration's line in Path: with Path, the declaration's
+	// place whatever links the page has, as the scene names a handler and a
+	// caller (SceneSource).
+	Line int    `json:"line,omitempty"`
 	Open string `json:"open,omitempty"`
 	// Code is the link to all of its lines, where Href names the first.
 	Code string `json:"code,omitempty"`
@@ -2186,7 +2190,7 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		symbol.Quiet = builder.neverRun(targetID, id)
 		symbol.Text = symbolText(object, name)
 		if anchor != nil {
-			symbol.Href, symbol.Open, symbol.Path, symbol.Code = anchor.Href, anchor.Open, anchor.Path, anchor.Code
+			symbol.Href, symbol.Open, symbol.Path, symbol.Line, symbol.Code = anchor.Href, anchor.Open, anchor.Path, anchor.Line, anchor.Code
 		}
 		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
 			symbol.Key = true

@@ -13,7 +13,7 @@ import (
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 93
+const CurrentFormatVersion = 94
 
 // MaxReportJSONBytes is the former ordinary report.json threshold. It is
 // advisory only; complete validated report authority is never rejected or
@@ -58,6 +58,10 @@ type ReportData struct {
 	// ordinary run: the files a term appears in, not its analysis context.
 	GlossaryOccurrences []terminology.TermOccurrences `json:"glossary_occurrences,omitempty"`
 
+	// Scene is what the scene canvas draws, read off the page when the
+	// report is assembled (scene.go): the page shows it and derives nothing.
+	Scene *SceneFacts `json:"scene,omitempty"`
+
 	OpenablePaths []string          `json:"openable_paths"`
 	SourceIDs     map[string]string `json:"source_ids,omitempty"`
 
@@ -84,6 +88,9 @@ type ReportData struct {
 	localGroupsIndex                    *groupindex.Index
 	reducedDocumentation                *documentationreduce.Result
 	targetMetadataBytes                 int
+	// sceneKeys has a page key every declaration by its place, whatever
+	// its links (deriveScene).
+	sceneKeys bool
 }
 
 // RunTiming mirrors the run's Time stage as the page reads it.
