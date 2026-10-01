@@ -413,12 +413,12 @@ export function invariantKit(){
         const name=el.querySelector('.flow-chip-name'),r=el.getBoundingClientRect(),style=name&&getComputedStyle(name);
         const px=name?parseFloat(style.fontSize)*(name.offsetHeight?name.getBoundingClientRect().height/name.offsetHeight:1):0;
         return {id:el.closest('.react-flow__node')?.dataset.id||'',title:(name?.getAttribute('title')||name?.textContent||'').replace(/\s+/g,' ').trim(),
-          faded:!name||parseFloat(style.opacity)<.999||px<11-.05,px,aria:el.getAttribute('aria-label')||'',focusable:el.tabIndex>=0,
+          faded:!name||parseFloat(style.opacity)<.5,small:!!name&&parseFloat(style.opacity)>=.5&&px<11-.05,px,aria:el.getAttribute('aria-label')||'',focusable:el.tabIndex>=0,
           x:r.left+r.width/2,y:r.top+r.height/2,inSight:r.left+r.width/2>c.l+4&&r.left+r.width/2<c.r-4&&r.top+r.height/2>c.t+4&&r.top+r.height/2<c.b-4};
       }).filter(chip=>chip.inSight);
     },
     // The name a tip gives to what is pointed at or focused.
-    tipNames(){return [...document.querySelectorAll('.scene-tip.scene-tip-name b')].filter(shown).map(b=>b.textContent.replace(/\s+/g,' ').trim());},
+    tipNames(){return [...document.querySelectorAll('.scene-tip b')].filter(shown).map(b=>b.textContent.replace(/\s+/g,' ').trim());},
     focusChip(id){const el=root().querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"] .flow-chip`);el?.focus();return document.activeElement===el;},
     blur(){document.activeElement?.blur?.();},
     cardOpen(){return [...document.querySelectorAll('.flow-floating-card')].some(shown);},

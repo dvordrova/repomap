@@ -110,6 +110,8 @@ for(const target of targets)for(const path of paths){
         // A chip whose name fades is named when pointed at and when focused,
         // and carries its name for assistive technology.
         for(const chip of await page.evaluate(()=>window.__inv.chips())){
+          // A name drawn under 11 px and not faded reads too small.
+          if(chip.small){add('chip-text',false,`${chip.id} "${chip.title}" drawn at ${chip.px.toFixed(1)}px, not faded`);continue;}
           if(!chip.faded){add('chip-text',true,'');continue;}
           phase=`pointing at chip ${chip.id}`;
           await page.mouse.move(chip.x,chip.y,{steps:2});await page.waitForTimeout(180);
