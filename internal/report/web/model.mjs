@@ -1,8 +1,11 @@
 // The display graph the scene canvas draws (PLAN S1), built once from the
 // page's data: what stands in what, the arrows between the things drawn,
-// the Outside frames grouped by part (B′) and the markers every box
-// carries. It is pure: no layout, no camera, no DOM. The page's records,
-// relations and readings are unchanged; this is display containment only.
+// the Outside frames grouped by part (B′), the markers every box carries,
+// the whole map's arrows and a frame's connections. It is pure: no layout,
+// no camera, no DOM. It is the one place facts are derived in the browser
+// (owner, 2026-10-01): levels, scene and overlay read only the model, and
+// the facts' saved shapes are in REPORT.md's Scene model. The page's
+// records, relations and readings are unchanged.
 import {prepareCards} from './cards.mjs';
 import {connections} from './layout.mjs';
 
@@ -346,6 +349,3 @@ function frameGroupsOf(model,id){
   if(!model.nodes.has(id))return [];
   return connections(id,frameMembers(model,id),model.edges,outsideOf(model,id));
 }
-// The model's things a scene can draw as boxes, by kind: what a box at
-// each level stands for.
-export const containerKinds=new Set(['program','area','inputs','kind','outside','bucket']);
