@@ -178,7 +178,10 @@ export function invariantKit(){
         const fromRect=rectOf(from),toRect=rectOf(to),fromEnds=endRects(from),toEnds=endRects(to);
         const startOn=fromEnds.some(e=>within(first,e))||!!fromRect&&onBorder(first,fromRect);
         const endOn=toEnds.some(e=>within(last,e))||!!toRect&&onBorder(last,toRect);
-        add('own-ends',startOn&&endOn,`${name}: ${startOn?'':`starts off ${from||'nothing'}${fromRect?'':' (not drawn)'}`}${!startOn&&!endOn?'; ':''}${endOn?'':`ends off ${to||'nothing'}${toRect?'':' (not drawn)'}`}`);
+        // How far an end stands from its box's border, in screen pixels.
+        const off=(p,r)=>{if(!r)return ' (not drawn)';const dx=Math.max(r.l-p.x,0,p.x-r.r),dy=Math.max(r.t-p.y,0,p.y-r.b),inside=!dx&&!dy;
+          return ` by ${(inside?Math.min(p.x-r.l,r.r-p.x,p.y-r.t,r.b-p.y):Math.hypot(dx,dy)).toFixed(1)}px ${inside?'inside':'outside'}`;};
+        add('own-ends',startOn&&endOn,`${name} at zoom ${cam.zoom.toFixed(2)}: ${startOn?'':`starts off ${from||'nothing'}${off(first,fromRect)}`}${!startOn&&!endOn?'; ':''}${endOn?'':`ends off ${to||'nothing'}${off(last,toRect)}`}`);
         // The head stands at the target end and the last segment enters it.
         let headOk=head==='end'||head==='both',why=headOk?'':`head ${head}`;
         if(headOk&&toRect&&onBorder(last,toRect)&&!toEnds.some(e=>within(last,e))){
@@ -295,7 +298,18 @@ export function invariantKit(){
         for(const [side,ms] of Object.entries(sides)){
           if(ms.length>3)why.push(`${ms.length} on ${side}`);
           if(b&&ms.length){const top=Math.min(...ms.map(m=>m.r.t)),bottom=Math.max(...ms.map(m=>m.r.b));if(bottom-top>b.height+1)why.push(`${side} stack ${Math.round(bottom-top)} px on a ${Math.round(b.height)} px box`);}
-          if(b)for(const m of ms){const x=side==='in'?b.left:b.right;if(m.r.l>x+1||m.r.r<x-1)why.push(`${side} marker off its edge`);}
+          // In each row the marker nearest the box touches its edge and the
+          // others follow it (scene.test.mjs: a row's first marker touches).
+          if(b){
+            const x=side==='in'?b.left:b.right,rows=new Map();
+            for(const m of ms){const y=Math.round((m.r.t+m.r.b)/2);const key=[...rows.keys()].find(k=>Math.abs(k-y)<=1)??y;if(!rows.has(key))rows.set(key,[]);rows.get(key).push(m);}
+            for(const row of rows.values()){
+              row.sort((a,c)=>side==='in'?c.r.r-a.r.r:a.r.l-c.r.l);
+              const near=side==='in'?row[0].r.r:row[0].r.l;
+              if(Math.abs(near-x)>1.5)why.push(`${side} marker ${(near-x).toFixed(1)}px off its edge`);
+              for(let i=1;i<row.length;i++){const gap=side==='in'?row[i-1].r.l-row[i].r.r:row[i].r.l-row[i-1].r.r;if(gap>3)why.push(`${side} markers ${gap.toFixed(1)}px apart in a row`);}
+            }
+          }
         }
         if(!b)why.push('its box is not drawn');
         if(why.length){out.failed++;if(out.examples.length<8)out.examples.push(`${id}: ${[...new Set(why)].join(', ')}`);}
