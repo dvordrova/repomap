@@ -673,10 +673,17 @@ func (b *builder) collectEdges(target TargetInput) {
 				continue
 			}
 			callee := b.byID[toID]
-			b.addEdge(atlas.FileID(from), atlas.FileID(to), kind, atlas.Witness{
+			static := (relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationExecutes) &&
+				relation.Dispatch == "" && relation.Resolution == programindex.ResolutionExact
+			edge := b.addEdge(atlas.FileID(from), atlas.FileID(to), kind, atlas.Witness{
 				Caller: displayName(caller, b.byID), Callee: displayName(callee, b.byID),
 				Path: from, LineNo: relationLine(relation),
 			})
+			edge.Static = edge.Static || static
+			if !slices.Contains(edge.Targets, target.Index.Target.ID) {
+				edge.Targets = append(edge.Targets, target.Index.Target.ID)
+				slices.Sort(edge.Targets)
+			}
 			b.file(from).callees[to] = struct{}{}
 			b.file(to).callers[from] = struct{}{}
 		}
@@ -727,7 +734,7 @@ func displayName(object programindex.Object, byID map[string]programindex.Object
 	return name
 }
 
-func (b *builder) addEdge(from, to, kind string, witness atlas.Witness) {
+func (b *builder) addEdge(from, to, kind string, witness atlas.Witness) *atlas.Edge {
 	key := edgeKey{from, to, kind}
 	edge, ok := b.edges[key]
 	if !ok {
@@ -739,6 +746,7 @@ func (b *builder) addEdge(from, to, kind string, witness atlas.Witness) {
 		witness.Kind = kind
 		edge.Witnesses = append(edge.Witnesses, witness)
 	}
+	return edge
 }
 
 // collectImports adds directory-to-directory edges for Go package imports of
@@ -767,7 +775,7 @@ func (b *builder) collectImports(target TargetInput) {
 				continue
 			}
 			// An import has no call site to witness; the edge counts alone.
-			b.addEdge(atlas.DirectoryID(from), atlas.DirectoryID(to), "imports", atlas.Witness{})
+			b.addEdge(atlas.DirectoryID(from), atlas.DirectoryID(to), "imports", atlas.Witness{}).Static = true
 		}
 	}
 }

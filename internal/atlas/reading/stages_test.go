@@ -488,9 +488,19 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 	graph := twoTargetGraph(t)
 	// web's client calls svc's handler file directly: a seam between targets.
 	graph.Edges = append(graph.Edges, atlas.Edge{
-		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("svc/api/h.go"), Kind: "calls", Count: 1,
+		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("svc/api/h.go"), Kind: "calls", Count: 1, Static: true,
 		Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 7}},
 	})
+	// A callback web's own program hands svc's handler is web's use of it;
+	// an implementation only svc's program binds there is svc's own wiring
+	// of web's code, no use of svc by web (etcd's server had "used"
+	// raftexample's Raft node: rafthttp, the server's code, calls it only
+	// inside raftexample).
+	graph.Edges = append(graph.Edges,
+		atlas.Edge{From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("svc/api/h.go"), Kind: "passes_callback", Count: 1, Targets: []string{"web"},
+			Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 9}}},
+		atlas.Edge{From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("svc/api/h.go"), Kind: "binds_implementation", Count: 1, Targets: []string{"svc"},
+			Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 10}}})
 	// A shared package under neither root that only svc happened to index is
 	// not svc's: a call into it from web is no seam between the two.
 	graph.Places = append(graph.Places,
@@ -505,7 +515,7 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 			File: &atlas.FileFacts{Callers: []string{atlas.FileID("web/src/client.ts")}, Callees: []string{}, Decls: []atlas.Decl{}},
 		})
 	graph.Edges = append(graph.Edges, atlas.Edge{
-		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("shared/pb/p.go"), Kind: "imports", Count: 9,
+		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("shared/pb/p.go"), Kind: "imports", Count: 9, Static: true,
 		Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 8}},
 	})
 	sort.Slice(graph.Places, func(i, j int) bool { return graph.Places[i].ID < graph.Places[j].ID })
@@ -544,12 +554,12 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 			}
 			return ""
 		}
-		if joint.From.TargetID != "web" || !strings.Contains(boxPath("web", joint.From.BoxID), "web/src/client.ts") || joint.To.TargetID != "svc" || !strings.Contains(boxPath("svc", joint.To.BoxID), "svc/api/h.go") || !joint.Same || joint.Possible {
+		if joint.From.TargetID != "web" || !strings.Contains(boxPath("web", joint.From.BoxID), "web/src/client.ts") || joint.To.TargetID != "svc" || !strings.Contains(boxPath("svc", joint.To.BoxID), "svc/api/h.go") || !joint.Same || joint.Possible || joint.SourceKind == "binds_implementation" {
 			t.Fatalf("link joint: %+v", joint)
 		}
 	}
-	if links != 1 {
-		t.Fatalf("link joints: %d", links)
+	if links != 2 {
+		t.Fatalf("link joints: %d, want the call and web's callback", links)
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)

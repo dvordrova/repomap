@@ -493,6 +493,14 @@ func (r *reader) linkJoints() []atlas.Joint {
 	var joints []atlas.Joint
 	for _, edge := range r.opts.Graph.Edges {
 		for _, fromTarget := range r.places[edge.From].TargetIDs {
+			// A call through an interface or a stored callback is the
+			// wiring of the programs that make it (Edge.Static): another
+			// program linking the caller's code is no use of it by the
+			// caller's own program (etcd's server had "used" raftexample's
+			// Raft node and etcdutl's lessor).
+			if !edge.Static && !contains(edge.Targets, fromTarget) {
+				continue
+			}
 			fromBox := r.boxFor(fromTarget, edge.From)
 			if fromBox == "" {
 				continue

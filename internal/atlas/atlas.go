@@ -618,6 +618,14 @@ type Edge struct {
 	Count     int           `json:"count"`
 	Witnesses []Witness     `json:"witnesses"`
 	Evidence  *EdgeEvidence `json:"evidence,omitempty"`
+	// Static marks an edge one program's code makes whatever program links
+	// it: an import, or a direct call or execution of one exact target. A
+	// call through an interface, a function value or a stored callback is
+	// the linking program's own wiring, observed only by the programs in
+	// Targets: etcd's rafthttp calls raftexample's raftNode.Process only
+	// inside raftexample, which links rafthttp and stores its node there.
+	Static  bool     `json:"static,omitempty"`
+	Targets []string `json:"targets,omitempty"`
 }
 
 // Graph is places.json: every place, every edge, the seeds the file rounds

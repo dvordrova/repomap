@@ -308,7 +308,40 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 		}
 	}
 	fmt.Fprintln(&r.tables)
+	foldDestinationSpellings(states)
 	return nil
+}
+
+// foldDestinationSpellings writes one system's name one way in every
+// program: names equal but for letter case are one name, spelled as the
+// first row by ID and program names it (etcd's windows had answered "DNS
+// Resolver" and "DNS resolver", "Etcd Server" and "Etcd server", and its
+// home stood a shared Outside frame for each spelling). The systems
+// question asks for one name per system; only its case is the code's.
+func foldDestinationSpellings(states []*boundaryState) {
+	ordered := slices.Clone(states)
+	sort.Slice(ordered, func(i, j int) bool { return compactIDLess(ordered[i].place.ID, ordered[j].place.ID) })
+	first := map[string]string{}
+	for _, state := range ordered {
+		targets := make([]string, 0, len(state.destinations))
+		for target := range state.destinations {
+			targets = append(targets, target)
+		}
+		sort.Strings(targets)
+		for _, target := range targets {
+			name := state.destinations[target]
+			if _, seen := first[strings.ToLower(name)]; !seen && name != "" {
+				first[strings.ToLower(name)] = name
+			}
+		}
+	}
+	for _, state := range ordered {
+		for target, name := range state.destinations {
+			if spelled := first[strings.ToLower(name)]; spelled != "" {
+				state.destinations[target] = spelled
+			}
+		}
+	}
 }
 
 // sdkService is the outside package a destination's rows all reach a

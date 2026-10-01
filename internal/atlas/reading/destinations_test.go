@@ -595,3 +595,30 @@ func TestOneServiceBehindAPackageIsOneDestinationInEveryProgram(t *testing.T) {
 		t.Fatalf("destinations = %v, resolver asked %d times; want %v, asked once", got, resolvers, want)
 	}
 }
+
+// One system's name is written one way in every program: names equal but
+// for letter case are the first spelling (etcd's home had stood a shared
+// Outside frame for "DNS Resolver" and another for "DNS resolver").
+func TestDestinationNamesEqualButForCaseAreOneSpelling(t *testing.T) {
+	state := func(id string, names map[string]string) *boundaryState {
+		return &boundaryState{place: atlas.Place{ID: id}, destinations: names}
+	}
+	states := []*boundaryState{
+		state("b12", map[string]string{"server": "DNS resolver"}),
+		state("b3", map[string]string{"pkg": "DNS Resolver", "client": "Etcd server"}),
+		state("b7", map[string]string{"server": "Etcd Server", "tools": "GitHub"}),
+	}
+	foldDestinationSpellings(states)
+	got := map[string]map[string]string{}
+	for _, s := range states {
+		got[s.place.ID] = s.destinations
+	}
+	want := map[string]map[string]string{
+		"b12": {"server": "DNS Resolver"},
+		"b3":  {"pkg": "DNS Resolver", "client": "Etcd server"},
+		"b7":  {"server": "Etcd server", "tools": "GitHub"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("spellings %v, want %v", got, want)
+	}
+}

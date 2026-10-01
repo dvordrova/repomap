@@ -42,3 +42,11 @@ func registerCallbacks(items []string) []func() {
 	}
 	return callbacks
 }
+
+// The worker's own hook, which the shared storefixture code runs in the
+// worker alone.
+type workerHook struct{}
+
+func (workerHook) Run() { processPendingJobs() }
+
+func runWorkerHook() { storefixture.RunLinkedHook(workerHook{}) }

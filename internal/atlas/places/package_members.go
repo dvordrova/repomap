@@ -101,7 +101,9 @@ func (b *builder) joinPackageUses() {
 			if to == use.from {
 				continue
 			}
-			b.addEdge(atlas.FileID(use.from), atlas.FileID(to), use.kind, use.witness)
+			// A call or an import naming another target's member is
+			// static, made wherever the importing code is linked.
+			b.addEdge(atlas.FileID(use.from), atlas.FileID(to), use.kind, use.witness).Static = true
 			b.file(use.from).callees[to] = struct{}{}
 			b.file(to).callers[use.from] = struct{}{}
 		}

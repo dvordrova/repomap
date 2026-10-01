@@ -449,7 +449,15 @@ branch for a split file:
 - Learn's evidence of a file with no part names no area; its declarations name
   their parts. A cross-target joint of a file edge into or out of a file with
   no part names no part and is not drawn; its declarations' calls still join
-  their parts inside the target.
+  their parts inside the target. A file edge is a program's use of another
+  only when its code makes it wherever it is linked (places `Edge.Static`:
+  an import, or a direct call or execution of one exact target) or the
+  program's own index observes it (`Edge.Targets`): a call through an
+  interface or a stored callback is the wiring of the programs making it
+  (2026-10-01: etcd's server had "used" raftexample's Raft node and
+  etcdutl's lessor, as rafthttp and mvcc, the server's code, call them
+  inside raftexample and etcdutl alone; the Go fixture's
+  `hookedRun.fire`, `TestSharedCodesInterfaceCallIsTheLinkingProgramsWiring`).
 
 **Membership and the off-map record.** The atlas saves explicit `member_ids`
 per part and a per-target `off_map` record: every file, or stray declaration,
@@ -1149,7 +1157,11 @@ wherever written (a URL's host, a setting), are one destination in every
 program: asked once, where asked first, and named alike everywhere by that
 answer (2026-09-30: redis-server's `gethostbyname` had read "Resolver",
 redis-cli's and redis-benchmark's "System Resolver";
-`TestOneServiceBehindAPackageIsOneDestinationInEveryProgram`). No fixture looks an address up
+`TestOneServiceBehindAPackageIsOneDestinationInEveryProgram`). Destination
+names equal but for letter case are one name in every program, spelled as
+the first row by ID names it (2026-10-01: etcd's "DNS Resolver" and "DNS
+resolver", "Etcd Server" and "Etcd server" had stood as separate shared
+Outside frames; `TestDestinationNamesEqualButForCaseAreOneSpelling`). No fixture looks an address up
 yet: C's `netConnect` converts one with `inet_pton`, no lookup (sdk is not
 for a conversion), and the Go, Python, JS/TS and Clojure fixtures resolve
 no host. An

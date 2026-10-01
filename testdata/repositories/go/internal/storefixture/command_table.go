@@ -249,3 +249,15 @@ func SyncReplica(kind, key string) {
 		r.sync(key)
 	}
 }
+
+// A hook the shared code runs is the linking program's own: cmd/worker hands
+// its hook here, and cmd/app, which links this code too, runs none. The call
+// through the field is the worker's wiring, no use of the worker by the app
+// (etcd's server had "used" raftexample's Raft node this way).
+type LinkedHook interface{ Run() }
+
+type hookedRun struct{ hook LinkedHook }
+
+func (h *hookedRun) fire() { h.hook.Run() }
+
+func RunLinkedHook(hook LinkedHook) { (&hookedRun{hook: hook}).fire() }
