@@ -2,11 +2,12 @@
 // size by ELK, bottom-up, each level its own graph with final routes. An
 // area lays out its parts; a program its areas and loose parts, its links
 // to other programs ending on ports of its border; the whole map its
-// programs, Inputs and Outside frames. A box at one level is exactly as
-// large as the level inside it, so zooming in finds the inner level where
-// the outer one drew its box. No wrapping, no grid, no size floors and no
-// edit after layout: an area too large for the canvas is the camera's job.
-// Arrowless collections (chips, inputs' names) are packed in rows.
+// programs, Inputs and Outside frames. A box at one level is a card holding
+// the level inside it at one scale, so zooming in finds the inner level
+// where the outer one drew its card. No wrapping, no grid, no size floors
+// and no edit after layout: an area too large for the canvas is the
+// camera's job. Arrowless collections (chips, inputs' names) are packed in
+// rows.
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {wrapText} from './cards.mjs';
 import {tileGrid} from './symbols.mjs';
@@ -52,8 +53,9 @@ const interior={
   'elk.layered.spacing.edgeNodeBetweenLayers':'28','elk.layered.spacing.edgeEdgeBetweenLayers':'20',
   'elk.spacing.portPort':'20',
 };
-// The whole map keeps ELK's own spacing (owner, 2026-09-29), its flow from
-// the Inputs through the programs to the Outside frames left to right.
+// The whole map, its flow from the Inputs through the programs to the
+// Outside frames left to right, keeps room for its arrows (owner,
+// 2026-09-29): ELK's spacing, its lanes as far apart as its edges.
 const outer={
   'elk.algorithm':'layered','elk.direction':'RIGHT','elk.edgeRouting':'ORTHOGONAL','elk.randomSeed':'1',
   'elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true',
@@ -63,7 +65,6 @@ const outer={
   // Arrows leaving one side of a box as far apart as lanes.
   'elk.spacing.portPort':'14',
 };
-
 
 // Sizes, in each level's own units: a part's card is cards.mjs's (260 wide,
 // its title at 17px); the whole map's text is 1 unit to a pixel.
@@ -75,7 +76,6 @@ export const units={
   band:text=>Math.round(48*text+12),
   // A program's card on the whole map.
   programCard:{width:240,minHeight:72,font:'700 17px system-ui',line:21.25,role:'600 13px system-ui',text:'13px system-ui',textLine:18,pad:14},
-  // A chip names an outside system in at most two lines.
   // A chip names an outside system in one cell of its frame's grid, its
   // name in at most two lines after its kind's mark; a bucket is a cell
   // taller by its systems' marks.
