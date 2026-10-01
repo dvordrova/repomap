@@ -1184,7 +1184,7 @@ rewritten canvas runs only behind `?scene=1` (`internal/report/web/scene-canvas.
 the canvas above stays the default.
 
 - `model.mjs` `buildModel(page)` builds the display graph from the page's
-  data: programs, areas, parts and the note keep the page's containment; a
+  data and the saved scene: programs, areas, parts and the note keep the page's containment; a
   program's inputs stand in its Inputs frame by kind, never by part; an
   outside system is one chip standing for its call records. An Outside
   frame holds, in order, the systems two or more parts call (the most
@@ -1197,31 +1197,34 @@ the canvas above stays the default.
   here"), else in its program. Inside an entered part a handled input's
   marker stands on its handler's tile and an outside call's on its caller's;
   an input with no known handler stays on the part's edge.
-- The facts the canvas draws are derived only behind `buildModel`'s one
-  input boundary (owner, 2026-10-01: "у html должна быть простая задача —
-  вот данные, показываю"); they are saved, and `buildModel` is to read
-  them instead of deriving them. When the report is assembled
+- The facts the canvas draws are saved with the report and read as saved
+  (owner, 2026-10-01: "у html должна быть простая задача — вот данные,
+  показываю"): `buildModel` derives none; where the page's relations say
+  otherwise it follows the saved scene, and with none saved it draws no
+  marker, caller or pair of programs (`model.test.mjs`, "buildModel draws
+  the facts saved with the report and derives none of its own"). When the report is assembled
   (`report.generate`), `scene.go` reads them once off the system map the
   page draws, its declarations keyed by their places whatever links a later
   render gives the page, and saves them as report.json's `scene`; the page
   carries it as saved in `<script type="application/json" id="rm-scene">`
   (`programPairs` there, `program_pairs` in report.json), a render deriving
   nothing (`TestThePageShowsTheSavedSceneWhateverItsLinks`; on Redis
-  buildModel's own derivation agrees on all 242 inputs). Layout, camera, hover
+  the browser derivation it replaced agreed on all 242 inputs). Layout, camera, hover
   and emphasis stay in the browser. `buildModel` reads the page's canvas
-  input `{items, relations, areas, inputOwner}`: of an item `id`, `title`,
-  `branch` (component, area, inputs, outside, communication), `category`,
-  `activation`, `lane`, `summary`, `role`, `children`, `componentOwner`,
-  `destinationKind`, `unestablished`, `trace`, `symbols`, `symbolCalls`
-  (and what `cards.mjs` measures); of a relation `from`, `to`,
-  `displayFrom`/`displayTo`, `scope`, `label`, `possible`, `init`,
-  `operations` and `calls` (`to`/`callee`, `caller`); `areas` `{id,
-  nodes}`; `inputOwner` input → part. IDs are the page's: programs
+  input `{items, relations, areas}` and `scene`, the `#rm-scene` the scene
+  canvas reads: of an item `id`, `title`, `branch` (component, area,
+  inputs, outside, communication), `category`, `activation` (an input is a
+  record with one), `lane`, `summary`, `role`, `children`,
+  `componentOwner`, `unestablished`, `trace`, `symbols` (their `path` and
+  `line` the place a handler or a caller names), `symbolCalls` (and what
+  `cards.mjs` measures); of a relation `from`, `to`,
+  `displayFrom`/`displayTo`, `possible`, `init`, and for the arrow's card
+  and the column's connections `scope`, `label`, `operations` and
+  `calls`; `areas` `{id, nodes}`. IDs are the page's: programs
   `system-component-tN`, parts `n-tN-gM`, areas `tN-area-kM`, inputs
   `tN-oM`, Inputs frames `system-inputs-tN`, outside systems
   `system-tN-out-bM-destination` (a call record `system-tN-out-bM` stands
-  for its system), Outside frames `system-outside-…`. The saved facts, of
-  the facts it derives today:
+  for its system), Outside frames `system-outside-…`. The saved facts:
   - `inputs[inputID]`: `{kind, program, parts: [partID], handled, handler}`;
     `kind` one of request, command, setting, scheduled, continuous,
     interaction, consumer, extension, entry (an activation `background`
@@ -1246,7 +1249,9 @@ the canvas above stays the default.
     an outside system served by another program's input (connects_to)
     counting as its caller's runtime pair to the served program;
     `relations` the relation indexes it stands for.
-  From these `buildModel` keeps the grouping it draws: inputs by kind
+  An input the scene does not name is of a kind not established and takes
+  effect nowhere; an edge between two programs no saved pair names is not
+  drawn on the whole map. From these `buildModel` keeps the grouping it draws: inputs by kind
   (groups `{inputs ID}#{kind}`), an Outside frame's items in order
   (systems two or more parts call, the most called first; buckets
   `{frame}~{part}`; the rest), a box's markers `markersOf(box)` `{in,
@@ -1279,7 +1284,9 @@ the canvas above stays the default.
   boxes, arrows (one polyline each, its own ends, a head at each end an
   edge goes into), markers and ports, each with a drawing band, and the
   level's one text scale; `emphasisOf` changes only classes and the
-  arrows' order (dark over grey); one `hitTest` answers hover and click.
+  arrows' order (dark over grey); one `hitTest` answers hover and click,
+  a box's outer two pixels belonging to an arrow meeting it there (its
+  head, all a close camera may show of it).
   The level is the chain of entered boxes (program, area, part; an Inputs
   frame; a bucket): entered by an action (the magnifier, a reading) or by
   a zoom with hysteresis, its text reading at 12.75px to enter and under
@@ -1288,7 +1295,8 @@ the canvas above stays the default.
   entered at the zoom its declarations read at.
 - `overlay.mjs` places markers, ports and magnifiers at one screen size on
   every camera tick: a marker touches its box's edge from outside, the
-  stack from the top, stepping past an arrow meeting that edge, shown once
+  stack from the top, stepping past every arrow running through its
+  column (one meeting that edge, one bending beside the box), shown once
   the box's title reads and the stack fits beside it. A box's words fade
   out below their readable size (titles about 11px, an input's name and a
   description 9.5px) and the pointer on such a box names it; a chip names
