@@ -161,9 +161,9 @@ function RoutedEdge({id,data}) {
 }
 const nodeTypes={part:Part,area:Area,chip:Chip}, edgeTypes={routed:RoutedEdge};
 
-// The rewritten canvas (scene-canvas.jsx) runs behind `?scene=1` until each
-// of its levels holds its invariants on every report (PLAN).
-const sceneMode=()=>{try{return new URLSearchParams(window.location.search).get('scene')==='1';}catch{return false;}};
+// The rewritten canvas (scene-canvas.jsx) draws the map; `?scene=0` keeps
+// this one until it is deleted (PLAN S5).
+const sceneMode=()=>{try{return new URLSearchParams(window.location.search).get('scene')!=='0';}catch{return true;}};
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
   if(sceneMode())return createSceneFlow(map,stage,records,relations,areas,inputOwner,callbacks);
   ({records,areas}=inputGroupsByPart(records,areas,inputOwner,relations));

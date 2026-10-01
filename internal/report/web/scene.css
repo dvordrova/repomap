@@ -1,4 +1,4 @@
-/* The scene canvas (scene-canvas.jsx), behind ?scene=1. Colours are the
+/* The scene canvas (scene-canvas.jsx). Colours are the
    canvas's own: no new colour, arrow kind or label. */
 .scene-root .react-flow__node{pointer-events:none!important;cursor:default}
 .scene-root .react-flow__pane{cursor:default}

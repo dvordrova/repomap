@@ -1,4 +1,4 @@
-// The scene canvas (PLAN, the new path behind `?scene=1`): the page's data
+// The scene canvas (PLAN): the page's data
 // is built into a model once (model.mjs), every level is laid out once per
 // canvas size (levels.mjs), and what is drawn is a pure function of the
 // level and the reader's choice (scene.mjs). React Flow is the camera and a
