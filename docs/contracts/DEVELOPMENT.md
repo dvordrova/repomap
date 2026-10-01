@@ -198,8 +198,9 @@ each seeded synthetic graph named by `REPOMAP_INVARIANT_GRAPHS` (`all`, or
 names of `fixtures/synthetic-*.json`: no inputs, 150 outside systems,
 cycles, 40 loose parts; written by `visual/synthetic-graphs.mjs` in the page
 data shape the canvas receives, for node scene tests too), it visits the
-whole map, every program and every area of the two largest programs, on the
-old path and on `?scene=1` (`REPOMAP_INVARIANT_PATHS`). At each level it
+whole map (its rest view, then "Show whole map"), every program and every
+area of the two largest programs, on the old path, on `?scene=1`, or on the
+page as it opens (`REPOMAP_INVARIANT_PATHS` `old`, `scene`, `canvas`). At each level it
 checks the arrows at rest, makes 24 random pans and 50 random pointer moves,
 points at every arrow and measures ports and markers at every camera; it
 writes `<repo>.<path>.json` to `REPOMAP_INVARIANT_OUT`, and
