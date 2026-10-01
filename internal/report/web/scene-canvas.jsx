@@ -461,6 +461,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const pointer=state.pointer;
     const tip=pointer&&(pointer.type==='marker'||pointer.type==='port')?items.find(item=>item.id===pointer.id):null;
+    // A box whose words do not read yet is named by the pointer on it.
+    const box=pointer?.type==='box'&&pointer.node&&pointer.node.text*17*v.zoom<11?pointer.node:null;
     return <div className="scene-overlay" aria-hidden="true">
       {items.filter(item=>item.type==='zoom').map(item=><span key={item.id} className="scene-zoom" data-zoom-into={item.box}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></span>)}
@@ -470,7 +472,16 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}>
         <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></span>)}
       {tip&&<MarkTip item={tip}/>}
+      {box&&<BoxTip node={box} camera={v}/>}
     </div>;
+  }
+  // What a box is, while its words are too small to read: its name and a
+  // line of what it does.
+  function BoxTip({node,camera:v}){
+    const item=model.nodes.get(node.id)?.item,about=item?.role||item?.summary||'';
+    const left=(node.rect.x+node.rect.width)*v.zoom+v.x+6,top=node.rect.y*v.zoom+v.y;
+    return <div className="scene-tip scene-box-tip" style={{left,top:Math.max(4,top)}}>
+      <b>{node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title}</b>{about&&<span>{about}</span>}</div>;
   }
   // What a marker or a port stands for, one name to a line.
   function MarkTip({item}){
@@ -540,7 +551,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       const item=model.nodes.get(node.id)?.item;
       const groups=node.display==='inputs'?model.nodes.get(node.id).children.map(id=>({kind:model.nodes.get(id).inputKind,lit:model.nodes.get(id).children.some(input=>lit.has(input))})):undefined;
       return {id:node.id,type:node.display,position:{x:node.rect.x,y:node.rect.y},width:node.rect.width,height:node.rect.height,
-        style:{width:node.rect.width,height:node.rect.height},zIndex:node.band===bands.frame?-1:2,
+        style:{width:node.rect.width,height:node.rect.height,'--scene-text':node.text},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
         className:`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
         data:{node,item,groups,lit:lit.has(node.id),
