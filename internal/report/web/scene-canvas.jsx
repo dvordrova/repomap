@@ -37,24 +37,24 @@ function cardWords(node,{titleFont='700 17px system-ui',titleLine=21.25,pad=14,r
   const most=Math.max(0,Math.floor((height-title.length*titleLine-6)/18));
   return {title,lines:description?descriptionLines(description,width,Math.min(most,4),measure,'13px system-ui'):[]};
 }
-function Mark({icon,className='',label=''}){
+function Mark({icon,className='',label='',kind=''}){
   if(!icon)return <span className={`scene-dot ${className}`} aria-hidden={label?undefined:'true'}/>;
-  return <svg className={`flow-kind-mark ${className}`} viewBox="0 0 16 16" width="14" height="14" aria-hidden={label?undefined:'true'} role={label?'img':undefined} aria-label={label||undefined}>
+  return <svg className={`flow-kind-mark ${className}`} data-kind-mark={kind||undefined} viewBox="0 0 16 16" width="14" height="14" aria-hidden={label?undefined:'true'} role={label?'img':undefined} aria-label={label||undefined}>
     {icon.paths.map((d,i)=><path key={i} d={d}/>)}</svg>;
 }
 const laneClass=lane=>lane==='core'?'flow-core':lane==='triggers'?'flow-entry':'';
 // A box drawn at its level's text size: its world rectangle holds its
 // content laid out at `text` world units to a pixel.
-function Scaled({node,className='',children,style}){
+function Scaled({node,className='',children,style,data}){
   const {rect,text}=node;
-  return <div className={`scene-scaled ${className}`} style={{width:rect.width/text,height:rect.height/text,transform:`scale(${text})`,...style}}>{children}</div>;
+  return <div className={`scene-scaled ${className}`} {...data} style={{width:rect.width/text,height:rect.height/text,transform:`scale(${text})`,...style}}>{children}</div>;
 }
 const handles=<><Handle type="target" position={Position.Top} isConnectable={false}/><Handle type="source" position={Position.Bottom} isConnectable={false}/></>;
 
 function CardNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>cardWords(node,{description:item?.summary||'',room:node.enter?24:0}),[node.rect.width,node.rect.height,node.text,node.title]);
-  return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`}>
+  return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     {node.ghosts&&<svg className="scene-ghosts" width={node.rect.width/node.text} height={node.rect.height/node.text} aria-hidden="true">
       {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={9*r.width/node.text/260}/>)}</svg>}
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
@@ -71,7 +71,7 @@ function ProgramNode({data}){
     const room=node.rect.height/node.text-2*c.pad-title.length*c.line-role.length*c.textLine-12;
     return {title,role,purpose:item?.summary?descriptionLines(item.summary,inner,Math.max(0,Math.min(2,Math.floor(room/c.textLine))),measure,c.text):[]};
   },[node.rect.width,node.rect.height,node.title]);
-  return <>{handles}<Scaled node={node} className="scene-program-card">
+  return <>{handles}<Scaled node={node} className="scene-program-card" data={{'data-component-overview':node.id}}>
     <strong data-box-title={node.id}>{words.title.join('\n')}</strong>
     {words.role.length>0&&<div className="flow-component-role" title={item.role}>{words.role.join('\n')}</div>}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{words.purpose.join('\n')}</p>}
@@ -84,18 +84,18 @@ function FrameNode({data}){
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   return <>{handles}<div className={`flow-area ${tone}`} style={{width:node.rect.width,height:node.rect.height}}>
     <Scaled node={{...node,text:node.titleText||node.text,rect:{...node.rect,height:units.band(1)*(node.titleText||node.text)}}} className="scene-frame-title">
-      <strong data-box-title={node.id}>{title}</strong></Scaled>
+      <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled>
   </div></>;
 }
 // An Inputs frame closed: its title over its kinds' marks, each named on
 // hover; entered, the kinds' groups name their inputs.
 function InputsNode({data}){
   const {node,groups}=data;
-  return <>{handles}<Scaled node={node} className="flow-area flow-input-collection scene-inputs-card">
+  return <>{handles}<Scaled node={node} className="flow-area flow-input-collection scene-inputs-card" data={{'data-component-overview':node.id}}>
     <strong data-box-title={node.id}>{t('Inputs')}</strong>
     {node.kinds.map((entry,i)=><span key={entry.kind} className={`scene-kind-mark ${groups[i]?.lit?'flow-lit':''}`} title={t(inputKindTitles[entry.kind])}
       data-input-group-kind={entry.kind} style={{left:(entry.rect.x-node.rect.x)/node.text,top:(entry.rect.y-node.rect.y)/node.text,width:entry.rect.width/node.text,height:entry.rect.height/node.text}}>
-      <Mark icon={kindIcon(entry.kind)}/></span>)}
+      <Mark icon={kindIcon(entry.kind)} kind={entry.kind}/></span>)}
   </Scaled></>;
 }
 function GroupNode({data}){
@@ -106,7 +106,7 @@ function GroupNode({data}){
 }
 function TileNode({data}){
   const {node}=data;
-  return <>{handles}<Scaled node={node} className={`scene-tile ${data.lit?'flow-lit':''}`}><Mark icon={kindIcon(node.inputKind)}/><span>{node.title}</span></Scaled></>;
+  return <>{handles}<Scaled node={node} className={`scene-tile ${data.lit?'flow-lit':''}`} data={{'data-input-id':node.id}}><Mark icon={kindIcon(node.inputKind)} kind={node.inputKind}/><span>{node.title}</span></Scaled></>;
 }
 function ChipNode({data}){
   const {node}=data;
