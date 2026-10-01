@@ -96,6 +96,8 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
     if(center)flow.focus(id);
   },
   connection(){},
+  // A kind of inputs chosen: the column reads the collection at it.
+  readKind(id,kinds){map.dataset.readKind=`${id} ${kinds.join(',')}`;flow.update({scope:id,operation:'',entry:'',selected:selected(id)});showReading(id);},
   // A zoom that brings another frame: the column reads it, as the report's
   // does, the camera staying.
   follow(id){map.dataset.followed=id;flow.update({scope:id,selected:selected(id)});showReading(id);},

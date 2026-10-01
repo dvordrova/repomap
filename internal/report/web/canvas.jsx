@@ -225,7 +225,7 @@ function FrameTitle({node,item,focused,enter,select,muted}) {
 // othello's negamax → evaluate had read as the key's "returns or takes a
 // type" (reviewer, 2026-09-30).
 function RoutedEdge({id,data}) {
-  return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')} data-edge-ends={(data.boxes||[]).join(' ')}>
+  return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''} ${data.faint?'flow-edge-faint':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')} data-edge-ends={(data.boxes||[]).join(' ')}>
     <path className="flow-edge-hit" d={data.path} data-edge-hit={id}/>
     <path className="flow-edge-casing" d={data.path} vectorEffect="non-scaling-stroke"/>
     <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
@@ -839,9 +839,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // Every connection of a frame that its drawn arrows show, where they meet
   // its border.
-  function frameLabels(frame,matchingOf){
+  // `head`, an arrowhead the pointer is on: a connection it carries whose
+  // drawn arrow crosses no border of the frame stands at the head instead.
+  // An arrow ending on its frame's border, or on an entered program's port
+  // (programPorts) had opened no card (owner, 2026-09-30: "the arrows can no
+  // longer be hovered").
+  function frameLabels(frame,matchingOf,head=null){
     return connections(frame,frameMembers(frame),layout.edges,outsideOf(frame)).flatMap(group=>{
-      const matching=matchingOf(group.edges),at=crossing(group,frame,matching);
+      const matching=matchingOf(group.edges),box=placed.get(frame);
+      const at=crossing(group,frame,matching)||(head&&box&&group.edges.some(id=>head.route.edgeIDs.includes(id))?{root:frame,point:head.tip,side:sideOf(head.tip,box)}:null);
       if(!at)return [];
       const outside=byID.get(group.outside);
       return [{...group,id:`boundary:${frame}:${group.key}`,boundary:true,...at,title:outside?.name||outside?.title||''}];
@@ -893,10 +899,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const looked=deepPart&&(head.into===deepPart||head.from===deepPart)?lookedLabels.filter(carries):[];
     if(looked.length)return looked.find(label=>label.incoming===(head.into===deepPart))||looked[0];
     const [frame,incoming]=isFrame(head.into)?[head.into,true]:isFrame(head.from)?[head.from,false]:[];
-    if(frame)return frameLabels(frame,lastMatchingOf).find(label=>label.incoming===incoming&&carries(label))||null;
+    if(frame)return frameLabels(frame,lastMatchingOf,head).find(label=>label.incoming===incoming&&carries(label))||null;
     // An arrow between two parts is the calling part's connection to the
     // other: inside Game logic no arrow had opened a card.
-    return head.from&&placed.has(head.from)?frameLabels(head.from,lastMatchingOf).find(label=>!label.incoming&&label.outside===head.into&&carries(label))||null:null;
+    if(head.from&&placed.has(head.from)){
+      const label=frameLabels(head.from,lastMatchingOf,head).find(label=>!label.incoming&&label.outside===head.into&&carries(label));
+      if(label)return label;
+    }
+    // An arrow from an entered program's port mark into a part is the
+    // part's connection from what the mark stands for.
+    return head.into&&placed.has(head.into)&&!isFrame(head.into)?frameLabels(head.into,lastMatchingOf,head).find(label=>label.incoming&&carries(label))||null:null;
   }
   // A connection that is not one of the looked-at frame's is kept for its card.
   function keepHeadLabel(label){if(!lookedLabels.some(other=>other.id===label.id))headLabels.set(label.id,label);}
@@ -1222,10 +1234,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     return fitting;
   }
   function select(id,event,center=false){
+    // A click on an input in a group too small to draw it reads that input's
+    // kind in its collection (owner, 2026-09-30: "я в колонке не вижу, что я
+    // тыкнул на канвасе инпут какой-то": Redis's acceptHandler, clicked in
+    // the closed Client I/O group, had read the handler's part).
+    const tile=byID.get(id)?.branch==='inputs-part'&&event&&instance?inputUnder(id,instance.screenToFlowPosition({x:event.clientX,y:event.clientY})):null;
+    if(tile){readKind(tile.collection,[tile.activation],event);return;}
     // A group of inputs is named by the part their handlers are in; choosing
     // it reads that part.
     if(byID.get(id)?.branch==='inputs-part')id=byID.get(id).owner;
     hover.remember(event.clientX,event.clientY);hover.pause();hoverArea='';preview='';map.clearMapPreview?.();callbacks.select(id,center);
+  }
+  // The input drawn under flow point `at` in a group whose inputs are not
+  // drawn, with its collection, or null.
+  function inputUnder(group,at){
+    const hit=leaves(group).find(leaf=>{const n=placed.get(leaf);return n&&byID.get(leaf)?.activation&&closed(leaf)&&
+      at.x>=n.absolute.x&&at.x<=n.absolute.x+n.width&&at.y>=n.absolute.y&&at.y<=n.absolute.y+n.height;});
+    let collection=group;while(collection&&byID.get(collection)?.branch!=='inputs')collection=placed.get(collection)?.parentId;
+    return hit&&collection?{collection,activation:byID.get(hit).activation}:null;
   }
   // A kind chosen in a collection's list reads the collection at that
   // kind's section, the camera staying.
@@ -1456,9 +1482,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // and outlines the parts they reach.
     const hot=ports&&portHot?drawing.edges.filter(edge=>edge.quiet&&[edge.outerFrom,edge.outerTo].includes(portHot)):[];
     const hotBoxes=new Set(hot.map(edge=>edge.outerFrom===portHot?edge.outerTo:edge.outerFrom));
-    const portOn=new Set([...(ports&&state.subject&&state.subject!==ports.program?state.activeEdges:[]),...hot.map(edge=>edge.id)]);
-    const drawnEdges=ports?drawing.edges.filter(edge=>!edge.quiet||portOn.has(edge.id)):drawing.edges;
-    const routes=routeDrawing(drawnEdges,closed,new Set([...state.activeEdges,...portOn]),recede,boundary,initVisible,quietEnds);
+    // The lines of the area or part the camera stands in, and of what the
+    // reader has chosen, stay whatever the pointer crosses: the fixture's
+    // Request handling entered had drawn its line from Web client, and the
+    // pointer coming onto it, over the program's empty space, had taken it
+    // away with its card (owner, 2026-09-30: arrows no longer opened cards).
+    const restPorts=ports&&quietEnds?drawing.edges.filter(edge=>edge.quiet&&(quietEnds.has(edge.from)||quietEnds.has(edge.to))):[];
+    const chosenPorts=ports&&rest.subject&&rest.subject!==ports.program?rest.activeEdges:[];
+    // Those the pointer or the focus reaches are dark; the rest kept stay grey.
+    const pointedPorts=new Set([...(ports&&state.subject&&state.subject!==ports.program?state.activeEdges:[]),...hot.map(edge=>edge.id)]);
+    const portOn=new Set([...pointedPorts,...chosenPorts,...restPorts.map(edge=>edge.id)]);
+    const drawnEdges=ports?drawing.edges.filter(edge=>!edge.quiet||portOn.has(edge.id)).map(edge=>edge.quiet?{...edge,quiet:false}:edge):drawing.edges;
+    const routes=routeDrawing(drawnEdges,closed,new Set([...state.activeEdges,...pointedPorts]),recede,boundary,initVisible,quietEnds);
     const matchingOf=routeIndex(routes);
     const labels=(area?connections(area,members,layout.edges,outsideOf(area)):[]).flatMap(group=>{
       // A label stands where its arrow meets the frame it marks.
@@ -1538,10 +1573,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
             alone:memberChoice?.part===n.id&&view.scope===n.id&&tooDense(n.id),
             point:index=>pointMember(n.id,index),choose:(index,event)=>chooseMember(n.id,index,event)}:undefined}};
     });
-    const edges=drawn.map(route=>{
+    // The dark arrows stand over every other (owner, 2026-09-30: redis's
+    // Core with Core data structures pointed at had its dark arrows broken
+    // by the grey ones crossing and running over them), and while one is
+    // dark the others fade, but for those between the parts looked at.
+    const anyDark=drawn.some(route=>route.on),edgeByID=new Map(layout.edges.map(edge=>[edge.id,edge]));
+    const between=route=>route.edgeIDs.some(id=>{const edge=edgeByID.get(id);return edge&&shown.focus.has(edge.from)&&shown.focus.has(edge.to);});
+    const edges=[...drawn].sort((a,b)=>!!a.on-!!b.on).map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
         ariaLabel:'',domAttributes:{'aria-hidden':true},
-        data:route};
+        data:{...route,faint:anyDark&&!route.on&&!between(route)}};
     });
     // Arrows stand under the boxes they join and over the frames holding
     // them (zIndexMode manual: every arrow at 0, a box one over its frame):

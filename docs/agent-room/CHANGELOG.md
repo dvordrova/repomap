@@ -1,5 +1,42 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — The area grid removed; every arrow opens its card; dark arrows on top; an input's place reads its kind
+
+- **Grid packing removed** (e9513614's `packedArea`/`packCards` and its
+  test, reverse-applied by the owner): looking at the variants, the owner
+  called Step 1 (daf1231e, layered areas) "ахуенно" and the grid "пиздец".
+  An area that does not fit keeps its layered arrangement and the camera
+  handles it (redis's Core is entered at its first parts, the rest a pan
+  away). Routing between e9513614 and HEAD was otherwise identical inside
+  Core, freqtrade and litestream; HEAD only added the port legs.
+- **Arrow hover** (`canvas.jsx`): an entered area's lines to its program's
+  ports were drawn while the area was the subject, and the pointer coming
+  onto one over the program's empty space made the program the subject and
+  took the line away with its card. The lines of the area or part the camera
+  stands in, and of a chosen mark or system, now stay (grey unless pointed
+  at); an arrow crossing no border opens its card at its head.
+  `visual/arrow-cards.spec.mjs` rests on sampled arrows at the whole map,
+  entered program, entered area, an outside dot's lines, an input kind's
+  lines and a part (fails before at the entered area); the geometry lint
+  reports `no-card` (none on the four reports).
+- **Dark arrows on top**: drawn after the grey ones with an 8.5 px halo of the
+  canvas colour; the grey ones fade to .45 while one is dark, but for those
+  between the parts looked at. Redis Core with Core data structures or
+  Virtual memory pointed at: 6 dark arrows ran under grey ones before, 0
+  now; test "a pointed part's dark arrows are whole and over the grey ones".
+  pointing.spec's "an arrow the pointer does not darken stays as it is" now
+  expects the fade (owner's new rule).
+- **An input's place reads its kind** (`select`/`inputUnder`): a click where
+  an input stands in a closed group of its Inputs reads that kind in the
+  collection, not the handler's part (Redis's acceptHandler: "Part · Core
+  server infrastructure" → "Inputs · Incoming requests");
+  `visual/input-click.spec.mjs` also checks the whole map's kind row.
+- **Checks:** web unit 140 pass; visual suite 59 passed, 5 skipped; go test
+  and vet ./internal/report pass; journeys on the four renders: journeys, leaving an input path and
+  clickable rows 12/12; reading lints fail only on the column's 104 long
+  folds and freqtrade's repeated "-V --version", none from the canvas.
+  Crops: scratchpad/eye13-canvas/compare/step1-vs-new-*.png.
+
 ## 2026-09-30 — The home's programs do something; a click is marked in the column
 
 - **Owner (Redis):** "вопросы сверху и ещё перечислены файлы … и ничего не
@@ -346,6 +383,8 @@
   its answers stay cached). Reader test renders the step and the fork.
 
 ## 2026-09-30 — An area no arrangement fits is packed like a program's areas
+
+- **Removed 2026-10-01** (owner: the grid "пиздец", Step 1 "ахуенно"); see that entry.
 
 - **Rule** (`packedArea`): an area none of whose layered arrangements fits
   the canvas packs its parts in the program grid (`packCards`, extracted

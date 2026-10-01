@@ -60,7 +60,9 @@ test('a pointed part is the subject, dark itself, and nothing recedes',async({pa
     return {own:at(id('routes','auth')),sibling:at(id('queue','worker'))};
   });
   expect(edges.own.active).toBe(true);
-  expect(edges.sibling.opacity,'an arrow the pointer does not darken stays as it is').toBe('1');
+  // Its parts stay as they are; an arrow it does not darken fades, so the
+  // dark ones read apart (owner, 2026-09-30).
+  expect(edges.sibling.opacity,'an arrow the pointer does not darken fades').toBe('0.45');
   await testInfo.attach('journey-01 — The pointed part is dark, the rest stays',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 
   // The area's title looks at the area: its frame darkens, its parts stay as they are.

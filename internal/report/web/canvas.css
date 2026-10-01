@@ -55,7 +55,8 @@
 .flow-node-reading .flow-part{border-color:#243044;outline:3px solid #243044;outline-offset:-3px}
 .react-flow__node.flow-node-muted,.flow-node-muted.flow-area-title,.flow-node-muted.flow-group-heading,.flow-node-muted.flow-area-summary,.flow-node-muted.flow-component-overview,.flow-node-muted.flow-zoom-mark,.flow-edge.flow-edge-muted{opacity:.4}
 /* Only the reader's choice recedes the rest; the pointer highlights and
-   recedes nothing, and nothing pointed at is greyed. The part pointed
+   recedes no box, and nothing pointed at is greyed (the arrows it does not
+   darken fade: flow-edge-faint). The part pointed
    at, the parts an emphasised arrow joins, and a closed frame standing for
    the parts hidden in it, take the dark of that arrow on their border; a
    frame pointed at takes it on its frame, at the arrow's 2.5px. The card open
@@ -72,7 +73,12 @@
 .flow-edge path{stroke:#64748b;stroke-width:calc(1.5px / var(--flow-zoom,1));fill:none;stroke-linecap:round;stroke-linejoin:round}
 .flow-edge .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(5px / var(--flow-zoom,1))}
 .flow-edge-active path{stroke:#34445b;stroke-width:calc(2.5px / var(--flow-zoom,1))}
-.flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(6px / var(--flow-zoom,1))}
+/* A dark arrow stands over the others in a 3px halo of the canvas, so a
+   grey line crossing or running beside it reads apart from it, and the
+   others fade while one is dark (canvas.jsx: edges). */
+.flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(8.5px / var(--flow-zoom,1))}
+.flow-edge.flow-edge-faint{opacity:.45}
+.flow-edge.flow-edge-faint.flow-edge-muted{opacity:.4}
 .flow-defs{position:absolute;width:0;height:0}
 /* An arrow's handle: a wide unpainted stroke over it takes the pointer
    (canvas.jsx RoutedEdge); the arrow itself is what the reader points at. */

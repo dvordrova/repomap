@@ -19,7 +19,8 @@
 //   card      a card's heading and rows, or two rows, intersect;
 //   small     a name on the canvas reads under 11 CSS pixels, a part's
 //             description under 9;
-//   head      an arrowhead is as large as the box it points into.
+//   head      an arrowhead is as large as the box it points into;
+//   no-card   an arrow the pointer rests on opens no card.
 export const checks={near:3,font:11,head:10};
 
 // Runs in the page. `level` names where the camera stands.
@@ -212,19 +213,23 @@ export async function lintReport(page,{repo='',areas=2,cards=3,programs=4}={}){
   };
   const lint=async(level,withCards=true)=>{
     findings.push(...(await page.evaluate(([level,whole])=>window.__lintCanvas?window.__lintCanvas(level,3,!whole):[],[`${repo} ${level}`,level==='whole map'])));
-    if(!withCards)return;
-    // The cards of a few arrows, opened as a reader's pointer opens them.
+    // The cards of a few arrows, opened as a reader's pointer opens them, on
+    // the arrow's middle and by its head: an arrow the pointer rests on and
+    // opens no card is a finding (owner, 2026-09-30: arrows into an area's
+    // border and from an entered program's ports had opened none).
     const hits=await page.evaluate(()=>{
       const canvas=document.querySelector('.flow-root').getBoundingClientRect();
-      return [...document.querySelectorAll('[data-edge-hit]')].map(path=>{
-        const length=path.getTotalLength(),ctm=path.getScreenCTM(),p=path.getPointAtLength(length*.5);
-        return {x:p.x*ctm.a+p.y*ctm.c+ctm.e,y:p.x*ctm.b+p.y*ctm.d+ctm.f};
-      }).filter(p=>p.x>canvas.left+20&&p.x<canvas.right-20&&p.y>canvas.top+20&&p.y<canvas.bottom-20);
+      return [...document.querySelectorAll('[data-edge-hit]')].flatMap(path=>{
+        const length=path.getTotalLength(),ctm=path.getScreenCTM();
+        return [.5,.9].map(f=>{const p=path.getPointAtLength(length*f);return {id:path.dataset.edgeHit,x:p.x*ctm.a+p.y*ctm.c+ctm.e,y:p.x*ctm.b+p.y*ctm.d+ctm.f};});
+      }).filter(p=>p.x>canvas.left+20&&p.x<canvas.right-20&&p.y>canvas.top+20&&p.y<canvas.bottom-20&&
+        document.elementFromPoint(p.x,p.y)?.closest?.('[data-edge-hit]'));
     });
-    for(const point of hits.slice(0,cards)){
-      await page.mouse.move(point.x,point.y,{steps:4});
-      const opened=await page.locator('.flow-floating-card .flow-connection-calls').waitFor({timeout:1200}).then(()=>true,()=>false);
-      if(opened)findings.push(...(await page.evaluate(lintCard,`${repo} ${level}`)));
+    for(const point of hits.slice(0,withCards?2*cards:4)){
+      await page.mouse.move(point.x-12,point.y-12);await page.mouse.move(point.x,point.y,{steps:4});
+      const opened=await page.locator('.flow-floating-card .flow-connection-calls').waitFor({timeout:1500}).then(()=>true,()=>false);
+      if(opened&&withCards)findings.push(...(await page.evaluate(lintCard,`${repo} ${level}`)));
+      if(!opened)findings.push({kind:'no-card',element:`arrow ${point.id}`,level:`${repo} ${level}`});
       await page.keyboard.press('Escape');await page.mouse.move(2,2);await page.waitForTimeout(100);
     }
   };
