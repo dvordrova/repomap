@@ -9,7 +9,7 @@
 .scene-root .flow-description-lines{white-space:pre-line;display:block}
 .scene-program-card{background:#f8fafc;border:1.25px solid #718096;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px;color:#243044;overflow:hidden}
 .scene-program-card>strong{font-size:18px;line-height:23px;white-space:pre-line}
-.scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line}
+.scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line;margin:0}
 .scene-frame-title{padding:10px 16px;pointer-events:none}
 .scene-frame-title>strong{font-size:17px;line-height:22px;white-space:nowrap}
 .flow-communication .scene-frame-title>strong{color:#77531c}
@@ -90,6 +90,9 @@
 /* Every card's border keeps its screen width at any zoom, as the arrows'
    strokes do. */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.flow-chip,.scene-root .scene-scaled.scene-tile,.scene-root .scene-scaled.scene-program-card{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
+/* The border takes its room from a card's padding, never from its words
+   (levels.mjs sizes a card by its words and a 14px padding). */
+.scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}
 /* A program's card shows its drawing's outline only once drawn large, its
    words over it. */
 .scene-program-ghosts{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1)}
