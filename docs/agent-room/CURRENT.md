@@ -1,6 +1,6 @@
 # Current product decision
 
-Status: active living ADR. Updated: 2026-09-29.
+Status: active living ADR. Updated: 2026-10-02.
 
 [CONSTITUTION](../CONSTITUTION.md) takes precedence. This page records the
 current decision and acceptance state; [AGENTS](../../AGENTS.md) routes work to
@@ -190,6 +190,20 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   reading column renders from the data is printed again, and a `<noscript>`
   line says so. A function reads as its flow; an input opens at how a request
   reaches it ([Report](../contracts/REPORT.md)).
+- **Canvas rewrite (accepted 2026-10-01, owner: "хз, газ"):** the canvas core
+  is four pure stages behind `?scene=1`: `buildModel` (the display model),
+  ELK laid out once per level (the whole map, a program, an area; no grid,
+  no edits after layout), `sceneAt` with one `hitTest` for hover and click,
+  and an overlay keeping markers and ports one screen size. One store holds
+  the state; the level is state, entered by an action or a zoom with
+  hysteresis, never by a pan. The facts it draws are saved data, the report's
+  `scene` (report.json 94) and GroupsIndex's derived output (report.json
+  95); the page displays them and derives none (owner: "у html должна быть
+  простая задача — вот данные, показываю"). A box carries markers on its
+  edges (input kinds left, outside kinds right) instead of port frames, the
+  whole map's Outside is grouped by calling part (B′), and its arrows
+  between programs follow the saved program pairs ([Report](../contracts/REPORT.md),
+  Scene model). The old path stays until the switch.
 - **Decoders (owner, 2026-09-26):** a decoder refuses only what is wrong, at
   the smallest scope; a form difference is not a refusal, and there is no
   identical-bytes resample. Refusals that keep the report true stay: unknown
@@ -441,6 +455,7 @@ Receipts for every row, including the run log moved out of this table on
 | repomap self-run | self-snap exit 0 on 2026-09-29 (116 s at e04743b1; 70 s at 66902610 with every atlas request cached); its orientation overview is accepted and its flow request exceeds the provider window (journaled under `flow_request`). The last cold self-run with a warm rerun and `cache clear` is 2026-09-26 (108.0 s, warm 25.1 s). |
 | pykrx library target | 2026-09-28 (map model step 3): exit 0, 12 parts. Open: `get_market_ohlcv`, used only by its file's `__main__` demo, is answered helper, tied to the owner's open question on a library's public API as entries. |
 | Syn, issue-bot, Watchtower | The latest ordinary reports are the third series of 2026-09-11 (native routes, operation activation, remote client/option distinctions and glossary provenance checked), before the map of parts and the current formats; the saved-window replays of that time (Watchtower glossary and reducer, boundary v5, issue-bot retrieval) check only packing, decoding and source distinctions. Open: Watchtower's worker answer and launch argument, issue-bot's per-call argument exception, a mixed route counter. |
+| Canvas rewrite (`?scene=1`) | The gate is the invariant table (`visual/invariants.spec.mjs`, REPORT's canvas invariants) over redis, litestream, freqtrade, othello, casdoor, headscale, beets and etcd plus the four seeded synthetic graphs, at every level. On 2026-10-02 (base 03a5bb3f, re-run cells 5904dfa7; 151 levels) it is green but for three fixes: home legibility (beets and etcd lanes 4.2/2.7 px, no readable word on four homes at rest), etcd Storage layer's arrow ends 1.5–2.2 px off their boxes, and freqtrade's chip names drawn at 10.6 px unfaded. The default flips once those cells are green. |
 | Airflow | Full current ordinary acceptance remains pending. Its Freqtrade prerequisite is met (ordinary runs accepted, see its row); do not restart before the prerequisite fixes and saved-window checks. Old elapsed time is not a measurement of the new builder. |
 
 Artifact consistency, a green fixture, a saved reading and a successful single
