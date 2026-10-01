@@ -1238,7 +1238,15 @@ and a fixture only to fixtures of its root. Only a destination with a
 `client_request` call (a request sent or a connection opened, the talks
 answer of its symbol) is offered them: a call through a library reaches
 the system the library talks to, and redis-cli's `gethostbyname`, offered
-redis-server, had been drawn into it where it had been "DNS Resolver". A program chosen, by its ref
+redis-server, had been drawn into it where it had been "DNS Resolver". A
+call into a Go package this repository builds (a Go program's module path
+or a package below it, `repositoryPackage`) is no outside system: the
+systems question never names it, and its destination is offered the
+programs whatever its kind (2026-10-01: etcd's tools called client/v3's
+`KV.Get`, a db call, and the api module's gRPC stubs, which the systems
+question had named "etcd" and "Etcd Server" beside the server program they
+reach; Python, JS/TS, C and Clojure name no program by its import path,
+recorded missing; `TestACallIntoTheRepositorysOwnPackageIsOfferedItsPrograms`). A program chosen, by its ref
 or by its name after `other: ` (case aside: freqtrade's run drew "other:
 Freqtrade" once), is the boundary's `destination_target`, and the report
 draws the destination into

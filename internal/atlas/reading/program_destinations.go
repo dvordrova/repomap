@@ -29,8 +29,17 @@ import (
 // redis-cli's gethostbyname of the server's host is answered by the
 // resolver, and offered redis-server it had been drawn into redis-server
 // ("Redis server (host lookup)"), where it had been "DNS Resolver".
+//
+// A call into a package this repository builds (repositoryPackage) goes
+// through the repository's own code, and is offered the programs too:
+// etcd's clients and tools call go.etcd.io/etcd/client/v3's KV.Get (a db
+// call) and the api module's gRPC stubs, which the systems question had
+// named "etcd" and "Etcd Server" as outside systems beside the server
+// program they reach.
 func (r *reader) programDestinations(target string, members []destinationMember) []lines.Destination {
-	if !slices.ContainsFunc(members, func(member destinationMember) bool { return member.state.kind == atlas.BoundaryClientRequest }) {
+	if !slices.ContainsFunc(members, func(member destinationMember) bool {
+		return member.state.kind == atlas.BoundaryClientRequest || r.repositoryPackage(member.state.outside)
+	}) {
 		return nil
 	}
 	role := func(meta TargetMeta) string {
@@ -89,4 +98,23 @@ func (r *reader) programDestinations(target string, members []destinationMember)
 		programs = append(programs, lines.Destination{Value: meta.Name, Program: true, Takes: takes[meta.ID], Target: meta.ID})
 	}
 	return programs
+}
+
+// repositoryPackage reports a Go package this repository builds: one of a
+// Go program's module path or a package below it (go.etcd.io/etcd/client/v3
+// and go.etcd.io/etcd/client/v3/concurrency, the client/v3 library's). Such
+// a package is the repository's own code, never an outside system, though
+// a program that does not load it calls it as an outside symbol. Python,
+// JS/TS, C and Clojure name no program by its import path here: a recorded
+// missing equivalent.
+func (r *reader) repositoryPackage(pkg string) bool {
+	if pkg == "" {
+		return false
+	}
+	for _, target := range r.opts.Targets {
+		if target.Language == "go" && target.Name != "" && (pkg == target.Name || strings.HasPrefix(pkg, target.Name+"/")) {
+			return true
+		}
+	}
+	return false
 }

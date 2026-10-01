@@ -875,7 +875,12 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			var states []*boundaryState
 			for _, key := range keys {
 				for _, state := range byOwner[key].states {
-					packages.add(state)
+					// A package this repository builds is no outside system:
+					// its calls are named by the destination question,
+					// where the repository's programs are offered.
+					if !r.repositoryPackage(state.outside) {
+						packages.add(state)
+					}
 					states = append(states, state)
 				}
 			}

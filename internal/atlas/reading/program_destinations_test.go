@@ -113,3 +113,69 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 		}
 	}
 }
+
+// A call into a package this repository builds is no outside system: the
+// systems question never names it, and its destination is offered the
+// repository's programs, a db call included (etcd's tools call client/v3's
+// KV.Get, which the systems question had named "etcd" beside the server
+// program it reaches).
+func TestACallIntoTheRepositorysOwnPackageIsOfferedItsPrograms(t *testing.T) {
+	get := atlas.SymbolCall{Kind: "invokes_external", Name: "Get", Line: 7, Column: 9, API: &atlas.CallAPI{Package: "example.com/kv/client", Receiver: "KV", Name: "Get"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Text: "key", Position: 1, Anchor: &sourcevalue.Anchor{Path: "tool/main.go", Line: 5, Column: 11}}}}}
+	read := atlas.Place{ID: "symbol:Read", Kind: atlas.PlaceSymbol, Path: "tool/main.go", LineNo: 5, Parent: "file:main", TargetIDs: []string{"tool"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:Read", Name: "Read"}, Calls: []atlas.SymbolCall{get}}}
+	route := atlas.Place{ID: "fact:range", Kind: atlas.PlaceBoundary, Path: "server/kv.go", LineNo: 3, Column: 2, Parent: "file:kv", TargetIDs: []string{"server"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "server", FactID: "range"}}, Values: []string{"/etcdserverpb.KV/Range"}, Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryRequest}}
+	graph := []atlas.Place{read, route}
+	var mu sync.Mutex
+	var asked []string
+	var offered []any
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		mu.Lock()
+		defer mu.Unlock()
+		if input["table"] == "atlas_systems" {
+			for i, source := range input["rows"].([]any) {
+				asked = append(asked, source.(map[string]any)["package"].(string))
+				rows[i]["system"] = "none"
+			}
+			return
+		}
+		for _, column := range input["fill"].([]any) {
+			if column.(map[string]any)["name"] != "destination" {
+				continue
+			}
+			offered, _ = input["context"].(map[string]any)["destination_catalog"].([]any)
+			for i := range input["rows"].([]any) {
+				rows[i]["destination"] = destinationRef(input, "example.com/kv/server")
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through, r.opts.Graph.Places = "", graph
+	r.opts.Targets = []TargetMeta{{ID: "client", Language: "go", Kind: "library", Name: "example.com/kv/client", Root: "client"},
+		{ID: "server", Language: "go", Kind: "executable", Name: "example.com/kv/server", Root: "server"}, {ID: "tool", Language: "go", Kind: "executable", Name: "example.com/kv/tool", Root: "tool"}}
+	r.opts.ReadSource = func(string) ([]byte, error) { return nil, nil }
+	r.places = map[string]atlas.Place{}
+	for _, place := range graph {
+		r.places[place.ID] = place
+	}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{"example.com/kv/client.KV.Get": {talks: atlas.BoundaryDB}}
+	r.arguments = map[string]ArgumentChoice{"example.com/kv/client.KV.Get": {Position: 1}}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) > 0 {
+		t.Fatalf("the systems question named the repository's own package: %q", asked)
+	}
+	if !strings.Contains(string(mustJSON(offered)), `"program":true`) {
+		t.Fatalf("the call into the repository's client was offered %s, want the server program", mustJSON(offered))
+	}
+	for _, state := range r.boundaries {
+		if state.place.Boundary.Direction == atlas.DirectionOut && state.destinationTargets["tool"] != "server" {
+			t.Fatalf("the tool's KV.Get reaches %q (%v), want the server program", state.destinationOf("tool"), state.destinationTargets)
+		}
+	}
+}
