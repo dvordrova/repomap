@@ -128,4 +128,6 @@ map.restoreReadingState=saved=>{
   showReading(saved.scope);
   flow.restore(saved.viewport);
 };
+// The page data drawn, for the invariant checks' list of levels.
+map.pageData={records,relations,areas,inputOwner};
 map.dataset.fixtureReady='true';

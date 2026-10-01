@@ -86,8 +86,8 @@ for(const target of targets)for(const path of paths){
         info.level=rest.level;info.zoom=rest.cam.zoom;
         // At rest: the arrows, the titles, the markers and the texts.
         const arrows=await page.evaluate(frame=>window.__inv.arrows(frame),level.kind==='home'?'':level.id);
-        for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses','lanes'])merge(name,arrows[name]);
-        info.bends=arrows.bends;info.lanes=arrows.lanes?.widest;
+        for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses','step1-gap'])merge(name,arrows[name]);
+        info.bends=arrows.bends;info.narrowestLane=arrows['step1-gap']?.narrowest;
         const titles=await page.evaluate(frame=>window.__inv.titles(frame),level.kind==='home'?'':level.id);
         if(titles.length>1){
           const sorted=titles.map(t=>t.px).sort((a,b)=>a-b),median=sorted[Math.floor(sorted.length/2)];
@@ -97,10 +97,15 @@ for(const target of targets)for(const path of paths){
         merge('markers',await page.evaluate(()=>window.__inv.markers()));
         const lints=await page.evaluate(([level,whole])=>window.__lintCanvas(level,3,!whole),[level.name,level.kind==='home']);
         const texts=await page.evaluate(()=>window.__inv.textCount());
-        r['no-labels'].checked+=texts;r.text.checked+=texts;
+        const chips=await page.evaluate(()=>[...document.querySelectorAll('.flow-root .flow-chip-name')].filter(el=>el.checkVisibility?.()).length);
+        r['no-labels'].checked+=texts;r.text.checked+=texts;r['chip-text'].checked+=chips;
         for(const finding of lints){
           if(finding.kind==='label'){r['no-labels'].failed++;if(r['no-labels'].examples.length<8)r['no-labels'].examples.push(finding.element);}
-          if(finding.kind==='small'||finding.kind==='clipped'){r.text.failed++;if(r.text.examples.length<8)r.text.examples.push(`${finding.kind} ${finding.element}`);}
+          // A chip's name drawn small is its own column (the plan keeps
+          // chips named; the lead's report of casdoor's 9 px names).
+          const chip=/flow-chip-name/.test(finding.element);
+          const into=chip&&finding.kind==='small'?r['chip-text']:finding.kind==='small'||finding.kind==='clipped'?r.text:null;
+          if(into){into.failed++;if(into.examples.length<8)into.examples.push(`${finding.kind} ${finding.element}`);}
         }
         if(level.kind==='home')for(const frame of await page.evaluate(()=>window.__inv.outside()))add('outside-40',frame.items<=40,`${frame.id}: ${frame.items} items`);
         // Pointed at, every port and marker draws its lines: they are
@@ -111,7 +116,7 @@ for(const target of targets)for(const path of paths){
         for(const handle of handles){
           await page.mouse.move(handle.x,handle.y,{steps:2});await page.waitForTimeout(160);
           const pointed=await page.evaluate(([frame,skip])=>window.__inv.arrows(frame,skip),[level.kind==='home'?'':level.id,restPaths]);
-          for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses'])
+          for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses','step1-gap'])
             merge(name,pointed[name]&&{...pointed[name],examples:pointed[name].examples.map(e=>`pointing at ${handle.id}: ${e}`)});
         }
         if(handles.length){await page.keyboard.press('Escape');await park(page);}

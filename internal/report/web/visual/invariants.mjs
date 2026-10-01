@@ -44,14 +44,15 @@ export const invariants=[
   ['in-frame','every arrow end lies in the level frame or on a port or marker'],
   ['off-canvas','no arrow end out of the canvas while the level frame fits it'],
   ['crosses','no arrow runs through a box it does not join'],
-  ['lanes','at most 4 parallel lanes in a gap between boxes'],
+  ['step1-gap','parallel lanes stand at least 7.5 screen px apart, as in the approved Step 1 drawing'],
   ['marker-size','ports and markers are 20-28 px at every camera, one size per level'],
   ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box'],
   ['titles','titles at one level within ±10% of their median'],
   ['dark-top','dark arrows are drawn after grey ones'],
   ['cards','every arrow opens its card when pointed at'],
   ['no-labels','no digit, plaque or kind label on the canvas'],
-  ['text','no clipped or too small text on the canvas'],
+  ['text','no clipped or too small text on the canvas (chip names apart)'],
+  ['chip-text','an outside chip\'s name reads at 11 px or more'],
   ['outside-40','the whole map Outside holds at most 40 top-level items'],
   ['page-errors','the page raises no error'],
 ];
@@ -101,7 +102,7 @@ export function invariantKit(){
   const kit={
     camera,level,canvas,
     ready:()=>{const m=map();return !!m&&m.classList.contains('flow-enabled')&&!m.classList.contains('flow-initializing')&&!!root();},
-    scene:()=>!!map()?.dataset.sceneLevel||map()?.dataset.scene==='1',
+    scene:()=>!!map()?.sceneState||!!document.querySelector('.scene-root'),
     // What is drawn, with its screen box: the elements a reader can lose.
     snapshot(){
       const els={},paths={},seen=new Map();
@@ -123,13 +124,24 @@ export function invariantKit(){
       const holder=frame?all.find(n=>n.id===frame):null;
       return all.filter(n=>n.id!==frame&&(!holder||inside(n.r,holder.r))&&!all.some(m=>m.id!==frame&&m!==n&&inside(n.r,m.r)&&(!holder||inside(m.r,holder.r)))).map(n=>n.id);
     },
-    // Programs, by their parts, and each program's areas.
+    // Programs, by their parts, and each program's areas: from the
+    // report's explorer nodes or a fixture's page data (the scene path
+    // lays out one level at a time), else from what is drawn.
     programs(){
+      const explorer=[...document.querySelectorAll('[data-map-explorer] [data-node]')];
+      const records=explorer.length?explorer.map(n=>({id:n.id,title:n.dataset.title,branch:n.dataset.branch||'',children:(n.dataset.children||'').split(/\s+/).filter(Boolean)}))
+        :map().pageData?.records||null;
+      if(records){
+        const byID=new Map(records.map(r=>[r.id,r]));
+        const parts=(id,seen=new Set())=>{if(seen.has(id))return 0;seen.add(id);const r=byID.get(id);if(!r)return 0;const kids=(r.children||[]).filter(k=>byID.has(k));return kids.length?kids.reduce((s,k)=>s+parts(k,seen),0):1;};
+        return records.filter(r=>r.branch==='component').map(r=>({id:r.id,title:r.title||r.id,parts:parts(r.id),
+          areas:(r.children||[]).map(k=>byID.get(k)).filter(a=>a?.branch==='area').map(a=>({id:a.id,title:a.title||a.id}))}));
+      }
       const nodes=geometry()||[],kids=new Map();
       for(const n of nodes){if(!kids.has(n.parentId||''))kids.set(n.parentId||'',[]);kids.get(n.parentId||'').push(n);}
       const parts=id=>(kids.get(id)||[]).reduce((sum,n)=>sum+(n.frame||kids.has(n.id)?parts(n.id):1),0);
-      const title=id=>document.getElementById(id)?.dataset?.title||root().querySelector(`[data-box-title="${CSS.escape(id)}"],[data-frame-title="${CSS.escape(id)}"] strong,[data-component-overview="${CSS.escape(id)}"] strong,[data-summary-area="${CSS.escape(id)}"] strong`)?.textContent?.trim().replace(/\s+/g,' ')||id;
-      return nodes.filter(n=>!n.parentId&&n.branch==='component').map(n=>({id:n.id,title:title(n.id),parts:parts(n.id),
+      const title=id=>root().querySelector(`[data-box-title="${CSS.escape(id)}"],[data-frame-title="${CSS.escape(id)}"] strong,[data-component-overview="${CSS.escape(id)}"] strong,[data-summary-area="${CSS.escape(id)}"] strong`)?.textContent?.trim().replace(/\s+/g,' ')||id;
+      return nodes.filter(n=>!n.parentId&&['component','program'].includes(n.branch)).map(n=>({id:n.id,title:title(n.id),parts:parts(n.id),
         areas:(kids.get(n.id)||[]).filter(a=>a.branch==='area').map(a=>({id:a.id,title:title(a.id)}))}));
     },
     // The arrows at rest: one path each, from its own source to its own
@@ -146,7 +158,10 @@ export function invariantKit(){
       const onBorder=(p,r,e=1.5)=>p.x>=r.l-e&&p.x<=r.r+e&&p.y>=r.t-e&&p.y<=r.b+e&&Math.min(Math.abs(p.x-r.l),Math.abs(p.x-r.r),Math.abs(p.y-r.t),Math.abs(p.y-r.b))<=e;
       const within=(p,r,e=2)=>p.x>=r.l-e&&p.x<=r.r+e&&p.y>=r.t-e&&p.y<=r.b+e;
       const inSight=r=>meets(r,c,0);
-      const frameRect=frame?rectOf(frame):c,fits=frameRect&&frameRect.l>=c.l-1&&frameRect.r<=c.r+1&&frameRect.t>=c.t-1&&frameRect.b<=c.b+1;
+      // The level's frame: the scene's own (the entered program's frame at
+      // its areas too), else the entered box, else the canvas.
+      const sceneFrame=(()=>{try{const f=map().sceneState?.().scene?.frame;if(!f)return null;const a=toScreen({x:f.x,y:f.y},cam,c),b=toScreen({x:f.x+f.width,y:f.y+f.height},cam,c);return {l:a.x,t:a.y,r:b.x,b:b.y};}catch{return null;}})();
+      const frameRect=sceneFrame||frame&&rectOf(frame)||c,fits=frameRect&&frameRect.l>=c.l-1&&frameRect.r<=c.r+1&&frameRect.t>=c.t-1&&frameRect.b<=c.b+1;
       const drawn=[];
       for(const g of edges()){
         const path=line(g);if(!path||!shown(g)||!shown(path))continue;
@@ -221,26 +236,26 @@ export function invariantKit(){
       }
       result['shared-run']={checked:pairs.length,failed:0,examples:[]};
       for(const [a,b,shared] of pairs)if(shared>6){result['shared-run'].failed++;if(result['shared-run'].examples.length<8)result['shared-run'].examples.push(`${a.name} and ${b.name}: ${shared.toFixed(0)} px`);}
-      // Parallel lanes in the gaps between leaf boxes: scan lines across the
-      // canvas, counting the distinct lanes between two neighbouring boxes.
-      const leaves=[...root().querySelectorAll('.react-flow__node[data-id]')].filter(shown).map(el=>({id:el.dataset.id,r:box(el.getBoundingClientRect())}))
-        .filter((n,_,all)=>inSight(n.r)&&!all.some(m=>m!==n&&m.r.l>=n.r.l-1&&m.r.r<=n.r.r+1&&m.r.t>=n.r.t-1&&m.r.b<=n.r.b+1&&(m.r.r-m.r.l)*(m.r.b-m.r.t)<(n.r.r-n.r.l)*(n.r.b-n.r.t)));
-      const all=drawn.flatMap(segs);
-      let widest=0,where='';
-      for(const [axis,along,lo,hi] of [['y','x',c.t,c.b],['x','y',c.l,c.r]]){
-        for(let at=lo+5;at<hi;at+=8){
-          const cuts=leaves.filter(n=>axis==='y'?n.r.t<at&&n.r.b>at:n.r.l<at&&n.r.r>at).map(n=>axis==='y'?[n.r.l,n.r.r]:[n.r.t,n.r.b]).sort((a,b)=>a[0]-b[0]);
-          const lanes=[...new Set(all.filter(([p,q])=>Math.abs(p[along]-q[along])<.5&&Math.min(p[axis],q[axis])<at&&Math.max(p[axis],q[axis])>at).map(([p])=>Math.round(p[along])))].sort((a,b)=>a-b);
-          const bounds=[axis==='y'?c.l:c.t,...cuts.flat(),axis==='y'?c.r:c.b];
-          for(let k=0;k+1<bounds.length;k+=2){
-            const inGap=lanes.filter(x=>x>bounds[k]+.5&&x<bounds[k+1]-.5);
-            const distinct=inGap.filter((x,i)=>!i||x-inGap[i-1]>1).length;
-            if(distinct>widest){widest=distinct;where=`${distinct} lanes ${axis==='y'?'across y':'across x'}=${at.toFixed(0)}`;}
-          }
+      // Lanes keep at least the room the owner-approved Step 1 drawing kept
+      // between two (7.5 screen pixels, scene.test.mjs): two parallel runs
+      // of different arrows, side by side over more than a pixel, with no
+      // box between them. Runs on one line are shared runs, not lanes.
+      const boxes=[...root().querySelectorAll('.react-flow__node[data-id]')].filter(shown).map(el=>box(el.getBoundingClientRect())).filter(b=>inSight(b));
+      const runs=drawn.flatMap(a=>segs(a).map(([p,q])=>({a,p,q,upright:Math.abs(p.x-q.x)<.5,flat:Math.abs(p.y-q.y)<.5}))).filter(r=>(r.upright||r.flat)&&inSight({l:Math.min(r.p.x,r.q.x)-1,r:Math.max(r.p.x,r.q.x)+1,t:Math.min(r.p.y,r.q.y)-1,b:Math.max(r.p.y,r.q.y)+1}));
+      let narrowest=Infinity,between='';
+      for(let i=0;i<runs.length;i++)for(let j=i+1;j<runs.length;j++){
+        const s=runs[i],t=runs[j];if(s.a===t.a||!s.a.fresh&&!t.a.fresh)continue;
+        for(const [axis,other] of [['x','y'],['y','x']]){
+          if(!(axis==='x'?s.upright&&t.upright:s.flat&&t.flat))continue;
+          const lo=Math.max(Math.min(s.p[other],s.q[other]),Math.min(t.p[other],t.q[other])),hi=Math.min(Math.max(s.p[other],s.q[other]),Math.max(t.p[other],t.q[other]));
+          if(hi-lo<=1)continue;
+          const d=Math.abs(s.p[axis]-t.p[axis]);if(d<.5)continue;
+          const a=Math.min(s.p[axis],t.p[axis]),b=Math.max(s.p[axis],t.p[axis]),mid=(lo+hi)/2,[near,far]=axis==='x'?['l','r']:['t','b'],[from,to]=axis==='x'?['t','b']:['l','r'];
+          if(boxes.some(r=>r[near]>a&&r[far]<b&&mid>=r[from]&&mid<=r[to]))continue;
+          if(d<narrowest){narrowest=d;between=`${s.a.name} and ${t.a.name}`;}
         }
       }
-      if(skip)return result;
-      result.lanes={checked:drawn.length?1:0,failed:widest>4?1:0,examples:widest>4?[where]:[],widest};
+      result['step1-gap']={checked:runs.length>1?1:0,failed:narrowest<7.5?1:0,examples:narrowest<7.5?[`lanes ${narrowest.toFixed(1)} px apart: ${between}`]:[],narrowest:Number.isFinite(narrowest)?narrowest:null};
       const bends=drawn.map(a=>a.points.length-2);
       result.bends={max:bends.length?Math.max(...bends):0,mean:bends.length?bends.reduce((s,b)=>s+b,0)/bends.length:0,arrows:drawn.length};
       return result;
