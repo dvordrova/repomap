@@ -252,17 +252,21 @@ export function buildModel(page,{measure,t=text=>text}={}){
     for(const edge of edges){
       if(edge.to===part&&nodes.get(edge.from)?.kind==='input'){
         const input=nodes.get(edge.from),anchor=anchors.get(input.id);
-        const places=new Set(edge.relations.flatMap(r=>(r.calls||[]).map(call=>at.get(call.to||call.callee))));
+        // An input with no known handler stays on the part's edge.
+        const handled=anchor?.handled&&anchor.parts.includes(part);
+        const places=new Set(handled?edge.relations.filter(r=>!takenIn.has(r.label)).flatMap(r=>(r.calls||[]).map(call=>at.get(call.to||call.callee))):[]);
+        places.delete(undefined);
         for(const i of places.size?places:[undefined]){
           const list=side(i,'in');
           if(!list.has(input.inputKind))list.set(input.inputKind,{kind:input.inputKind,members:[],systems:[],handled:[]});
           const marker=list.get(input.inputKind);
-          if(!marker.members.includes(input.id)){marker.members.push(input.id);if(anchor?.handled&&anchor.parts.includes(part))marker.handled.push(input.id);}
+          if(!marker.members.includes(input.id)){marker.members.push(input.id);if(handled)marker.handled.push(input.id);}
         }
       }
       if(edge.from===part&&kind.get(edge.to)==='system'){
         const k=nodes.get(edge.to)?.systemKind||'other';
         const places=new Set(edge.relations.flatMap(r=>(r.calls||[]).map(call=>at.get(call.caller))));
+        places.delete(undefined);
         for(const i of places.size?places:[undefined]){
           const list=side(i,'out');
           if(!list.has(k))list.set(k,{kind:k,members:[part],systems:[],handled:[]});

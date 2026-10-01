@@ -54,3 +54,15 @@ for(const [name,page] of [...syntheticPages,...realPages()]){
     }
   });
 }
+
+for(const [name,page] of [...syntheticPages,...realPages()]){
+  test(`${name}: inside a part, a marker stands on a declaration only for an input it handles or a call it makes`,()=>{
+    const model=buildModel(page,{measure});
+    for(const node of model.nodes.values()){
+      if(node.kind!=='part'||!node.item?.symbols?.length)continue;
+      const {members}=model.memberMarkersOf(node.id);
+      for(const sides of members.values())for(const marker of sides.in)
+        for(const input of marker.members)assert.ok(model.anchors.get(input)?.handled,`${input}, with no known handler, stands on a declaration of ${node.name}`);
+    }
+  });
+}
