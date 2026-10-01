@@ -10,7 +10,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
 import {layoutLevels} from './levels.mjs';
-import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands} from './scene.mjs';
+import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
 import {syntheticPages,realPages,measure} from './scene-pages.mjs';
@@ -32,7 +32,7 @@ async function prepare(name,page){
 function levelsOf(model){
   const levels=[[]];
   for(const node of model.nodes.values())
-    if(['program','area','inputs','bucket'].includes(node.kind)||node.kind==='part'&&node.item?.symbols?.length)levels.push(chainOf(model,node.id));
+    if(enterable(model,node.id))levels.push(chainOf(model,node.id));
   return levels;
 }
 // The camera a level is shown at: the whole map's, or entered.
@@ -58,6 +58,18 @@ function segments(points){
 
 function checkScene(name,model,geometry,scene,problems){
   const zoom=zoomOf(geometry,scene),px=1/zoom,where=`${name} [${scene.key||'map'}]`;
+  // Everything the level draws or finds stands somewhere: every box, every
+  // declaration's tile, every kind's mark on a closed Inputs card; and the
+  // pointer finds something at each box's middle (owner, 2026-10-01: a
+  // bucket's kinds, read as marks, had thrown on a click).
+  const finite=r=>r&&[r.x,r.y,r.width,r.height].every(Number.isFinite);
+  for(const node of scene.nodes){
+    if(!finite(node.rect)){problems.push(['rects',`${where}: ${node.id} has no place`]);continue;}
+    for(const mark of node.kinds||[])if(!finite(mark?.rect))problems.push(['rects',`${where}: a kind's mark on ${node.id} has no place`]);
+    try{hitTest(scene,{x:node.rect.x+node.rect.width/2,y:node.rect.y+node.rect.height/2},zoom,()=>true);}
+    catch(error){problems.push(['rects',`${where}: pointing at ${node.id} throws ${error.message}`]);}
+  }
+  for(const member of scene.members||[])if(!finite(member.rect))problems.push(['rects',`${where}: ${member.part}#${member.index} has no place`]);
   const rect=new Map(scene.nodes.map(node=>[node.id,node.rect]));
   const portAt=new Map(scene.ports.map(port=>[port.id,port.point]));
   const frame=scene.frame;
@@ -132,6 +144,7 @@ function checkScene(name,model,geometry,scene,problems){
   const perSide=new Map();
   for(const marker of scene.markers){const key=`${marker.box}:${marker.side}`;perSide.set(key,(perSide.get(key)||0)+1);}
   for(const [key,count] of perSide)if(count>markersPerSide)problems.push(['markers',`${where}: ${count} markers on ${key}`]);
+  const runs=scene.edges.filter(edge=>edge.rest!==false).flatMap(edge=>segments(edge.points).map(s=>({...s,edge:edge.id})));
   for(let i=0;i<50;i++){
     const z=zoom*Math.pow(2,(i/49)*4-1.5);
     for(const item of project(scene,{x:0,y:0,zoom:z})){
@@ -140,6 +153,11 @@ function checkScene(name,model,geometry,scene,problems){
       const r=item.rect,half=item.size/2,edge=item.side==='in'?r.x:r.x+r.width;
       if(Math.abs(item.x+(item.side==='in'?half:-half)-edge)>1e-6*Math.max(1,r.width))problems.push(['markers',`${where}: ${item.id} does not touch its box`]);
       if(!item.row&&(item.y-half<r.y-1e-6||item.y+half>r.y+r.height+1e-6))problems.push(['markers',`${where}: ${item.id} stands beyond its box at zoom ${z}`]);
+      // A marker stands on no arrow: the arrow under it would be lost
+      // (owner: what is drawn is what is read).
+      if(item.row)continue;
+      const h=half-1/z,on=runs.find(({a,b})=>Math.max(a.x,b.x)>item.x-h&&Math.min(a.x,b.x)<item.x+h&&Math.max(a.y,b.y)>item.y-h&&Math.min(a.y,b.y)<item.y+h);
+      if(on)problems.push(['markers',`${where}: ${item.id} stands on ${on.edge} at zoom ${z.toFixed(3)}`]);
     }
   }
   // Pointing changes classes and order only, dark arrows after grey; and
@@ -165,10 +183,15 @@ function checkScene(name,model,geometry,scene,problems){
       if(!(backward?edge.heads.start:edge.heads.end))continue;
       if(!connectionOf(model,edge,backward))problems.push(['connections',`${where} ${edge.id}: no connection ${backward?'back':'on'}`]);
     }
-    const longest=segments(edge.points).sort((a,b)=>Math.hypot(b.b.x-b.a.x,b.b.y-b.a.y)-Math.hypot(a.b.x-a.a.x,a.b.y-a.a.y))[0];
-    const middle={x:(longest.a.x+longest.b.x)/2,y:(longest.a.y+longest.b.y)/2};
-    const hit=hitTest(scene,middle,zoom,()=>true);
-    if(hit?.type!=='box'&&hit?.type!=='marker'&&hit?.type!=='port'&&!(hit?.type==='edge'))problems.push(['hits',`${where} ${edge.id}: its middle finds ${hit?.type||'nothing'}`]);
+    // Pointed at anywhere along it, its ends included (a head touching its
+    // box, the only part in sight when the camera stands close), an arrow
+    // is found; a port at its port end is the port.
+    const parts=segments(edge.points),total=parts.reduce((sum,{a,b})=>sum+Math.hypot(b.x-a.x,b.y-a.y),0);
+    const along=f=>{let d=f*total;for(const {a,b} of parts){const l=Math.hypot(b.x-a.x,b.y-a.y);if(d<=l){const t=l?d/l:0;return {x:a.x+t*(b.x-a.x),y:a.y+t*(b.y-a.y)};}d-=l;}return edge.points.at(-1);};
+    for(const f of [0,.2,.35,.5,.65,.8,1]){
+      const hit=hitTest(scene,along(f),zoom,()=>true);
+      if(hit?.type!=='edge'&&!(hit?.type==='port'&&edge.port))problems.push(['hits',`${where} ${edge.id}: ${f*100}% along it finds ${hit?.type||'nothing'} ${hit?.id||''}`]);
+    }
   }
 }
 
@@ -200,14 +223,14 @@ function checkHome(name,model,geometry,problems){
 
 // Each rule's problems on every level of a page, with a box chosen too: a
 // chosen box draws its quiet arrows, and the rules hold for them.
-const rules={ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
+const rules={rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
   crosses:'no arrow runs through a box it does not join',
   uses:'the whole map draws no code-use arrow between programs at rest',
   pairs:'every two programs an operation joins have exactly one arrow at rest',titles:'titles at one level are within ±10%',
-  markers:'markers keep 20–28px, at most three a side, beside their box',order:'dark arrows are drawn after grey ones',
-  hover:'a marker lights only markers sharing its systems',connections:'every arrow resolves to its connection',hits:'an arrow is found where it is drawn'};
+  markers:'markers keep 20–28px, at most three a side, beside their box, on no arrow',order:'dark arrows are drawn after grey ones',
+  hover:'a marker lights only markers sharing its systems',connections:'every arrow resolves to its connection',hits:'an arrow is found all along it, its ends included'};
 const problemsOf=new Map();
 async function problemsFor(name,page){
   if(!problemsOf.has(name))problemsOf.set(name,(async()=>{

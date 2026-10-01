@@ -12,13 +12,26 @@ export const mark={size:22,gap:3,inset:6,readable:11};
 // top under its title, each `mark.size` screen pixels; it shows once the
 // box's title reads and the stack fits beside the box. A port is centred on
 // its point of the program's border. World units.
+// The last zoom's places are kept per scene: the pointer's hit test asks
+// at every move, at the camera's one zoom. The list is not to be changed.
+const placed=new WeakMap();
 export function overlayAt(scene,zoom){
-  const size=mark.size/zoom,gap=mark.gap/zoom,inset=mark.inset/zoom,clear=size/2+6/zoom;
+  const kept=placed.get(scene);
+  if(kept?.zoom===zoom)return kept.items;
+  const items=placeAt(scene,zoom);
+  placed.set(scene,{zoom,items});
+  return items;
+}
+function placeAt(scene,zoom){
+  const size=mark.size/zoom,gap=mark.gap/zoom,inset=mark.inset/zoom,pad=6/zoom;
   const readable=marker=>(marker.text||scene.text)*17*zoom>=mark.readable;
   const items=[];
-  // Each side's stack from the top, a marker stepping down past an arrow
-  // meeting that side; one that would stand below the box is not shown.
-  const stacks=new Map();
+  // Each side's stack from the top, a marker stepping down past every
+  // arrow running through the column it stands in (an arrow meeting that
+  // side, one bending beside the box); one that would stand below the box
+  // is not shown.
+  const runs=scene.edges.filter(edge=>edge.rest!==false).flatMap(edge=>edge.points.slice(1).map((b,i)=>[edge.points[i],b]));
+  const stacks=new Map(),columns=new Map();
   for(const marker of scene.markers){
     const r=marker.rect,key=`${marker.box}:${marker.side}`;
     // A declaration's markers stand in a row beside its tile, outward.
@@ -27,8 +40,15 @@ export function overlayAt(scene,zoom){
       items.push({...marker,type:'marker',x:edge+out*(size/2+marker.index*(size+gap)),y:r.y+r.height/2,size,shown:readable(marker)});
       continue;
     }
+    if(!columns.has(key))columns.set(key,crossings(runs,marker.side==='in'?r.x-size:r.x+r.width,size));
     let y=stacks.has(key)?stacks.get(key):r.y+inset+size/2;
-    for(const at of marker.blocked||[])if(Math.abs(at-y)<clear)y=at+clear;
+    for(let moved=true;moved;){
+      moved=false;
+      for(const [lo,hi] of columns.get(key)){
+        const past=hi+pad+size/2;
+        if(y+size/2+pad>lo&&past>y+1e-9*size){y=past;moved=true;}
+      }
+    }
     stacks.set(key,y+size+gap);
     const shown=readable(marker)&&y+size/2+inset<=r.y+r.height;
     const x=marker.side==='in'?r.x-size/2:r.x+r.width+size/2;
@@ -44,6 +64,19 @@ export function overlayAt(scene,zoom){
       shown:readable(node)&&r.width*zoom>=4*mark.size&&r.height*zoom>=2*mark.size});
   }
   return items;
+}
+
+// The y-ranges where the segments `runs` cross the column of `width` from
+// x `left`, sorted.
+function crossings(runs,left,width){
+  const right=left+width,out=[];
+  for(const [a,b] of runs){
+    if(Math.max(a.x,b.x)<left||Math.min(a.x,b.x)>right)continue;
+    if(a.x===b.x){out.push([Math.min(a.y,b.y),Math.max(a.y,b.y)]);continue;}
+    const y=x=>a.y+(x-a.x)/(b.x-a.x)*(b.y-a.y),from=y(Math.max(left,Math.min(a.x,b.x))),to=y(Math.min(right,Math.max(a.x,b.x)));
+    out.push([Math.min(from,to),Math.max(from,to)]);
+  }
+  return out.sort((p,q)=>p[0]-q[0]);
 }
 
 // Screen places at `camera` {x, y, zoom}: each shown item's centre and its

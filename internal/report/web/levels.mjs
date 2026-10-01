@@ -356,7 +356,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const boxes=new Map(),scales=new Map(),routes=new Map(),ports=new Map();
   const toWorld=(origin,scale)=>point=>({x:origin.x+point.x*scale,y:origin.y+point.y*scale});
   function place(container,rect){
-    const inside=local.get(container);if(!inside)return;
+    const inside=local.get(container);if(!inside||!(inside.width>0&&inside.height>0))return;
     const scale=Math.min(rect.width/inside.width,rect.height/inside.height);
     const origin={x:rect.x+(rect.width-inside.width*scale)/2,y:rect.y+(rect.height-inside.height*scale)/2};
     scales.set(container,{scale,origin,frame:{x:origin.x,y:origin.y,width:inside.width*scale,height:inside.height*scale}});

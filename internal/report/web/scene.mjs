@@ -12,10 +12,11 @@ import {emphasis,recedes,focusAncestors} from './emphasis.mjs';
 import {overlayAt} from './overlay.mjs';
 import {tileRoom,tileHeader} from './symbols.mjs';
 
-// What can be entered: a level of its own opens inside it.
+// What can be entered: a level of its own opens inside it (a program
+// holding nothing has none).
 export function enterable(model,id){
   const node=model.nodes.get(id);if(!node)return false;
-  if(['program','area','inputs','bucket'].includes(node.kind))return true;
+  if(['program','area','inputs','bucket'].includes(node.kind))return node.children.length>0;
   return node.kind==='part'&&(node.item?.symbols?.length||0)>0;
 }
 // The level that shows `id`: the enterable boxes from the root down to it.
@@ -73,7 +74,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
             const t=geometry.text.get(child);
             box(child,'frame',rectOf(child),t,{bucket:true});
             for(const system of item.children)box(system,'chip',rectOf(system),t,{systemKind:model.nodes.get(system).systemKind});
-          }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),1,{kinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
+          }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),1,{systemKinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
         }
       }
       else if(node.kind==='note')box(id,'note',rect,1);
@@ -151,12 +152,6 @@ export function sceneAt(model,geometry,level=[],selection={}){
   function finish(){
     // Quiet arrows stand only where an end is looked at.
     const drawn=edges.filter(edge=>!edge.quiet||edge.near);
-    // Where arrows meet a box's left and right edges: its markers stand
-    // clear of them (overlay.mjs).
-    for(const marker of markers){
-      const r=marker.rect,x=marker.side==='in'?r.x:r.x+r.width,eps=Math.max(1e-6,r.width*1e-4);
-      marker.blocked=drawn.flatMap(edge=>[edge.points[0],edge.points.at(-1)]).filter(p=>Math.abs(p.x-x)<=eps&&p.y>=r.y-eps&&p.y<=r.y+r.height+eps).map(p=>p.y).sort((a,b)=>a-b);
-    }
     // `frame` holds everything the level draws; `focus` is what entering
     // it frames: the box entered, or the whole map.
     return {level,key:levelKey(level),inner,program,text,nodes,edges:drawn,markers,ports,members,
@@ -193,24 +188,29 @@ function distanceToPolyline(points,p){
 // What stands under world point `p` at `zoom`, the topmost first: a marker
 // or a port, a box (a card, a chip, a closed frame), an arrow within six
 // pixels, then an open frame, its title band first. Null on empty canvas.
+// Two pixels about a box's border are an arrow's meeting it there: a head
+// touching the box is the arrow's.
 export function hitTest(scene,p,zoom,shown=edge=>edge.rest!==false){
-  for(const item of overlayAt(scene,zoom).reverse())
+  for(const item of [...overlayAt(scene,zoom)].reverse())
     if(item.shown&&Math.abs(p.x-item.x)<=item.size/2&&Math.abs(p.y-item.y)<=item.size/2)return {type:item.type,id:item.type==='zoom'?item.box:item.id,box:item.box||'',item};
-  const member=(scene.members||[]).find(m=>inside(m.rect,p));
-  if(member)return {type:'member',id:`${member.part}#${member.index}`,part:member.part,index:member.index,member};
-  const boxes=scene.nodes.filter(node=>node.band===bands.box&&inside(node.rect,p));
-  if(boxes.length){
-    const top=boxes.reduce((a,b)=>b.rect.width*b.rect.height<a.rect.width*a.rect.height?b:a);
-    const kind=(top.kinds||[]).find(entry=>inside(entry.rect,p,2/zoom));
-    return {type:'box',id:top.id,node:top,...(kind?{kind:kind.kind,group:kind.group}:{})};
-  }
   let near=null;
   for(const edge of scene.edges){
     if(!shown(edge))continue;
     const d=distanceToPolyline(edge.points,p);
     if(d<=6/zoom&&(!near||d<near.d))near={d,edge};
   }
-  if(near)return {type:'edge',id:near.edge.id,edge:near.edge,at:p};
+  const arrow=near&&{type:'edge',id:near.edge.id,edge:near.edge,at:p};
+  const rim=2/zoom,onRim=r=>inside(r,p,rim)&&Math.min(Math.abs(p.x-r.x),Math.abs(r.x+r.width-p.x),Math.abs(p.y-r.y),Math.abs(r.y+r.height-p.y))<=rim;
+  if(arrow&&near.d<=rim&&scene.nodes.some(node=>node.band===bands.box&&onRim(node.rect)))return arrow;
+  const member=(scene.members||[]).find(m=>inside(m.rect,p));
+  if(member)return {type:'member',id:`${member.part}#${member.index}`,part:member.part,index:member.index,member};
+  const boxes=scene.nodes.filter(node=>node.band===bands.box&&inside(node.rect,p));
+  const top=boxes.length?boxes.reduce((a,b)=>b.rect.width*b.rect.height<a.rect.width*a.rect.height?b:a):null;
+  if(top){
+    const kind=(top.kinds||[]).find(entry=>inside(entry.rect,p,2/zoom));
+    return {type:'box',id:top.id,node:top,...(kind?{kind:kind.kind,group:kind.group}:{})};
+  }
+  if(arrow)return arrow;
   const frames=scene.nodes.filter(node=>node.band===bands.frame&&inside(node.rect,p));
   if(frames.length){
     const top=frames.reduce((a,b)=>b.rect.width*b.rect.height<a.rect.width*a.rect.height?b:a);

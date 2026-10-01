@@ -129,7 +129,7 @@ function BucketNode({data}){
   const {node}=data;
   return <>{handles}<Scaled node={node} className="flow-chip scene-bucket">
     <span className="flow-chip-name" title={node.title}>{node.title}</span>
-    <span className="scene-bucket-marks">{node.kinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></Scaled></>;
+    <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></Scaled></>;
 }
 function NoteNode({data}){
   const {node}=data,item=data.item;
@@ -179,7 +179,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   }
   window.addEventListener('resize',sizeWorkspace);sizeWorkspace();
 
-  const model=buildModel({items:records,relations,areas,inputOwner},{measure,t});
+  // The facts drawn are the saved scene the page carries (REPORT.md
+  // "Scene model"), read as saved.
+  let saved=null;
+  try{saved=JSON.parse(document.getElementById('rm-scene')?.textContent||'null');}catch{saved=null;}
+  const model=buildModel({items:records,relations,areas,scene:saved},{measure,t});
   const size=()=>({width:host.clientWidth||1200,height:host.clientHeight||700});
   let geometry;
   try{geometry=await layoutLevels(model,{...size(),measure});}
@@ -381,7 +385,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     return {x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
   };
   const onCard=event=>!!event.target.closest?.('.flow-floating-card');
-  host.addEventListener('pointerdown',event=>{down={x:event.clientX,y:event.clientY};},true);
+  // A press that moves the pointer or the camera is a drag: the click
+  // ending it acts on nothing.
+  host.addEventListener('pointerdown',event=>{const v=camera.get();down={x:event.clientX,y:event.clientY,camera:{x:v.x,y:v.y,zoom:v.zoom},moved:false};},true);
+  host.addEventListener('pointermove',event=>{if(down&&event.buttons&&Math.hypot(event.clientX-down.x,event.clientY-down.y)>4)down.moved=true;},true);
   host.addEventListener('pointermove',event=>{
     if(initializing||event.buttons)return;
     if(onCard(event))return;
@@ -403,7 +410,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointerleave',()=>{store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
-    if(down&&Math.hypot(event.clientX-down.x,event.clientY-down.y)>4)return;
+    const v=camera.get(),press=down;down=null;
+    if(press&&(press.moved||Math.hypot(event.clientX-press.x,event.clientY-press.y)>4||Math.abs(v.x-press.camera.x)>.5||Math.abs(v.y-press.camera.y)>.5||v.zoom!==press.camera.zoom))return;
     const scene=sceneOf(store.getState());
     clickAt(hitTest(scene,worldAt(event),camera.get().zoom,shownEdge),event);
   });
