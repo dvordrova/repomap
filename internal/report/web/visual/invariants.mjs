@@ -52,7 +52,7 @@ export const invariants=[
   ['cards','every arrow opens its card when pointed at'],
   ['no-labels','no digit, plaque or kind label on the canvas'],
   ['text','no clipped or too small text on the canvas (chip names apart)'],
-  ['chip-text','an outside chip\'s name reads at 11 px or more'],
+  ['chip-text','an outside chip\'s name reads at 11 px, or fades and pointing or focus names it'],
   ['outside-40','the whole map Outside holds at most 40 top-level items'],
   ['page-errors','the page raises no error'],
 ];
@@ -364,6 +364,22 @@ export function invariantKit(){
       }
       return n;
     },
+    // The outside chips in sight, each with its name, whether that name
+    // reads (under 11 px it fades on the scene path) and its accessible name.
+    chips(){
+      const c=canvas();
+      return [...root().querySelectorAll('.flow-chip:not(.scene-bucket)')].filter(shown).map(el=>{
+        const name=el.querySelector('.flow-chip-name'),r=el.getBoundingClientRect(),style=name&&getComputedStyle(name);
+        const px=name?parseFloat(style.fontSize)*(name.offsetHeight?name.getBoundingClientRect().height/name.offsetHeight:1):0;
+        return {id:el.closest('.react-flow__node')?.dataset.id||'',title:(name?.getAttribute('title')||name?.textContent||'').replace(/\s+/g,' ').trim(),
+          faded:!name||parseFloat(style.opacity)<.999||px<11-.05,px,aria:el.getAttribute('aria-label')||'',focusable:el.tabIndex>=0,
+          x:r.left+r.width/2,y:r.top+r.height/2,inSight:r.left+r.width/2>c.l+4&&r.left+r.width/2<c.r-4&&r.top+r.height/2>c.t+4&&r.top+r.height/2<c.b-4};
+      }).filter(chip=>chip.inSight);
+    },
+    // The name a tip gives to what is pointed at or focused.
+    tipNames(){return [...document.querySelectorAll('.scene-tip.scene-tip-name b')].filter(shown).map(b=>b.textContent.replace(/\s+/g,' ').trim());},
+    focusChip(id){const el=root().querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"] .flow-chip`);el?.focus();return document.activeElement===el;},
+    blur(){document.activeElement?.blur?.();},
     cardOpen(){return [...document.querySelectorAll('.flow-floating-card')].some(shown);},
     // A spot on the canvas over nothing a reader points at, for a pan.
     emptySpot(seed){

@@ -98,8 +98,7 @@ for(const target of targets)for(const path of paths){
         merge('markers',await page.evaluate(()=>window.__inv.markers()));
         const lints=await page.evaluate(([level,whole])=>window.__lintCanvas(level,3,!whole),[level.name,level.kind==='home']);
         const texts=await page.evaluate(()=>window.__inv.textCount());
-        const chips=await page.evaluate(()=>[...document.querySelectorAll('.flow-root .flow-chip-name')].filter(el=>el.checkVisibility?.()).length);
-        r['no-labels'].checked+=texts;r.text.checked+=texts;r['chip-text'].checked+=chips;
+        r['no-labels'].checked+=texts;r.text.checked+=texts;
         for(const finding of lints){
           if(finding.kind==='label'){r['no-labels'].failed++;if(r['no-labels'].examples.length<8)r['no-labels'].examples.push(finding.element);}
           // A chip's name drawn small is its own column (the plan keeps
@@ -108,6 +107,21 @@ for(const target of targets)for(const path of paths){
           const into=chip&&finding.kind==='small'?r['chip-text']:finding.kind==='small'||finding.kind==='clipped'?r.text:null;
           if(into){into.failed++;if(into.examples.length<8)into.examples.push(`${finding.kind} ${finding.element}`);}
         }
+        // A chip whose name fades is named when pointed at and when focused,
+        // and carries its name for assistive technology.
+        for(const chip of await page.evaluate(()=>window.__inv.chips())){
+          if(!chip.faded){add('chip-text',true,'');continue;}
+          phase=`pointing at chip ${chip.id}`;
+          await page.mouse.move(chip.x,chip.y,{steps:2});await page.waitForTimeout(180);
+          const pointed=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);
+          await park(page);
+          let focused=false;
+          if(chip.focusable&&await page.evaluate(id=>window.__inv.focusChip(id),chip.id)){await page.waitForTimeout(150);focused=(await page.evaluate(()=>window.__inv.tipNames())).includes(chip.title);}
+          await page.evaluate(()=>window.__inv.blur());
+          const named=chip.aria.replace(/\s+/g,' ').trim()===chip.title;
+          add('chip-text',pointed&&focused&&named,`${chip.id} "${chip.title}" at ${chip.px.toFixed(1)}px: ${[!pointed&&'pointing names it not',!focused&&(chip.focusable?'focus names it not':'it takes no focus'),!named&&`aria-label "${chip.aria}"`].filter(Boolean).join(', ')}`);
+        }
+        await park(page);
         if(level.kind==='home')for(const frame of await page.evaluate(()=>window.__inv.outside()))add('outside-40',frame.items<=40,`${frame.id}: ${frame.items} items`);
         // Pointed at, every port and marker draws its lines: they are
         // arrows too, checked as the ones at rest.
