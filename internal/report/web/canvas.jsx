@@ -18,6 +18,7 @@ import {InputTypes, KindMark, scrollInventory} from './card-content.jsx';
 import {systemIcons} from './kind-icons.mjs';
 import {callCard} from './call-card.mjs';
 import {BriefRows, FrameConnections} from './call-card-view.jsx';
+import {createSceneFlow} from './scene-canvas.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -233,7 +234,11 @@ function RoutedEdge({id,data}) {
 }
 const nodeTypes={part:Part,area:Area,chip:Chip}, edgeTypes={routed:RoutedEdge};
 
+// The rewritten canvas (scene-canvas.jsx) runs behind `?scene=1` until each
+// of its levels holds its invariants on every report (PLAN).
+const sceneMode=()=>{try{return new URLSearchParams(window.location.search).get('scene')==='1';}catch{return false;}};
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
+  if(sceneMode())return createSceneFlow(map,stage,records,relations,areas,inputOwner,callbacks);
   ({records,areas}=inputGroupsByPart(records,areas,inputOwner,relations));
   // A destination's call tiles are read in the column, not drawn: a tile
   // the reading names stands for its chip.

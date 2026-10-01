@@ -1,0 +1,55 @@
+/* The scene canvas (scene-canvas.jsx), behind ?scene=1. Colours are the
+   canvas's own: no new colour, arrow kind or label. */
+.scene-root .react-flow__node{pointer-events:none!important;cursor:default}
+.scene-root .react-flow__pane{cursor:default}
+.scene-root .react-flow__node.scene-frame,.scene-root .react-flow__node.scene-group{z-index:-1!important}
+.scene-scaled{position:absolute;left:0;top:0;transform-origin:0 0;box-sizing:border-box}
+.scene-root .flow-part{padding:14px;gap:6px;overflow:hidden}
+.scene-root .flow-part>strong{white-space:pre-line;line-height:21.25px}
+.scene-root .flow-description-lines{white-space:pre-line;display:block}
+.scene-program-card{background:#f8fafc;border:1.25px solid #718096;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:6px;color:#243044;overflow:hidden}
+.scene-program-card>strong{font-size:18px;line-height:23px;white-space:pre-line}
+.scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line}
+.scene-frame-title{padding:10px 16px;pointer-events:none}
+.scene-frame-title>strong{font-size:17px;line-height:22px;white-space:nowrap}
+.flow-communication .scene-frame-title>strong{color:#77531c}
+.flow-input-collection .scene-frame-title>strong,.scene-inputs-card>strong{color:#204a7b}
+.scene-inputs-card{padding:14px 16px;display:flex;flex-direction:column;gap:8px;border-radius:10px;box-shadow:inset 0 0 0 1.25px #356faa}
+.scene-inputs-card>strong{font-size:17px;line-height:22px}
+.scene-inputs-card .flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font:500 13px/18px system-ui;color:#204a7b}
+.scene-inputs-card .flow-input-types li{display:flex;gap:6px;align-items:center}
+.scene-group{box-sizing:border-box;border-radius:8px;box-shadow:inset 0 0 0 1px #9dbbe0;background:#f6faff}
+.scene-group-title{display:flex;gap:6px;align-items:center;padding:8px 12px;color:#204a7b}
+.scene-group-title>strong{font-size:13.6px;line-height:18px;white-space:nowrap}
+.scene-tile{display:flex;gap:6px;align-items:center;padding:0 10px;border-radius:6px;background:#deedff;border:1.25px solid #356faa;color:#204a7b;font:600 13px/17px system-ui;overflow:hidden}
+.scene-tile>span{overflow-wrap:anywhere}
+.scene-chip{gap:6px;padding:0 12px;font:600 13px/17px system-ui}
+.scene-bucket{flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:6px 12px;background:#fffaf1}
+.scene-bucket-marks{display:flex;gap:4px;color:#896019}
+.scene-note{background:#f8fafc;border-style:dashed}
+.flow-kind-mark{flex:none;fill:currentColor}
+.scene-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+/* Markers and ports keep one screen size (overlay.mjs): an input kind on a
+   box's left edge in the inputs' blue, an outside kind on its right in the
+   Outside frame's amber, a program's port in the frames' slate. */
+.scene-overlay{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden}
+.scene-mark{position:absolute;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1.25px solid;background:#fff}
+.scene-mark .flow-kind-mark{width:14px;height:14px}
+.scene-mark-in{border-color:#356faa;color:#204a7b;background:#deedff}
+.scene-mark-out{border-color:#906014;color:#77531c;background:#ffefcf}
+.scene-mark-port{border-color:#718096;color:#52647d;background:#f8fafc;border-radius:50%}
+.scene-mark-lit{border-color:#243044;box-shadow:0 0 0 1.5px #243044}
+.scene-zoom{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:6px;background:#ffffffd9;border:1px solid #c7d0dc}
+.scene-zoom .flow-zoom-picture{width:14px;height:14px}
+.scene-tip{position:absolute;display:flex;flex-direction:column;gap:2px;max-width:260px;padding:6px 9px;border-radius:7px;background:#fff;border:1px solid #c7d0dc;box-shadow:0 4px 14px #24304422;font:13px/17px system-ui;color:#243044;white-space:nowrap}
+.scene-tip>b{font-weight:650;color:#52647d}
+.scene-tip>span{overflow:hidden;text-overflow:ellipsis}
+.scene-card{position:absolute;z-index:6}
+.scene-root .scene-scaled>*{margin:0}
+.scene-program-inside{list-style:none;padding:0;display:flex;flex-direction:column;font:500 13px/18px system-ui;color:#52647d}
+.scene-program-inside li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scene-ghosts{position:absolute;left:0;top:0;pointer-events:none}
+.scene-ghosts rect{fill:#ffffff8c;stroke:currentColor;stroke-opacity:.25;stroke-width:1.5}
+.scene-area-card>strong,.scene-area-card>.flow-description{position:relative;z-index:1}
+.scene-words{position:relative;z-index:1;display:flex;flex-direction:column;gap:6px;background:inherit;border-radius:6px;align-self:flex-start;max-width:100%}
+.scene-words>strong{font-size:17px;line-height:21.25px;white-space:pre-line}

@@ -717,6 +717,7 @@ var russianUI = map[string]string{
 	"click — explore":                  "нажмите, чтобы изучить",
 	"declared at {0}":                  "объявлено в {0}",
 	"declared in":                      "объявлено в",
+	"declared here":                    "объявлено здесь",
 	"looked up in":                     "ищется в",
 	"drag to pan":                      "перетаскивайте для перемещения",
 	"fit":                              "вся карта",

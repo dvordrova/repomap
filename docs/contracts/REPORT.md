@@ -1176,6 +1176,58 @@ reading lists, in the column's muted meta text (owner, 2026-09-29). Saved
 core/entry/dependency lanes stay named in map and reading; an import is not
 promoted into an external communication.
 
+## Scene model
+
+The canvas is being rewritten as four pure stages (the accepted plan of
+2026-10-01). Until each level holds its invariants on every report, the
+rewritten canvas runs only behind `?scene=1` (`internal/report/web/scene-canvas.jsx`);
+the canvas above stays the default.
+
+- `model.mjs` `buildModel(page)` builds the display graph from the page's
+  data: programs, areas, parts and the note keep the page's containment; a
+  program's inputs stand in its Inputs frame by kind, never by part; an
+  outside system is one chip standing for its call records. An Outside
+  frame holds, in order, the systems two or more parts call (the most
+  called first), one bucket per part with two or more systems of its own,
+  then the rest (B′; casdoor: 94 systems, 33 items). Every box carries
+  markers for what stands inside it: the kinds of the inputs taking effect
+  in it (left) and of the outside systems it calls (right), at most three a
+  side, the least held kinds folded into the third. An input takes effect
+  in its handler's part, else where its code takes it in ("declared
+  here"), else in its program.
+- `levels.mjs` `layoutLevels(model, canvas)` lays every level out once per
+  canvas size with ELK, bottom-up, each level its own graph with final
+  routes: an area its parts (layered down, arrows on the boxes' tops and
+  bottoms, the left and right edges left to the markers); a program its
+  closed areas (a card of its open drawing's proportion) and loose parts,
+  of both directions the one fitting the canvas larger, a link to another
+  program ending on a port of the program's border (one port per box and
+  program); the whole map its programs, Inputs and Outside frames, one
+  arrow per pair. A box at one level holds the level inside it at one
+  scale. Arrowless collections (chips, inputs' names) are packed in rows.
+  No wrapping, grid, size floor or edit after layout.
+- `scene.mjs` `sceneAt(model, geometry, level, choice)` gives a level's
+  boxes, arrows (one polyline each, its own ends, a head at each end an
+  edge goes into), markers and ports, each with a drawing band, and the
+  level's one text scale; `emphasisOf` changes only classes and the
+  arrows' order (dark over grey); one `hitTest` answers hover and click.
+  The level is the chain of entered boxes (program, area, part; an Inputs
+  frame; a bucket): entered by an action (the magnifier, a reading) or by
+  a zoom with hysteresis, its text reading at 12.75px to enter and under
+  10.5px to leave; a pan never changes it. Entered, a program draws
+  nothing beyond itself: its links to other programs end on its ports.
+- `overlay.mjs` places markers and ports at one screen size on every
+  camera tick: a marker touches its box's edge from outside, the stack
+  from the top, stepping past an arrow meeting that edge, shown once the
+  box's title reads and the stack fits beside it. `store.mjs` holds the
+  level, the pointer and the choice (useSyncExternalStore); the camera
+  has its own store.
+- The node tests `model.test.mjs` and `scene.test.mjs` check every
+  invariant at every level of the seeded synthetic graphs and of the
+  reports named by `REPOMAP_SCENE_PAGES` (page JSON captured by
+  `node scene-pages.mjs capture REPORT.html --out DIR`). The page exposes
+  `map.sceneState()` and `map.sceneEnter(id)` for browser checks.
+
 ## Reader context
 
 The complete component/input catalogue stays available beside the same map,
