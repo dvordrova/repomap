@@ -46,7 +46,7 @@ export const units={
   // An open frame's title band, in its level's text units.
   band:text=>Math.round(48*text+12),
   // A program's card on the whole map.
-  programCard:{width:300,minHeight:120,font:'700 18px system-ui',line:23,role:'600 13px system-ui',text:'13px system-ui',textLine:18,pad:16},
+  programCard:{width:240,minHeight:72,font:'700 17px system-ui',line:21.25,role:'600 13px system-ui',text:'13px system-ui',textLine:18,pad:14},
   // A chip names an outside system in at most two lines.
   // A chip names an outside system in one cell of its frame's grid, its
   // name in at most two lines after its kind's mark; a bucket is a cell
@@ -153,16 +153,14 @@ async function layered(id,boxes,pairs,{band=units.band(1),spacing=1,ports=[],por
 // The box a part's card takes at its level, `k` times its own size.
 const partBox=(node,k=1)=>({id:node.id,width:units.part.width*k,height:(node.item?.height||90)*k});
 
-// A program's card on the whole map: its title, role, up to two lines of
-// its purpose and its areas' and loose parts' names, one to a line, at
-// most five.
-export function programCardHeight(node,width,measure,names=[]){
+// A program's card on the whole map: its title, its role and up to two
+// lines of its purpose; what it holds reads where it is entered.
+export function programCardHeight(node,width,measure){
   const card=units.programCard,inner=width-2*card.pad;
   const title=wrapText(node.name,inner,card.font,measure).length*card.line;
-  const role=node.item?.role?wrapText(node.item.role,inner,card.role,measure).length*card.textLine+6:0;
+  const role=node.item?.role?Math.min(2,wrapText(node.item.role,inner,card.role,measure).length)*card.textLine+6:0;
   const purpose=node.item?.summary?Math.min(2,wrapText(node.item.summary,inner,card.text,measure).length)*card.textLine+6:0;
-  const listed=names.length?Math.min(5,names.length)*card.textLine+6:0;
-  return Math.max(card.minHeight,2*card.pad+title+role+purpose+listed);
+  return Math.max(card.minHeight,2*card.pad+title+role+purpose);
 }
 // A closed area's card at its program's level, `k` times a part's: its
 // title and up to three lines of its purpose, in the proportion of its
@@ -188,11 +186,10 @@ export function inputBox(node,measure){
   return {id:node.id,width,height:c.height+(lines-1)*17};
 }
 
-// An Inputs frame closed: its title and its kinds, one to a line, each
-// after its mark.
-export function inputsCard(node,names,measure){
-  const width=Math.max(200,...names.map(name=>Math.ceil(measure(name,'500 13px system-ui'))+64));
-  return {width,height:units.band(1)+node.children.length*24+20};
+// An Inputs frame closed: its title over its kinds' marks; the kinds'
+// names and their inputs read where it is entered.
+export function inputsCard(node){
+  return {width:Math.max(112,28+node.children.length*22),height:units.band(1)+26};
 }
 
 // `model` from buildModel; `canvas` {width,height} in pixels. Returns the
@@ -278,16 +275,21 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       // Closed, it lists its kinds (canvas: the collection's summary); open,
       // its kinds' groups are packed toward that card's proportion.
       const groups=node.children.map(id=>({id,width:local.get(id).width,height:local.get(id).height}));
-      const closed=inputsCard(node,node.children.map(id=>nodes.get(id)?.name||''),measure);
+      const closed=inputsCard(node);
       const laid=pack(groups,{top:units.band(1),aspect:closed.width/closed.height,gap:24});
       local.set(node.id,{width:laid.width,height:laid.height,closed,children:new Map(groups.map(group=>[group.id,{...laid.at.get(group.id),width:group.width,height:group.height}])),routes:new Map(),ports:[],text:1,kind:'inputs'});
     }
-    if(node.kind==='outside'){
+  }
+  // An Outside frame's cells in rows toward `aspect`; the whole map tries
+  // a few and keeps the one it shows largest.
+  const packOutside=aspect=>{
+    for(const node of nodes.values()){
+      if(node.kind!=='outside')continue;
       const items=node.children.map(id=>nodes.get(id)?.kind==='bucket'?closedBucket(nodes.get(id)):chipBox(nodes.get(id)));
-      const laid=pack(items,{top:units.band(1),aspect:1});
+      const laid=pack(items,{top:units.band(1),aspect});
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(items.map(item=>[item.id,{...laid.at.get(item.id),width:item.width,height:item.height}])),routes:new Map(),ports:[],text:1,kind:'outside'});
     }
-  }
+  };
 
   // 4. The whole map: each program as a card of its own level's
   // proportion, each Inputs frame as its kinds' list, each Outside frame
@@ -296,7 +298,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const node=nodes.get(id),inside=local.get(id);
     // A program's card holds its summary; entered, its drawing stands
     // inside the card at the scale that fits it.
-    if(node.kind==='program')return {id,width:units.programCard.width,height:programCardHeight(node,units.programCard.width,measure,node.children.map(id=>nodes.get(id)?.name||''))};
+    if(node.kind==='program')return {id,width:units.programCard.width,height:programCardHeight(node,units.programCard.width,measure)};
     if(node.kind==='inputs')return {id,...inside.closed};
     if(node.kind==='outside')return {id,width:inside.width,height:inside.height};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
@@ -304,14 +306,19 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     if(node.kind==='input')return inputBox(node,measure);
     return partBox(node);
   };
-  const roots=model.roots.map(rootBox);
   const rootPairs=pairsOf(model,model.edges,model.rootOf);
-  let map=null;
-  for(const direction of ['RIGHT','DOWN']){
-    const laid=readNode(await native({id:'map',layoutOptions:{...outer,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
-      edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
-    if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05)map=laid;
+  let map=null,chosen=1;
+  const hasOutside=[...nodes.values()].some(node=>node.kind==='outside');
+  for(const aspect of hasOutside?[1,.6,1.6]:[1]){
+    packOutside(aspect);
+    const roots=model.roots.map(rootBox);
+    for(const direction of ['RIGHT','DOWN']){
+      const laid=readNode(await native({id:'map',layoutOptions:{...outer,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
+        edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
+      if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen=aspect;}
+    }
   }
+  packOutside(chosen);
   local.set('',{...map,text:1,pairs:rootPairs,kind:'map'});
 
   // 5. World places: the map's units are the world's; a box drawn at one

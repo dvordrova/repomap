@@ -67,21 +67,14 @@ function ProgramNode({data}){
   const words=useMemo(()=>{
     const inner=node.rect.width/node.text-2*c.pad;
     const title=wrapText(node.title,inner,c.font,measure);
-    const role=item?.role?wrapText(item.role,inner,c.role,measure):[];
-    let room=node.rect.height/node.text-2*c.pad-title.length*c.line-role.length*c.textLine-14;
-    const purpose=item?.summary?descriptionLines(item.summary,inner,Math.max(0,Math.min(2,Math.floor(room/c.textLine))),measure,c.text):[];
-    room-=purpose.length*c.textLine+8;
-    // Its areas and loose parts, one name to a line, as many as stand.
-    const most=Math.max(0,Math.min(5,Math.floor(room/c.textLine)));
-    const names=(data.inside||[]).slice(0,most);
-    if(names.length&&names.length<(data.inside||[]).length)names[names.length-1]='…';
-    return {title,role,purpose,names};
+    const role=item?.role?descriptionLines(item.role,inner,2,measure,c.role):[];
+    const room=node.rect.height/node.text-2*c.pad-title.length*c.line-role.length*c.textLine-12;
+    return {title,role,purpose:item?.summary?descriptionLines(item.summary,inner,Math.max(0,Math.min(2,Math.floor(room/c.textLine))),measure,c.text):[]};
   },[node.rect.width,node.rect.height,node.title]);
   return <>{handles}<Scaled node={node} className="scene-program-card">
     <strong data-title="">{words.title.join('\n')}</strong>
-    {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}
+    {words.role.length>0&&<div className="flow-component-role" title={item.role}>{words.role.join('\n')}</div>}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines" title={item.summary}>{words.purpose.join('\n')}</p>}
-    {words.names.length>0&&<ul className="scene-program-inside">{words.names.map((name,i)=><li key={i}>{name}</li>)}</ul>}
   </Scaled></>;
 }
 function FrameNode({data}){
@@ -94,12 +87,14 @@ function FrameNode({data}){
       <strong data-title="">{title}</strong></Scaled>
   </div></>;
 }
+// An Inputs frame closed: its title over its kinds' marks, each named on
+// hover; entered, the kinds' groups name their inputs.
 function InputsNode({data}){
-  const {node}=data,groups=data.groups;
+  const {node,groups}=data;
   return <>{handles}<Scaled node={node} className="flow-area flow-input-collection scene-inputs-card">
     <strong data-title="">{t('Inputs')}</strong>
-    <ul className="flow-input-types">{groups.map(group=><li key={group.kind} className={group.lit?'flow-lit':undefined}>
-      <Mark icon={kindIcon(group.kind==='background'?'continuous':group.kind)}/>{t(inputKindTitles[group.kind])}</li>)}</ul>
+    <span className="scene-kind-marks">{groups.map(group=><span key={group.kind} className={group.lit?'flow-lit':undefined} title={t(inputKindTitles[group.kind])}>
+      <Mark icon={kindIcon(group.kind)}/></span>)}</span>
   </Scaled></>;
 }
 function GroupNode({data}){
@@ -491,7 +486,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         style:{width:node.rect.width,height:node.rect.height},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
         className:`scene-node scene-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
-        data:{node,item,groups,lit:lit.has(node.id),inside:node.display==='program'?model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||''):undefined,
+        data:{node,item,groups,lit:lit.has(node.id),
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
     }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen]);
