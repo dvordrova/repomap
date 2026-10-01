@@ -30,7 +30,7 @@ async function prepare(name,page){
 function levelsOf(model){
   const levels=[[]];
   for(const node of model.nodes.values())
-    if(['program','area','inputs','bucket'].includes(node.kind))levels.push(chainOf(model,node.id));
+    if(['program','area','inputs','bucket'].includes(node.kind)||node.kind==='part'&&node.item?.symbols?.length)levels.push(chainOf(model,node.id));
   return levels;
 }
 // The camera a level is shown at: the whole map's, or entered.
@@ -81,7 +81,7 @@ function checkScene(name,model,geometry,scene,problems){
       if(p.x<frame.x-px||p.y<frame.y-px||p.x>frame.x+frame.width+px||p.y>frame.y+frame.height+px)problems.push(['frame',`${where} ${edge.id}: end beyond the level's frame`]);
   }
   // No two arrows share more than 6 screen pixels of one line.
-  const all=scene.edges.flatMap(edge=>segments(edge.points).map(segment=>({...segment,edge:edge.id})));
+  const all=scene.edges.flatMap(edge=>segments(edge.points).map(segment=>({...segment,edge:edge.id,container:edge.container})));
   for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++){
     const s=all[i],t=all[j];if(s.edge===t.edge)continue;
     let overlap=0;
@@ -99,7 +99,8 @@ function checkScene(name,model,geometry,scene,problems){
     const low=Math.max(-Infinity,...across.filter(r=>r[axis]+r[size]<=at+eps).map(r=>r[axis]+r[size]));
     const high=Math.min(Infinity,...across.filter(r=>r[axis]>=at-eps).map(r=>r[axis]));
     if(!Number.isFinite(low)||!Number.isFinite(high))continue;
-    const lanes=new Set(all.filter(t=>(s.vertical?t.vertical:t.horizontal)&&t.a[axis]>low&&t.a[axis]<high&&
+    // Lanes of one level's own graph: an open frame's border parts its routes from its program's.
+    const lanes=new Set(all.filter(t=>t.container===s.container&&(s.vertical?t.vertical:t.horizontal)&&t.a[axis]>low&&t.a[axis]<high&&
       Math.min(t.a[span[0]],t.b[span[0]])<=mid&&Math.max(t.a[span[0]],t.b[span[0]])>=mid).map(t=>Math.round(t.a[axis]*zoom)));
     if(lanes.size>4){problems.push(['lanes',`${where}: ${lanes.size} lanes in one gap`]);break;}
   }
@@ -117,10 +118,10 @@ function checkScene(name,model,geometry,scene,problems){
     const z=zoom*Math.pow(2,(i/49)*4-1.5);
     for(const item of project(scene,{x:0,y:0,zoom:z})){
       if(item.px<20||item.px>28)problems.push(['markers',`${where}: ${item.id} drawn ${item.px}px`]);
-      if(item.type!=='marker')continue;
+      if(item.type!=='marker'||item.row&&item.index>0)continue;
       const r=item.rect,half=item.size/2,edge=item.side==='in'?r.x:r.x+r.width;
       if(Math.abs(item.x+(item.side==='in'?half:-half)-edge)>1e-6*Math.max(1,r.width))problems.push(['markers',`${where}: ${item.id} does not touch its box`]);
-      if(item.y-half<r.y-1e-6||item.y+half>r.y+r.height+1e-6)problems.push(['markers',`${where}: ${item.id} stands beyond its box at zoom ${z}`]);
+      if(!item.row&&(item.y-half<r.y-1e-6||item.y+half>r.y+r.height+1e-6))problems.push(['markers',`${where}: ${item.id} stands beyond its box at zoom ${z}`]);
     }
   }
   // Pointing changes classes and order only, dark arrows after grey; and

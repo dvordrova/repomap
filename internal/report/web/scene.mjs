@@ -8,9 +8,10 @@
 //               and click alike;
 //   levelAfterZoom  the level a zoom gesture brings, with hysteresis; a
 //               pan never changes it.
-import {emphasis,endEmphasis,recedes,focusAncestors} from './emphasis.mjs';
+import {emphasis,recedes,focusAncestors} from './emphasis.mjs';
 import {overlayAt} from './overlay.mjs';
 import {connections} from './layout.mjs';
+import {tileRoom,tileHeader} from './symbols.mjs';
 
 // What can be entered: a level of its own opens inside it.
 export function enterable(model,id){
@@ -31,7 +32,7 @@ export const bands={frame:0,arrow:1,dark:2,box:3};
 // The scene at `level` (a chain from chainOf). `selection` {scope} names
 // the box the reader has chosen: its quiet arrows are drawn.
 export function sceneAt(model,geometry,level=[],selection={}){
-  const nodes=[],edges=[],markers=[],ports=[];
+  const nodes=[],edges=[],markers=[],ports=[],members=[];
   const inner=level.at(-1)||'',top=level[0]||'';
   const program=top&&model.nodes.get(top)?.kind==='program'?top:'';
   const rectOf=id=>geometry.boxes.get(id);
@@ -93,14 +94,14 @@ export function sceneAt(model,geometry,level=[],selection={}){
       for(const part of node.children){
         if(!rectOf(part))continue;
         box(part,level[2]===part?'deep':'card',rectOf(part),text,{lane:model.nodes.get(part).item?.lane||''});
-        if(level[2]!==part)markersFor(part);
+        if(level[2]!==part)markersFor(part);else deepFor(part);
       }
       for(const route of geometry.routes.get(child)||[])edges.push(edgeOf(route,model,new Set([...looked,...node.children])));
     }else if(node.kind==='area'){
       // A closed area shows where its parts stand, never a blank box.
       box(child,'area',rect,text,{lane:node.item?.lane||'',ghosts:node.children.map(id=>rectOf(id)).filter(Boolean)});markersFor(child);
     }
-    else{box(child,level[1]===child?'deep':'card',rect,text,{lane:node.item?.lane||''});if(level[1]!==child)markersFor(child);}
+    else{box(child,level[1]===child?'deep':'card',rect,text,{lane:node.item?.lane||''});if(level[1]!==child)markersFor(child);else deepFor(child);}
   }
   // A program's own arrows; those of the area entered count as looked at.
   const lookedHere=new Set([...looked,...(level[1]?[level[1]]:[])]);
@@ -109,6 +110,29 @@ export function sceneAt(model,geometry,level=[],selection={}){
     ports.push({id:port.id,program:port.program,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
   return finish();
 
+  // A part entered: its declarations' tiles, each a member the pointer
+  // finds, its markers on the declarations they stand for (a row of them
+  // beside the tile), the rest on the part's edge.
+  function deepFor(id){
+    const drawn=geometry.grids.get(id),r=rectOf(id);
+    if(!drawn||!r)return markersFor(id);
+    const {grid,box:card}=drawn,s=r.width/card.width,{inset,columnGap:gap}=tileRoom;
+    const rectOfRow=row=>({x:r.x+s*(1+(inset+row.column*(grid.tileWidth+gap))/grid.divisor),
+      y:r.y+s*(1+tileHeader(grid.divisor)+(inset+row.y)/grid.divisor),width:s*grid.tileWidth/grid.divisor,height:s*row.height/grid.divisor});
+    const tileText=s/grid.divisor*13/17;
+    (model.nodes.get(id).item?.symbols||[]).forEach((symbol,index)=>{
+      const row=grid.rows[index];
+      if(row)members.push({part:id,index,rect:rectOfRow(row),text:tileText,name:symbol.name});
+    });
+    const own=model.memberMarkersOf(id);
+    for(const [index,sides] of own.members){
+      const member=members.find(m=>m.index===index);if(!member)continue;
+      for(const side of ['in','out'])sides[side].forEach((marker,i)=>markers.push({
+        id:`${id}#${index}:${side}:${marker.kind}`,box:`${id}#${index}`,part:id,member:index,side,index:i,count:sides[side].length,rect:member.rect,row:true,text:tileText,...marker}));
+    }
+    for(const side of ['in','out'])own.rest[side].forEach((marker,i)=>markers.push({
+      id:`${id}:${side}:${marker.kind}`,box:id,side,index:i,count:own.rest[side].length,rect:r,...marker}));
+  }
   function markersFor(id){
     const rect=rectOf(id),own=model.markersOf(id);
     for(const side of ['in','out'])own[side].forEach((marker,index)=>markers.push({
@@ -125,7 +149,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
     }
     // `frame` holds everything the level draws; `focus` is what entering
     // it frames: the box entered, or the whole map.
-    return {level,key:levelKey(level),inner,program,text,nodes,edges:drawn,markers,ports,
+    return {level,key:levelKey(level),inner,program,text,nodes,edges:drawn,markers,ports,members,
       frame:program?frameOf(program):geometry.bounds,focus:inner?frameOf(inner):geometry.bounds};
   }
 }
@@ -135,7 +159,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
 function edgeOf(route,model,looked){
   const ids=[...route.forward,...route.backward],all=ids.map(id=>edgeByID(model).get(id)).filter(Boolean);
   const end=id=>[id,...model.ancestors(id)];
-  return {id:route.id,from:route.from,to:route.to,points:route.points,band:bands.arrow,
+  return {id:route.id,container:route.container,from:route.from,to:route.to,points:route.points,band:bands.arrow,
     heads:{end:route.forward.length>0,start:route.backward.length>0},edgeIDs:ids,forward:route.forward,backward:route.backward,
     possible:all.length>0&&all.every(edge=>edge.possible),quiet:all.length>0&&all.every(edge=>edge.init),
     near:all.some(edge=>end(edge.from).some(id=>looked.has(id))||end(edge.to).some(id=>looked.has(id))),port:route.port||''};
@@ -161,7 +185,9 @@ function distanceToPolyline(points,p){
 // pixels, then an open frame, its title band first. Null on empty canvas.
 export function hitTest(scene,p,zoom){
   for(const item of overlayAt(scene,zoom).reverse())
-    if(item.shown&&Math.abs(p.x-item.x)<=item.size/2&&Math.abs(p.y-item.y)<=item.size/2)return {type:item.type,id:item.id,box:item.box||'',item};
+    if(item.shown&&Math.abs(p.x-item.x)<=item.size/2&&Math.abs(p.y-item.y)<=item.size/2)return {type:item.type,id:item.type==='zoom'?item.box:item.id,box:item.box||'',item};
+  const member=(scene.members||[]).find(m=>inside(m.rect,p));
+  if(member)return {type:'member',id:`${member.part}#${member.index}`,part:member.part,index:member.index,member};
   const boxes=scene.nodes.filter(node=>node.band===bands.box&&inside(node.rect,p));
   if(boxes.length){
     const top=boxes.reduce((a,b)=>b.rect.width*b.rect.height<a.rect.width*a.rect.height?b:a);
@@ -190,8 +216,10 @@ export function emphasisOf(scene,model,pointer,view={},member=null){
   const blank={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false};
   const choice={...blank,...view};
   const subject=pointer?.type==='box'||pointer?.type==='frame'?pointer.id:pointer?.type==='marker'?pointer.box:'';
-  const state=pointer?.type==='edge'?endEmphasis({insides:[],edges:pointer.edge.edgeIDs},edges):emphasis(choice,subject,leaves,edges,member);
-  if(pointer?.type==='edge'){for(const id of [pointer.edge.from,pointer.edge.to])state.focus.add(id);}
+  // An arrow pointed at is dark with the boxes at its ends; its card says
+  // what it carries.
+  const state=pointer?.type==='edge'?{mode:'hover',subject:'',focus:new Set([pointer.edge.from,pointer.edge.to]),
+    participants:new Set([pointer.edge.from,pointer.edge.to]),activeEdges:new Set(pointer.edge.edgeIDs)}:emphasis(choice,subject,leaves,edges,member);
   const rest=emphasis(choice,'',leaves,edges,null);
   const recede=rest.mode==='all'?null:rest;
   const subjects=state.mode==='search'?state.focus:new Set([state.subject,...(pointer?.type==='edge'?[pointer.edge.from,pointer.edge.to]:[])].filter(Boolean));

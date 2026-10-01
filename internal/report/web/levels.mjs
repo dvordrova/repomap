@@ -9,6 +9,7 @@
 // Arrowless collections (chips, inputs' names) are packed in rows.
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {wrapText} from './cards.mjs';
+import {tileGrid} from './symbols.mjs';
 
 let engine;
 const native=graph=>(engine||=new ELK()).layout(graph);
@@ -355,8 +356,15 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const box=boxes.get(node.id);
     enterZoom.set(node.id,reading.deep/box.width);exitZoom.set(node.id,reading.deepExit/box.width);
   }
+  // A part entered draws its declarations as tiles in its card
+  // (symbols.mjs tileGrid), laid out once here in the card's own units.
+  const grids=new Map();
+  for(const node of nodes.values())if(node.kind==='part'&&node.item?.symbols?.length){
+    const box={width:units.part.width,height:node.item?.height||90};
+    grids.set(node.id,{box,grid:tileGrid(node.item.symbols,node.item.symbolCalls||[],box,measure)});
+  }
   const bounds={x:0,y:0,width:map.width,height:map.height};
-  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,
+  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,
     home:homeCamera(bounds,canvas)};
 }
 

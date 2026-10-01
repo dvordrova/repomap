@@ -219,23 +219,66 @@ export function buildModel(page,{measure,t=text=>text}={}){
       if(!marker.members.includes(part))marker.members.push(part);
       if(!marker.systems.includes(system))marker.systems.push(system);
     }
-    const capped=(list,size,order)=>{
-      list.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind));
-      if(list.length<=markersPerSide)return list;
-      const bySize=[...list].sort((a,b)=>size(b)-size(a)||order.indexOf(a.kind)-order.indexOf(b.kind));
-      const kept=bySize.slice(0,markersPerSide-1),folded=bySize.slice(markersPerSide-1);
-      const last={kind:folded[0].kind,folded:folded.map(marker=>marker.kind),members:[...new Set(folded.flatMap(m=>m.members))],
-        systems:[...new Set(folded.flatMap(m=>m.systems))],handled:[...new Set(folded.flatMap(m=>m.handled||[]))]};
-      return [...kept.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind)),last];
-    };
     const result={in:capped([...byIn.values()],m=>m.members.length,inputKinds),out:capped([...byOut.values()],m=>m.systems.length,systemKinds)};
     markerCache.set(box,result);
+    return result;
+  }
+  // At most markersPerSide markers a side: past it the least held kinds
+  // fold into the last marker, its kind the most held of them.
+  function capped(list,size,order){
+    list.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind));
+    if(list.length<=markersPerSide)return list;
+    const bySize=[...list].sort((a,b)=>size(b)-size(a)||order.indexOf(a.kind)-order.indexOf(b.kind));
+    const kept=bySize.slice(0,markersPerSide-1),folded=bySize.slice(markersPerSide-1);
+    const last={kind:folded[0].kind,folded:folded.map(marker=>marker.kind),members:[...new Set(folded.flatMap(m=>m.members))],
+      systems:[...new Set(folded.flatMap(m=>m.systems))],handled:[...new Set(folded.flatMap(m=>m.handled||[]))]};
+    return [...kept.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind)),last];
+  }
+  // Inside a part drawn as its declarations, a marker stands on the
+  // declaration handling or declaring the input, or making the outside
+  // call; what names no declaration of the part stays on the part's edge.
+  // {members: Map symbol index → {in, out}, rest: {in, out}}.
+  const memberCache=new Map();
+  function memberMarkersOf(part){
+    if(memberCache.has(part))return memberCache.get(part);
+    const symbols=nodes.get(part)?.item?.symbols||[],at=new Map();
+    symbols.forEach((symbol,i)=>{for(const key of [symbol.href,symbol.open])if(key&&!at.has(key))at.set(key,i);});
+    const byMember=new Map(),rest={in:new Map(),out:new Map()};
+    const side=(i,way)=>{
+      if(i===undefined)return rest[way];
+      if(!byMember.has(i))byMember.set(i,{in:new Map(),out:new Map()});
+      return byMember.get(i)[way];
+    };
+    for(const edge of edges){
+      if(edge.to===part&&nodes.get(edge.from)?.kind==='input'){
+        const input=nodes.get(edge.from),anchor=anchors.get(input.id);
+        const places=new Set(edge.relations.flatMap(r=>(r.calls||[]).map(call=>at.get(call.to||call.callee))));
+        for(const i of places.size?places:[undefined]){
+          const list=side(i,'in');
+          if(!list.has(input.inputKind))list.set(input.inputKind,{kind:input.inputKind,members:[],systems:[],handled:[]});
+          const marker=list.get(input.inputKind);
+          if(!marker.members.includes(input.id)){marker.members.push(input.id);if(anchor?.handled&&anchor.parts.includes(part))marker.handled.push(input.id);}
+        }
+      }
+      if(edge.from===part&&kind.get(edge.to)==='system'){
+        const k=nodes.get(edge.to)?.systemKind||'other';
+        const places=new Set(edge.relations.flatMap(r=>(r.calls||[]).map(call=>at.get(call.caller))));
+        for(const i of places.size?places:[undefined]){
+          const list=side(i,'out');
+          if(!list.has(k))list.set(k,{kind:k,members:[part],systems:[],handled:[]});
+          const marker=list.get(k);if(!marker.systems.includes(edge.to))marker.systems.push(edge.to);
+        }
+      }
+    }
+    const finish=sides=>({in:capped([...sides.in.values()],m=>m.members.length,inputKinds),out:capped([...sides.out.values()],m=>m.systems.length,systemKinds)});
+    const result={members:new Map([...byMember].map(([i,sides])=>[i,finish(sides)])),rest:finish(rest)};
+    memberCache.set(part,result);
     return result;
   }
 
   return {
     nodes,roots,edges,record,inputOwner,anchors,calls,callingPrograms,
-    shown,parent,ancestors,rootOf,leaves,within,programOf,markersOf,
+    shown,parent,ancestors,rootOf,leaves,within,programOf,markersOf,memberMarkersOf,
     kindGroupOf,
   };
 }

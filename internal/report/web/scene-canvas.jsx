@@ -18,6 +18,7 @@ import {wrapText,descriptionLines} from './cards.mjs';
 import {kindIcon,kindNames,systemIcons} from './kind-icons.mjs';
 import {callCard} from './call-card.mjs';
 import {BriefRows,FrameConnections} from './call-card-view.jsx';
+import {PartSymbols} from './part-symbols.jsx';
 import {createLook} from './look.mjs';
 import {placeCard} from './card-place.mjs';
 import './scene.css';
@@ -128,7 +129,18 @@ function NoteNode({data}){
   return <>{handles}<Scaled node={node} className="flow-part scene-note"><strong data-title="">{node.title}</strong>
     {item?.summary&&<div className="flow-description">{item.summary}</div>}</Scaled></>;
 }
-const nodeTypes={card:CardNode,area:CardNode,deep:CardNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,group:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
+// A part entered: its declarations as tiles in its card (part-symbols.jsx),
+// the one pointed at and the one chosen marked.
+function DeepNode({data}){
+  const {node,item,drawn,member}=data;
+  if(!drawn)return <CardNode data={data}/>;
+  const {grid,box}=drawn,s=node.rect.width/box.width;
+  return <>{handles}<div className={`flow-part flow-part-deep scene-deep ${laneClass(node.lane)}`} style={{width:box.width,height:box.height,transform:`scale(${s})`}}>
+    <strong data-title="" style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{node.title}</strong>
+    <PartSymbols symbols={item.symbols} calls={item.symbolCalls} width={box.width} height={box.height} grid={grid} member={member}/>
+  </div></>;
+}
+const nodeTypes={card:CardNode,area:CardNode,deep:DeepNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,group:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
 
 const arrowHead=7;
 function SceneEdge({id,data}){
@@ -273,12 +285,42 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(!id)return;
     callbacks.select(id,center);
   }
+  // What the emphasis needs of a declaration: its part, the names its
+  // calls use for it and its source (canvas.jsx memberFacts).
+  function memberFacts(member){
+    const symbols=model.nodes.get(member?.part)?.item?.symbols||[],symbol=symbols[member?.index];
+    if(!symbol)return null;
+    const owner=symbol.owner?symbols[symbol.owner-1]?.name:'';
+    return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open].filter(Boolean)};
+  }
+  // A declaration clicked is read in its part, named; with a modifier its
+  // code opens.
+  function chooseMember(part,index,event){
+    const symbol=model.nodes.get(part)?.item?.symbols?.[index];if(!symbol||symbol.kind==='more')return;
+    if(event&&(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)){window.open(symbol.code||symbol.href,'_blank');return;}
+    store.dispatch({type:'member',member:{chosen:{part,index}}});
+    read(part,event);
+    setTimeout(()=>map.explainSource?.({key:symbol.href||symbol.open||'',href:symbol.href,open:symbol.open}),0);
+  }
+  // The column names a declaration (Find, a link, a restored visit): its
+  // tile is the one chosen, its part entered when out of sight.
+  map.addEventListener('repomap:reading',()=>{
+    const named=map.explorerMember;if(!named?.owner)return;
+    const part=named.owner,symbols=model.nodes.get(part)?.item?.symbols||[];
+    const same=value=>!!value&&[named.key,named.href,named.open].includes(value);
+    const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open));
+    const chosen=store.getState().member.chosen;
+    if(index<0||chosen?.part===part&&chosen.index===index)return;
+    store.dispatch({type:'member',member:{chosen:{part,index}}});
+    if(!map.readingRestoring&&!levelKey(store.getState().level).split('/').includes(part))enter(chainOf(model,part),{rect:geometry.boxes.get(part)});
+  });
   function clickAt(target,event){
     if(!target){
       if(store.getState().pinned.length||look.key){look.end();store.dispatch({type:'look',key:''});store.dispatch({type:'unpin'});return;}
       return;
     }
     if(target.type==='zoom'){const level=chainOf(model,target.id);enter(level);callbacks.follow?.(target.id,true);return;}
+    if(target.type==='member'){chooseMember(target.part,target.index,event);return;}
     if(target.type==='marker'){
       const marker=target.item;
       if(marker.side==='in'){
@@ -347,7 +389,12 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const box=host.getBoundingClientRect(),aimScreen=gestureAim||{x:box.left+box.width/2,y:box.top+box.height/2};
     const action=event?zoomAction(lastZoom,viewport,{x:(aimScreen.x-box.left-viewport.x)/viewport.zoom,y:(aimScreen.y-box.top-viewport.y)/viewport.zoom}):null;
     lastZoom=viewport.zoom;
-    if(action)store.dispatch(action);
+    if(!action)return;
+    const before=levelKey(store.getState().level);
+    store.dispatch(action);
+    // A zoom that brings another level has the column read it.
+    const level=store.getState().level;
+    if(levelKey(level)!==before&&level.length)callbacks.follow?.(level.at(-1));
   }
 
   function Overlay({scene,emphasis}){
@@ -356,13 +403,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const pointer=state.pointer;
     const tip=pointer&&(pointer.type==='marker'||pointer.type==='port')?items.find(item=>item.id===pointer.id):null;
-    // Magnifiers: an enterable box not entered, its title readable.
-    const zooms=scene.nodes.filter(node=>node.enter&&node.display!=='frame'&&node.band===bands.box&&node.text*17*v.zoom>=mark.readable&&node.rect.width*v.zoom>=80);
     return <div className="scene-overlay" aria-hidden="true">
-      {zooms.map(node=><span key={'zoom:'+node.id} className="scene-zoom" data-zoom-into={node.id}
-        style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x-mark.size-4,top:node.rect.y*v.zoom+v.y+4,width:mark.size,height:mark.size}}>
-        <span className="flow-zoom-picture"/></span>)}
-      {items.map(item=><span key={item.id} className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
+      {items.filter(item=>item.type==='zoom').map(item=><span key={item.id} className="scene-zoom" data-zoom-into={item.box}
+        style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></span>)}
+      {items.filter(item=>item.type!=='zoom').map(item=><span key={item.id} className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
         data-marker={item.type==='marker'?item.id:undefined} data-port={item.type==='port'?item.id:undefined}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}>
         <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></span>)}
@@ -419,8 +463,12 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function App(){
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const scene=sceneOf(state);
-    const member=null;
-    const emphasis=useMemo(()=>emphasisOf(scene,model,state.pointer,state.view,member),[scene,state.pointer,state.view]);
+    // A declaration pointed at, else the one chosen in the part read.
+    const chosen=state.member.chosen&&state.view.scope===state.member.chosen.part?state.member.chosen:null;
+    const pointed=state.pointer?.type==='member'?{part:state.pointer.part,index:state.pointer.index}:chosen;
+    const facts=memberFacts(pointed);
+    const pointer=state.pointer?.type==='member'?{type:'box',id:state.pointer.part}:state.pointer;
+    const emphasis=useMemo(()=>emphasisOf(scene,model,pointer,state.view,facts),[scene,state.pointer,state.view,chosen]);
     useEffect(()=>{callbacks.emphasis?.({...emphasis.state,overview:!state.level.length});},[emphasis.state.mode,emphasis.state.subject,state.view.scope,state.level.length]);
     useEffect(()=>{
       if(state.level.length)map.dataset.sceneLevel=levelKey(state.level);else delete map.dataset.sceneLevel;
@@ -435,8 +483,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         style:{width:node.rect.width,height:node.rect.height},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
         className:`scene-node scene-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
-        data:{node,item,groups,lit:lit.has(node.id),inside:node.display==='program'?model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||''):undefined}};
-    }),[scene,emphasis,state.lit]);
+        data:{node,item,groups,lit:lit.has(node.id),inside:node.display==='program'?model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||''):undefined,
+          drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
+          member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
+    }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen]);
     const edges=useMemo(()=>emphasis.order.map(id=>{
       const edge=scene.edges.find(e=>e.id===id),flags=emphasis.edgeState.get(id);
       const ends=[edge.from,edge.to].map(end=>scene.nodes.some(node=>node.id===end)?end:scene.program||scene.nodes[0]?.id);
@@ -539,6 +589,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     light(ids){store.dispatch({type:'lit',ids});},
     overview:()=>fitOverview(420),
     update(next){
+      const chosen=store.getState().member.chosen;
+      if(chosen&&model.shown(next.scope||'')!==chosen.part)store.dispatch({type:'member',member:{chosen:null}});
       const view={...next,scope:model.shown(next.scope||''),selected:new Set([...(next.selected||[])].map(model.shown)),matched:new Set([...(next.matched||[])].map(model.shown))};
       store.dispatch({type:'view',view});
     },

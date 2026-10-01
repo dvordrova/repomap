@@ -53,3 +53,4 @@
 .scene-area-card>strong,.scene-area-card>.flow-description{position:relative;z-index:1}
 .scene-words{position:relative;z-index:1;display:flex;flex-direction:column;gap:6px;background:inherit;border-radius:6px;align-self:flex-start;max-width:100%}
 .scene-words>strong{font-size:17px;line-height:21.25px;white-space:pre-line}
+.scene-root .flow-part.scene-deep{position:absolute;left:0;top:0;transform-origin:0 0;padding:0;display:block;overflow:visible}
