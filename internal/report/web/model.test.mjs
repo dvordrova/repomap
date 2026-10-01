@@ -66,3 +66,30 @@ for(const [name,page] of [...syntheticPages,...realPages()]){
     }
   });
 }
+
+// The whole map's arrows (owner, 2026-10-01, on the skeptic's verdict).
+test('the whole map joins two programs once, at run time through an outside system, and by code use apart',()=>{
+  const item=(id,fields={})=>({id,title:id,branch:'',activation:'',lane:'',summary:'',symbols:[],symbolCalls:[],children:[],category:'part',...fields});
+  const page={items:[
+    item('system-component-t1',{branch:'component',category:'component',children:['n-t1-g1']}),item('n-t1-g1'),
+    item('system-component-t2',{branch:'component',category:'component',children:['n-t2-g1']}),item('n-t2-g1'),
+    item('system-component-t3',{branch:'component',category:'component',children:['n-t3-g1']}),item('n-t3-g1'),
+    item('system-inputs-t2',{branch:'inputs',componentOwner:'system-component-t2',children:['t2-o1']}),
+    item('t2-o1',{activation:'request',componentOwner:'system-component-t2',category:'input'}),
+    item('system-outside-t1',{branch:'outside',children:['system-t1-out-b1-destination']}),
+    item('system-t1-out-b1-destination',{branch:'communication',destinationKind:'request',children:['system-t1-out-b1']}),
+    item('system-t1-out-b1',{category:'external'}),
+  ],relations:[
+    {from:'n-t1-g1',to:'system-t1-out-b1',scope:'structure',calls:[],label:''},
+    {from:'system-t1-out-b1',to:'t2-o1',scope:'operation',calls:[],label:'connects to'},
+    {from:'t2-o1',to:'n-t2-g1',scope:'operation',calls:[],label:'implemented in'},
+    {from:'n-t3-g1',to:'n-t2-g1',scope:'structure',calls:[],label:''},
+  ],areas:[],inputOwner:{'t2-o1':'n-t2-g1'}};
+  const model=buildModel(page,{measure});
+  const pair=(a,b)=>model.homePairs.find(p=>[p.from,p.to].sort().join('|')===[a,b].sort().join('|'));
+  assert.ok(pair('system-component-t1','system-component-t2')?.operation,'the client reaches the server through the system it calls');
+  assert.equal(pair('system-component-t1','system-component-t2').uses,false);
+  assert.ok(pair('system-component-t3','system-component-t2')?.uses,'a code use alone is drawn on demand');
+  assert.ok(pair('system-inputs-t2','system-component-t2'),'a program\'s Inputs go into it');
+  assert.ok(pair('system-component-t1','system-outside-t1'),'a program goes into its Outside frame');
+});
