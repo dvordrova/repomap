@@ -67,7 +67,8 @@
    size; the pointer on the box names it meanwhile (scene-canvas.jsx). */
 .scene-root .react-flow__node [data-box-title]{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 2),1)}
 .scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 8.5) * 2),1)}
-/* A chip names its system on the whole map at any size (PLAN B: named chips). */
+/* An input's name and a kind's title fade; a chip's name never does: the
+   whole map names its systems at any size (PLAN B: named chips). */
 .scene-root .react-flow__node .scene-tile>span,.scene-root .react-flow__node .scene-group-title>strong{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 12.5 - 9) * 2),1)}
 .scene-root .react-flow__node .scene-deep [data-box-title]{opacity:1}
 .scene-box-tip{white-space:normal;max-width:280px}
