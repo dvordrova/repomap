@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-10-01 — What Derive computes is saved with the GroupsIndex (data 1)
+
+- **ada29625 (GroupsIndex 27, report.json 95):** analysis derives each
+  index once and its test-free view over the folded program set once;
+  `Overlay.Derived` / `Overlay.TestFree` save them, a rendering applies
+  them and runs no `Derive` (`TestARenderingNeverDerivesTheGroupsIndex`).
+  The report's re-derivations went: `branchAt` reads `Index.Branches`,
+  `dataOperationLinks` the saved `Reach`. Older saved runs are refused.
+- Ordinary runs, clean exports of ada29625^ → ada29625, default cache,
+  all exit 0 (after: redis 185413, othello 185427, litestream 185447,
+  headscale 185537, casdoor 185726, etcd 190107, beets 190530, freqtrade
+  191118): report.html identical on all 8 but for run id, format and
+  sha. report.json grows redis 3.09 → 4.94 MB, othello 0.24 → 0.36,
+  litestream 2.79 → 4.20, headscale 4.97 → 6.40, casdoor 15.4 → 16.6,
+  etcd 10.4 → 14.1, beets 9.65 → 10.5, freqtrade 13.0 → 16.1. `repomap
+  render` CPU (two alternating rounds) barely moves: etcd 30.6 → 29.2 s,
+  casdoor 27.6 → 26.8, freqtrade 37.7 → 37.3, headscale 9.8 → 9.4,
+  redis 4.3 → 4.4; deriving was never what a rendering spends.
+
 ## 2026-10-01 — The scene canvas's facts are saved with the report (data 2)
 
 - report.json format 94 saves `scene` (`internal/report/scene.go`): where
