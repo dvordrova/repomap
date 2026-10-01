@@ -223,7 +223,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     overviewFit=false;
     return Promise.resolve(instance.setViewport(view,{duration:smooth?420:0})).then(()=>{camera.set(instance.getViewport());map.dispatchEvent(new Event('repomap:viewport'));});
   }
-  const levelZoom=level=>level.length?(geometry.enterZoom.get(level.at(-1))||0)*1.02:0;
+  // The camera a level is entered at: no smaller than its entry zoom; a
+  // part entered at the zoom its declarations read at (eleven pixels), its
+  // head and first column in sight when it is larger than the canvas.
+  const levelZoom=level=>{
+    const inner=level.at(-1);if(!inner)return 0;
+    const entry=(geometry.enterZoom.get(inner)||0)*1.02,drawn=geometry.grids.get(inner),rect=geometry.boxes.get(inner);
+    if(model.nodes.get(inner)?.kind!=='part'||!drawn||!rect)return entry;
+    return Math.max(entry,11/13*drawn.grid.divisor*drawn.box.width/rect.width);
+  };
   function enter(level,{rect=null,smooth=true}={}){
     store.dispatch({type:'enter',level});
     const scene=sceneOf(store.getState());
@@ -515,7 +523,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     </ReactFlow>;
   }
   // Far enough into a part to read its declarations, and a little more.
-  const maxZoom=()=>Math.max(4,...[...geometry.enterZoom.values()].map(zoom=>zoom*1.6));
+  const maxZoom=()=>Math.max(4,...[...geometry.enterZoom.values()].map(zoom=>zoom*1.6),...[...geometry.grids.keys()].map(id=>levelZoom([id])*1.6));
 
   let restorePending=null;
   function capture(){return instance&&!initializing?{...camera.get(),level:store.getState().level,layoutKey,fit:overviewFit}:restorePending;}
