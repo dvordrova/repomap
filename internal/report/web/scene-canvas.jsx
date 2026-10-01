@@ -518,9 +518,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function BoxTip({node,camera:v}){
     const item=model.nodes.get(node.id)?.item;
     let head=node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title,names=[],about='';
-    // A chip's name, drawn at twelve pixels, reads at eleven, as every word
-    // (scene.css --word).
-    const faded=node.text*12*v.zoom<11;
+    // A chip's name, drawn at twelve pixels, reads at nine and a half, as
+    // every secondary word (scene.css --word).
+    const faded=node.text*12*v.zoom<9.5;
     if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x+6,top:Math.max(4,node.rect.y*v.zoom+v.y)}}><b>{head}</b></div>;
     if(node.display==='chip')names=[...new Set([...(model.callers.get(node.id)||[])].map(part=>model.nodes.get(part)?.name||''))].map(name=>`← ${name}`);
     else if(node.display==='bucket')names=model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||'');

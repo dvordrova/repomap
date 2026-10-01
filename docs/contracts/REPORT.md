@@ -1270,17 +1270,20 @@ the canvas above stays the default.
   program's border (one port a way per box, naming its programs on hover);
   the whole map its programs (cards of their name and role), Inputs frames (their kinds' marks) and
   Outside frames. Every program and every outside system in sight is
-  named at rest on the whole map, at eleven pixels or more (owner,
-  2026-10-02): a program's card is drawn at the text size its name reads
-  at at the camera showing the whole map, an Outside frame's chips and
-  buckets at the size theirs do (its title at the programs'), the map's
-  lanes widening with the programs, an Inputs frame (its kinds are icons)
-  and a loose box at their own. Where the map grows as its names do (etcd,
-  beets, headscale, casdoor, the 150-system graph), the sizes kept are the
-  last that brought the smallest name a tenth larger, and the camera at
-  rest frames the busiest program with the most other names a canvas
-  holds, as close as they read; "Show whole map" shows all of it, the
-  names that do not read faded and named on pointing. The
+  named at rest on the whole map (owner, 2026-10-02): a program's name at
+  eleven pixels or more, an outside system's (a chip's, a bucket's) at
+  nine and a half, a secondary word as a description and an input's name.
+  A program's card is drawn at the text size its name reads at at the
+  camera showing the whole map, an Outside frame's chips and buckets at
+  the size theirs do (its title at the programs'), the map's lanes
+  widening with the programs, an Inputs card (its kinds are icons) and a
+  loose box at their own. The sizes grow while the names come near
+  reading at the pace they do; where they cannot (the map grows as its
+  names do: etcd, beets, casdoor, the 150-system graph), the sizes kept
+  are those that brought them nearest, and the camera at rest frames the
+  busiest program with the most other programs, then the most other
+  names, a canvas holds, as close as they read; "Show whole map" shows all
+  of it, the names that do not read faded and named on pointing. The
   world is drawn a power of two larger, keeping every level's entry camera
   at most four screen pixels to a world pixel: the browser sizes a box in
   steps of 1/64 of a pixel, and at etcd's deepest levels arrows' ends had
@@ -1317,7 +1320,7 @@ the canvas above stays the default.
   column (one meeting that edge, one bending beside the box), shown once
   the box's title reads and the stack fits beside it. A box's words fade
   out below their readable size (titles about 11px, an input's name and a
-  description 9.5px, a chip's or a bucket's name 11px, one rule for all
+  description and a chip's or a bucket's name 9.5px, one rule for all
   words, each word by its own drawn size: its font size times the zoom
   times its level's text scale) and the pointer on such a box names it, as the keyboard's focus
   names a chip, in one line. `store.mjs` holds the level, the pointer and the

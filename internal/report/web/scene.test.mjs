@@ -221,16 +221,17 @@ function checkScene(name,model,geometry,scene,problems){
 function checkHome(name,model,geometry,problems){
   const scene=sceneAt(model,geometry,[],{});
   // At rest on the whole map every program and every outside system in
-  // sight is named, at eleven pixels or more (owner, 2026-10-02): a
-  // program's title whole in its card, a chip's and a closed bucket's name.
+  // sight is named (owner, 2026-10-02): a program's title whole in its
+  // card at eleven pixels or more, a chip's and a closed bucket's name, a
+  // secondary word, at nine and a half.
   // The camera at rest shows them all wherever their names read there
   // (levels.mjs homeView); "Show whole map" shows the whole map.
   const rest=geometry.home,inSight=r=>{const l=r.x*rest.zoom+rest.x,t=r.y*rest.zoom+rest.y;return l>=-.5&&t>=-.5&&l+r.width*rest.zoom<=canvas.width+.5&&t+r.height*rest.zoom<=canvas.height+.5;};
   const named=scene.nodes.filter(node=>['program','chip','bucket'].includes(node.display));
   for(const node of named.filter(node=>inSight(node.rect))){
-    const px=(node.display==='program'?17:12)*node.text*rest.zoom;
-    const whole=node.display!=='program'||programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure).title.join('').replace(/\s+/g,'')===node.title.replace(/\s+/g,'');
-    if(px<11||!whole)problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px${whole?'':', cut'}`]);
+    const program=node.display==='program',px=(program?17:12)*node.text*rest.zoom;
+    const whole=!program||programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure).title.join('').replace(/\s+/g,'')===node.title.replace(/\s+/g,'');
+    if(px<(program?11:9.5)||!whole)problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px${whole?'':', cut'}`]);
   }
   if(rest.zoom!==geometry.whole.zoom&&named.filter(node=>inSight(node.rect)).length<1)problems.push(['names',`${name}: the camera at rest frames no name`]);
   const all=geometry.whole,b=geometry.bounds;
@@ -257,7 +258,7 @@ function checkHome(name,model,geometry,problems){
 
 // Each rule's problems on every level of a page, with a box chosen too: a
 // chosen box draws its quiet arrows, and the rules hold for them.
-const rules={names:'every program and outside system in sight is named at rest on the whole map, at eleven pixels or more',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
+const rules={names:'every program (11px) and outside system (9.5px) in sight is named at rest on the whole map; Show whole map fits it all',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
   crosses:'no arrow runs through a box it does not join',

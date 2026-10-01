@@ -63,13 +63,14 @@
 /* Names on zoom: each word stands once it reads and fades out below, by
    its own drawn size: its font size (--word, in pixels, which its rule
    also draws it at) times the camera's zoom (--flow-zoom) times its
-   level's text scale (--scene-text). A title and a chip's or a bucket's
-   name stand from eleven pixels (owner, 2026-10-01: one rule for all
-   text), an input's name, a kind's title, a role and a description from
-   nine and a half; the pointer or the keyboard's focus names a box
+   level's text scale (--scene-text). A title stands from eleven pixels
+   (owner, 2026-10-01: one rule for all text); a secondary word, an
+   outside system's name (a chip's, a bucket's), an input's name, a kind's
+   title, a role and a description, from nine and a half (owner,
+   2026-10-02); the pointer or the keyboard's focus names a box
    meanwhile (scene-canvas.jsx). */
 .scene-root .react-flow__node [data-box-title]{--word:17;--gone:10.5}
-.scene-root .react-flow__node .flow-chip-name{--word:12;--gone:10.5}
+.scene-root .react-flow__node .flow-chip-name{--word:12;--gone:9}
 .scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{--word:13;--gone:9}
 .scene-root .react-flow__node .scene-tile>span{--word:13;--gone:9}
 .scene-root .react-flow__node .scene-group-title>strong{--word:13.6;--gone:9}

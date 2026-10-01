@@ -87,10 +87,11 @@ export const units={
 // A program is entered where its boxes' titles read at 12.75 pixels, which
 // is four fifths of the zoom that fits it in the canvas; an area where its
 // parts' do (PLAN S3: by zoom, with hysteresis, never by a pan).
-// A program's name reads on the whole map at rest from eleven pixels
-// (owner, 2026-10-02); its card is sized for eleven and a half, room for
-// the browser's measure.
-export const reading={enter:.75,exit:.62,deep:860,deepExit:760,title:11.5,least:11};
+// On the whole map at rest a program's name reads from eleven pixels, an
+// outside system's (a secondary word, as a description and an input's
+// name) from nine and a half (owner, 2026-10-02); they are sized for half a
+// pixel more, room for the browser's measure.
+export const reading={enter:.75,exit:.62,deep:860,deepExit:760,title:11.5,least:11,system:10,systemLeast:9.5};
 
 const pairKey=(a,b)=>a<b?`${a}|${b}`:`${b}|${a}`;
 
@@ -355,10 +356,10 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // The whole map names at rest every program and every outside system
   // (owner, 2026-10-02: headscale's, beets' and etcd's whole maps had
   // drawn no word that read, their chips blank): a program's card is drawn
-  // at the text size (`programText`) its name reads at, an Outside frame's
-  // systems at the size (`systemText`) theirs do, eleven and a half pixels
-  // at the camera showing the whole map; an Inputs frame, whose kinds are
-  // icons, and a loose box keep their own.
+  // at the text size (`programText`) its name reads at (eleven and a half
+  // pixels at the camera showing the whole map), an Outside frame's systems
+  // at the size (`systemText`) theirs do (ten, a secondary word); an Inputs
+  // card, its kinds icons, and a loose box keep their own.
   let programText=1,systemText=1;
   const systems=model.roots.some(id=>nodes.get(id)?.kind==='outside'&&nodes.get(id).children.length);
   const rootBox=id=>{
@@ -386,7 +387,9 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     return readNode(await native({id:'map',layoutOptions:{...outer,...lanes,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
       edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
   };
-  const layAll=async()=>{
+  // Every arrangement tried, or the one chosen again.
+  const layAll=async(again=false)=>{
+    if(again){map=await layMap(chosen.aspect,chosen.direction);return;}
     map=null;
     for(const aspect of hasOutside?[1,.6,1.6,2.4]:[1])for(const direction of ['RIGHT','DOWN']){
       const laid=await layMap(aspect,direction);
@@ -399,18 +402,27 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const zoom=homeCamera({x:0,y:0,width:map.width,height:map.height},canvas).zoom;
     return {program:17*programText*zoom,system:systems?12*systemText*zoom:Infinity};
   };
-  const least=()=>Math.min(sizes().program,sizes().system);
-  // Where the map grows as its names do (etcd: its programs stand in many
-  // layers), a larger size stops paying: the sizes kept are the last that
-  // brought the smallest name a tenth larger, and the camera at rest then
-  // shows the part of the map it names (homeView below).
-  for(let step=0;step<8&&least()<reading.title;step++){
-    const before={programText,systemText,map,chosen,px:least()},now=sizes();
+  // How far the names stand from reading, the smaller of the programs'
+  // and the systems' ratios to their own sizes: 1 or more where both read.
+  const short=(sized=reading.title,systemSized=reading.system)=>Math.min(sizes().program/sized,sizes().system/systemSized);
+  // The map grows as its names do, more slowly where they are a small part
+  // of it: the sizes grow while the names come near enough reading at the
+  // pace they do; where they cannot reach it (etcd: its programs stand in
+  // many layers), the sizes kept are those that brought them nearest, and
+  // the camera at rest then shows the part of the map it names (homeView
+  // below).
+  const steps=20;
+  let best={programText,systemText,map,chosen,ratio:short()};
+  for(let step=0;step<steps&&short()<1;step++){
+    const before=short(),now=sizes();
     if(now.program<reading.title)programText*=reading.title/now.program*1.01;
-    if(now.system<reading.title)systemText*=reading.title/now.system*1.01;
-    await layAll();
-    if(least()<reading.least&&least()<before.px*1.1){({programText,systemText,map,chosen}=before);break;}
+    if(now.system<reading.system)systemText*=reading.system/now.system*1.01;
+    await layAll(step>0);
+    if(short()>best.ratio)best={programText,systemText,map,chosen,ratio:short()};
+    const gain=short()/before-1;
+    if(short()>=1||gain<=0||gain*(steps-step-1)<1/short()-1)break;
   }
+  if(short()<best.ratio)({programText,systemText,map,chosen}=best);
   packOutside(chosen.aspect);
   local.set('',{...map,text:1,pairs:rootPairs,kind:'map'});
 
@@ -489,26 +501,28 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // systems' (a chip, a closed bucket).
   const names=[...programs,...model.roots.filter(id=>nodes.get(id)?.kind==='outside').flatMap(id=>nodes.get(id).children).map(id=>boxes.get(id)).filter(Boolean)];
   return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programText:programText*unit,
-    home:homeView(bounds,canvas,unit,Math.min(17*programText,systems?12*systemText:Infinity)*unit,names),whole:homeCamera(bounds,canvas,16,1/unit)};
+    home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length),whole:homeCamera(bounds,canvas,16,1/unit)};
 }
 
 // The camera at rest on the whole map: all of it, unless its names would
-// not read there (eleven pixels; `word` the smallest name's world size);
-// then as close as they read, framing the busiest program (`names` come
-// with the programs first, busiest first) with the most other names a
-// canvas holds, centred on them. "Show whole map" shows all of it
+// not read there (a program's at eleven pixels, an outside system's at
+// nine and a half; `word` their world sizes); then as close as they read,
+// framing the busiest program (`names` come with the `programs` first,
+// busiest first) with the most other programs, then the most other names,
+// a canvas holds, centred on them. "Show whole map" shows all of it
 // (geometry.whole).
-export function homeView(bounds,canvas,unit,word,names,pad=16){
+export function homeView(bounds,canvas,unit,word,names,programs=names.length,pad=16){
   const whole=homeCamera(bounds,canvas,pad,1/unit);
-  if(word*whole.zoom>=reading.least||!names.length)return whole;
-  const zoom=reading.title/word,width=(canvas.width-2*pad)/zoom,height=(canvas.height-2*pad)/zoom;
+  if(word.program*whole.zoom>=reading.least&&word.system*whole.zoom>=reading.systemLeast||!names.length)return whole;
+  const zoom=Math.max(reading.title/word.program,reading.system/word.system),width=(canvas.width-2*pad)/zoom,height=(canvas.height-2*pad)/zoom;
   const within=(r,x,y)=>r.x>=x-1e-9&&r.y>=y-1e-9&&r.x+r.width<=x+width+1e-9&&r.y+r.height<=y+height+1e-9;
   const xs=[...new Set(names.map(r=>r.x))],ys=[...new Set(names.map(r=>r.y))];
+  const score=held=>held.filter(r=>names.indexOf(r)<programs).length*1e6+held.length;
   let best=null;
   for(const x of xs)for(const y of ys){
     if(!within(names[0],x,y))continue;
     const held=names.filter(r=>within(r,x,y));
-    if(!best||held.length>best.length)best=held;
+    if(!best||score(held)>score(best))best=held;
   }
   best||=[names[0]];
   const l=Math.min(...best.map(r=>r.x)),t=Math.min(...best.map(r=>r.y)),r=Math.max(...best.map(r=>r.x+r.width)),b=Math.max(...best.map(r=>r.y+r.height));
