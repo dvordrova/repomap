@@ -1166,7 +1166,7 @@
   },
   {
    "id": "system-outside-t1-b5-destination",
-   "title": "Redis",
+   "title": "Route 53",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "sdk",
@@ -1224,7 +1224,7 @@
   },
   {
    "id": "system-outside-t1-b11-destination",
-   "title": "Google Cloud Storage",
+   "title": "Python 3",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "started",
@@ -2866,7 +2866,7 @@
   },
   {
    "id": "system-outside-t1-b181-destination",
-   "title": "Stripe EU",
+   "title": "Web 2.0",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "database",
@@ -2895,7 +2895,7 @@
   },
   {
    "id": "system-outside-t1-b184-destination",
-   "title": "PayPal EU",
+   "title": "Dropbox 3",
    "branch": "communication",
    "lane": "dependencies",
    "destinationKind": "request",

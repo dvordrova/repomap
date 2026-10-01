@@ -15,7 +15,10 @@
 //             dot it ends at, or ends on nothing drawn;
 //   off-canvas with a program entered whole, an arrow starts or ends out
 //             of sight (its ports stand for everything beyond it);
-//   label     the canvas prints a kind label, a plaque or a lone number;
+//   label     the canvas prints a kind label, a plaque or a lone number:
+//             an element whose words are only a number (a count badge, a
+//             number on an arrow), never a digit in a name ("Route 53",
+//             "Python 3", "Web 2.0", "Amazon S3");
 //   card      a card's heading and rows, or two rows, intersect;
 //   small     a name on the canvas reads under 11 CSS pixels, a part's
 //             description under 9;
@@ -190,7 +193,8 @@ export function lintCanvas(level,near=3,readNames=true){
   }
   // 6: no kind label, plaque or lone number on the canvas.
   for(const el of root.querySelectorAll('.flow-kind,.flow-connection-label,.flow-boundary-label,.flow-inside-counts'))if(shown(el))out.push({kind:'label',element:name(el),level});
-  for(const text of texts)if(text.text.split(/[\s·,]+/).some(word=>/^\d+$/.test(word)))out.push({kind:'label',element:`number in ${name(text.el)}`,level});
+  const counts=new Set();
+  for(const text of texts){const words=text.el.textContent.replace(/\s+/g,' ').trim();if(/^[+−-]?\d+([.,]\d+)?$/.test(words)&&!counts.has(text.el)){counts.add(text.el);out.push({kind:'label',element:`number ${name(text.el)}`,level});}}
   return out;
 }
 

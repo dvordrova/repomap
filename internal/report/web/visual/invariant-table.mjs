@@ -19,7 +19,7 @@ const [dir,...rest]=process.argv.slice(2);
 if(!dir){console.error('usage: node visual/invariant-table.mjs DIR [--title TEXT] [--not-run NAMES] [--why TEXT]');process.exit(2);}
 const flag=name=>{const at=rest.indexOf(name);if(at<0)return '';const out=[];for(let i=at+1;i<rest.length&&!rest[i].startsWith('--');i++)out.push(rest[i]);return out.join(' ');};
 const title=flag('--title')||'Canvas invariants',notRun=flag('--not-run').split(',').map(n=>n.trim()).filter(Boolean),why=flag('--why')||'not run';
-const read=async from=>{const out=[];for(const name of (await readdir(from)).filter(n=>/\.(old|scene)\.json$/.test(n)).sort())out.push(JSON.parse(await readFile(join(from,name),'utf8')));return out;};
+const read=async from=>{const out=[];for(const name of (await readdir(from)).filter(n=>/\.(old|scene|canvas)\.json$/.test(n)).sort())out.push(JSON.parse(await readFile(join(from,name),'utf8')));return out;};
 const runs=await read(dir);
 const baseHead=flag('--head');
 for(const run of runs){run.head||=baseHead;for(const level of run.levels)for(const cell of Object.values(level.invariants))cell.head||=run.head;}
@@ -48,11 +48,11 @@ const lines=[`# ${title}`,'',`Generated ${new Date().toISOString().slice(0,16).r
   'A cell is `ok N` (N checks, all passed), `**F**/N` (F of N failed) or `–` (nothing to check at that level).','',
   '## Invariants','',...invariants.map(([name,says])=>`- \`${name}\`: ${says}`),''];
 const table={generated:new Date().toISOString(),invariants:Object.fromEntries(invariants),runs:[]};
-for(const path of ['old','scene']){
+for(const path of ['old','scene','canvas']){
   const set=runs.filter(run=>run.path===path);if(!set.length)continue;
-  lines.push(`## ${path==='old'?'Old path':'`?scene=1`'}`,'');
-  const notRead=set.filter(run=>path==='scene'&&!run.sceneOn).map(run=>run.repo);
-  if(notRead.length)lines.push(`The page did not report a scene level for ${notRead.join(', ')}: the bundle drew its old path under \`?scene=1\`.`,'');
+  lines.push(`## ${({old:'Old path',scene:'`?scene=1`',canvas:'Canvas (no flag)'})[path]}`,'');
+  const notRead=set.filter(run=>path!=='old'&&!run.sceneOn).map(run=>run.repo);
+  if(notRead.length)lines.push(`The page did not draw the scene canvas for ${notRead.join(', ')}: its bundle drew the old path.`,'');
   // Summary: failing levels per repo and invariant.
   lines.push('### Levels failing, by repository','',`| repo | levels | ${invariants.map(([n])=>n).join(' | ')} |`,`|---|---|${invariants.map(()=>'---').join('|')}|`);
   for(const run of set){

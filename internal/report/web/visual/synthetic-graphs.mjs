@@ -111,6 +111,9 @@ function outside150(){
   // Past the fifty names, a region tells copies apart: a digit would read
   // as a printed number on the canvas.
   const regions=['','EU','US'],names=[];for(let i=0;i<150;i++)names.push(`${systemNames[i%systemNames.length]}${regions[Math.floor(i/systemNames.length)]?` ${regions[Math.floor(i/systemNames.length)]}`:''}`);
+  // Names that carry a digit are names, not printed counts: two shared
+  // systems the whole map shows at rest, and two copies.
+  names[2]='Route 53';names[4]='Python 3';names[60]='Web 2.0';names[61]='Dropbox 3';
   // A few systems used by many parts; most by one; identity providers by
   // one part, many of them.
   const systems=names.map((name,i)=>({name,kind:kinds[i%kinds.length],callers:i<4?parts.t1.filter(()=>b.chance(.5)).slice(0,12):i<20?[b.pick(parts.t1),b.pick(parts.t1)]:i<60?[parts.t1[3]]:[b.pick(parts.t1)]}));

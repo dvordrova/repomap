@@ -13,7 +13,9 @@ import {lintCanvas} from './geometry.mjs';
 // list of their names, or "all"), drawn by the fixture page:
 //   REPOMAP_INVARIANT_REPORTS=a.html,b.html REPOMAP_INVARIANT_OUT=dir \
 //     npx playwright test invariants --workers=1
-// REPOMAP_INVARIANT_PATHS picks "old", "scene" or both (default both).
+// REPOMAP_INVARIANT_PATHS picks "old", "scene" or both (default both), or
+// "canvas": the page as it opens, with no flag, once the scene path is the
+// only one.
 // Each report and path writes <out>/<repo>.<path>.json; the table is
 // written by `node visual/invariant-table.mjs <out>`. The run passes unless
 // REPOMAP_INVARIANT_STRICT is set: the table is the result.
