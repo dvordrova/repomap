@@ -1204,8 +1204,8 @@ the canvas above stays the default.
   closed areas (cards of their open drawing's proportion, holding that
   drawing when entered) and loose parts, of both directions the one fitting
   the canvas larger, a link to another program ending on a port of the
-  program's border (one port per box and program); the whole map its
-  programs (cards of their summary), Inputs frames (their kinds' marks) and
+  program's border (one port a way per box, naming its programs on hover);
+  the whole map its programs (cards of their summary), Inputs frames (their kinds' marks) and
   Outside frames. No wrapping, grid, size floor or edit after layout.
   Arrowless collections (chips, inputs' names) are packed in rows. A graph
   ELK throws on is laid out again with ELK's own placement.
