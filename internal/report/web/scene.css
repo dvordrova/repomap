@@ -80,3 +80,6 @@
    through the canvas's hit test. */
 .scene-overlay button{padding:0;font:inherit;pointer-events:none}
 .scene-overlay button:focus-visible{outline:2px solid #243044;outline-offset:2px}
+/* An entered part's border keeps its screen width however far its card is
+   drawn up: scaled with the card, it had stood 12px thick. */
+.scene-root .flow-part.scene-deep{border-width:calc(1.5px / (var(--flow-zoom,1) * var(--scene-card-scale,1)));border-radius:calc(9px / (var(--flow-zoom,1) * var(--scene-card-scale,1)))}

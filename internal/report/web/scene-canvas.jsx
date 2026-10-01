@@ -135,7 +135,7 @@ function DeepNode({data}){
   const {node,item,drawn,member}=data;
   if(!drawn)return <CardNode data={data}/>;
   const {grid,box}=drawn,s=node.rect.width/box.width;
-  return <>{handles}<div className={`flow-part flow-part-deep scene-deep ${laneClass(node.lane)}`} style={{width:box.width,height:box.height,transform:`scale(${s})`}}>
+  return <>{handles}<div className={`flow-part flow-part-deep scene-deep ${laneClass(node.lane)}`} style={{width:box.width,height:box.height,transform:`scale(${s})`,'--scene-card-scale':s}}>
     <strong style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{node.title}</strong>
     <PartSymbols symbols={item.symbols} calls={item.symbolCalls} width={box.width} height={box.height} grid={grid} member={member}/>
   </div></>;
