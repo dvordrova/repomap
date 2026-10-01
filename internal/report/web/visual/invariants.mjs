@@ -344,11 +344,12 @@ export function invariantKit(){
     },
     // The arrows drawn now, by their paths.
     paths(){return Object.fromEntries(edges().map(g=>[g.dataset.edgeId,line(g)?.getAttribute('d')||''])) ;},
-    // Every port item and marker in sight, by its middle.
+    // Every port item and marker in sight, by its middle (the scene canvas
+    // hit-tests the pointer itself: its markers take no pointer events).
     handles(){
       const c=canvas();
       return [...root().querySelectorAll('[data-port-end],[data-marker]')].filter(shown).map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.portEnd||el.dataset.marker,x:r.left+r.width/2,y:r.top+r.height/2};})
-        .filter(h=>h.x>c.l+2&&h.x<c.r-2&&h.y>c.t+2&&h.y<c.b-2&&document.elementFromPoint(h.x,h.y)?.closest?.('[data-port-end],[data-marker]'));
+        .filter(h=>h.x>c.l+2&&h.x<c.r-2&&h.y>c.t+2&&h.y<c.b-2);
     },
     hitIds(){return [...root().querySelectorAll('[data-edge-hit]')].filter(path=>shown(path.closest('g[data-edge-id]')||path)).map(path=>path.dataset.edgeHit);},
     // The texts drawn on the canvas in sight, which the label and text
