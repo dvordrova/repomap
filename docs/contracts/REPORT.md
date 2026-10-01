@@ -1194,18 +1194,29 @@ the canvas above stays the default.
   in it (left) and of the outside systems it calls (right), at most three a
   side, the least held kinds folded into the third. An input takes effect
   in its handler's part, else where its code takes it in ("declared
-  here"), else in its program.
+  here"), else in its program. Inside an entered part a handled input's
+  marker stands on its handler's tile and an outside call's on its caller's;
+  an input with no known handler stays on the part's edge.
 - `levels.mjs` `layoutLevels(model, canvas)` lays every level out once per
   canvas size with ELK, bottom-up, each level its own graph with final
   routes: an area its parts (layered down, arrows on the boxes' tops and
   bottoms, the left and right edges left to the markers); a program its
-  closed areas (a card of its open drawing's proportion) and loose parts,
-  of both directions the one fitting the canvas larger, a link to another
-  program ending on a port of the program's border (one port per box and
-  program); the whole map its programs, Inputs and Outside frames, one
-  arrow per pair. A box at one level holds the level inside it at one
-  scale. Arrowless collections (chips, inputs' names) are packed in rows.
-  No wrapping, grid, size floor or edit after layout.
+  closed areas (cards of their open drawing's proportion, holding that
+  drawing when entered) and loose parts, of both directions the one fitting
+  the canvas larger, a link to another program ending on a port of the
+  program's border (one port per box and program); the whole map its
+  programs (cards of their summary), Inputs frames (their kinds' marks) and
+  Outside frames. No wrapping, grid, size floor or edit after layout.
+  Arrowless collections (chips, inputs' names) are packed in rows. A graph
+  ELK throws on is laid out again with ELK's own placement.
+- The whole map at rest (owner, 2026-10-01, on the skeptic's verdict):
+  each program's Inputs into it, a program into each Outside frame it
+  calls, and one arrow per two programs an operation joins (a program
+  reaching another's input reaches that program; a call through an outside
+  system the other program serves is the caller's arrow to it). Two
+  programs joined only by code use are drawn while one of them is pointed
+  at or chosen. Possible arrows stay dashed and are never hidden for it.
+  Inside a program everything is drawn.
 - `scene.mjs` `sceneAt(model, geometry, level, choice)` gives a level's
   boxes, arrows (one polyline each, its own ends, a head at each end an
   edge goes into), markers and ports, each with a drawing band, and the
@@ -1214,19 +1225,26 @@ the canvas above stays the default.
   The level is the chain of entered boxes (program, area, part; an Inputs
   frame; a bucket): entered by an action (the magnifier, a reading) or by
   a zoom with hysteresis, its text reading at 12.75px to enter and under
-  10.5px to leave; a pan never changes it. Entered, a program draws
-  nothing beyond itself: its links to other programs end on its ports.
-- `overlay.mjs` places markers and ports at one screen size on every
-  camera tick: a marker touches its box's edge from outside, the stack
-  from the top, stepping past an arrow meeting that edge, shown once the
-  box's title reads and the stack fits beside it. `store.mjs` holds the
-  level, the pointer and the choice (useSyncExternalStore); the camera
-  has its own store.
-- The node tests `model.test.mjs` and `scene.test.mjs` check every
-  invariant at every level of the seeded synthetic graphs and of the
-  reports named by `REPOMAP_SCENE_PAGES` (page JSON captured by
-  `node scene-pages.mjs capture REPORT.html --out DIR`). The page exposes
-  `map.sceneState()` and `map.sceneEnter(id)` for browser checks.
+  10.5px to leave, one pinch crossing one level boundary; a pan never
+  changes it. Entered, a program draws nothing beyond itself; a part is
+  entered at the zoom its declarations read at.
+- `overlay.mjs` places markers, ports and magnifiers at one screen size on
+  every camera tick: a marker touches its box's edge from outside, the
+  stack from the top, stepping past an arrow meeting that edge, shown once
+  the box's title reads and the stack fits beside it. A box's words fade
+  out below their readable size (titles about 11px, an input's name and a
+  description 9.5px) and the pointer on such a box names it; a chip names
+  its system at any size. `store.mjs` holds the level, the pointer and the
+  choice (useSyncExternalStore); the camera has its own store.
+- The node tests `model.test.mjs`, `scene.test.mjs` and `store.test.mjs`
+  check every invariant at every level of the seeded synthetic graphs and
+  of the reports named by `REPOMAP_SCENE_PAGES` (page JSON captured by
+  `node scene-pages.mjs capture REPORT.html --out DIR`). Lanes keep at least
+  7.5 screen pixels between them at a level's entry zoom: the smallest the
+  owner-approved Step 1 drawing kept (daf1231e, redis's Core server
+  infrastructure, measured on that commit's layout code). The page exposes
+  `map.sceneState()` and `map.sceneEnter(id)` and the DOM contract of
+  `visual/invariants.mjs`.
 
 ## Reader context
 
