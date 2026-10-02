@@ -7,11 +7,11 @@ import (
 	"github.com/dvordrova/repomap/internal/facts"
 )
 
-// A library's exports are its API, never a way to run it: the request counts
-// them and lists no row a run recipe could cite, so the model cannot offer
-// liblua.a's lua_gettop as a command while the program's own entrypoint
-// stays citable.
-func TestRequestCountsLibraryExportsAndListsNone(t *testing.T) {
+// A library's exports are its API: listed as `export` rows, its role's own
+// evidence (Lua's liblua.a had none once claims left the request), never an
+// entrypoint and never a way to run it: a run step citing only an export is
+// refused, so the model cannot offer liblua.a's lua_gettop as a command.
+func TestRequestListsLibraryExportsAsItsOwnEvidenceNeverARunStep(t *testing.T) {
 	fixture := newFixture(t)
 	input := fixture.input
 	export := facts.Fact{Kind: facts.KindEntrypoint, TargetID: fixture.targetID("alpha"), Anchor: &facts.Anchor{Path: "alpha/main.go", Line: 3}, Symbol: "Apply", Key: facts.EntrypointExport}
@@ -21,20 +21,33 @@ func TestRequestCountsLibraryExportsAndListsNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	input.Facts = sealed
-	wire, _, err := buildOverview(input)
+	wire, cat, err := buildOverview(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wire.OmittedFactCounts["entrypoint_export"] != 1 {
-		t.Fatalf("omitted counts %v", wire.OmittedFactCounts)
-	}
-	var entrypoints []string
+	var entrypoints, exports []string
+	exportRef := ""
 	for _, row := range wire.Facts {
-		if row.Kind == string(facts.KindEntrypoint) {
+		switch row.Kind {
+		case string(facts.KindEntrypoint):
 			entrypoints = append(entrypoints, row.Key+" "+row.Symbol)
+		case exportKind:
+			exports = append(exports, row.Symbol)
+			exportRef = row.Ref
 		}
 	}
-	if !slices.Equal(entrypoints, []string{"callable Serve"}) {
-		t.Fatalf("entrypoint rows offered to the recipe: %v", entrypoints)
+	if !slices.Equal(entrypoints, []string{"callable Serve"}) || !slices.Equal(exports, []string{"Apply"}) {
+		t.Fatalf("entrypoint rows %v, export rows %v", entrypoints, exports)
+	}
+	alpha := fixture.targetID("alpha")
+	result, err := normalizeOverview(encodeResponse(t, map[string]any{
+		"roles":      []any{map[string]any{"target": alpha, "role": "Library", "purpose": "Applies items.", "refs": []string{exportRef}}},
+		"run_recipe": []any{map[string]any{"target": alpha, "command": "go run .", "cwd": "alpha", "refs": []string{exportRef}}},
+	}), cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.roles) != 1 || len(result.roles[0].FactIDs) != 1 || len(result.recipe) != 0 {
+		t.Fatalf("an export is its library's role evidence and no run step's: roles %+v recipe %+v", result.roles, result.recipe)
 	}
 }

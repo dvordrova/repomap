@@ -11,17 +11,16 @@ import (
 // ref of another target is ignored and recorded; a role citing only another
 // target's evidence is refused; a target the request lists no fact or seed
 // of keeps a role that cites nothing, and one that has some must cite them.
-// A manifest fact is the own evidence of every target whose manifest file
-// quotes it.
+// A shared makefile's rule is the own evidence of the program it builds.
 func TestARoleIsReadFromItsOwnTargetsEvidence(t *testing.T) {
 	cat := newCatalog()
 	for _, ref := range []string{"t1", "t2", "t3", "t5", "t6"} {
 		cat.targets[ref] = ref
 	}
-	// Lua's root makefile is the lua program's and liblua.a's manifest; the
-	// facts layer files its rows under the first, lua.
-	cat.manifests["t1"], cat.manifests["t6"] = "makefile", "makefile"
-	cat.facts["a477"] = factEntry{id: "a477", byTarget: map[string]string{"t1": "a477"}, manifest: "makefile"}
+	// Lua's root makefile is the lua program's and liblua.a's manifest; its
+	// rule for liblua.a is liblua.a's own, its rule for lua is lua's.
+	cat.facts["a477"] = factEntry{id: "a477", byTarget: map[string]string{"t6": "a477"}}
+	cat.facts["a478"] = factEntry{id: "a478", byTarget: map[string]string{"t1": "a478"}}
 	cat.facts["a6"] = factEntry{id: "a6", byTarget: map[string]string{"t3": "a6"}}
 	cat.facts["a9"] = factEntry{id: "a9", byTarget: map[string]string{"t3": "a9", "t5": "a10"}}
 	cat.facts["a30"] = factEntry{id: "a30"} // repository-wide: no target's own
@@ -32,7 +31,7 @@ func TestARoleIsReadFromItsOwnTargetsEvidence(t *testing.T) {
 		{"target":"t2","role":"Parser stub","purpose":"Stands in for the parser when it is left out.","refs":["a30"]},
 		{"target":"t3","role":"Minimal interpreter","purpose":"Runs Lua from stdin.","refs":["a6","t5.n1","a9"]},
 		{"target":"t5","role":"Interpreter","purpose":"Runs Lua scripts.","refs":[]},
-		{"target":"t6","role":"Core static library","purpose":"Packages the core objects into liblua.a.","refs":["a477"]}
+		{"target":"t6","role":"Core static library","purpose":"Packages the core objects into liblua.a.","refs":["a477","a478"]}
 	]}`), cat)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +47,7 @@ func TestARoleIsReadFromItsOwnTargetsEvidence(t *testing.T) {
 		t.Fatalf("t3 keeps its own facts and drops t5's seed: %+v", role)
 	}
 	if role := roles["t6"]; len(role.FactIDs) != 1 || role.FactIDs[0] != "a477" {
-		t.Fatalf("a fact quoted from t6's own manifest is its own evidence: %+v", role)
+		t.Fatalf("t6 keeps its own rule and drops lua's: %+v", role)
 	}
 	if _, kept := roles["t5"]; kept {
 		t.Fatal("t5 has a seed of its own, so a role citing nothing is refused")

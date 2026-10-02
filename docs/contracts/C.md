@@ -459,6 +459,16 @@ repository ships no manifest" beside the makefile whose dry run made
   followed through the variables their values name, each under its
   conditional (`variable.CFLAGS when ifeq ($(uname_S),SunOS)` and `when not
   ifeq …` in redis-1.3.6; Lua's `MYCFLAGS … -DLUA_USE_LINUX`, `CC= gcc`).
+A makefile several programs name as their manifest (Lua's root makefile
+for `lua` and `liblua.a`, 5.1.5's src/Makefile for liblua.a, lua and luac,
+the fixture's Makefile for kvd and kvcli) files each `rule.<target>` under
+the program whose output it builds (the rule's target beside the makefile
+is that program's name) and every row building no single program's output
+(the default goal, `all`, `test`, a platform goal, a variable) under none:
+a run recipe still cites it, no program's role reads it as its own (5.1.5's
+liblua.a had read "links the lua and luac executables" from rules filed
+under it). A rule named through a variable the makefile does not set
+(`$(BUILD)/lua`) keeps the first owner.
 A makefile is read as text, as the other manifests are; what the build does
 is the dry run's. A makefile elsewhere in a repository of another language
 (a docs/Makefile) is no manifest. A program built from a main unit with no

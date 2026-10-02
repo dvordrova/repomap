@@ -18,6 +18,8 @@ cite a ref of the wrong kind.
   the form `path:line`. `omitted_fact_counts` tells how many rows of other
   kinds exist but were not listed. Kinds:
   - `entrypoint`: where a program starts.
+  - `export`: a function or type a library offers to code that links it:
+    the library's own evidence for its role, never a way to run anything.
   - `registration`: a call into code the repository does not own that hands
     over a repository function or an address-like value: a route, a
     command, a consumer, a timer, a client request or a server start. Which
@@ -77,18 +79,17 @@ Rules for each part:
   "Backend API service" or "Browser front end"; `purpose` is one sentence. A
   role describes only its own target: what its own groups, facts and seeds
   show it doing. A fact is a target's own when its `targets` lists that
-  target, or when it is a `manifest` fact quoted from that target's
-  `manifest` file; a seed is its own when its ref starts with that target's
-  ref and a dot (`t2.` for `t2`). Never describe a target by another target's
+  target; a seed is its own when its ref starts with that target's ref and a
+  dot (`t2.` for `t2`). Never describe a target by another target's
   evidence, by the directory it sits in, or by the repository as a whole;
   name another target only as a connection shows it. `refs` cite only the
   target's own facts and seeds, at least one when it has any; leave `refs`
   empty only when the request lists none of either.
 - `run_recipe`: the commands a newcomer runs to start each target, in order.
   `refs` cite facts only, and every row must cite at least one `manifest` or
-  `entrypoint` fact that supports the command. Use `cwd` for the directory the
-  command runs in. Leave the list empty rather than guessing a command the
-  facts do not support.
+  `entrypoint` fact that supports the command; an `export` never does. Use
+  `cwd` for the directory the command runs in. Leave the list empty rather
+  than guessing a command the facts do not support.
   Repository paths in the input are relative to the repository root; paths
   inside `command` are relative to `cwd`. Keep that pair consistent: a command
   `go run ./service` from `.` does not mean `go run ./service` from `service`;
@@ -108,8 +109,8 @@ Rules for each part:
   than presenting the bare entry point as sufficient.
 - `main_flow_target`: the one target (`t*`) whose main flow a newcomer should
   read first: the program the repository exists for, not a helper script,
-  test or build tool. Its flow is read in a separate step. Leave it empty
-  when no target runs anything.
+  test, build tool or library, which runs nothing on its own. Its flow is
+  read in a separate step. Leave it empty when no target runs anything.
 
 Write plain, readable English. One sentence each; no essays, no lists inside
 sentences, no markdown, no line breaks inside a value. Do not add fields. Do

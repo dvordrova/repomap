@@ -72,6 +72,7 @@ func (b *builder) addManifestRows(filePath string) {
 	}
 	targetID := b.manifestOwner(filePath)
 	root := b.rootForTarget(targetID)
+	outputs := b.sharedMakefileOutputs(filePath)
 	for _, row := range rows {
 		if row.key == "" {
 			continue
@@ -80,14 +81,57 @@ func (b *builder) addManifestRows(filePath string) {
 		if !b.once(strings.Join([]string{string(KindManifest), filePath, row.key}, "\x00")) {
 			continue
 		}
+		owner := targetID
+		if outputs != nil {
+			// A makefile several programs share: a row is the program's
+			// whose output it builds, and one building none alone (all,
+			// a platform goal, a variable) is no program's. Lua 5.1.5's
+			// src/Makefile had filed lua's and luac's rules under liblua.a.
+			owner = outputs[makefileOutput(filePath, row)]
+		}
 		b.add(root, Fact{
 			Kind:     KindManifest,
-			TargetID: targetID,
+			TargetID: owner,
 			Anchor:   &anchor,
 			Key:      row.key,
 			Value:    clipText(row.value),
 		}, row.key, row.value)
 	}
+}
+
+// sharedMakefileOutputs maps each output of a makefile several targets
+// name as their manifest to the target building it, by the target's name
+// (a C program's name is its output's path); nil for any other file.
+func (b *builder) sharedMakefileOutputs(filePath string) map[string]string {
+	if !isMakefileName(path.Base(filePath)) {
+		return nil
+	}
+	outputs := make(map[string]string)
+	for _, target := range b.targets {
+		if target.target.Manifest == filePath {
+			outputs[path.Clean(target.target.Name)] = target.target.ID
+		}
+	}
+	if len(outputs) < 2 {
+		return nil
+	}
+	return outputs
+}
+
+// makefileOutput is the path of the file a makefile row builds: a rule's
+// target, or the default goal's, beside the makefile; "" for a variable.
+func makefileOutput(filePath string, row manifestRow) string {
+	name := ""
+	switch {
+	case strings.HasPrefix(row.key, "rule."):
+		name, _, _ = strings.Cut(strings.TrimPrefix(row.key, "rule."), " when ")
+	case row.key == "default_goal":
+		name, _, _ = strings.Cut(row.value, ":")
+	}
+	if name = strings.TrimSpace(name); name == "" {
+		return ""
+	}
+	return path.Join(path.Dir(filePath), name)
 }
 
 // manifestOwner is the target a manifest's rows hold for: the target under

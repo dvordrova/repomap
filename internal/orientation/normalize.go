@@ -411,7 +411,8 @@ func (result *normalized) acceptRecipe(raw json.RawMessage, cat catalog, slot st
 
 func citesRunEvidence(refs []resolvedRef) bool {
 	for _, ref := range refs {
-		if ref.fact.kind == facts.KindManifest || ref.fact.kind == facts.KindEntrypoint {
+		// A library's export is no way to run it.
+		if !ref.fact.export && (ref.fact.kind == facts.KindManifest || ref.fact.kind == facts.KindEntrypoint) {
 			return true
 		}
 	}
@@ -449,7 +450,7 @@ func (cat catalog) resolve(refs []string, targetRef string, allowed ...byte) ([]
 
 // ownRefs resolves a role's refs to its own target's evidence: a fact row
 // that target holds (not a row another target holds, which idFor would
-// name) or one quoted from its own manifest file, a seed of that target. Another target's refs are returned apart;
+// name), a seed of that target. Another target's refs are returned apart;
 // unknown refs and repository-wide facts are ignored.
 func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, others, ignored []string) {
 	seen := make(map[string]bool, len(refs))
@@ -465,7 +466,7 @@ func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, 
 		case entry.class == classFact && cat.ownFact(entry.fact, targetRef),
 			entry.class == classSubject && entry.subject.targetRef == targetRef:
 			own = append(own, entry)
-		case entry.class == classFact && len(entry.fact.byTarget) == 0 && entry.fact.manifest == "":
+		case entry.class == classFact && len(entry.fact.byTarget) == 0:
 			ignored = append(ignored, ref) // a repository-wide fact is no target's own
 		default:
 			others = append(others, ref)
@@ -474,14 +475,10 @@ func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, 
 	return own, others, ignored
 }
 
-// ownFact reports a fact row of the target: one it holds, or a manifest
-// fact quoted from its own manifest file, which several targets may share.
+// ownFact reports a fact row the target holds. A shared makefile's rows
+// are filed by the facts layer under the program whose output they build.
 func (cat catalog) ownFact(entry factEntry, targetRef string) bool {
-	if entry.byTarget[targetRef] != "" {
-		return true
-	}
-	manifest := cat.manifests[targetRef]
-	return manifest != "" && entry.manifest == manifest
+	return entry.byTarget[targetRef] != ""
 }
 
 // holdsEvidence reports whether the request lists a fact or seed of the

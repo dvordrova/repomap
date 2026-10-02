@@ -1959,15 +1959,16 @@ and no replacement is invented.
 
 A role describes its own target from its own groups, facts and seeds,
 never another target's, its directory's or the repository's. A fact is a
-target's own when the target holds its row or when it is a manifest fact
-quoted from the target's own manifest file (the facts layer files a shared
-makefile's rows under its first target: Lua's liblua.a cites the root
-makefile's rule), a seed when its ref is the target's; a repository-wide
-fact is no target's own. Another target's refs
+target's own when the target holds its row (a shared makefile's rule is the
+program's whose output it builds, [C](C.md)), a seed when its ref is the
+target's; a repository-wide fact is no target's own. A library's exports
+are listed as `export` rows, its role's own evidence, never an entrypoint
+and never a run step's support (a step citing only exports is refused):
+Lua's liblua.a and test modules had no evidence of their own once the
+claims left the request. Another target's refs
 in a role are ignored and recorded; a role citing only another target's
 evidence is refused; a role must cite its target's own facts or seeds when
-the request lists any, and otherwise (a library, whose exports are only
-counted) stands without refs.
+the request lists any, and otherwise stands without refs.
 
 The overview carries the complete facts and connections, the groups
 with title, summary and `member_count` but no member lists, and each seed's

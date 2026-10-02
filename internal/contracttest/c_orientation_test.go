@@ -131,10 +131,11 @@ func TestKvdOrientationReadsTheMakefileAsTheBuildsManifest(t *testing.T) {
 	run := runKvdOrientation(t)
 	var overview struct {
 		Targets []struct {
-			Name, Manifest string
+			Ref, Name, Manifest string
 		}
 		Facts []struct {
 			Kind, Anchor, Key, Value string
+			Targets                  []string
 		}
 	}
 	if err := json.Unmarshal(run.asked.bodies(t)[0], &overview); err != nil {
@@ -167,6 +168,28 @@ func TestKvdOrientationReadsTheMakefileAsTheBuildsManifest(t *testing.T) {
 	}
 	if _, object := rows["rule.kvd.o"]; object {
 		t.Fatal("an object's rule is no command a reader runs")
+	}
+	// The Makefile is both programs' manifest: a rule is the program's whose
+	// output it builds, and a row building neither alone (all, test, a
+	// variable) is no program's, so no role reads its neighbour's build as
+	// its own (Lua 5.1.5's liblua.a had "linked lua and luac").
+	refs := map[string]string{}
+	for _, target := range overview.Targets {
+		refs[target.Name] = target.Ref
+	}
+	holders := map[string]string{}
+	for _, fact := range overview.Facts {
+		if fact.Kind == "manifest" {
+			holders[fact.Key] = strings.Join(fact.Targets, ",")
+		}
+	}
+	for key, want := range map[string]string{
+		"rule.kvd": refs["kvd"], "rule.kvcli": refs["kvcli"],
+		"default_goal": "", "rule.test": "", "variable.CFLAGS": "", "rule.clean": "",
+	} {
+		if got, listed := holders[key]; !listed || got != want {
+			t.Fatalf("manifest row %s is held by %q, want %q (targets %v)", key, got, want, refs)
+		}
 	}
 }
 
