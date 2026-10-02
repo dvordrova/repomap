@@ -109,13 +109,30 @@ def statement_position(node):
 
 
 LOOPS = (ast.For, ast.AsyncFor, ast.While)
-COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+# A list, set or dict comprehension runs where it stands, its body repeating
+# like a loop's; a generator expression runs when it is consumed.
+EAGER_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp)
 
 
 def store_span(node):
     """Where a store's statement starts and ends, for stored_callees."""
     start = statement_position(node)
     return {"start": start, "end": (getattr(node, "end_lineno", start[0]), getattr(node, "end_col_offset", start[1]))}
+
+
+def repeating_spans(node):
+    """The spans of a loop or an eager comprehension that run again on each
+    pass: a for's target and body, a while's test and body, a
+    comprehension's all but its first iterable; never an else."""
+    if isinstance(node, (ast.For, ast.AsyncFor)):
+        parts = [node.target] + node.body
+    elif isinstance(node, ast.While):
+        parts = [node.test] + node.body
+    else:
+        parts = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+        for index, generator in enumerate(node.generators):
+            parts += [generator.target] + list(generator.ifs) + ([generator.iter] if index else [])
+    return [tuple(store_span(part).values()) for part in parts]
 
 
 def location_key(location):
@@ -1835,23 +1852,26 @@ class RelationVisitor(ast.NodeVisitor):
                 (owner.kind == "type" and owner is not self.scope):
             return [], []
         position = statement_position(call)
+        within = lambda spans, start, end: any(first <= start and end <= last for first, last in spans)
         lazily = owner is not self.scope or any(
-            scope is self.scope and isinstance(node, COMPREHENSIONS) for node, scope in self.enclosing)
+            scope is self.scope and isinstance(node, ast.GeneratorExp) for node, scope in self.enclosing)
         if lazily:
-            # A call in a nested def, lambda or comprehension runs when it is
-            # called: any store of the name may be what it finds.
+            # A call in a nested def, a lambda or a generator expression runs
+            # when it is called or consumed: any store may be what it finds.
             reaching = list(stores)
         else:
             # A store whose statement ends before the call may reach it, from
-            # the last one no branch skips on; one after it only through the
-            # outermost loop around the call, from inside that loop.
+            # the last one no branch skips on; one after it only from the part
+            # of the outermost loop or eager comprehension around the call
+            # that runs again (repeating_spans).
             before = sorted((store for store in stores if store["end"] <= position), key=lambda store: store["end"])
             last = max((index for index, store in enumerate(before) if not store["conditional"]), default=0)
             reaching = before[last:]
-            loops = [node for node, scope in self.enclosing if scope is self.scope and isinstance(node, LOOPS)]
+            loops = [repeating_spans(node) for node, scope in self.enclosing
+                     if scope is self.scope and isinstance(node, LOOPS + EAGER_COMPREHENSIONS) and
+                     within(repeating_spans(node), position, position)]
             if loops:
-                start, end = store_span(loops[0]).values()
-                reaching += [store for store in stores if store["end"] > position and start <= store["start"] and store["end"] <= end]
+                reaching += [store for store in stores if store["end"] > position and within(loops[0], store["start"], store["end"])]
         if not reaching or (owner.kind in ("module", "type") and all(store["conditional"] for store in reaching)):
             return [], []
         chosen = []

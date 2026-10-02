@@ -114,6 +114,16 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		// reassigned holds its caller's value otherwise and stays open.
 		47:  {programindex.RelationCalls, "run_chosen_handler", "accept_client,flush_replies", alternatives},
 		147: {programindex.RelationCalls, "run_defaulted_handler", "", unresolved},
+		// A list, set or dict comprehension runs where it stands: no store
+		// after it is its target. A generator runs when it is consumed.
+		155: {programindex.RelationCalls, "eager_list", "", unresolved},
+		161: {programindex.RelationCalls, "eager_set", "", unresolved},
+		167: {programindex.RelationCalls, "eager_dict", "", unresolved},
+		173: {programindex.RelationCalls, "deferred_generator", "accept_client", exact},
+		// The store no branch skips overwrites what came before it.
+		184: {programindex.RelationCalls, "overwritten_before_call", "accept_client", exact},
+		// A comprehension in a loop meets the loop's later store again.
+		190: {programindex.RelationCalls, "comprehension_in_loop", "accept_client,flush_replies", alternatives},
 	})
 	for _, view := range relations {
 		if view.from == "fire" && view.relation.Kind == programindex.RelationCalls && len(view.to) != 0 {

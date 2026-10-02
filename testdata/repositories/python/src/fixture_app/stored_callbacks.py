@@ -145,3 +145,48 @@ def run_defaulted_handler(handler=None):
     if handler is None:
         handler = accept_client
     handler()
+
+
+# A list, set or dict comprehension runs where it stands: a call in it finds
+# only the stores before it, so a store after it is never its target (each
+# raises UnboundLocalError), and its body repeats like a loop's. A generator
+# expression runs when it is consumed, so any store may be what it finds.
+def eager_list(flag):
+    [handler() for _ in [0]]
+    if flag:
+        handler = accept_client
+
+
+def eager_set(flag):
+    {handler() for _ in [0]}
+    if flag:
+        handler = accept_client
+
+
+def eager_dict(flag):
+    {0: handler() for _ in [0]}
+    if flag:
+        handler = accept_client
+
+
+def deferred_generator(flag):
+    calls = (handler() for _ in [0])
+    if flag:
+        handler = accept_client
+    return list(calls)
+
+
+def overwritten_before_call(flag):
+    handler = accept_client
+    if flag:
+        handler = flush_replies
+    handler = accept_client
+    handler()
+
+
+def comprehension_in_loop(items):
+    handler = flush_replies
+    for item in items:
+        [handler() for _ in [item]]
+        if item:
+            handler = accept_client

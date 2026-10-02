@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A comprehension runs where it stands (lead, fixes 2b69431a)
+
+- **Found:** the control review ran real Python 3.14. 2b69431a treated a call inside a list, set or dict comprehension as deferred, so a store after the comprehension counted: `[h() for _ in [0]]; if flag: h = b` became exact `b`, where at runtime both branches raise UnboundLocalError.
+- **Fix:**
+  - Only a generator expression, a lambda or a nested def is deferred.
+  - A list, set or dict comprehension finds only the stores before it.
+  - Its body repeats like a loop's. A later store counts only within the part of the outermost loop around the call that runs again: a `for`'s target and body, a `while`'s test and body, a comprehension's all but its first iterable, never an `else`.
+- **Fixture** (`stored_callbacks.py`):
+  - `eager_list`, `eager_set` and `eager_dict` stay open.
+  - `deferred_generator` calls `accept_client`.
+  - `overwritten_before_call` is exact `accept_client`.
+  - `comprehension_in_loop` gives alternatives {accept_client, flush_replies}.
+- **Checks:**
+  - The reviewer's example run through the fixed parser: the three eager calls are unresolved and the generator's call is exact `b`.
+  - pythonprogramindex and the Python contract tests are green.
+
 ## 2026-10-03 — A Python name reassigned under a branch calls what its stores put there (lead)
 
 - **Before:**

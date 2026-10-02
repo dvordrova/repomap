@@ -569,8 +569,14 @@ supports:
     `handler = handler()` calls what came before. From the stores ending
     before the call, the last one no branch skips (in the name's own scope)
     and every one after it reach the call. A store after the call reaches it
-    only from inside the outermost loop around the call. A call in a nested
-    def, a lambda or a comprehension runs later and finds any store.
+    only from the part of the outermost loop around the call that runs again
+    (a `for`'s target and body, a `while`'s test and body, never an `else`).
+    A list, set or dict comprehension runs where it stands, its body
+    repeating like a loop's, so a store after it is never its target
+    (`eager_list`, `eager_set`, `eager_dict`; `comprehension_in_loop` meets
+    its loop's later store). A call in a nested def, a lambda or a generator
+    expression runs when it is called or consumed and finds any store
+    (`deferred_generator`).
   - **Exact and alternatives.** One function reaching the call is the
     ordinary exact call (a single store under a branch, the name unbound
     otherwise). Classes are constructed, and outside symbols alone make an
