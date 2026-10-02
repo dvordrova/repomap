@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A directory's own makefile the root never reaches (data 2)
+
+- **7de7a254:** a directory holding a makefile and C units no line
+  compiled, not entered by any dry run, has its default goal dry-run as the
+  root's is; when that goal compiles none of its units, they are compiled as
+  that makefile compiles their objects (`make -n -B -k -w -o <makefile> x.o
+  …`), flags only (C.md "Nested makefiles", past a skeptic: provenance per
+  unit, failures per makefile, `c_unit_unbuilt` for an object no rule makes,
+  step 2 only where the default goal compiled none). The linker closure gives
+  a name units of several directories define to the one beside the unit
+  needing it. Fixture: `upper/` (`c:upper/upper.so`, a shared library with
+  `-I..`) and `util/` (`c:util/ping.c`, `util/Makefile`'s object rule).
+- Lua (master 0b29f408, discovery and clang on a scratch clone):
+  `testes/libs` was one library failing on "'lua.h' file not found"; it is
+  five shared libraries, `c:testes/libs/lib1.so`, `lib11.so`, `lib2.so`,
+  `lib21.so`, `lib2-v2.so`, each parsing with `-I../../`. Lua 5.1.5:
+  `c:etc/` (noparser.c) and `c:etc/min.c` parse with `-I../src`; the new
+  `c:etc/all.c` fails in clang as it does by hand on macOS (Lua's `getline`
+  macro against the SDK's `_stdio.h`). `c:src/lua.c` and `c:src/luac.c` keep
+  parsing because of the closure's directory tie-break.
+- Measured on moby, deploy, go, ghidra and kubernetes: 0, 0, 2, 2 and 2
+  nested runs, none failing, discovery 2–9 s.
+- Ordinary runs of lua-5.1.5 at HEAD and with this change did not finish:
+  both spent over 20 minutes of CPU in `facts.(*routeValueReader).value`, as
+  the coordinator's cold Lua run does (sampled at 1 h 44 m). That walk
+  enumerates every caller of a parameter's function without memoising, and
+  it is the facts layer's, not this change's. The ordinary Lua acceptance
+  run waits for it.
+
 ## 2026-10-02 — An outside call says where it is made beside where it is called from (lead)
 
 - **a7530fa9:** a call's, a destination's and an Outside frame's reading say
