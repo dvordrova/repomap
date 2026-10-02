@@ -199,3 +199,24 @@ test('a drag from an arrow, a chip or a marker pans the map, selecting no text a
   }
   expect(errors).toEqual([]);
 });
+
+// A closed box's words move into its part in sight only where that part
+// holds them: a box all but out of sight at the canvas's foot keeps its
+// words where they stand (harness lints, 2026-10-03: casdoor's Outside
+// buckets, a sliver of each in sight, had had their centred words pulled
+// to their tops by the rule bringing a cut box's words up into sight).
+test('a box all but out of sight at the canvas\'s foot keeps its words where they stand',async({page})=>{
+  const errors=await open(page);
+  const box=page.locator('.react-flow__node[data-id="front"]');
+  const words=box.locator('.scene-words').first();
+  await expect(words).toBeVisible();
+  const canvas=await page.locator('.flow-root').boundingBox(),at=await box.boundingBox();
+  // Dragged down from empty canvas until 12 pixels of it stand in sight.
+  const spot=await page.evaluate(seed=>window.__inv.emptySpot(seed),7);
+  const by=canvas.y+canvas.height-12-at.y;
+  await page.mouse.move(spot.x,spot.y);await page.mouse.down();await page.mouse.move(spot.x,spot.y+by,{steps:10});await page.mouse.up();await settle(page);
+  const moved=await box.boundingBox();
+  expect(Math.round(canvas.y+canvas.height-moved.y),'12 pixels of the box in sight').toBe(12);
+  expect(await words.evaluate(el=>el.style.transform||''),'its words stay where they stand').toBe('');
+  expect(errors).toEqual([]);
+});

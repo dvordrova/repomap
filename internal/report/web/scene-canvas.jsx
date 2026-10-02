@@ -154,8 +154,13 @@ function useWordsInSight(node,ref,centred=false){
     // Under the frames' names at the canvas's top, never behind them.
     const shifted=left+dx*z,below=scene.under?.(shifted,shifted+width*z)||0;
     let dy=Math.max(0,Math.min((Math.max(pad,below+pad)-top)/z,at.bottom-y-height));
-    if(!dx)dx=-Math.max(0,Math.min((left+width*z-(W-pad))/z,at.x-border));
-    if(!dy)dy=-Math.max(0,Math.min((top+height*z-(H-pad))/z,y-border));
+    // Left or up only where the box's part in sight holds them, from its
+    // own edge or the canvas's: a box all but out of sight keeps them where
+    // they stand (casdoor's Outside buckets at the canvas's foot had had
+    // their centred words pulled to their tops).
+    const roomX=(W-pad)-Math.max(r.x*v.zoom+v.x,pad),roomY=(H-pad)-Math.max(r.y*v.zoom+v.y,pad);
+    if(!dx&&roomX>=width*z)dx=-Math.max(0,Math.min((left+width*z-(W-pad))/z,at.x-border));
+    if(!dy&&roomY>=height*z)dy=-Math.max(0,Math.min((top+height*z-(H-pad))/z,y-border));
     return Math.abs(dx)>=.5||Math.abs(dy)>=.5?`${Math.round(dx)}px,${Math.round(dy)}px`:'';
   });
   return key?{transform:`translate(${key})`}:undefined;

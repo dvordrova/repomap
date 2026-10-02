@@ -1209,8 +1209,12 @@ post-layout edits are deleted.
   in, under those names, never out of its own inside (etcd's "gRPC proxy",
   casdoor's "Email providers" beside an opened part-group); cut at the
   right or bottom edge, it moves them left or up into its padding, never
-  past its border (synthetic-no-inputs' "Invoice audit" beside Report
-  queue, its words cut at the canvas's foot; harness table, 60e7ea98).
+  past its border, where the part of it in sight holds them
+  (synthetic-no-inputs' "Invoice audit" beside Report queue, its words cut
+  at the canvas's foot; harness table, 60e7ea98); a box all but out of
+  sight keeps them where they stand (casdoor's Outside buckets, a sliver of
+  each at the canvas's foot, had had their centred words pulled to their
+  tops).
   The camera framing a box (entering a level, a reading's declaration or
   arrow end, "Show input") stops where that level's words read at 1.35
   times their size, and no word on the canvas, nor a chip's or a bucket's

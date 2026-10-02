@@ -181,7 +181,9 @@ pending canvas; a drag leaving the canvas keeps every arrow drawn as the
 pointing drew it; and a drag from an arrow, a chip or a marker pans the map
 as one from empty canvas does, selecting no text, scrolling no page and
 opening no card (the arrows take no pointer event: the harness asks the
-canvas's own hit test, `[data-map].sceneHitAt(x,y)`, what a point reaches). `visual/stable-labels.spec.mjs` checks that a pan keeps the
+canvas's own hit test, `[data-map].sceneHitAt(x,y)`, what a point reaches);
+and a box all but out of sight at the canvas's foot keeps its words where
+they stand. `visual/stable-labels.spec.mjs` checks that a pan keeps the
 whole map's summaries' line boxes. `visual/geometry.spec.mjs`
 (`visual/geometry.mjs`) checks the drawn fixture: no two texts overlap, no
 text is cut without an ellipsis and a title, every box stands in its frame,
