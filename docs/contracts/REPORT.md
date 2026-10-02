@@ -245,7 +245,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   launch point no part holds makes no entry part and no canvas label; the
   component's heading, reading and "Not on the map" list name it as the
   program's entry with its off-map reason, the heading and reading by its name
-  and file:line anchor, written as other source links are.
+  and its file linking to its line, as a card's source reads, no line number
+  printed (etcd's RootCmd had read "tools/proto-annotations/cmd/root.go:28"
+  in its row, reading lints, 2026-10-03); with no source link its place
+  stays its path and line, with `No source`.
 
 - Concrete input captions remain. A dark outline marks the card open on the
   right without inserting a row or moving its text. Dark arrows and outlined

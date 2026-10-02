@@ -14,8 +14,10 @@ import (
 // Redis's main was a near-tie of the parts answer, so no part holds it: the
 // map draws no entry part and the code never picks one. The component's
 // reading and its "Not on the map" list name main as the program's entry,
-// with why it is off the map; the reading's line names it with its file
-// and line ("main redis.c:9124"), as the page's source anchors are written.
+// with why it is off the map; the reading's line names it with its file,
+// linking to its line ("main redis.c"), as a card's source reads (etcd's
+// RootCmd had read "tools/proto-annotations/cmd/root.go:28" in its row);
+// with no source link its place stays its path and line.
 func TestALaunchPointOffTheMapIsNamedWithItsReason(t *testing.T) {
 	object := func(id, name string, line int) groupindex.Subject {
 		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction,
@@ -63,6 +65,19 @@ func TestALaunchPointOffTheMapIsNamedWithItsReason(t *testing.T) {
 		if !strings.Contains(line, want) {
 			t.Fatalf("the entry line lacks %q: %s", want, line)
 		}
+	}
+	// Linked, it reads as its file, its link to its line.
+	builder.links = newPageLinks(&ReportData{GitHubSourceLinks: &GitHubSourceLinks{RepositoryURL: "https://github.com/redis/redis", Revision: "abc"}})
+	linked := &pageSection{ID: "t1", programTargetID: "t1"}
+	builder.fillSectionOffMap(linked)
+	page.Reset()
+	if err := parsed.ExecuteTemplate(&page, "target.html", linked); err != nil {
+		t.Fatal(err)
+	}
+	line = page.String()[strings.Index(page.String(), `class="component-entry"`):]
+	line = line[:strings.Index(line, "</p>")]
+	if !strings.Contains(line, `href="https://github.com/redis/redis/blob/abc/redis.c#L9124" target="_blank">redis.c</a>`) || strings.Contains(line, "redis.c:9124") {
+		t.Fatalf("the linked entry line does not read as its file linking to its line: %s", line)
 	}
 	for _, group := range index.Groups {
 		if group.Lane == groupindex.LaneTriggers {
