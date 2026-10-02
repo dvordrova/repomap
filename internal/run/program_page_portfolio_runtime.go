@@ -149,6 +149,7 @@ func orientAndPublishRepositoryReport(
 	if err != nil {
 		return report.RunReceipt{}, err
 	}
+	options.Output.Wall(publicationStage, time.Since(started))
 	options.Output.State("Report publication", "ready", formatRunOutputWallDuration(time.Since(started)))
 	return receipt, nil
 }

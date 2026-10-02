@@ -87,10 +87,16 @@ type CPlatformUnit struct {
 	Alternative bool `json:"alternative,omitempty"`
 }
 
-// RunTiming is the Time stage of a run as data.
+// RunTiming is the Time stage of a run as data. WallMS is the run until its
+// report's publication, as the page says it: the page cannot time its own
+// rendering. Once the report is published, PublicationMS is that stage and
+// CommandMS the whole command until then. Headscale's metadata had said
+// 185,602 ms of a 781 s command: its 596 s publication was nowhere.
 type RunTiming struct {
-	WallMS int64         `json:"wall_ms"`
-	Stages []StageTiming `json:"stages,omitempty"`
+	WallMS        int64         `json:"wall_ms"`
+	PublicationMS int64         `json:"publication_ms,omitempty"`
+	CommandMS     int64         `json:"command_ms,omitempty"`
+	Stages        []StageTiming `json:"stages,omitempty"`
 }
 
 // StageTiming is one model stage's account: how many calls were live and

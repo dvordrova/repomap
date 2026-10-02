@@ -339,6 +339,50 @@ func (output *runOutput) TimingReport() debugdump.RunTiming {
 	return report
 }
 
+// publicationStage is the report's publication in the Time stage: a stage
+// of its own, no model's, from assembling the report to its last file.
+const publicationStage = "report publication"
+
+// recordCommandTiming completes the run's saved timing once its report is
+// published: publication_ms, that stage, and command_ms, the whole command
+// until then. wall_ms stays what the page says, the run until its
+// publication; every other field of the metadata stays as written.
+func recordCommandTiming(runDir string, output *runOutput) error {
+	if output == nil {
+		return nil
+	}
+	output.mu.Lock()
+	command, publication := output.now().Sub(output.started), output.wallTime[publicationStage]
+	output.mu.Unlock()
+	path := filepath.Join(runDir, "metadata.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("run timing: read metadata: %w", err)
+	}
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return fmt.Errorf("run timing: decode metadata: %w", err)
+	}
+	var timing debugdump.RunTiming
+	if saved := metadata["timing"]; saved != nil {
+		if err := json.Unmarshal(saved, &timing); err != nil {
+			return fmt.Errorf("run timing: decode metadata timing: %w", err)
+		}
+	}
+	timing.PublicationMS, timing.CommandMS = publication.Milliseconds(), command.Milliseconds()
+	if metadata["timing"], err = json.Marshal(timing); err != nil {
+		return fmt.Errorf("run timing: encode metadata timing: %w", err)
+	}
+	encoded, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("run timing: encode metadata: %w", err)
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		return fmt.Errorf("run timing: write metadata: %w", err)
+	}
+	return nil
+}
+
 // writeRunTiming records the run's account in its metadata, so the page
 // generated next can say how long the run took and where.
 func writeRunTiming(runDir string, timing debugdump.RunTiming) error {

@@ -150,6 +150,19 @@ Successful target-plan and target-page console rows use the public selector or
 the already assigned compact `t*` identity. Adapter-native discovery keys such
 as hashed scout refs are not user-facing scope labels.
 
+## Run timing
+
+The closing Time stage says the whole command's wall clock, each stage
+without a model, report publication included ("report publication: …, no
+model"), and each model stage's live and cached calls. The run's
+`metadata.json` `timing` keeps it as data. `wall_ms` is the run until its
+report's publication: the page shows that figure, since it cannot time its
+own rendering. Once the report is published, `publication_ms` is that stage
+and `command_ms` the whole command until then. Both are metadata only, so
+report.json and its format do not change. The fields were added after
+headscale's metadata said 185,602 ms of a 781 s command, with its 596 s
+publication counted nowhere.
+
 ## Helper and publication errors
 
 The embedded JS/TS helper reserves an exit status for compiler-load failures;

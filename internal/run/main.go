@@ -858,6 +858,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		if _, generationErr := generateReport(); generationErr != nil {
 			return fmt.Errorf("generate authorized browser report: %w", generationErr)
 		}
+		humanOutput.Wall(publicationStage, time.Since(reportStarted))
+		if !deps.siblingTargetRun {
+			if err := recordCommandTiming(runDir, humanOutput); err != nil {
+				humanOutput.Warn("could not record the command's timing", err.Error())
+			}
+		}
 	}
 	reportPath = filepath.Join(runDir, "report.html")
 	if !deps.siblingTargetRun {

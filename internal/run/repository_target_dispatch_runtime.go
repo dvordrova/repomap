@@ -680,6 +680,9 @@ func finishRepositoryTargetDispatch(
 	})
 	output.State("Report", "generated")
 	output.Stage("Report", "path: "+reportPath)
+	if err := recordCommandTiming(runDir, output); err != nil {
+		output.Warn("could not record the command's timing", err.Error())
+	}
 	output.Timing()
 	if staticHost != "" {
 		output.Stage("Report", "standalone host: "+staticHost)
