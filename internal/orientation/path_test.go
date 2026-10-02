@@ -387,3 +387,47 @@ func TestAnOptionSaysWhatThePathEnters(t *testing.T) {
 		t.Errorf("StartServer's option reads %q", start)
 	}
 }
+
+// The inputs a candidate handles are a criterion of every option of a split
+// or of none: said of one, it reads as "no" on the rest, whose inputs the
+// catalogue may not hold (lua's pmain had offered "handles: command W,
+// command e l" on runargs alone, the script being a positional argument,
+// and the walk took the -l option 5 of 5).
+func TestAHandledInputIsSaidOfEveryOptionOrNone(t *testing.T) {
+	operation := func(subject, kind, name string) groupindex.Operation {
+		return groupindex.Operation{ID: "o" + subject, SubjectID: subject, GroupID: "g1", Kind: kind, Name: name}
+	}
+	for _, test := range []struct {
+		name       string
+		operations []groupindex.Operation
+		want       map[string]string
+	}{
+		{"one handles an input", []groupindex.Operation{operation("on_click", "interaction", "click")}, map[string]string{"on_click": "", "on_move": ""}},
+		{"each handles an input", []groupindex.Operation{operation("on_click", "interaction", "click"), operation("on_move", "interaction", "move")},
+			map[string]string{"on_click": "interaction click", "on_move": "interaction move"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := flowProgram()
+			input.Groups[0].Operations = test.operations
+			var asked []llm.Question
+			categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+				asked = append(asked, question)
+				return llm.Verdict{Choice: "on_click", Probabilities: map[string]float64{"on_click": 0.8, "on_move": 0.2}}, true
+			}}
+			if _, err := walkFlow(t.Context(), llm.Executor{}, categorizer, input, "t1"); err != nil {
+				t.Fatal(err)
+			}
+			if len(asked) != 1 {
+				t.Fatalf("asked %d questions, want the split at start", len(asked))
+			}
+			got := map[string]string{}
+			for _, option := range asked[0].Options {
+				_, handles, _ := strings.Cut(option.Meaning, "handles: ")
+				got[option.Name], _, _ = strings.Cut(handles, ";")
+			}
+			if !maps.Equal(got, test.want) {
+				t.Fatalf("options handle %q, want %q", got, test.want)
+			}
+		})
+	}
+}

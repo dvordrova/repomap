@@ -387,6 +387,19 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 	subject := stepSubject(step)
 	options := make([]map[string]any, 0, len(candidates))
 	names := graph.toldApart(candidates)
+	// The inputs a candidate handles, as the reading decided them (a user's
+	// mouse press is an interaction, a sketch's setup an extension), are a
+	// criterion of every option or of none: said of some, it reads as "no"
+	// on the rest, while the catalogue holds only inputs written as literals
+	// (lua's pmain had offered "handles: command W, command e l" on runargs
+	// alone, the script being a positional argument, and the walk took the
+	// -l option 5 of 5; handle_script wins 5 of 5 without it).
+	handled := make([][]string, len(candidates))
+	every := len(candidates) > 0
+	for position, candidate := range candidates {
+		handled[position] = graph.handles(met[candidate.Edge])
+		every = every && len(handled[position]) > 0
+	}
 	for position, candidate := range candidates {
 		id := stepSubject(candidate)
 		ref := fmt.Sprintf("c%d", position+1)
@@ -420,10 +433,8 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 			reached += " by " + strings.Join(by, ", ")
 		}
 		terms = append(terms, "reached: "+reached)
-		// An input it handles, as the reading decided it (a user's mouse
-		// press is an interaction, a sketch's setup an extension).
-		if handles := graph.handles(met[candidate.Edge]); len(handles) > 0 {
-			terms = append(terms, "handles: "+strings.Join(handles, ", "))
+		if every {
+			terms = append(terms, "handles: "+strings.Join(handled[position], ", "))
 		}
 
 		options = append(options, map[string]any{"ref": ref, "title": names[position], "criteria": strings.Join(terms, "; ")})

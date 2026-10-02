@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A split says the inputs its options handle for every option or for none (data 2)
+
+- **Lua's Main flow** walked main → pmain → runargs → dolibrary: the `-l` option, where `./lua script.lua` goes pmain → handle_script.
+  - At pmain only runargs, 1 of 7 options, read "handles: command W, command e l": the catalogue holds the options written as literals, and the script is a positional argument with none.
+  - Uncached Jev draws on the cached pmain request: runargs 5/5 (0.53–0.57, handle_script 0.24). The same request without runargs's clause: handle_script 5/5 (0.52–0.54, runargs 0.25–0.28). A reworded question kept runargs 5/5. Each call written with its condition: runargs 4, handle_script 1.
+  - So the asymmetric criterion decided it: said of one option, it reads as "no" on the rest. A skeptic chose "every option or none" over dropping the clause, which keeps othello's and freqtrade's requests byte-identical.
+- **Fix:** `chooseNext` says `handles:` only when every candidate handles an input. `TestAHandledInputIsSaidOfEveryOptionOrNone`; READING Main flow.
+- **Regression draws** (4 each, the clause as now sent vs before):
+
+| Split | Options carrying it | Before | Now |
+|---|---|---|---|
+| othello start! | 5/5 | setup 4/4 | unchanged request |
+| freqtrade get_parsed_arg | 29/29 | start_trading 4/4 | unchanged request |
+| casdoor main | 5/25 | main$1 4/4 ~0.70 | main$1 4/4 ~0.70 |
+| redis aeProcessEvents | 1/6 | readQueryFromClient 4/4 0.55–0.59 | 4/4 0.62–0.73 |
+| redis call | 94/96 | setCommand 4/4 0.42–0.47 | 4/4 0.39–0.48; feedAppendOnlyFile within 0.1 in 2 draws |
+| Lua 5.1.5 pmain | 1/6 | runargs 4/4 0.69–0.73 | runargs 3, handle_script 1, 0.34–0.40 each |
+
+  No other cached flow question carries the clause.
+- **Warm runs** with HEAD 46ec53d4 plus the fix (binary 3dfd7431), every exit 0:
+  - lua 20261002-183328: main → pmain → handle_script → luaL_loadfilex → lua_load → luaC_step → youngcollection → sweepgen. The new pmain request is JSON-identical to the drawn no-clause one.
+  - lua-5.1.5 185016: pmain parts into handle_script → luaL_loadfile → lua_load and runargs → dolibrary.
+  - othello 183422, etcd 183434 and freqtrade 184018 walk the same flows as before.
+- **Next stumble, not changed here** (one question change per run): after handle_script the path goes into the collector, because the helper question decided `docall` and `luaD_protectedparser` are helpers. The walk drops a helper with its closure, so lua_pcall → the VM and the parser are never offered.
+
 ## 2026-10-02 — A drag keeps what it points at drawn; a long Entry list folds in the component's reading too (lead, cfddeb7d)
 
 - **Cause of etcd's home `pan-keeps` 1/24:**

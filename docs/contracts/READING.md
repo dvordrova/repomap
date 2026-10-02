@@ -2002,7 +2002,16 @@ task names the program and its core parts, the item is the step's name,
 signature and part, each option a candidate's name, signature, part, atlas
 line, how it is reached ("called", "one of 96 at redis.c:1033", "handed to
 quil.core.sketch.mouse-pressed", with the members of a class step reaching
-it) and the inputs it handles. An option is what the path enters: a type
+it) and, when every option handles one, the inputs it handles: a criterion
+said of some options reads as "no" on the rest, while the catalogue holds
+only inputs written as literals (2026-10-02: lua's pmain had offered
+"handles: command W, command e l" on runargs alone, the script being a
+positional argument, and the walk took the `-l` option 5 of 5;
+handle_script wins 5 of 5 without it; othello, freqtrade, casdoor and
+redis keep their winners, redis's call, with 94 of 96 options handling a
+request, nearing feedAppendOnlyFile in 2 of 4 draws;
+`TestAHandledInputIsSaidOfEveryOptionOrNone`). An
+option is what the path enters: a type
 entered through some of its members is said by them after its title, each
 with how the step reaches it ("enters Etcd.Close (handed to
 RegisterInterruptHandler), Etcd.Err (called)"), never by the type's own line
