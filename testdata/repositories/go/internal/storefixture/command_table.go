@@ -86,9 +86,9 @@ func RunChosenHandler(readable bool) {
 	loop.onRead()
 }
 
-// The same event loop with interface-typed fields. A handler parameter stored
-// in one of two fields under a branch leaves the calls through both open;
-// each handler it brings is a witness of those calls, never an alternative.
+// The same event loop with interface-typed fields. A handler parameter stored in one of two
+// fields under a branch is a witness of the calls through both, never an alternative; write,
+// which no observed value fills, calls each repository implementation of readyHandler.
 type readyHandler interface{ Handle() }
 
 type acceptReady struct{}

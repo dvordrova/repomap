@@ -135,10 +135,65 @@ separate local KvServerToKvClient adapter binding at v3client.go:33.
 An interface value stored through a repository constructor parameter retains
 the concrete implementations supplied by every actual static repository call
 to that constructor. A non-call use, missing argument or caller outside the
-selected repository scope keeps the frontier unresolved. The declared method
-still limits eligible observed implementations; type compatibility alone never
-creates a dispatch edge. The cumulative Go fixture requires the
-constructor-injected facade to retain `storedEngine.Put` as an observed target.
+selected repository scope leaves that path of the value open. The declared
+method limits eligible observed implementations, and the cumulative Go fixture
+requires the constructor-injected facade to retain `storedEngine.Put` as its
+one observed target.
+
+### A value no observed flow gives
+
+An interface call follows the repository's implementations (owner). On
+2026-09-30 at 08:12:54 UTC the coordinator asked, as item 9: «Интерфейсные
+вызовы. Идти по реализациям как по альтернативам?»; at 08:51:11 UTC the
+owner answered: «"Это близко к «размытому разрешению», которое вы
+запретили" - я никогда такого не запрещал». On 2026-09-16 he had ruled one
+known target `exact`, several `alternatives`, none `unresolved`, with no
+cautious unknowns. The September implementation followed the
+implementations the field's stores put there (observed flow, above). A call through a value of an interface the
+selected repository declares that no observed flow gives at all (no
+candidate: a parameter of a function no repository code calls, a closure's
+captured value, the result of another interface call) applies the same
+approval: its targets are the methods the repository's named non-interface
+types implementing the receiver's static interface declare, selected from
+each pointer method set by `types.Implements` (the matcher of the
+`implements` facts below, shared), one exact, several alternatives, no
+unknown beside them. A method promoted from an embedded type is that type's
+own, once; one promoted from an embedded interface is no implementation; a
+generic type is not enumerated. The handoff candidate's evidence is
+`interface_implementation`, and the ProgramIndex relation says
+`basis: implements` (PROGRAM_INDEX), so a reader and the page never take it
+for a traced runtime binding: "implemented by X in this repository". A call
+with an observed value keeps that value's basis, an open path beside it
+included (litestream's `WriteLTXFile`, above), and an interface declared
+outside the repository (`error`, `io.Writer`) is filled by no repository
+type. Stores under a branch that brought no candidate stop being witnesses
+once the call is resolved. On etcd's server target, the gateway's
+`server.Campaign` in `RegisterElectionHandlerServer`'s handler, which no
+repository code calls (etcd registers the gateway in client mode), calls
+`electionServer.Campaign`, `electionProxy.Campaign` and
+`UnimplementedElectionServer.Campaign` as alternatives; its unresolved
+interface calls fall from 836 to 86 (325 now exact and 425 alternatives on
+the implements basis, 154 of them with a generated `Unimplemented*` stub
+among the targets, 18 with the caller itself, a wrapper implementing the
+interface it calls), the rest through `error` and anonymous interfaces or
+with no repository implementation. The fixture's
+`RegisterTicketHandlerServer` (two implementations, a type embedding one, a
+type embedding the interface, a method of another signature) and
+`RegisterReceiptHandlerServer` (one, exact) check it, with `unknownFacade.Put`
+and the command table's `fire` through `write`
+(`assertGoOpenInterfaceCallsFollowImplementations`).
+
+Native equivalents, probed on one small repository per language (a base or
+interface `Store` with two implementations, a `save(store)` called with one,
+and a `register_store_handler(routes, store)` no code calls), are recorded
+missing, not fabricated: Python resolves `store.put(key)` on a parameter
+annotated with the repository's ABC exactly to the abstract `Store.put`, its
+subclasses' overrides not alternatives, the called `save` included; JS/TS
+leaves the call through an interface-typed parameter unresolved, the classes
+that `implements` it not joined; Clojure resolves a protocol call `(put!
+store k)` exactly to the protocol's `put!`, the `defrecord` implementations
+not joined; C has no interfaces, and a function-pointer field keeps its
+stores (C).
 
 ## Interface implementation matching
 
@@ -155,10 +210,11 @@ Each accepted type pair projects one exact `implements` relation from concrete
 type to interface and each directly owned matching method projects another
 exact `implements` relation from concrete method to interface method. Value and
 pointer method-set evidence remains explicit. These compatibility facts do not
-claim construction, assignment or runtime dispatch and therefore never replace
-the separately observed binding and call relations. The cumulative fixture
-requires `compatibleOnlyEngine` and its `Put` method to match `FieldStore`
-despite never being assigned to that interface.
+claim construction or assignment and never replace an observed binding or an
+observed call's targets; a call no observed flow gives a value takes the
+implementations they name as its own targets, on the `implements` basis
+(above). The cumulative fixture requires `compatibleOnlyEngine` and its `Put`
+method to match `FieldStore` despite never being assigned to that interface.
 
 ## Receiver fields and bindings
 

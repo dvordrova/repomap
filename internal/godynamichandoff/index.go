@@ -94,8 +94,10 @@ func (value Resolution) valid() bool {
 	return value == ResolutionExact || value == ResolutionAlternatives || value == ResolutionUnresolved
 }
 
-// CandidateEvidence states exactly how the local SSA value itself identifies
-// a repository callable. Compatibility-only type or naming candidates are not
+// CandidateEvidence states how a repository callable is known as a
+// candidate: by the local SSA value itself, or, for an interface invoke whose
+// value no observed flow gives, by the repository types implementing the
+// interface (EvidenceInterfaceImplementation). Naming candidates are not
 // part of this closed vocabulary.
 type CandidateEvidence string
 
@@ -109,13 +111,18 @@ const (
 	// A concrete value was stored in this declared field somewhere in the
 	// repository. It is a possible receiver, not proof about this instance.
 	EvidenceInterfaceFieldAssignment CandidateEvidence = "interface_field_assignment"
+	// No observed flow gives the invoked value: the candidate is the method
+	// a repository type implementing the receiver's interface declares
+	// (owner, 2026-09-16 and 2026-09-30: an interface call follows the
+	// repository's implementations).
+	EvidenceInterfaceImplementation CandidateEvidence = "interface_implementation"
 )
 
 func (value CandidateEvidence) valid() bool {
 	switch value {
 	case EvidenceDirectFunctionValue, EvidenceClosureValue, EvidenceUniqueValueFlow,
 		EvidenceValueFlowAlternative, EvidenceConcreteInterfaceValue,
-		EvidenceInterfaceValueAlternative, EvidenceInterfaceFieldAssignment:
+		EvidenceInterfaceValueAlternative, EvidenceInterfaceFieldAssignment, EvidenceInterfaceImplementation:
 		return true
 	default:
 		return false
@@ -125,7 +132,7 @@ func (value CandidateEvidence) valid() bool {
 func (value CandidateEvidence) exact() bool {
 	return value == EvidenceDirectFunctionValue || value == EvidenceClosureValue ||
 		value == EvidenceUniqueValueFlow || value == EvidenceConcreteInterfaceValue ||
-		value == EvidenceInterfaceFieldAssignment
+		value == EvidenceInterfaceFieldAssignment || value == EvidenceInterfaceImplementation
 }
 
 type Candidate struct {
@@ -495,11 +502,21 @@ func validateKindShape(handoff Handoff, functions map[string]struct{}) error {
 			target != (StaticTarget{}) {
 			return fmt.Errorf("Go dynamic handoff index: invalid interface invoke slot")
 		}
+		implementations := 0
 		for _, candidate := range handoff.Candidates {
+			if candidate.Evidence == EvidenceInterfaceImplementation {
+				implementations++
+				continue
+			}
 			if candidate.Evidence != EvidenceConcreteInterfaceValue &&
 				candidate.Evidence != EvidenceInterfaceValueAlternative && candidate.Evidence != EvidenceInterfaceFieldAssignment {
 				return fmt.Errorf("Go dynamic handoff index: interface candidate lacks concrete SSA value flow")
 			}
+		}
+		// The implementations stand for a value no observed flow gives:
+		// all of the candidates, and no open frontier beside them.
+		if implementations > 0 && (implementations != len(handoff.Candidates) || handoff.CandidatesOmitted != 0) {
+			return fmt.Errorf("Go dynamic handoff index: interface implementations stand beside observed values")
 		}
 	case FunctionValueCall:
 		if !validText(handoff.Slot.Signature) || handoff.Slot.ContainerType != "" ||
@@ -627,6 +644,8 @@ func evidenceRank(value CandidateEvidence) int {
 		return 4
 	case EvidenceInterfaceValueAlternative:
 		return 5
+	case EvidenceInterfaceImplementation:
+		return 7
 	default:
 		return 99
 	}

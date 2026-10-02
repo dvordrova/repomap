@@ -116,6 +116,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoInterfaceFieldEvidence(t, authorities, index)
 	assertGoExternalInterfaceImplementation(t, index)
 	assertGoInterfaceImplementationMatches(t, index)
+	assertGoOpenInterfaceCallsFollowImplementations(t, index)
 	assertGoSharedHandoffFlows(t, index)
 	assertGoCallableReceiverFields(t, authorities, index)
 	assertGoCommandTableAndStoredCallbacks(t, repository, index)
@@ -661,8 +662,37 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 		"fieldFacade.Put":               {"storedEngine.Put", "alternateEngine.Put"},
 		"outerFacade.Put":               {"fieldFacade.Put"},
 		"unrelatedFacade.Put":           {"neverStoredEngine.Put"},
-		"unknownFacade.Put":             {},
 		"constructorInjectedFacade.Put": {"storedEngine.Put"},
+	}
+	// A field no observed store fills runs the method of every repository
+	// type implementing its interface (owner, 2026-09-16 and 2026-09-30),
+	// the facade itself among them.
+	implemented := map[string][]string{
+		"unknownFacade.Put": {"storedEngine.Put", "alternateEngine.Put", "neverStoredEngine.Put", "fieldFacade.Put", "outerFacade.Put",
+			"unrelatedFacade.Put", "unknownFacade.Put", "bucketStore.Put", "diskStore.Put", "compatibleOnlyEngine.Put", "constructorInjectedFacade.Put"},
+	}
+	for _, handoff := range authorities.dynamic.Handoffs {
+		if handoff.Kind != godynamichandoff.InterfaceInvoke {
+			continue
+		}
+		for caller, expected := range implemented {
+			if name := names[handoff.CallerID]; name != caller && !strings.HasSuffix(name, "."+caller) {
+				continue
+			}
+			seen[caller] = true
+			var got []string
+			for _, candidate := range handoff.Candidates {
+				if candidate.Evidence != godynamichandoff.EvidenceInterfaceImplementation || len(candidate.Assignments) > 0 {
+					t.Fatalf("%s's candidate is no implementation: %+v", caller, candidate)
+				}
+				parts := strings.Split(names[candidate.FunctionID], ".")
+				got = append(got, strings.Join(parts[max(0, len(parts)-2):], "."))
+			}
+			want := slices.Sorted(slices.Values(expected))
+			if slices.Sort(got); handoff.Resolution != godynamichandoff.ResolutionAlternatives || handoff.CandidatesOmitted != 0 || !slices.Equal(got, want) {
+				t.Fatalf("%s runs %v (%s, %d omitted), want %v", caller, got, handoff.Resolution, handoff.CandidatesOmitted, want)
+			}
+		}
 	}
 	for _, handoff := range authorities.dynamic.Handoffs {
 		if handoff.Kind != godynamichandoff.InterfaceInvoke {
@@ -706,6 +736,11 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 		}
 	}
 	for caller := range want {
+		if !seen[caller] {
+			t.Fatalf("no interface invocation for %s; functions: %v", caller, names)
+		}
+	}
+	for caller := range implemented {
 		if !seen[caller] {
 			t.Fatalf("no interface invocation for %s; functions: %v", caller, names)
 		}
@@ -810,6 +845,70 @@ func assertGoInterfaceImplementationMatches(t *testing.T, index programindex.Ind
 	}
 	if interfaceType == "" || implementationType == "" || interfaceMethod == "" || implementationMethod == "" || len(want) != 0 {
 		t.Fatalf("compatible-only implementation was not matched: endpoints=%q/%q/%q/%q missing=%v", interfaceType, implementationType, interfaceMethod, implementationMethod, want)
+	}
+}
+
+// A call through an interface value no observed flow gives (a gateway's
+// registration function no repository code calls hands its server to the
+// handler it registers) runs the method of each repository type implementing
+// the interface, the same method objects its `implements` facts name, with
+// the implements basis: one exact, several alternatives (owner, 2026-09-16
+// and 2026-09-30). A type embedding an implementation runs that method, a
+// type embedding the interface and a method of another signature are none.
+func assertGoOpenInterfaceCallsFollowImplementations(t *testing.T, index programindex.Index) {
+	t.Helper()
+	objects := make(map[string]programindex.Object, len(index.Objects))
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	named := func(id string) string { return objects[objects[id].OwnerID].Name + "." + objects[id].Name }
+	implements := map[string][]string{}
+	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationImplements && objects[relation.FromID].Kind == programindex.ObjectMethod {
+			implements[named(relation.ToIDs[0])] = append(implements[named(relation.ToIDs[0])], named(relation.FromID))
+		}
+	}
+	want := map[string]struct {
+		resolution programindex.Resolution
+		targets    []string
+		declared   string
+	}{
+		"RegisterTicketHandlerServer$1":  {programindex.ResolutionAlternatives, []string{"ticketDesk.IssueTicket", "ticketKiosk.IssueTicket"}, "ticketServer.IssueTicket"},
+		"RegisterReceiptHandlerServer$1": {programindex.ResolutionExact, []string{"receiptDesk.PrintReceipt"}, "receiptServer.PrintReceipt"},
+	}
+	seen := map[string]bool{}
+	for _, relation := range index.Relations {
+		expected, ok := want[objects[relation.FromID].Name]
+		if !ok || relation.Kind != programindex.RelationCalls {
+			continue
+		}
+		var targets []string
+		for _, id := range relation.ToIDs {
+			targets = append(targets, named(id))
+		}
+		slices.Sort(targets)
+		declared := slices.Sorted(slices.Values(implements[expected.declared]))
+		if relation.Dispatch != programindex.DispatchInterface || relation.Resolution != expected.resolution || relation.TargetsOmitted != 0 ||
+			relation.Basis != programindex.BasisImplements || !slices.Equal(targets, expected.targets) || !slices.Equal(targets, declared) {
+			t.Fatalf("%s calls %v (%s, basis %q, %d omitted), want %v as its implements facts %v", objects[relation.FromID].Name, targets,
+				relation.Resolution, relation.Basis, relation.TargetsOmitted, expected.targets, declared)
+		}
+		seen[objects[relation.FromID].Name] = true
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("open interface calls seen %v, want %d", seen, len(want))
+	}
+	// An observed value keeps its own basis: the constructor-injected
+	// facade calls only the engine its construction hands.
+	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationCalls && relation.Dispatch == programindex.DispatchInterface && relation.Basis != "" &&
+			relation.Basis != programindex.BasisImplements {
+			t.Fatalf("unknown basis %+v", relation)
+		}
+		if objects[relation.FromID].Name == "Put" && objects[objects[relation.FromID].OwnerID].Name == "constructorInjectedFacade" &&
+			relation.Kind == programindex.RelationCalls && relation.Basis != "" {
+			t.Fatalf("an observed value's call took the implements basis: %+v", relation)
+		}
 	}
 }
 

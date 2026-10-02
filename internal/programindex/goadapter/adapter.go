@@ -1108,6 +1108,13 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			// call stays open and the implementation is never its target.
 			witnesses = append(witnesses, programindex.Witness{Kind: kind, Detail: detail, Location: at, ObjectRef: projection.directNodeObjectRefs[witness.FunctionID]})
 		}
+		// Targets known by the repository's implementations of the
+		// interface, no observed flow giving the value, say so.
+		basis := ""
+		if handoff.Kind == godynamichandoff.InterfaceInvoke && len(handoff.Candidates) > 0 &&
+			handoff.Candidates[0].Evidence == godynamichandoff.EvidenceInterfaceImplementation {
+			basis = programindex.BasisImplements
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef:         handoff.ID,
 			Kind:              kind,
@@ -1121,6 +1128,7 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			Witnesses:         witnesses,
 			WitnessesObserved: len(witnesses),
 			SourceArgument:    sourceArgument,
+			Basis:             basis,
 		})
 		counts := represented[handoff.CallerID]
 		switch handoff.Kind {

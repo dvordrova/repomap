@@ -78,8 +78,8 @@ func InvokeInterfaceFlows(flag bool) {
 
 type constructorInjectedFacade struct{ store FieldStore }
 
-// compatibleOnlyEngine is never assigned to a FieldStore. It exists to prove
-// that library interface matching is method-set authority, not runtime binding.
+// compatibleOnlyEngine is never assigned to a FieldStore: its implements facts are method-set
+// authority, not runtime binding; only unknownFacade.Put, whose value no flow gives, runs it.
 type compatibleOnlyEngine struct{}
 
 func (*compatibleOnlyEngine) Put(string) {}
@@ -115,4 +115,42 @@ func OpenUserRows() (*userRows, error) {
 		return nil, err
 	}
 	return newUserRows(db), nil
+}
+
+// A registration function no repository code calls hands the server it is
+// given to the handler it registers, as a generated gateway's
+// RegisterElectionHandlerServer does: no observed flow gives the value the
+// handler calls, so the call runs the method of each repository type
+// implementing the interface, never an unknown (owner, 2026-09-16 and
+// 2026-09-30). A type that only embeds an implementation runs that one's
+// method, a type embedding the interface implements nothing of its own, and
+// a method of another signature is no implementation.
+type ticketServer interface {
+	IssueTicket(string) error
+}
+
+type ticketDesk struct{}
+type ticketKiosk struct{}
+type renamedTicketDesk struct{ ticketDesk }
+type ticketGateway struct{ ticketServer }
+type ticketPrinter struct{}
+
+func (*ticketDesk) IssueTicket(string) error  { return nil }
+func (*ticketKiosk) IssueTicket(string) error { return nil }
+func (*ticketPrinter) IssueTicket(int) error  { return nil }
+
+func RegisterTicketHandlerServer(mux map[string]func(string) error, server ticketServer) {
+	mux["issue"] = func(name string) error { return server.IssueTicket(name) }
+}
+
+// One repository type implements receiptServer: the call is exact, its
+// target known by the implementation all the same.
+type receiptServer interface{ PrintReceipt(string) }
+
+type receiptDesk struct{}
+
+func (receiptDesk) PrintReceipt(string) {}
+
+func RegisterReceiptHandlerServer(mux map[string]func(string), server receiptServer) {
+	mux["print"] = func(name string) { server.PrintReceipt(name) }
 }

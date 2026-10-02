@@ -8,7 +8,6 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/gocoreobject"
@@ -108,33 +107,15 @@ func (a *analyzer) captureInterfaceImplementations(input *gocoreobject.Input) er
 	}
 
 	candidates := make([]coreNamedType, 0, len(entries))
-	byMethod := make(map[string]map[int]struct{})
+	named := make([]*types.Named, 0, len(entries))
 	for _, entry := range entries {
 		if entry.declaration.Kind == gocoreobject.TypeInterface {
 			continue
 		}
-		index := len(candidates)
 		candidates = append(candidates, entry)
-		seen := make(map[string]struct{})
-		for _, receiver := range []types.Type{entry.named, types.NewPointer(entry.named)} {
-			set := types.NewMethodSet(receiver)
-			for position := 0; position < set.Len(); position++ {
-				method, ok := set.At(position).Obj().(*types.Func)
-				if !ok {
-					continue
-				}
-				key := method.Id()
-				if _, duplicate := seen[key]; duplicate {
-					continue
-				}
-				seen[key] = struct{}{}
-				if byMethod[key] == nil {
-					byMethod[key] = make(map[int]struct{})
-				}
-				byMethod[key][index] = struct{}{}
-			}
-		}
+		named = append(named, entry.named)
 	}
+	index := newMethodSetIndex(named)
 
 	for _, entry := range entries {
 		if entry.declaration.Kind != gocoreobject.TypeInterface {
@@ -145,28 +126,8 @@ func (a *analyzer) captureInterfaceImplementations(input *gocoreobject.Input) er
 			return fmt.Errorf("go core object index: %s.%s lost interface type", entry.declaration.Package, entry.declaration.Name)
 		}
 		iface.Complete()
-		candidateIDs := make([]int, 0, len(candidates))
-		if iface.NumMethods() == 0 {
-			for index := range candidates {
-				candidateIDs = append(candidateIDs, index)
-			}
-		} else {
-			var narrow map[int]struct{}
-			narrowSelected := false
-			for position := 0; position < iface.NumMethods(); position++ {
-				set := byMethod[iface.Method(position).Id()]
-				if !narrowSelected || len(set) < len(narrow) {
-					narrow = set
-					narrowSelected = true
-				}
-			}
-			for index := range narrow {
-				candidateIDs = append(candidateIDs, index)
-			}
-			sort.Ints(candidateIDs)
-		}
-		for _, index := range candidateIDs {
-			implementation := candidates[index]
+		for _, position := range index.candidates(iface) {
+			implementation := candidates[position]
 			valueReceiver := types.Implements(implementation.named, iface)
 			pointerReceiver := types.Implements(types.NewPointer(implementation.named), iface)
 			if !valueReceiver && !pointerReceiver {

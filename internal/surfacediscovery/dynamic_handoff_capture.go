@@ -20,8 +20,13 @@ type dynamicHandoffCapture struct {
 	bindingsFrozen    bool
 	interfaceFields   map[*types.Var][]interfaceFieldStore
 	invokeSummaries   map[ssa.CallInstruction]dynamicValueSummary
-	coverage          godynamichandoff.CoverageInput
-	err               error
+	// repositoryTypes and repositoryTypeIndex are the target's repository
+	// types an interface call no observed flow gives may run a method of,
+	// built once (repositoryNamedTypes).
+	repositoryTypes     []*types.Named
+	repositoryTypeIndex methodSetIndex
+	coverage            godynamichandoff.CoverageInput
+	err                 error
 }
 
 // callableBindingFact is one immutable post-SSA fact shared by the bounded
@@ -371,6 +376,16 @@ func (capture *dynamicHandoffCapture) observeInterfaceInvoke(
 	// An exact external implementation is an invokes_external fact of its own,
 	// not an unknown value of this repository dispatch.
 	unresolved -= len(externalInterfaceImplementations(a, summary))
+	// A value no observed flow gives runs a method of the repository's
+	// implementations of the receiver's interface, never an unknown (owner,
+	// 2026-09-16 and 2026-09-30): etcd's gateway calls server.Campaign on
+	// the ElectionServer that RegisterElectionHandlerServer, which no
+	// repository code calls, hands its closure.
+	if len(candidates) == 0 && unresolved > 0 {
+		if implementations := a.interfaceImplementationCandidates(common.Value.Type(), common.Method); len(implementations) > 0 {
+			candidates, unresolved = implementations, 0
+		}
+	}
 	candidatesConsidered := dynamicCandidatesConsidered(candidates, unresolved)
 	resolution := dynamicResolution(candidates, unresolved)
 	if resolution == godynamichandoff.ResolutionUnresolved {

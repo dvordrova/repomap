@@ -269,9 +269,11 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		// The same loop with interface-typed fields: readyLoop.register
 		// stores its handler parameter into read or write under a branch,
 		// a witness of both, and RunChosenReady stores acceptReady into read
-		// under a branch, the one value read's calls call.
+		// under a branch, the one value read's calls call. No observed value
+		// fills write, so its call runs each repository implementation of
+		// readyHandler (owner, 2026-09-16 and 2026-09-30).
 		114: {calls, "fire", "Handle", alternatives},
-		115: {calls, "fire", "", unresolved},
+		115: {calls, "fire", "Handle,Handle", alternatives},
 		131: {calls, "RunChosenReady", "Handle", alternatives},
 		// A field whose interface fmt declares: the call through the field
 		// the branch chose calls what it stored, and clearing the other field
@@ -314,7 +316,6 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 	read := []string{stored("acceptReady", "read", 107), stored("flushReady", "read", 107), "observed receiver assignment for (acceptReady).Handle@129"}
 	openCalls := map[int][]string{
 		114: read,
-		115: {stored("acceptReady", "write", 109), stored("flushReady", "write", 109)},
 		131: read,
 		// A call of fmt.Stringer.String keeps its store beside that fact.
 		156: {"observed receiver assignment for (acceptName).String@151"},

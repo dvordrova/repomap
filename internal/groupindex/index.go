@@ -372,6 +372,11 @@ type StructuralEdge struct {
 	// record's field, the field as the code reaches it (ProgramIndex
 	// Relation.FieldPath): server.masterhost, redisDb.expires.
 	FieldPath string `json:"field_path,omitempty"`
+	// Basis is, on a relation target edge of a call through a repository
+	// interface whose value no observed flow gives, how the target is
+	// known (ProgramIndex Relation.Basis): "implements", a method of a
+	// repository type implementing the interface, not a traced binding.
+	Basis string `json:"basis,omitempty"`
 }
 
 // Index is the single sealed group-graph authority for one enriched
@@ -1514,7 +1519,7 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 				FromSubjectID: relation.FromID, ToSubjectID: targetID,
 				Role: EdgeRelationTarget, RelationID: relation.ID,
 				RelationKind: relation.Kind, Resolution: relation.Resolution,
-				Location: cloneLocation(relation.Location), FieldPath: relation.FieldPath,
+				Location: cloneLocation(relation.Location), FieldPath: relation.FieldPath, Basis: relation.Basis,
 			})
 		}
 		for _, pattern := range relation.Patterns {

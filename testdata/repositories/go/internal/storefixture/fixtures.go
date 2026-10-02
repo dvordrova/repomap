@@ -46,8 +46,8 @@ func createFixtureState() (*os.File, error) {
 	return os.Create("fixture-state.db")
 }
 
-// Interface-field forwarding preserves evidence without assuming that two
-// instances share a receiver or that every compatible type is ever installed.
+// Interface-field forwarding preserves evidence without assuming two instances share a
+// receiver; a field no observed value fills (unknownFacade's) calls each FieldStore Put.
 type FieldStore interface{ Put(string) }
 type storedEngine struct{}
 type alternateEngine struct{}

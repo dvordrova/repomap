@@ -1135,6 +1135,14 @@ func validDispatch(value string) bool {
 	return value == "" || value == DispatchInterface || value == DispatchInterfaceMethod || value == DispatchFunctionValue
 }
 
+// BasisImplements is, on a call through a repository interface whose value
+// no observed flow gives, how its targets are known: they are the methods of
+// the repository's types that implement the interface (owner, 2026-09-16 and
+// 2026-09-30: an interface call follows the repository's implementations,
+// one exact, several alternatives), not a traced binding of this value. An
+// absent basis is an observed one.
+const BasisImplements = "implements"
+
 // RelationInput cites ObjectInput.SourceRef values. TargetsObserved and
 // WitnessesObserved are mandatory adapter measurements; the core never derives
 // them from retained rows.
@@ -1156,6 +1164,8 @@ type RelationInput struct {
 	// FieldPath is, on a reads or writes relation whose target is a field
 	// of a record, the field as the code reaches it (Relation.FieldPath).
 	FieldPath string
+	// Basis is how a call's targets are known (Relation.Basis).
+	Basis string
 	// Value is, on a writes relation with a FieldPath, the value the site
 	// assigns (Relation.Value).
 	Value *sourcevalue.Value
@@ -1190,6 +1200,10 @@ type Relation struct {
 	// the readers and writers of one field gather across functions whatever
 	// root each reaches it from.
 	FieldPath string `json:"field_path,omitempty"`
+	// Basis is, on a call through a repository interface whose value no
+	// observed flow gives, BasisImplements: its targets are the
+	// implementations of the interface's method in the repository (GO).
+	Basis string `json:"basis,omitempty"`
 	// Value is, on a writes relation with a FieldPath, the value a plain
 	// assignment stores in the field there, as the adapter records any
 	// source value (`server.dbfilename = "dump.rdb"` stores the literal,
@@ -1689,6 +1703,7 @@ func New(input Input) (Index, error) {
 			Patterns:         patterns, PatternsObserved: value.PatternsObserved,
 			PatternsOmitted: value.PatternsObserved - len(patterns),
 			FieldPath:       value.FieldPath,
+			Basis:           value.Basis,
 			Value:           sourcevalue.Clone(value.Value),
 		}
 		if value.SourceArgument != nil {
@@ -2452,6 +2467,9 @@ func validateRelationShape(value Relation) error {
 	}
 	if value.Value != nil && (value.Kind != RelationWrites || value.FieldPath == "" || sourcevalue.Validate(value.Value) != nil) {
 		return fmt.Errorf("program index: a written value belongs to a write of one field")
+	}
+	if value.Basis != "" && (value.Basis != BasisImplements || value.Kind != RelationCalls || value.Dispatch != DispatchInterface || value.Resolution == ResolutionUnresolved) {
+		return fmt.Errorf("program index: an implements basis belongs to a resolved interface call")
 	}
 	if value.TargetsObserved <= 0 || value.TargetsObserved < len(value.ToIDs) ||
 		value.TargetsOmitted != value.TargetsObserved-len(value.ToIDs) ||

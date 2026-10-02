@@ -99,7 +99,13 @@ ProgramIndex retains:
   target, `interface` (targets are implementations), `interface_method` (the
   declared method of an external interface; implementation unknown) or
   `function_value`. The relation kind already says a call, a callback or a
-  binding, so no mechanism prefix is attached;
+  binding, so no mechanism prefix is attached. `basis` says how a resolved
+  `interface` call's targets are known when no observed flow gives the
+  value: `implements`, the methods of the repository's types implementing
+  the interface (Go, GO: the owner's rule that an interface call follows the
+  repository's implementations), never a traced binding of that value;
+  absent, the targets are observed. Validation refuses it on any other
+  relation;
 - one resolution rule for every language: one known target is `exact`, several
   are `alternatives`, none is `unresolved`;
 - one owner rule for every language: a call, read or callback belongs to the
