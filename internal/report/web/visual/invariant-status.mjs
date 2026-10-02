@@ -32,14 +32,19 @@ export function legacyStatus(cell,level){
   return {status:INCOMPLETE,reason:'recorded before statuses: no check ran and none was declared not applicable'};
 }
 
-// A cell's status as written, else as a legacy table implies.
-export const statusOf=(cell,level)=>cell?.status?{status:cell.status,reason:cell.reason||''}:legacyStatus(cell,level);
+// A cell's status as written, else as a legacy table implies; a cell the
+// run has no record of (an invariant added after it ran) was not measured.
+export const statusOf=(cell,level)=>!cell?{status:INCOMPLETE,reason:'not measured: the run has no record of this invariant'}
+  :cell.status?{status:cell.status,reason:cell.reason||''}:legacyStatus(cell,level);
 
 // A level is complete when no exception stopped it and every cell has a
 // status other than INCOMPLETE; a run when every level is and the run
 // itself raised nothing.
-export const levelComplete=level=>level.complete!==false&&!level.info?.error&&Object.values(level.invariants||{}).every(cell=>statusOf(cell,level).status!==INCOMPLETE);
-export const runComplete=run=>run.complete!==false&&!run.error&&(run.levels||[]).every(levelComplete);
+// `names`, when given, are the invariants the table reads: one a level has
+// no record of leaves it incomplete.
+export const levelComplete=(level,names=null)=>level.complete!==false&&!level.info?.error&&
+  (names||Object.keys(level.invariants||{})).every(name=>statusOf(level.invariants?.[name],level).status!==INCOMPLETE);
+export const runComplete=(run,names=null)=>run.complete!==false&&!run.error&&(run.levels||[]).every(level=>levelComplete(level,names));
 
 // What strict acceptance refuses: every FAIL and INCOMPLETE cell, every
 // level an exception stopped and a run that did not finish.

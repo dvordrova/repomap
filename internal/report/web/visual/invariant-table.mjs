@@ -22,6 +22,7 @@ const flag=name=>{const at=rest.indexOf(name);if(at<0)return '';const out=[];for
 const title=flag('--title')||'Canvas invariants',notRun=flag('--not-run').split(',').map(n=>n.trim()).filter(Boolean),why=flag('--why')||'not run';
 const read=async from=>{const out=[];for(const name of (await readdir(from)).filter(n=>/\.(old|scene|canvas)\.json$/.test(n)).sort())out.push(JSON.parse(await readFile(join(from,name),'utf8')));return out;};
 const runs=await read(dir);
+const names=invariants.map(([name])=>name);
 const baseHead=flag('--head');
 for(const run of runs){run.head||=baseHead;for(const level of run.levels)for(const cell of Object.values(level.invariants))cell.head||=run.head;}
 // A later pass laid over the table.
@@ -69,8 +70,8 @@ for(const path of ['old','scene','canvas']){
       const said=failed?`**${failed}**/${applied}`:passed?`ok ${passed}`:open?'':'n/a';
       return [said,open?`**${open}** incomplete`:''].filter(Boolean).join(' · ');
     });
-    const complete=run.levels.filter(levelComplete).length;
-    lines.push(`| ${run.repo} | ${run.levels.length} | ${runComplete(run)?'yes':`**no**: ${complete}/${run.levels.length}${run.error?`, stopped: ${run.error.replace(/\|/g,'\\|').slice(0,60)}`:''}`} | ${row.join(' | ')} |`);
+    const complete=run.levels.filter(level=>levelComplete(level,names)).length;
+    lines.push(`| ${run.repo} | ${run.levels.length} | ${runComplete(run,names)?'yes':`**no**: ${complete}/${run.levels.length}${run.error?`, stopped: ${run.error.replace(/\|/g,'\\|').slice(0,60)}`:''}`} | ${row.join(' | ')} |`);
   }
   for(const name of notRun)lines.push(`| ${name} | – | not run | ${invariants.map(()=>'–').join(' | ')} |`);
   lines.push('');
@@ -80,7 +81,7 @@ for(const path of ['old','scene','canvas']){
   for(const run of set.filter(run=>run.note))lines.push(`${run.repo}: ${run.note}`,'');
   lines.push('### Every level','',`| repo | level | ${invariants.map(([n])=>n).join(' | ')} |`,`|---|---|${invariants.map(()=>'---').join('|')}|`);
   for(const run of set)for(const level of run.levels)
-    lines.push(`| ${run.repo} | ${level.name.replace(/\|/g,'\\|')}${levelComplete(level)?'':` (**INCOMPLETE**${level.info?.error?`: ${level.info.error.replace(/\|/g,'\\|').slice(0,80)}`:''})`} | ${invariants.map(([n])=>cell(level.invariants[n],level,run.head)).join(' | ')} |`);
+    lines.push(`| ${run.repo} | ${level.name.replace(/\|/g,'\\|')}${levelComplete(level,names)?'':` (**INCOMPLETE**${level.info?.error?`: ${level.info.error.replace(/\|/g,'\\|').slice(0,80)}`:''})`} | ${invariants.map(([n])=>cell(level.invariants[n],level,run.head)).join(' | ')} |`);
   lines.push('');
   // The first examples of each failing invariant, per repo.
   lines.push('### Examples','');
@@ -95,12 +96,12 @@ for(const path of ['old','scene','canvas']){
     lines.push('');
   }
   // What did not finish, and why.
-  const open=set.flatMap(run=>[...run.error?[`${run.repo}: the run stopped: ${run.error}`]:[],...run.levels.filter(l=>!levelComplete(l)).map(l=>{
+  const open=set.flatMap(run=>[...run.error?[`${run.repo}: the run stopped: ${run.error}`]:[],...run.levels.filter(l=>!levelComplete(l,names)).map(l=>{
     const cells=invariants.filter(([n])=>statusOf(l.invariants[n],l).status===INCOMPLETE).map(([n])=>n);
     return `${run.repo} · ${l.name}: ${l.info?.error?`stopped${l.info.errorPhase?` at ${l.info.errorPhase}`:''}: ${l.info.error}; `:''}${cells.length} cells INCOMPLETE (${cells.join(', ')}): ${statusOf(l.invariants[cells[0]],l).reason||''}`;
   })]);
   if(open.length)lines.push('### Incomplete','',...open.map(line=>`- ${line.replace(/\|/g,'\\|')}`),'');
-  for(const run of set)table.runs.push({repo:run.repo,path,head:run.head||'',complete:runComplete(run),...run.error?{error:run.error}:{},sceneOn:run.sceneOn,file:run.file,note:run.note||'',levels:run.levels.map(l=>({name:l.name,kind:l.kind,id:l.id,complete:levelComplete(l),info:l.info,
+  for(const run of set)table.runs.push({repo:run.repo,path,head:run.head||'',complete:runComplete(run,names),...run.error?{error:run.error}:{},sceneOn:run.sceneOn,file:run.file,note:run.note||'',levels:run.levels.map(l=>({name:l.name,kind:l.kind,id:l.id,complete:levelComplete(l,names),info:l.info,
     invariants:Object.fromEntries(invariants.map(([n])=>{const {status,reason}=statusOf(l.invariants[n],l);return [n,{status,...reason?{reason}:{},checked:l.invariants[n]?.checked||0,failed:l.invariants[n]?.failed||0,pass:status===PASS,head:l.invariants[n]?.head||run.head||'',
       examples:l.invariants[n]?.examples||[],...l.invariants[n]?.was?{was:{checked:l.invariants[n].was.checked,failed:l.invariants[n].was.failed,head:l.invariants[n].was.head,examples:l.invariants[n].was.examples}}:{}}];}))}))});
 }
