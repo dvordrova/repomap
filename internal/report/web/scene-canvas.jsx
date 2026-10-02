@@ -67,7 +67,7 @@ function CardNode({data}){
     <div className="scene-words" ref={held} style={inSight}><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
       <span className="scene-chosen-tile" title={data.tile.full||data.tile.name}>{data.tile.name}</span></div></Scaled></>;
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
-    <Ghosts node={node}/>
+    <Ghosts node={node} className={node.display==='card'?'scene-part-ghosts':''}/>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
     <div className="scene-words" ref={held} style={inSight}>{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
     {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>

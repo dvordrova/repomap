@@ -162,8 +162,13 @@ export function lintLevel(level){
         // (an Inputs card's kind marks, a closed area's parts outlined).
         const words=[...box.el.querySelectorAll('*')].filter(el=>(own(el)||el.matches('svg,img,[data-kind-mark],.scene-ghosts>*,.scene-program-ghosts>*,.scene-bucket-marks>*'))&&shown(el)).flatMap(el=>[...el.getClientRects()]);
         const bottom=Math.max(box.rect.top,...words.map(rect=>rect.bottom));
+        // Judged wholly in sight: a box the canvas's edge cuts has its words
+        // moved into its part in sight, and is name-sight's (invariants.mjs),
+        // never its fill's (coordinator, 2026-10-03: casdoor's Outside
+        // buckets at the canvas's foot had read 31%).
+        const whole=box.rect.left>=canvas.left-1&&box.rect.right<=canvas.right+1&&box.rect.top>=canvas.top-1&&box.rect.bottom<=canvas.bottom+1;
         if(!text(box.el))add('empty box',box.id);
-        else if(height>=40&&bottom-box.rect.top<height*.45)add('empty box',`${box.id} "${text(box.el).slice(0,40)}": its words fill ${Math.round(100*(bottom-box.rect.top)/height)}% of it`);
+        else if(whole&&height>=40&&bottom-box.rect.top<height*.45)add('empty box',`${box.id} "${text(box.el).slice(0,40)}": its words fill ${Math.round(100*(bottom-box.rect.top)/height)}% of it`);
         continue;
       }
       const named=document.querySelector(`[data-frame-title="${CSS.escape(box.id)}"],[data-summary-area="${CSS.escape(box.id)}"],[data-component-overview="${CSS.escape(box.id)}"]`);

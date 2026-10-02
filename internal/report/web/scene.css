@@ -53,7 +53,7 @@
 .scene-program-inside{list-style:none;padding:0;display:flex;flex-direction:column;font:500 13px/18px system-ui;color:#52647d}
 .scene-program-inside li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .scene-ghosts{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.scene-ghosts rect{fill:#fff;fill-opacity:.55;stroke:currentColor;stroke-opacity:.25;stroke-width:1.5}
+.scene-ghosts rect{fill:#fff;fill-opacity:.55;stroke:currentColor;stroke-opacity:.25;stroke-width:1.5;vector-effect:non-scaling-stroke}
 .scene-area-card>strong,.scene-area-card>.flow-description{position:relative;z-index:1}
 .scene-words{position:relative;z-index:1;display:flex;flex-direction:column;gap:6px;background:inherit;border-radius:6px;align-self:flex-start;max-width:100%}
 .scene-words>strong{font-size:17px;line-height:21.25px;white-space:pre-line}
@@ -139,7 +139,11 @@
    contrib/lock/storage and tools/etcd-dump-db had stood on the whole map
    as a name over a blank card, its words filling 31% of it). Each word's
    line keeps its own ground, and takes it along when it fades. */
-.scene-program-ghosts{opacity:max(clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1),calc(1 - clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 9) * 2),1)))}
+/* So does a closed part's card its declarations' tiles (scene.mjs tilesOf):
+   casdoor's Shared UI components and etcd's Snapshot engine, neighbours
+   drawn larger than their words may grow, had stood as words over a blank
+   card (reading lints, 2026-10-03). */
+.scene-program-ghosts,.scene-part-ghosts{opacity:max(clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1),calc(1 - clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 9) * 2),1)))}
 .scene-program-card>.scene-words{background:transparent}
 .scene-program-card>.scene-words>*{background:#f8fafc}
 /* A closed part's chosen declaration, alone as its tile under its title. */

@@ -258,9 +258,10 @@ every program, Inputs, Outside, destination, area and part and a sample of
 inputs (the journeys' among them) as the explorer reads them, with two
 arrow cards at each frame: no `file:line` in a row of the column or a
 card, no entry twice in one list, no word cut by an ellipsis or the
-browser, no Outside chip naming its own program, no empty card (its words
-and marks filling less than its top 45%) or empty frame (a box holding no
-other box and no title) in sight, "Parts on this path" naming parts only,
+browser, no Outside chip naming its own program, no empty card wholly in
+sight (its words and marks filling less than its top 45%; a card the
+canvas's edge cuts is the canvas invariant `name-sight`'s) or empty frame (a
+box holding no other box and no title) in sight, "Parts on this path" naming parts only,
 each once, and no fold holding more than 67 rows of one kind (the 95th
 percentile of the folded lists of the four reports measured on 2026-09-30)
 under no named fold of their own. Each offender is printed with its level.

@@ -115,7 +115,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
       box(child,'frame',frameOf(child),text,{area:true,lane:node.item?.lane||''});
       for(const part of node.children){
         if(!rectOf(part))continue;
-        box(part,level[2]===part?'deep':'card',rectOf(part),text,{lane:model.nodes.get(part).item?.lane||''});
+        box(part,level[2]===part?'deep':'card',rectOf(part),text,{lane:model.nodes.get(part).item?.lane||'',ghosts:tilesOf(part)});
         if(level[2]!==part)markersFor(part);else deepFor(part);
       }
       for(const route of geometry.routes.get(child)||[])edges.push(edgeOf(route,model,new Set([...looked,...node.children])));
@@ -123,7 +123,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
       // A closed area shows where its parts stand, never a blank box.
       box(child,'area',rect,own,{lane:node.item?.lane||'',ghosts:node.children.map(id=>rectOf(id)).filter(Boolean)});markersFor(child,own);
     }
-    else{box(child,level[1]===child?'deep':'card',rect,own,{lane:node.item?.lane||''});if(level[1]!==child)markersFor(child,own);else deepFor(child);}
+    else{box(child,level[1]===child?'deep':'card',rect,own,{lane:node.item?.lane||'',ghosts:tilesOf(child)});if(level[1]!==child)markersFor(child,own);else deepFor(child);}
   }
   // A program's own arrows; those of the area entered count as looked at.
   const lookedHere=new Set([...looked,...(level[1]?[level[1]]:[])]);
@@ -135,12 +135,27 @@ export function sceneAt(model,geometry,level=[],selection={}){
   // A part entered: its declarations' tiles, each a member the pointer
   // finds, its markers on the declarations they stand for (a row of them
   // beside the tile), the rest on the part's edge.
+  // A declaration's tile in its part's card, wherever that card stands.
+  function tileRect(r,drawn,row){
+    const {grid,box:card}=drawn,s=r.width/card.width,{inset,columnGap:gap}=tileRoom;
+    return {x:r.x+s*(1+(inset+row.column*(grid.tileWidth+gap))/grid.divisor),
+      y:r.y+s*(1+tileHeader(grid.divisor)+(inset+row.y)/grid.divisor),width:s*grid.tileWidth/grid.divisor,height:s*row.height/grid.divisor};
+  }
+  // A closed part's card holds its declarations' outline, as a program's
+  // card holds its parts' (owner via the coordinator, 2026-10-03): seen
+  // while its words cannot fill it, drawn larger than they may grow or too
+  // small to read (scene.css .scene-part-ghosts). Its top tiles only, a
+  // type's members inside its own.
+  function tilesOf(id){
+    const drawn=geometry.grids.get(id),r=rectOf(id),symbols=model.nodes.get(id)?.item?.symbols||[];
+    if(!drawn||!r)return [];
+    return symbols.flatMap((symbol,index)=>{const row=drawn.grid.rows[index];return row&&!symbol.owner?[tileRect(r,drawn,row)]:[];});
+  }
   function deepFor(id){
     const drawn=geometry.grids.get(id),r=rectOf(id);
     if(!drawn||!r)return markersFor(id);
-    const {grid,box:card}=drawn,s=r.width/card.width,{inset,columnGap:gap}=tileRoom;
-    const rectOfRow=row=>({x:r.x+s*(1+(inset+row.column*(grid.tileWidth+gap))/grid.divisor),
-      y:r.y+s*(1+tileHeader(grid.divisor)+(inset+row.y)/grid.divisor),width:s*grid.tileWidth/grid.divisor,height:s*row.height/grid.divisor});
+    const {grid,box:card}=drawn,s=r.width/card.width;
+    const rectOfRow=row=>tileRect(r,drawn,row);
     const tileText=s/grid.divisor*13/17;
     (model.nodes.get(id).item?.symbols||[]).forEach((symbol,index)=>{
       const row=grid.rows[index];

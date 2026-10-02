@@ -449,7 +449,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   blank box, as a program's card does once drawn large and while its role
   and description are too small to read (owner via the coordinator,
   2026-10-02: etcd's contrib/lock/storage and tools/etcd-dump-db had stood
-  on the whole map as a name over a blank card); only a box that can be
+  on the whole map as a name over a blank card), and as a closed part's card
+  does its declarations' tiles under the same rule (owner via the
+  coordinator, 2026-10-03: casdoor's Shared UI components and etcd's
+  Snapshot engine, neighbours drawn larger than their words may grow under
+  the 1.6× cap, had stood as words over a blank card); an outline's line
+  keeps its screen width; only a box that can be
   entered has a magnifier. An architectural area holds at least two parts
   (reading draws none smaller; GroupsIndex keeps no container of fewer than
   two groups), and the canvas draws every area it is given; Inputs and Outside

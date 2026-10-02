@@ -372,3 +372,24 @@ for(const [name,page] of pages){
     }
   });
 }
+
+// A closed part's card holds its declarations' outline, as a program's holds
+// its parts' (owner via the coordinator, 2026-10-03: casdoor's Shared UI
+// components and etcd's Snapshot engine, neighbours drawn larger than their
+// words may grow, had stood as words over a blank card): one outline per top
+// tile, a type's members inside its own, each inside the card, at every
+// level that draws the part closed.
+test('a closed part\'s card holds its declarations\' outlines',async()=>{
+  const [,base]=syntheticPages.find(([name])=>name==='synthetic-cycles');
+  const items=base.items.map(item=>item.id==='n-t1-g2'?{...item,symbols:[{name:'Profile',kind:'type'},{name:'load',kind:'method',owner:1},{name:'save',kind:'function'}]}:item);
+  const model=buildModel({...base,items},{measure});
+  const geometry=await layoutLevels(model,{...canvas,measure});
+  let checked=0;
+  for(const level of levelsOf(model))for(const node of sceneAt(model,geometry,level,{}).nodes){
+    if(node.id!=='n-t1-g2'||node.display!=='card')continue;
+    assert.equal(node.ghosts?.length,2,`at ${level.join('/')||'the whole map'}: its two top tiles' outlines`);
+    for(const r of node.ghosts)assert.ok(r.x>=node.rect.x-1e-6&&r.y>=node.rect.y-1e-6&&r.x+r.width<=node.rect.x+node.rect.width+1e-6&&r.y+r.height<=node.rect.y+node.rect.height+1e-6,'an outline inside its card');
+    checked++;
+  }
+  assert.ok(checked>0,'the part is drawn closed at some level');
+});
