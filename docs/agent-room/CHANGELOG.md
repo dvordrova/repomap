@@ -31,7 +31,9 @@
   not. After (same run rendered with the change): backtesting is at 10,
   download-data 17, trade 41, webserver 43, the AVAILABLE_CLI_OPTIONS
   catalogue from 50. "--erase convert-trade-data, download-data / install-ui"
-  and "-V --version version / version_main" still read apart.
+  and "-V --version version / version_main" still read apart. The same on
+  the orientation-2 run 20261002-100744-freqtrade-6bf5f57485a9 rendered at
+  eade699f and at 1da657f8: trade 173 → 40, --allow-limit-orders 15 → 49.
 - Screenshots: scratchpad eye12-reader/{before,after}/etcd-requests.png,
   etcd-canvas-requests.png, etcd-Campaign.png, freqtrade-commands.png.
 
