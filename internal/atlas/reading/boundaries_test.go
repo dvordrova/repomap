@@ -10,6 +10,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *testing.T) {
@@ -608,5 +609,77 @@ func TestAFixedBoundaryKeepsOnlyALineTheModelWrote(t *testing.T) {
 	unasked := &boundaryState{place: written, line: written.Given}
 	if unasked.writtenLine() != "" {
 		t.Fatal("an unasked row keeps its given text as its line")
+	}
+}
+
+// A walk ending in one value is asked like several: what reached the call is
+// not therefore where it connects. casdoor's LDAP dials ended in "%s:%d", an
+// oss List in an object key's "%s/%s" and freqtrade's inspector in the table
+// "trades", and each had been shown as the address the code knew. The model
+// chooses between those values and unknown; an unknown leaves no address,
+// with one literal end or several, an a* gives the value as written (a URL
+// whose host is written), and every chain stays the call's evidence.
+func TestWalkedValuesAreAskedWhereTheCallConnects(t *testing.T) {
+	put := atlas.SymbolCall{Kind: "invokes_external", Name: "bbolt.Bucket.Put", Line: 12, Column: 5, API: &atlas.CallAPI{Package: "go.etcd.io/bbolt", Receiver: "*Bucket", Name: "Put"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: "key"}}}}
+	post := atlas.SymbolCall{Kind: "invokes_external", Name: "http.Post", Line: 14, Column: 5, API: &atlas.CallAPI{Package: "net/http", Name: "Post"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: "https://hooks.example/notify"}}}}
+	// Two object keys an upload chooses between: several literal ends, no
+	// destination among them.
+	upload := atlas.SymbolCall{Kind: "invokes_external", Name: "oss.StorageInterface.Put", Line: 16, Column: 5, API: &atlas.CallAPI{Package: "github.com/casdoor/oss", Receiver: "StorageInterface", Name: "Put"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{{Kind: "literal", Text: "avatars/%s"}, {Kind: "literal", Text: "%s/%s"}}}}}}
+	file := atlas.Place{ID: "file:store", Kind: atlas.PlaceFile, Path: "store.go", TargetIDs: []string{"service"}, File: &atlas.FileFacts{}}
+	owner := atlas.Place{ID: "symbol:save", Kind: atlas.PlaceSymbol, Path: file.Path, Parent: file.ID, LineNo: 10, TargetIDs: []string{"service"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:save", Name: "Save", Signature: "func Save(b *bolt.Bucket)"}, Calls: []atlas.SymbolCall{put, post, upload}}}
+	asked := map[string][]any{}
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		if input["table"] != lines.StageBoundaries {
+			return
+		}
+		catalog := map[string]string{}
+		for _, item := range input["rows"].([]any) {
+			row := item.(map[string]any)
+			asked[row["external"].(string)], _ = row["address_options"].([]any)
+			addresses, _ := row["address_catalog"].([]any)
+			for _, address := range addresses {
+				if value := address.(map[string]any)["value"].(string); strings.HasPrefix(value, "https://") || catalog[row["key"].(string)] == "" {
+					catalog[row["key"].(string)] = value
+				}
+			}
+		}
+		for _, row := range rows {
+			row["line"], row["address"] = "sends one value", "unknown"
+			if strings.HasPrefix(catalog[row["key"].(string)], "https://") {
+				row["address"] = "a1"
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through, r.opts.Graph.Places = "", []atlas.Place{file, owner}
+	r.places = map[string]atlas.Place{file.ID: file, owner.ID: owner}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{"go.etcd.io/bbolt.Bucket.Put": {talks: atlas.BoundaryDB}, "net/http.Post": {talks: atlas.BoundaryClientRequest}, "github.com/casdoor/oss.StorageInterface.Put": {talks: atlas.BoundarySDK}}
+	r.arguments = map[string]ArgumentChoice{"go.etcd.io/bbolt.Bucket.Put": {Position: 1}, "net/http.Post": {Position: 1}, "github.com/casdoor/oss.StorageInterface.Put": {Position: 1}}
+	r.boxOf = map[string]string{file.ID: "store"}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for external, options := range map[string][]any{put.Name: {"unknown", "a1"}, post.Name: {"unknown", "a1"}, upload.Name: {"unknown", "a1", "a2"}} {
+		if !reflect.DeepEqual(asked[external], options) {
+			t.Fatalf("%s's walked values were not asked: %v (asked %v)", external, asked[external], asked)
+		}
+	}
+	addresses, sources := map[string]string{}, map[string]int{}
+	for _, boundary := range r.target(TargetMeta{ID: "service"}).Boundaries {
+		addresses[boundary.External], sources[boundary.External] = boundary.Address, len(boundary.Uses)
+	}
+	if addresses[put.Name] != "" || addresses[upload.Name] != "" || addresses[post.Name] != "https://hooks.example/notify" {
+		t.Fatalf("addresses after the decision: %v", addresses)
+	}
+	// Every walked value stays the call's evidence, accepted or not.
+	if sources[put.Name] != 1 || sources[upload.Name] != 2 || sources[post.Name] != 1 {
+		t.Fatalf("a decision dropped a chain: %v", sources)
 	}
 }

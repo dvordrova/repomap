@@ -18,12 +18,11 @@ import (
 type pageOutbound struct {
 	// Connections keep exact saved integration identities for the canvas.
 	// Destination text groups presentation only and never establishes a peer.
-	Connections      []string
-	MapGroup         string
-	Operations       string
-	KindLabel        string
-	DestinationCount int
-	Uses             []pageOutboundUse
+	Connections []string
+	MapGroup    string
+	Operations  string
+	KindLabel   string
+	Uses        []pageOutboundUse
 	// reached are the callers outside its part the program reaches the
 	// call from (GroupsIndex ReachedFrom), read with its tile; program is
 	// the component making it.
@@ -106,10 +105,15 @@ func (row pageOutbound) ProgramLabel() string {
 	}
 }
 
+// pageOutboundUse is one chain the walk read for the call's argument: the
+// value it ends in (DestinationUse.Address, as written) is argument
+// evidence, never the call's address. The address is only the boundary's
+// accepted one (pageOutbound.Address): casdoor's oss Put printed its object
+// key "%s/%s" as "Address" eleven times after the decision said unknown.
 type pageOutboundUse struct {
-	Address, Frontier, Method string
+	Value, Frontier, Method string
 	// Unread says the walk ended at a value its adapter could not read: the
-	// address is not established from code (atlas DestinationUse Unread).
+	// value is not established from code (atlas DestinationUse Unread).
 	Unread bool
 	Steps  []pageOutboundStep
 }
@@ -172,8 +176,20 @@ func outboundAddressText(address string) pageOutboundAddress {
 	return result
 }
 
-func (row pageOutbound) AddressText() pageOutboundAddress    { return outboundAddressText(row.Address) }
-func (use pageOutboundUse) AddressText() pageOutboundAddress { return outboundAddressText(use.Address) }
+func (row pageOutbound) AddressText() pageOutboundAddress { return outboundAddressText(row.Address) }
+
+// ValueText is a chain's value with its setting spelled out, labelled as
+// the argument's value it is.
+func (use pageOutboundUse) ValueText() pageOutboundAddress {
+	text := outboundAddressText(use.Value)
+	switch text.SettingLabel {
+	case "Address from command-line option":
+		text.SettingLabel = "Value from command-line option"
+	case "Address from environment variable":
+		text.SettingLabel = "Value from environment variable"
+	}
+	return text
+}
 
 func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 	index := builder.graphIndex(section.programTargetID)
@@ -239,10 +255,8 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		}
 		sort.Strings(inputs)
 		row.Operations = strings.Join(inputs, " ")
-		destinations := make(map[string]bool)
 		for _, use := range call.Uses {
-			destinations[use.Address+"\x00"+use.Frontier] = true
-			value := pageOutboundUse{Address: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method}
+			value := pageOutboundUse{Value: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method}
 			for _, step := range use.Steps {
 				name := step.Name
 				// A declaration reads by its report name: a method with its
@@ -274,13 +288,6 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 				value.Steps = append(value.Steps, pageOutboundStep{Name: name, Anchor: anchor})
 			}
 			row.Uses = append(row.Uses, value)
-		}
-		row.DestinationCount = len(destinations)
-		if len(call.Uses) > 0 {
-			row.Address = ""
-			if len(destinations) == 1 {
-				row.Address = call.Uses[0].Address
-			}
 		}
 		// Native HTTP facts may have no semantic label. Compose only their
 		// supplied method and address, never a guessed destination.
@@ -500,27 +507,24 @@ func reachedReading(rows []pageOutbound) string {
 }
 
 // pageOutboundGroup presents every record naming one destination as one
-// row: the destination, how many records name it, their shared kind, basis
-// and address. The records are compact lines nested beneath it, three in
-// view and the rest under one disclosure; each opens its own purpose,
-// address and source. Nothing is merged in the data.
+// row: the destination, how many records name it, their shared kind and
+// basis. The records are compact lines nested beneath it, three in view and
+// the rest under one disclosure; each opens its own purpose, address and
+// source. Nothing is merged in the data: the group carries no address of
+// its own, since one would be completed here from its records' walked
+// values (casdoor's Object Storage had read "%s/%s", an object key).
 type pageOutboundGroup struct {
 	Destination, NativeLabel, KindLabel string
-	Basis, Source, Address              string
+	Basis, Source                       string
 	// Program marks the programs a component starts: Destination is the
 	// word naming one as written, ProgramLabel stands for one no word names.
 	Program      bool
 	ProgramLabel string
-	Addresses    int
 	Rows         []pageOutbound
 }
 
 func (group pageOutboundGroup) BasisLabel() string {
 	return pageOutbound{Basis: group.Basis}.BasisLabel()
-}
-
-func (group pageOutboundGroup) AddressText() pageOutboundAddress {
-	return outboundAddressText(group.Address)
 }
 
 // outboundGroupPreview is how many call records a destination shows before
@@ -583,7 +587,7 @@ func (row pageOutbound) InformativeUses() []pageOutboundUse {
 	var uses []pageOutboundUse
 	for _, use := range row.Uses {
 		frontier := use.FrontierName() != "" && (row.External == "" || displayCallable(use.Frontier) != row.External)
-		if use.Address != "" || frontier || len(use.Steps) > 1 {
+		if use.Value != "" || frontier || len(use.Steps) > 1 {
 			uses = append(uses, use)
 		}
 	}
@@ -683,27 +687,6 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 			group.Source = "model"
 		}
 		group.Rows = append(group.Rows, row)
-	}
-	for i := range groups {
-		addresses := make(map[string]bool)
-		for _, row := range groups[i].Rows {
-			if row.Address != "" {
-				addresses[row.Address] = true
-			}
-			if row.DestinationCount > 1 {
-				for _, use := range row.Uses {
-					if use.Address != "" {
-						addresses[use.Address] = true
-					}
-				}
-			}
-		}
-		groups[i].Addresses = len(addresses)
-		if len(addresses) == 1 {
-			for address := range addresses {
-				groups[i].Address = address
-			}
-		}
 	}
 	// Within one destination a member shared by several types keeps its
 	// type on the line; a member used by one type reads alone.

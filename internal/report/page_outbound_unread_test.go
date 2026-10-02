@@ -39,7 +39,7 @@ func TestAnUnreadAddressIsNotEstablishedFromCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := out.String()
-	if strings.Contains(page, "Address passes through") || !strings.Contains(page, "Address not established from code") || !strings.Contains(page, "anetTcpGenericConnect") {
+	if strings.Contains(page, "passes through") || !strings.Contains(page, "Argument value not established from code") || !strings.Contains(page, "anetTcpGenericConnect") {
 		t.Fatalf("the unread end reads wrong:\n%s", page)
 	}
 }

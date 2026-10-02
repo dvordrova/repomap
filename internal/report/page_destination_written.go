@@ -19,7 +19,7 @@ func destinationWritten(rows []pageOutbound) (string, pageAnchor) {
 			continue
 		}
 		for _, use := range row.Uses {
-			value := use.Address
+			value := use.Value
 			if value == "" {
 				value = use.FrontierName()
 			}

@@ -373,7 +373,7 @@ func destinationColumn() table.Column {
 // unknown, which keeps no address.
 func addressColumn() table.Column {
 	return table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options", Missing: "unknown", Alone: true,
-		Note: "one supplied a* address value, or unknown when no observed value identifies the destination"}
+		Note: "the a* whose value writes where the call connects: a URL with its host, a host and port, a socket path, a database file, a connection string with its server, or the setting holding the address, the first when several do; unknown when none does, never another bare word or identifier, a template whose host is a placeholder, a key, name or path inside the destination, SQL or another payload"}
 }
 
 // BoundaryAddress keeps the original supplied bytes and their source context.

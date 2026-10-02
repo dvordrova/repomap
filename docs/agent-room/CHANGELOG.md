@@ -49,6 +49,56 @@
 - **casdoor web** (`--no-model --target jsts:web/package.json`): the relations JSON is byte-identical to the HEAD-before-e2b5a25b binary's (27,458 relations, 6,617 objects).
 - **Checks:** jstsproject and the JS contract tests are green.
 
+## 2026-10-03 — The address question says where the call connects; the report never calls a walked value an address (data 1)
+
+- **Found (control review P1s, 20:42 and 21:34):**
+  - After the README lines left the owner context, casdoor's outbound `address` committed to non-addresses: `object/storage.go:171` (an oss Put) answered `%s/%s`, the object key `util.UrlJoin` builds, and `object/adapter.go:206` answered the MySQL DSN template `%s:%s@tcp(%s:%d)/%s`.
+  - The question had only said "one `a*` naming the request's destination".
+  - A walk ending in one value was taken as the address without asking. Across the ten benchmark repositories that path set 95 addresses: casdoor's LDAP, SSH and RADIUS dials `%s:%d`, URL templates `%s?%s`, etcd's bbolt `key`, and freqtrade's tables `trades`, `orders`, `pairlocks` and `KeyValueStore`.
+  - The report printed every walked value as "Address" whatever the decision: eleven times `Address: %s/%s` on casdoor's Put. A destination group promoted its records' one walked value to its own address.
+- **Skeptic:** rejected a carve-out keeping etcd's gRPC methods as "what the call asks for there". With a placeholder host, a route can't be told from an object key, and the method is display only. It approved the criteria on two conditions: ask single-value walks too, and judge rows against written expectations.
+- **Change:**
+  - The `address` bullet (`fixed_boundaries.md`) and the column note state what we want, where the other end is. They give per-option criteria:
+    - counts: a URL whose host is written, whatever placeholders follow it in its path or query; a host and port; a socket path or database file; a connection string with its server; the setting holding the address, including a configuration read's key;
+    - never counts: a bare word, a template whose host is a placeholder, a key/name/path inside the destination, SQL or another payload, logging or formatting configuration, another kind.
+    - The first value counts when several do.
+  - `boxes.go` no longer takes a walk ending in one value as the address. A native HTTP fact's single value is still the code's.
+  - The report:
+    - A record says "Address" only for the boundary's accepted one.
+    - Each chain's value reads "Argument value", or "Value from environment variable/command-line option"; an unread one reads "Argument value not established from code".
+    - The "Destinations · N" count over walked values is gone.
+    - A destination group carries no address.
+  - Every chain, step and source location stays. No format blacklist and no browser code.
+  - Tests:
+    - `TestWalkedValuesAreAskedWhereTheCallConnects`: one literal end and several are asked and stay unknown, a URL with its host is chosen, and every chain is kept. It fails with the old shortcut.
+    - `TestAWalkedValueIsNeverCalledAnAddress`: one and several ends print no "Address" and no group address.
+    - The accepted address and the chains are told apart in Russian too.
+- **Saved-request draws** (39 requests, the 102 rows the latest runs asked, 3 cache-off draws each, expectations written first):
+  - The old wording was right in 67 of 306 draws; the final wording in 291.
+  - The two named rows answer unknown 5/5, and LinkedIn and Weibo keep their URLs.
+  - Entra ID's `https://login.microsoftonline.com/%s/oauth2/v2.0/token` (b3034) had answered unknown once in a run. Drawn 20 times per wording it was 20/20 the URL with and without "whatever placeholders follow the host in its path"; the line was kept for the review's diagnosis.
+- **Warm runs** (HEAD 715c385c plus these files; every exit 0; contracttest green in 4 chunks). Flips against the runs before the first change:
+
+| Repo | Run | Address rows asked | Boundary requests | → unknown | unknown → value | Real-URL collateral |
+|---|---|---|---|---|---|---|
+| casdoor | 214554 | 101 | 87 | 44 | 6 | `https://%s.b2clogin.com/…` and two of four `dataSourceName` rows → unknown; proxy.go:44 → the walk artefact `https://cdn.casbin.org` |
+| headscale | 215133 | 16 | 13 | 3 | 7 `:memory:` | none |
+| litestream | 215327 | 15 | 16 | 0 | 0 | none (`{--socket}`, localhost, nats kept) |
+| freqtrade | 215453 | 5 | 5 | 4 table names | 0 | none (GitHub API kept) |
+| etcd | 220546 | 52 | 12 | 47 (42 gRPC methods, bbolt keys, `/`, `compact_rev_key`) | 0 | none |
+
+- **casdoor's unknown → value:** Facebook, Twitter, DingTalk's syncer, Gravatar and the WHOIS host `grs-whois.hichina.com`, plus the proxy artefact. Entra ID keeps its URL. No later stage reads an address.
+- **casdoor HTML:**
+  - `Address: <code>%s/%s` 19 → 0, `Address: <code>%s:%d` 51 → 0, every `Address:` 640 → 52.
+  - `Argument value: <code>` 536.
+- **Browser walk** (headless Chromium, 1440×900, loopback, the fresh casdoor report): Find "Object Storage" → Object Storage (made in uploadFile and five more) → Its calls → StorageInterface.Put (`Argument value: %s/%s` under its chains, no "Address") → Called from (HTTP controllers) → uploadFile() → code `object/storage.go#L162-L181` → back returns to the Put record.
+- **Open (CURRENT):**
+  - the walk's `GetConfigString` artefacts;
+  - headscale's `:memory:`;
+  - the gRPC method as its own field;
+  - the destination's unlabelled written value;
+  - the saved field name `DestinationUse.Address`.
+
 ## 2026-10-03 — A JS/TS call through a variable calls what its stores put there (lead)
 
 - **Decision:** the coordinator's, applying the owner's rule of 2026-09-30 (one known target exact, several alternatives, no cautious unknowns). It replaces JSTS.md's own rule that `const h = a; h()` calls the constant itself.

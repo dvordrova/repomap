@@ -124,7 +124,7 @@ func TestOutboundFrontierNamingNothingPrintsNoAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := out.String()
-	for _, absent := range []string{"Address passes through", "<code>()</code>", "Address not determined"} {
+	for _, absent := range []string{"passes through", "<code>()</code>", "not determined"} {
 		if strings.Contains(page, absent) {
 			t.Errorf("a frontier naming nothing printed %q:\n%s", absent, page)
 		}
@@ -146,8 +146,8 @@ func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
 	builder.fillSectionOutbound(section)
 	row := section.Outbound[0]
-	if row.Address != "" || row.DestinationCount != 2 || len(row.Uses) != 2 || row.Uses[1].Steps[0].Name != "WriteAudit" {
-		t.Fatalf("shared helper lost a distinct source use: %+v", row)
+	if row.Address != "https://prices.example" || len(row.Uses) != 2 || row.Uses[1].Steps[0].Name != "WriteAudit" {
+		t.Fatalf("shared helper lost a distinct source use or its accepted address: %+v", row)
 	}
 	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
@@ -160,6 +160,52 @@ func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	for _, text := range []string{"https://prices.example", "https://audit.example", "GetPrices", "WriteAudit", "prices.go:12", "audit.go:22"} {
 		if !strings.Contains(out.String(), text) {
 			t.Fatalf("destination disclosure lost %q", text)
+		}
+	}
+	// The accepted address is said once, as the address; each chain's value
+	// is the argument's (Russian: Адрес once, Значение аргумента twice).
+	if page := out.String(); strings.Count(page, russianUI["Address"]+":") != 1 || strings.Count(page, russianUI["Argument value"]+":") != 2 {
+		t.Fatalf("the accepted address and the chains' values are not told apart:\n%s", page)
+	}
+}
+
+// A walked value is the call's argument, never its address, until the
+// boundary's decision accepts one: casdoor's oss Put at storage.go:171
+// printed its object key "%s/%s" as "Address" eleven times after the
+// decision said unknown, from the uses and from a destination group that
+// promoted their one value. With one literal end or several, an unknown
+// address prints no address; every chain and its steps stay.
+func TestAWalkedValueIsNeverCalledAnAddress(t *testing.T) {
+	key := atlas.DestinationUse{Address: "%s/%s", Steps: []atlas.DestinationStep{{Name: "uploadFile", Path: "object/storage.go", Line: 171, Column: 30}, {Name: "UrlJoin", Path: "util/path.go", Line: 61, Column: 9}}}
+	other := atlas.DestinationUse{Address: "avatars/%s", Steps: []atlas.DestinationStep{{Name: "uploadFile", Path: "object/storage.go", Line: 171, Column: 30}, {Name: "refineObjectKey", Path: "object/storage.go", Line: 224, Column: 2}}}
+	for name, uses := range map[string][]atlas.DestinationUse{"one": {key}, "several": {key, other}} {
+		index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Outbound: []groupindex.OutboundCall{{
+			ID: "b3006", Kind: "sdk", Destination: "Object Storage", External: "oss.StorageInterface.Put", Location: programindex.Location{Path: "object/storage.go", Line: 171, Column: 30},
+			Uses: uses,
+		}}}
+		section := &pageSection{ID: "t1", programTargetID: "t1"}
+		builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+		builder.fillSectionOutbound(section)
+		row := section.Outbound[0]
+		if row.Address != "" || len(row.Uses) != len(uses) {
+			t.Fatalf("%s: the row completed an address or lost a chain: %+v", name, row)
+		}
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "outbound-group", groupOutbound(section.Outbound)[0]); err != nil {
+			t.Fatal(err)
+		}
+		page := out.String()
+		if strings.Contains(page, "Address") || strings.Count(page, "Argument value: <code>") != len(uses) {
+			t.Fatalf("%s: a walked value was called an address:\n%s", name, page)
+		}
+		for _, text := range []string{"util/path.go:61", "uploadFile"} {
+			if !strings.Contains(page, text) {
+				t.Fatalf("%s: the chain lost %q:\n%s", name, text, page)
+			}
 		}
 	}
 }
@@ -291,7 +337,7 @@ func TestOutboundSourcePathsAndFoldKeepOriginalEvidence(t *testing.T) {
 	}
 }
 
-func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
+func TestOutboundGroupsByDestinationAndPreview(t *testing.T) {
 	rows := []pageOutbound{
 		{ID: "a", Destination: "Kubernetes API server", Summary: "Lists pods in the namespace. Then filters them.", KindLabel: "SDK", Basis: "dispatch", Source: "model", Address: "{env:KUBECONFIG}"},
 		{ID: "b", Destination: "Postgres", Summary: "Stores events.", KindLabel: "Database", Basis: "dispatch", Source: "model", Address: "{env:DATABASE_URL}"},
@@ -303,9 +349,6 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
 	groups := groupOutbound(rows)
 	if len(groups) != 3 || groups[0].Destination != "Postgres" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {
 		t.Fatalf("groups by destination, most records first: %+v", groups)
-	}
-	if groups[0].Addresses != 2 || groups[0].Address != "" || groups[1].Addresses != 1 || groups[1].Address != "{env:KUBECONFIG}" {
-		t.Fatalf("shared address not aggregated: %+v", groups[:2])
 	}
 	if groups[1].Basis != "" || groups[0].Basis != "dispatch" || groups[1].KindLabel != "SDK" {
 		t.Fatalf("mixed basis or kind not neutralised: %+v", groups[:2])
@@ -388,7 +431,7 @@ func TestOutboundLineFallsBackToTheCallingFunction(t *testing.T) {
 	if len(row.InformativeUses()) != 0 {
 		t.Fatal("a one-step chain without address or frontier is not informative")
 	}
-	row.Uses = append(row.Uses, pageOutboundUse{Frontier: "v5.Connect", Steps: []pageOutboundStep{{Name: "main"}}}, pageOutboundUse{Address: "{env:PG_URL}"})
+	row.Uses = append(row.Uses, pageOutboundUse{Frontier: "v5.Connect", Steps: []pageOutboundStep{{Name: "main"}}}, pageOutboundUse{Value: "{env:PG_URL}"})
 	if len(row.InformativeUses()) != 2 {
 		t.Fatalf("chains with a frontier or an address were dropped: %+v", row.InformativeUses())
 	}

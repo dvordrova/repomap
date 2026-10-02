@@ -1581,11 +1581,15 @@ remote-client configuration stay distinguishable. Native addresses and code
 names stay original; role/purpose use the display bindings. For display,
 observations group by destination text (case-insensitive; the native label or
 kind when the model named none): one row per destination with the record
-count, shared kind, basis and address (or the number of distinct addresses);
-its records are compact nested lines (native method and address, else the
-callable, else the purpose's first sentence, with the source location), all
-visible, each opening its full purpose, address, basis and call/source
-chain. The section count and first screen count destination groups; a
+count, shared kind and basis, and no address of its own (one would be
+completed here from its records' walked values); its records are compact
+nested lines (native method and address, else the callable, else the
+purpose's first sentence, with the source location), all visible, each
+opening its full purpose, its accepted address (the boundary's `Address`,
+none when the decision said unknown), basis and call/source chains. A
+chain's walked value is the argument's, read "Argument value", never
+"Address" (2026-10-03: casdoor's oss Put had printed its object key `%s/%s`
+as "Address" eleven times, from its chains and its destination group). The section count and first screen count destination groups; a
 destination text is still no proof of one remote system. Dependency/import
 groups stay in collapsed code reference and supply no integration count.
 Empty observations do not prove that the service contacts nothing.
@@ -1700,11 +1704,11 @@ destination chain whose frontier is the record's own callable, one step at
 its line, names the call a second time and is no line on the page or in the
 column; two steps of one declaration on one line are one name. A frontier
 that names nothing (freqtrade's `getattr(ccxt, name)(config)`, a bare `()`)
-is no address step: the chain prints its steps and no address line. A walk
+is no value step: the chain prints its steps and no value line. A walk
 ending at a value its adapter could not read (atlas `DestinationUse.Unread`,
-READING) reads "Address not established from code" with its steps, never
-the expression: Redis's connect had read "Address passes through (struct
-sockaddr*)&sa" (2026-09-30).
+READING) reads "Argument value not established from code" with its steps,
+never the expression: Redis's connect had read "Address passes through
+(struct sockaddr*)&sa" (2026-09-30).
 
 An input its code reads under several spellings of one value (GroupsIndex
 `Operation.Aliases`) is named by the first; its reading says the others,

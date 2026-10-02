@@ -16,11 +16,11 @@ func TestADestinationSaysWhereItsValueEnds(t *testing.T) {
 	if written, source := destinationWritten(primary); written != "server.masterhost" || source != at {
 		t.Fatalf("Primary reads %q at %+v, want server.masterhost at %+v", written, source, at)
 	}
-	two := append(primary, pageOutbound{Uses: []pageOutboundUse{{Address: "https://api.github.com"}}})
+	two := append(primary, pageOutbound{Uses: []pageOutboundUse{{Value: "https://api.github.com"}}})
 	if written, _ := destinationWritten(two); written != "" {
 		t.Fatalf("two ends read %q", written)
 	}
-	if written, _ := destinationWritten([]pageOutbound{{Program: true, Uses: []pageOutboundUse{{Address: "litestream"}}}}); written != "" {
+	if written, _ := destinationWritten([]pageOutbound{{Program: true, Uses: []pageOutboundUse{{Value: "litestream"}}}}); written != "" {
 		t.Fatalf("a started program reads %q", written)
 	}
 }

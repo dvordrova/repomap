@@ -793,9 +793,6 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 		state.uses = canonicalDestinationUses(state.uses)
 		state.through = canonicalDestinationUses(state.through)
-		if len(state.uses) == 1 && state.uses[0].Address != "" {
-			state.address = state.uses[0].Address
-		}
 	}
 	var ids []string
 	for id := range r.boundaries {
@@ -912,8 +909,11 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 					addresses = destinationAddresses(state.uses)
 				}
 				// The code knows the address of a native HTTP fact with one
-				// value and of a call whose traced chains end in one value;
-				// such a row has no address decision.
+				// value; such a row has no address decision. A walk ending in
+				// one value is asked like several: what reached the call is
+				// not therefore where it connects (casdoor's LDAP dials ended
+				// in "%s:%d", an oss List in an object key's "%s/%s",
+				// freqtrade's inspector in the table "trades").
 				askAddress := outgoing && state.address == ""
 				// Without captions an outgoing row with no address to
 				// choose has nothing to decide and is not sent.

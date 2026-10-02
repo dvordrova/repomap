@@ -1494,17 +1494,36 @@ original address ref, while its native kind and dispatch basis cannot be
 changed by model cells. What an outgoing call reaches is its destination's
 one answer (One destination, one name), never a cell of its row. An entry's
 rows share windows without an owner. Without captions a row with no decision
-to make (an outgoing row whose address code knows or that has no candidate) is not sent
-and has no line: `Boundary.Line` holds only a line the model wrote, the fact's
+to make (an outgoing row whose address code knows, a native HTTP fact with one
+value, or that has no candidate) is not sent and has no line: `Boundary.Line` holds only a line the model wrote, the fact's
 given text being only the joint request's context, so an entry's or outgoing
 fact's summary is empty unless the model explained it (the reading and Find
 name the handler; an outgoing row names its call or kind). A refused line
 leaves no line. A row whose only address option is `unknown` reads any address
-answer as `unknown`. The address catalogue lists only literals that can be
-addresses (no format templates, nothing from formatting, logging, time or
-string packages), sent only for outgoing rows whose address code does not
-know; an outgoing row carries its call's outside `package` when code names
-the call at its site. A destination's item carries `reached_from`, the
+answer as `unknown`. A row whose call the walk read offers every value its
+chains end in, as written, with the chains; any other row offers only
+literals that can be addresses (no format templates, nothing from
+formatting, logging, time or string packages). A walk ending in one value is
+asked like several (2026-10-03): what reached the call is not therefore
+where it connects. The `address` question asks where the other end of the
+call is: the `a*` of a value that writes where the call connects, of the
+kind the call reaches (a URL whose host is written, whatever placeholders
+follow it in its path or query; a host and port, a socket path or a
+database file; a connection
+string with its server; the setting holding the address, as `{env:…}`,
+`{--…}` or the key a configuration read is given), the first when several
+do; otherwise `unknown`. A bare word, a template whose host is a
+placeholder, a key, name or path inside the destination (an object or file
+key, a table, an RPC method, a URL path), SQL or another payload, logging
+or formatting configuration and a value of another kind than the call
+reaches never answer. casdoor's oss Put at storage.go:171 (an object key's
+`%s/%s`), its adapter's DSN templates, its LDAP and SSH dials' `%s:%d`,
+headscale's `key = ?` and freqtrade's table names answer `unknown`; etcd's
+gRPC clients no longer show the RPC method as their address. The boundary
+publishes the accepted address apart from its chains (`Boundary.Address`,
+`Uses`); the report never calls a chain's value an address (REPORT). An
+outgoing row
+carries its call's outside `package` when code names the call at its site. A destination's item carries `reached_from`, the
 declarations its program reaches the calls from, by name, each once:
 GroupsIndex's `reached_from` as the reading computes it before the parts are
 drawn (a file stands for its part: exact callers are followed back through

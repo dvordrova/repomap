@@ -281,18 +281,37 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   requests (383k input tokens) and nothing after them: 8 of 50 addresses
   moved. `TestProviderBodiesCarryNoAuthorDocs` covers directory, target and
   boundary bodies.
-- **Open: the address question can commit to a value that is no
-  destination.** `address` offers every value the walk read, and the model
-  can take a format string or an object key for the destination. Without the
-  README line it commits more often. casdoor `object/storage.go:171`
-  (`storageProvider.Put(objectKeyRefined, …)`) went from unknown to `%s/%s`,
-  the object key's format; casdoor `object/adapter.go:206`
-  (`xormadapter.NewAdapterByEngineWithTableName(engine, …)`) from
-  `dataSourceName` to the MySQL DSN format `%s:%s@tcp(%s:%d)/%s`; headscale
-  `hscontrol/db/db.go:1089` (`gorm.Open(sqlite.Open(connectionURL))`)
-  answers `:memory:`, the only catalogue value, while its URL comes from
-  `sqliteConfig.ToURL()`. Not fixed: it needs a criterion for what names a
-  destination, which re-asks every address.
+- **The address question says where the call connects (2026-10-03, P1s of
+  the 20:42 and 21:34 control reviews):** the `address` criteria name what
+  counts (a URL whose host is written, whatever placeholders follow it in
+  its path or query; a host and port, a socket path or database file; a
+  connection string with its server; the setting holding the address) and
+  what never does (a bare word, a template whose host is a placeholder, a
+  key, name or path inside the destination, SQL or another payload), the
+  first when several count; a walk ending in one value is asked like
+  several instead of being taken as the address. The report keeps the
+  accepted address apart from the walked values: a record says "Address"
+  only for the boundary's accepted one, each chain's value reads "Argument
+  value", and a destination group carries no address (it had promoted its
+  records' one walked value). Saved-request draws: 291 of 306 judged right
+  against 67 before; storage.go:171 and adapter.go:206 answer unknown 5/5,
+  LinkedIn and Weibo keep their URLs, Entra ID's token URL 20/20.
+- **Open, outside this decision:**
+  - The walk's catalogue carries artefacts: casdoor's `GetConfigString`
+    merges every key's default (`https://cdn.casbin.org`, a logger JSON)
+    into each read, joins a value to itself (`dataSourceNamedataSourceName`)
+    and gives the key read (`dataSourceName`) instead of `{env:…}`.
+    proxy.go:44's SOCKS dial answers `https://cdn.casbin.org` because of it.
+  - headscale's migration and version-check calls answer `:memory:`, the
+    one alternative the walk read, beside unread `file:{c.Path}` and
+    Postgres chains (nats keeps its default URL the same way). Owner's call.
+  - etcd's gRPC clients no longer show their RPC method as an address; if
+    the method should show, it needs its own field.
+  - A destination still says under its name the one value all its walks end
+    in (`destinationWritten`, unlabelled): casdoor's Object Storage card can
+    read `%s/%s` there.
+  - The saved field for a chain's value is still `DestinationUse.Address`;
+    renaming it is a format change.
 - **Known prompt drift (2026-09-29):** READING says a symbol that runs the
   handed callable in place, wraps or stores it is `binds` `none`;
   `internal/atlas/lines/prompts/entry_options.md`'s `none` names only a

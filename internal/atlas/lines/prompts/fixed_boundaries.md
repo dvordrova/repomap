@@ -36,5 +36,26 @@ Fill only the columns in `fill`:
   over the bare literal it was composed from. Leave out a word that only
   names the registering call or the record type, and answer `none` when no
   word names the entry.
-- `address`, when requested: one `a*` ref from `address_catalog` naming the
-  request's destination, else `unknown`.
+- `address`, when requested: where the other end of this call is, as one
+  `a*` ref from `address_catalog`, else `unknown`. The catalogue holds every
+  value the code was seen to hand the call, and `destination_chains` where
+  each came from; a value is not an address because it is offered.
+  - Answer the `a*` of a value that writes where the call connects, of the
+    kind the call reaches: a URL whose host is written, whatever placeholders
+    follow the host in its path or query (`https://login.example.com/%s/token`,
+    `https://api.example.com/v2/me?token=%s`); a host
+    and port, a socket path or a database file the call opens; a connection
+    string that writes its server; a setting that holds the address, as the
+    code writes it (`{env:API_URL}`, `{--socket}`) or as the key its chain's
+    configuration read is given. When several values do, the call reaches
+    each of them: answer the first.
+  - Answer `unknown` when no value does. A value that writes no host, port,
+    socket or file path and is no such setting says nowhere: a bare word or
+    identifier (a field, a table or a key) or `/`. Nor does a template whose
+    host or server is itself a placeholder (`%s:%d`, `app:%s@tcp(%s:%d)/%s`,
+    `https://%s/api/users`), which shows how the address is built, not where
+    it is; a key, a name or a path inside the destination (an object or a
+    file key, a table, an RPC method, a URL path without its host); SQL, a
+    query, a message or request body, a JSON document or another payload;
+    logging, timing or formatting configuration; a value of another kind
+    than the call reaches (a web URL handed to a database driver).
