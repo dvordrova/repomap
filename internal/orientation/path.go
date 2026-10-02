@@ -248,18 +248,52 @@ func (graph *flowGraph) line(id string) string {
 	return ""
 }
 
-// role is what a split's option says it does: its own line, else, for a
-// member of another class, its class's (litestream's RestoreCommand.Run is
-// "a command to restore a database from a backup"); members of the step's
-// own class take none of it, since it would tell them nothing apart.
-func (graph *flowGraph) role(id, stepUnit string) string {
-	if line := graph.line(id); line != "" {
-		return line
+// class says a declaration is a type: a unit folding its members.
+func (graph *flowGraph) class(id string) bool {
+	subject := graph.subjects[id]
+	return subject != nil && subject.Object != nil && subject.Object.Kind == programindex.ObjectType
+}
+
+// typeLine is, for a member of another type with no line of its own, that
+// type and its line, said as the type's, never as the member's role
+// (litestream's RestoreCommand.Run reads with "type RestoreCommand: a
+// command to restore a database from a backup"; etcd's EtcdServer.Stop had
+// read as "the main etcd server"). Members of the step's own type take
+// none, since it would tell them nothing apart.
+func (graph *flowGraph) typeLine(id, stepUnit string) (string, string) {
+	if graph.line(id) != "" {
+		return "", ""
 	}
-	if unit := graph.unit(id); unit != id && unit != stepUnit {
-		return graph.line(unit)
+	if unit := graph.unit(id); unit != id && unit != stepUnit && graph.class(unit) {
+		return graph.name(unit), graph.line(unit)
 	}
-	return ""
+	return "", ""
+}
+
+// enteredMembers are, for an option that is a type entered through its
+// members, those members as the path enters them: each with its type
+// (Etcd.Close), how the step's work reaches it ("handed to
+// RegisterInterruptHandler") and its own line when it has one.
+func (graph *flowGraph) enteredMembers(candidate groupindex.SpineStep, met flowCandidate) []string {
+	if len(candidate.Members) == 0 || !graph.class(candidate.SubjectID) || stepSubject(candidate) != candidate.SubjectID {
+		return nil
+	}
+	var entered []string
+	for _, member := range candidate.Members {
+		said := graph.qualified(member)
+		var about []string
+		if way, known := met.ways[member]; known {
+			about = append(about, way.asked())
+		}
+		if line := graph.line(member); line != "" {
+			about = append(about, line)
+		}
+		if len(about) > 0 {
+			said += " (" + strings.Join(about, "; ") + ")"
+		}
+		entered = append(entered, said)
+	}
+	return entered
 }
 
 // part is the title of the part holding a declaration, or "".
@@ -356,14 +390,25 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 		id := stepSubject(candidate)
 		ref := fmt.Sprintf("c%d", position+1)
 		terms := []string{names[position]}
-		if signature := graph.signature(id); signature != "" {
+		// An option is what the path enters: a type entered through some
+		// of its members is said by those members, never by the type's own
+		// line or signature, and a type's line beside a member of it is
+		// said as the type's (etcd's startEtcd had offered "Etcd ... serves
+		// peers, clients and metrics", entered only through Close, handed
+		// to the interrupt handler, and Err: the walk took the shutdown
+		// path 5 of 5).
+		if entered := graph.enteredMembers(candidate, met[candidate.Edge]); len(entered) > 0 {
+			terms = append(terms, "enters "+strings.Join(entered, ", "))
+		} else if signature := graph.signature(id); signature != "" {
 			terms = append(terms, "signature "+signature)
 		}
 		if part := graph.part(id); part != "" {
 			terms = append(terms, "in part "+part)
 		}
-		if line := graph.role(id, graph.unit(subject)); line != "" {
+		if line := graph.line(id); line != "" && !graph.class(id) {
 			terms = append(terms, "role: "+line)
+		} else if typ, line := graph.typeLine(id, graph.unit(subject)); line != "" {
+			terms = append(terms, "type "+typ+": "+line)
 		}
 		reached := met[candidate.Edge].reach.asked()
 		if len(step.Members) > 1 {
