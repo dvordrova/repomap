@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A Python name reassigned under a branch calls what its stores put there (lead)
+
+- **Before:**
+  - `handler = flush_replies; if readable: handler = accept_client; handler()` stayed unresolved, with both stores as witnesses.
+  - Go calls the same local choice, the SSA phi, as alternatives. Under the owner's rule of 2026-09-30, several known targets are alternatives.
+- **Fix:** `handler()` calls the functions that the stores reaching it put there. One function is exact; several are alternatives with dispatch `function_value`, each reaching store its witness. Classes are constructed, and outside symbols alone make `invokes_external`.
+  - **Store reach:**
+    - A store takes effect where its statement ends, so `h = h()` calls what came before.
+    - From the stores before the call, the last one no branch skips and those after it reach the call.
+    - A later store reaches the call only from inside the outermost loop around it.
+    - A call in a nested def, lambda or comprehension sees every store.
+  - **Stays open:**
+    - A store of anything else (`None`, a call result, a module), or a copy of a name with more than one store.
+    - A parameter (`run_defaulted_handler`: the caller's value when the branch is skipped), a for target, an augmented or opaque name, or a name declared global or nonlocal anywhere in the module.
+    - A module with star imports.
+    - A module or class name no reaching store always binds (builtin fallback).
+    - A class-body name called in a method.
+  - Only the call through the name changes. Arguments, bases, attribute calls (`codec.dumps`) and `resolve()` keep their shapes.
+  - A skeptic chose this ordered reach (drop stores before the last unconditional one, and stores after the call unless a loop encloses it) over a flow-insensitive union, which would have drawn arrows that cannot happen, and over a full reaching-definitions walk.
+- **Tests:**
+  - `TestBuildCallsWhatTheStoresOfANameAssignedUnderABranchPutThere` covers 21 call shapes, 12 of them new.
+    - Seven stay open: default parameter, global, builtin fallback, class body, branched alias, `None` then if/else, augmented assignment.
+    - Five resolve: `h = h()`, a store after the call, a store after the call in a loop, an overwriting store, and a class choice.
+  - Cumulative fixture: `run_chosen_handler` → alternatives {accept_client, flush_replies}, and the new `run_defaulted_handler` stays open (assertPythonStoredCallbacks).
+- **Other languages, recorded:**
+  - JS/TS: a `let` a branch reassigns is either an unresolved call naming neither function (`let f; if (c) f = a; else f = b; f()`) or an exact call of the variable's own declaration (`let g: () => void = a; if (c) g = b; g()`, so b is missed). This is JSTS.md's documented constant rule, left for the owner.
+  - Clojure: a let-bound local is an unresolved `function_value` call naming no function, even for one function (CLOJURE.md).
+  - The stale JSTS.md line saying the fixture has no alternatives is corrected: Throttle's `step()` and `watchTick` have them.
+- **Checks:** pythonprogramindex, pythontarget and contracttest (in three serial groups under 5 min each) are green; vet is clean. No online run.
+
 ## 2026-10-03 — Four reader bugs from the final journeys, the 60e7ea98 table and one name-sight FAIL (785fad41, 811f8199)
 
 - **60e7ea98 full table** (no flag, one browser, 13 runs: the eight reports, lua and four synthetic graphs): every run complete, no INCOMPLETE cell. beets' and etcd's home `step1-gap` (7.1 and 5.0 px at 829626d6) pass. `title-sight` and `name-sight` were measured for the first time. The one FAIL: synthetic-no-inputs, area api-server / Report queue, `name-sight` 1/2: "Invoice audit" was cut at the canvas's edge. The table script had written `table.md` with the working tree's invariant list, edited while it ran; it is rewritten with the commit's own. From now on the full table runs strict, from the export's harness.

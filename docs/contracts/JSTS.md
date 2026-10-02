@@ -372,10 +372,11 @@ outside symbol, so outside functions are not alternatives as in Python and C
 
 Missing equivalents, recorded rather than fabricated:
 
-- The fixture has no input of its own and no relation resolved as several
-  alternatives, so GroupsIndex's reach is checked by probing declarations as
-  inputs (`flowtest.Probe`: `recordOrder` reads `handledOrderIds`,
-  `runWorker` calls `processPendingJobs`) and there is no dispatch site.
+- The fixture has no input of its own, so GroupsIndex's reach is checked by
+  probing declarations as inputs (`flowtest.Probe`: `recordOrder` reads
+  `handledOrderIds`, `runWorker` calls `processPendingJobs`). A call's
+  alternatives (`Throttle.throttle`'s `step()`, `watchTick`'s conditional
+  callees) are no input's handlers, so there is no dispatch site.
 - No JS/TS function is proven `unreachable` (the C adapter's per-program
   fact, PROGRAM_INDEX): computed property access (`handlers[name]()`),
   dynamic `import()`, callbacks a framework or the DOM calls by the name
@@ -412,9 +413,15 @@ Missing equivalents, recorded rather than fabricated:
 - A call through a local constant holding a function
   (`const handler = acceptClient; handler()`) is an exact call of the constant
   itself. The function is only read at the constant's initializer. A `let`
-  reassigned under a branch behaves the same way and reads each assigned
-  function. The adapter sets no dispatch word, so no call says that it runs a
-  function value.
+  a branch reassigns reads each assigned function where it is assigned, and
+  the call through it never calls them. An initialized or typed `let`
+  (`let g: () => void = a; if (c) g = b; g()`) is an exact call of the
+  variable's own declaration, so `b` is not reached. An untyped one
+  (`let f; if (c) f = a; else f = b; f()`) is an unresolved call that names
+  neither function. Python calls the functions such stores put there as
+  alternatives (PYTHON, Handler tables), and Go calls the SSA phi of a
+  function value a branch chooses the same way (GO, `WatchTick`). Neither
+  call through a variable says that it runs a function value.
 
 ## Test sources
 

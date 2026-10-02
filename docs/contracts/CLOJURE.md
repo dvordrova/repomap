@@ -168,7 +168,11 @@ Missing equivalents, recorded rather than fabricated:
   other (REPORT).
 - An unresolved `function_value` call names no function a binding could hold,
   so it draws none of the possible arrows the C, Go and Python store
-  witnesses draw.
+  witnesses draw. A local bound to a function is such a call, whether one
+  function (`(let [f tick-millis] (f ms))`) or an `if`'s choice of two
+  (`(let [f (if seconds tick-seconds tick-millis)] (f ms))`): each function
+  is only a `reads` of its var, where Python and Go call the functions a
+  branch's stores put in a name as alternatives (PYTHON, Handler tables).
 - A call of a function's own parameter (`(defn run [job] (job))`) stays that
   unresolved call: the vars its callers hand there are not joined to it, where
   the Python, Go, JS/TS and C adapters make them its targets (PYTHON, Handler

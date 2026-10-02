@@ -109,9 +109,11 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		30: {programindex.RelationPassesCallback, "run_event_loop", "accept_client", exact},
 		31: {programindex.RelationPassesCallback, "run_event_loop", "flush_replies", exact},
 		38: {programindex.RelationCalls, "run_single_handler", "accept_client", exact},
-		// A name reassigned under a branch is neither its last function
-		// nor both as alternatives.
-		47: {programindex.RelationCalls, "run_chosen_handler", "", unresolved},
+		// A name reassigned under a branch calls each function its stores
+		// put there (owner, 2026-09-30; Go's WatchTick); a parameter so
+		// reassigned holds its caller's value otherwise and stays open.
+		47:  {programindex.RelationCalls, "run_chosen_handler", "accept_client,flush_replies", alternatives},
+		147: {programindex.RelationCalls, "run_defaulted_handler", "", unresolved},
 	})
 	for _, view := range relations {
 		if view.from == "fire" && view.relation.Kind == programindex.RelationCalls && len(view.to) != 0 {
@@ -139,6 +141,9 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		}
 		if view.relation.Kind != programindex.RelationCalls || (view.line != 38 && view.line != 47) {
 			continue
+		}
+		if view.line == 47 && view.relation.Dispatch != programindex.DispatchFunctionValue {
+			t.Fatalf("the call through the reassigned name is no function value: %+v", view.relation)
 		}
 		// The call through the reassigned name names each store where it is
 		// written, as the C adapter does; the name bound once needs none.

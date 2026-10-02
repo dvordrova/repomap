@@ -108,6 +108,16 @@ def statement_position(node):
     return (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
 
 
+LOOPS = (ast.For, ast.AsyncFor, ast.While)
+COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+def store_span(node):
+    """Where a store's statement starts and ends, for stored_callees."""
+    start = statement_position(node)
+    return {"start": start, "end": (getattr(node, "end_lineno", start[0]), getattr(node, "end_col_offset", start[1]))}
+
+
 def location_key(location):
     """A source location's order across modules: path, line, column."""
     location = location or {}
@@ -298,6 +308,11 @@ class Scope:
         self.stores = {}
         self.branched = {}
         self.conditional_base = 0
+        # The scope's parameters, and the names it binds without a recorded
+        # store (a for target, an augmented assignment): a value no store
+        # names may be in them (stored_callees).
+        self.parameters = set()
+        self.unstored_names = set()
 
     def binding(self, name):
         owner = self.owner(name)
@@ -371,6 +386,9 @@ class Analyzer:
         # None, the callable's scope), and the parameters of every def.
         self.return_nodes = {}
         self.parameter_refs = set()
+        # The names some scope of each module declares global or nonlocal:
+        # that scope's stores of them are not their owner's (stored_callees).
+        self.shared_names = {}
         # The keyword-only ones, which no positional argument fills; each
         # call a def makes of its own parameter, and each call into a
         # repository callable with what it hands (hand_parameter_calls).
@@ -1187,18 +1205,21 @@ class Collector(ast.NodeVisitor):
         if binding is not None and isinstance(target, ast.Name):
             self.scope.bindings[target.id] = dict(binding)
 
-    def record_store(self, target, binding=None, value=None):
+    def record_store(self, target, binding=None, value=None, span=None):
         # One assignment of a name, with the callable its value names. Under a
         # branch, the name afterwards holds whatever the branch left there.
+        # The store takes effect where its statement (an assignment
+        # expression's own span) ends: a call in its value runs before it.
         if isinstance(target, ast.Name):
             self.scope.stores.setdefault(target.id, []).append({
                 "binding": dict(binding) if binding is not None else None,
                 "conditional": self.conditional_depth > self.scope.conditional_base,
                 "node": value if binding is not None and value is not None else target,
+                **store_span(span or self.statement or target),
             })
         elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
-                self.record_store(element)
+                self.record_store(element, span=span)
 
     def record_declaration(self, name, binding, node):
         # A def, class or import binds the name too. It is one more value the
@@ -1207,6 +1228,7 @@ class Collector(ast.NodeVisitor):
             "binding": dict(binding),
             "conditional": self.conditional_depth > self.scope.conditional_base,
             "node": node, "declaration": True,
+            **store_span(self.statement or node),
         })
 
     def ensure_call_result(self, node):
@@ -1301,6 +1323,7 @@ class Collector(ast.NodeVisitor):
         previous, self.scope = self.scope, child
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
+            child.parameters.add(argument.arg)
             self.analyzer.parameter_refs.add(self.analyzer.node_refs[id(argument)])
             if any(argument is value for value in node.args.kwonlyargs):
                 self.analyzer.keyword_only_parameters.add(self.analyzer.node_refs[id(argument)])
@@ -1380,6 +1403,9 @@ class Collector(ast.NodeVisitor):
         previous, self.scope = self.scope, child
         for argument in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
             self.add_variable(argument.arg, argument, True)
+        child.parameters.update(argument.arg for argument in
+                                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs) +
+                                [value for value in (node.args.vararg, node.args.kwarg) if value is not None])
         self.visit(node.body)
         self.scope = previous
 
@@ -1486,7 +1512,7 @@ class Collector(ast.NodeVisitor):
         self.visit(node.value)
         self.bind_targets(node.target, True)
         self.bind_callable_alias(node.target, alias_binding)
-        self.record_store(node.target, alias_binding, node.value)
+        self.record_store(node.target, alias_binding, node.value, node)
 
     def visit_For(self, node):
         self.visit(node.iter)
@@ -1494,6 +1520,7 @@ class Collector(ast.NodeVisitor):
         self._target_reads(node.target)
         self.record_field_store(node.target)
         self.bind_targets(node.target, True)
+        self.scope.unstored_names.update(part.id for part in ast.walk(node.target) if isinstance(part, ast.Name))
         for statement in node.body + node.orelse:
             self.visit(statement)
         self.conditional_depth -= 1
@@ -1503,6 +1530,7 @@ class Collector(ast.NodeVisitor):
     def visit_AugAssign(self, node):
         if isinstance(node.target, ast.Name):
             self.record_export(node.target.id)
+            self.scope.unstored_names.add(node.target.id)
         self.record_field_store(node.target)
         self.generic_visit(node)
 
@@ -1550,9 +1578,11 @@ class Collector(ast.NodeVisitor):
 
     def visit_Global(self, node):
         self.scope.global_names.update(node.names)
+        self.analyzer.shared_names.setdefault(self.module["name"], set()).update(node.names)
 
     def visit_Nonlocal(self, node):
         self.scope.nonlocal_names.update(node.names)
+        self.analyzer.shared_names.setdefault(self.module["name"], set()).update(node.names)
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -1595,6 +1625,9 @@ class RelationVisitor(ast.NodeVisitor):
         self.module = module
         self.scope = scope
         self.invocation = ""
+        # The loops and comprehensions around the node being visited, each
+        # with the scope it runs in (stored_callees).
+        self.enclosing = []
         # Pattern receiver provenance is deliberately source ordered. The
         # declaration collector has already created stable variable objects,
         # but it must not let a later assignment explain an earlier call.
@@ -1772,11 +1805,87 @@ class RelationVisitor(ast.NodeVisitor):
             owner.branched[name] = stores if assigned and any(store["conditional"] for store in stores) else []
         return owner.branched[name]
 
-    def stored_function_witnesses(self, node):
+    def visit(self, node):
+        if not isinstance(node, LOOPS + COMPREHENSIONS):
+            return super().visit(node)
+        self.enclosing.append((node, self.scope))
+        try:
+            return super().visit(node)
+        finally:
+            self.enclosing.pop()
+
+    def stored_callees(self, call):
+        """The callables a call through a name assigned under a branch
+        calls, each (origin, ref), with the witnesses of the stores that put
+        them there: the stores that may reach the call (owner, 2026-09-30:
+        several known targets are alternatives; Go's phi of a function value
+        a branch chooses). [] leaves the call open: a store of anything but a
+        function, a class or an outside symbol, or a name some value no store
+        names may be in (a parameter, a for target, an augmented or opaque
+        name, a name declared global or nonlocal, a module with star imports,
+        a module or class name no store before the call always binds, which
+        falls back to a builtin or a global)."""
+        func = call.func
+        if not isinstance(func, ast.Name) or func.id in self.read_shadows:
+            return [], []
+        name = func.id
+        stores = self.branch_stores(name)
+        owner = self.scope.owner(name)
+        if not stores or owner is None or not self.settled_name(owner, name) or \
+                (owner.kind == "type" and owner is not self.scope):
+            return [], []
+        position = statement_position(call)
+        lazily = owner is not self.scope or any(
+            scope is self.scope and isinstance(node, COMPREHENSIONS) for node, scope in self.enclosing)
+        if lazily:
+            # A call in a nested def, lambda or comprehension runs when it is
+            # called: any store of the name may be what it finds.
+            reaching = list(stores)
+        else:
+            # A store whose statement ends before the call may reach it, from
+            # the last one no branch skips on; one after it only through the
+            # outermost loop around the call, from inside that loop.
+            before = sorted((store for store in stores if store["end"] <= position), key=lambda store: store["end"])
+            last = max((index for index, store in enumerate(before) if not store["conditional"]), default=0)
+            reaching = before[last:]
+            loops = [node for node, scope in self.enclosing if scope is self.scope and isinstance(node, LOOPS)]
+            if loops:
+                start, end = store_span(loops[0]).values()
+                reaching += [store for store in stores if store["end"] > position and start <= store["start"] and store["end"] <= end]
+        if not reaching or (owner.kind in ("module", "type") and all(store["conditional"] for store in reaching)):
+            return [], []
+        chosen = []
+        for store in reaching:
+            if store["binding"] is None or not self.settled_alias(owner, store):
+                return [], []
+            origin, ref = self.binding_target(store["binding"])
+            value = self.object(ref) if ref else None
+            if origin not in ("local", "external") or value is None or \
+                    value["kind"] not in ("function", "method", "lambda", "type", "external_symbol"):
+                return [], []
+            chosen.append((origin, ref))
+        return chosen, self.stored_function_witnesses(func, reaching)
+
+    def settled_name(self, owner, name):
+        # Every value of the name is one of its owner's stores.
+        return name not in owner.parameters and name not in owner.opaque_names and \
+            name not in owner.unstored_names and name not in self.analyzer.shared_names.get(self.module["name"], ()) and \
+            not (owner.kind == "module" and owner.star_imports)
+
+    def settled_alias(self, owner, store):
+        # `handler = accept` stores the value accept holds where the store
+        # runs: accept's one store when it has only one, else any of them.
+        value = store["node"]
+        if store.get("declaration") or not isinstance(value, ast.Name):
+            return True
+        source = owner.owner(value.id)
+        return source is not None and self.settled_name(source, value.id) and len(source.stores.get(value.id, [])) == 1
+
+    def stored_function_witnesses(self, node, stores=None):
         # A call through a name assigned under a branch names each function
         # those assignments store, as the C adapter names a pointer's stores.
         # A call of an attribute of that name names each module or class
-        # stored in it.
+        # stored in it. A resolved call names the stores that reach it.
         root = node
         while isinstance(root, ast.Attribute):
             root = root.value
@@ -1786,7 +1895,7 @@ class RelationVisitor(ast.NodeVisitor):
         if root is not node:
             kinds += ("module", "package")
         witnesses = []
-        for store in self.branch_stores(root.id):
+        for store in self.branch_stores(root.id) if stores is None else stores:
             if store["binding"] is None:
                 continue
             authority, ref = self.binding_target(store["binding"])
@@ -1796,8 +1905,8 @@ class RelationVisitor(ast.NodeVisitor):
             detail = candidate["name"] + " stored in " + root.id
             if store["conditional"]:
                 detail += " under a condition"
-            # The witness names what the store put there; the call stays
-            # unresolved and the stored value is never its target.
+            # The witness names what the store put there, the call's target
+            # only when stored_callees resolves it.
             witness = {"kind": "function_value_store", "detail": bounded_text(detail), "object_ref": ref}
             location = source_location(self.module["path"], store["node"])
             if location is not None:
@@ -3235,6 +3344,11 @@ class RelationVisitor(ast.NodeVisitor):
         # callee). One callable, a constant condition or both branches the
         # same, is the ordinary call; several are alternatives below.
         chosen = self.conditional_callees(node.func) if not resolved[1] else []
+        # A call through a name assigned under a branch calls what the
+        # stores reaching it put there, alike (stored_callees).
+        stored = []
+        if not resolved[1] and not chosen:
+            chosen, stored = self.stored_callees(node)
         if len({ref for _, ref in chosen}) == 1:
             resolved, chosen = chosen[0], []
         # Filled only for the ordinary call relation retained below. Dynamic-only
@@ -3260,16 +3374,19 @@ class RelationVisitor(ast.NodeVisitor):
             # implementations, several of them alternatives.
             members = self.registered_members(node.func) if not resolved[1] else []
             if chosen:
-                # Several callables a condition chooses between: alternatives
-                # through a function value, the owner's rule for several
-                # known targets. Classes it chooses between are constructed.
+                # Several callables a condition or a branch's stores choose
+                # between: alternatives through a function value, the owner's
+                # rule for several known targets. Classes are constructed.
                 refs = sorted({ref for _, ref in chosen})
                 names = [ref_name for _, ref_name in sorted((ref, self.object(ref)["name"]) for ref in refs)]
-                witness = {"kind": "python_conditional_callee",
-                           "detail": bounded_text(ast.unparse(node.func) + " calls " + " or ".join(names) + ", as its condition decides")}
-                location = source_location(self.module["path"], node.func)
-                if location is not None:
-                    witness["location"] = location
+                witnesses = stored
+                if not stored:
+                    witness = {"kind": "python_conditional_callee",
+                               "detail": bounded_text(ast.unparse(node.func) + " calls " + " or ".join(names) + ", as its condition decides")}
+                    location = source_location(self.module["path"], node.func)
+                    if location is not None:
+                        witness["location"] = location
+                    witnesses = [witness]
                 if all(self.object(ref)["kind"] == "type" for ref in refs):
                     invocation = "construct"
                 call_relation_ref = self.analyzer.add_relation(
@@ -3277,7 +3394,7 @@ class RelationVisitor(ast.NodeVisitor):
                     self.scope.ref, refs, "alternatives", node, "callsite",
                     name, invocation=invocation, targets_observed=len(refs), source_expression=source_expression,
                     witness_callee=node.func, patterns=[pattern] if pattern else [], patterns_observed=patterns_observed,
-                    extra_witnesses=(witness,), dispatch="function_value",
+                    extra_witnesses=tuple(witnesses), dispatch="function_value",
                 )
             elif members:
                 call_relation_ref = self.analyzer.add_relation(

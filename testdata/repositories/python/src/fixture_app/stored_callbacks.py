@@ -39,7 +39,7 @@ def run_single_handler():
 
 
 # A name reassigned under a branch may hold either function when it is
-# called: the call stays unresolved and names each function stored in it.
+# called: the call calls one of them, each store naming its function.
 def run_chosen_handler(readable):
     handler = flush_replies
     if readable:
@@ -137,3 +137,11 @@ def watch_tick_again(ms, seconds):
     (tick_millis if seconds else tick_millis)(ms)
     (time.monotonic if seconds else time.perf_counter)()
     (EventLoop if seconds else Loop)()
+
+
+# A parameter reassigned under a branch still holds what its caller handed
+# when the branch is skipped: the call through it stays open.
+def run_defaulted_handler(handler=None):
+    if handler is None:
+        handler = accept_client
+    handler()

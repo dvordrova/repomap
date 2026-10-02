@@ -555,17 +555,45 @@ supports:
   handler keeps its exact callback at its `register` call.
 - A local name bound once to a function (`handler = accept_client`) makes
   `handler()` an exact call of that function.
-- A name reassigned under a branch leaves the call through it unresolved,
-  never its last assignment and never alternatives, as the C adapter does.
-  After `handler = flush_replies` and `if readable: handler = accept_client`
-  (`run_chosen_handler`), `handler()` names each function stored in the name
-  as a `function_value_store` witness at the stored value:
-  `flush_replies stored in handler` and
-  `accept_client stored in handler under a condition`, each naming its
-  function by identity too, so the map draws the call's possible arrows. In `models.py`,
+- A call through a name reassigned under a branch calls what the stores
+  that may reach it put there, as Go calls the SSA phi of a function value a
+  branch chooses (GO, `WatchTick`; owner, 2026-09-30: one known target
+  exact, several alternatives). After `handler = flush_replies` and
+  `if readable: handler = accept_client` (`run_chosen_handler`), `handler()`
+  calls both as `alternatives`, dispatch `function_value`, each store a
+  `function_value_store` witness at the stored value naming its function
+  (`flush_replies stored in handler`,
+  `accept_client stored in handler under a condition`).
+  - **Which stores reach the call.** A store takes effect where its
+    statement ends, an assignment expression where it ends, so
+    `handler = handler()` calls what came before. From the stores ending
+    before the call, the last one no branch skips (in the name's own scope)
+    and every one after it reach the call. A store after the call reaches it
+    only from inside the outermost loop around the call. A call in a nested
+    def, a lambda or a comprehension runs later and finds any store.
+  - **Exact and alternatives.** One function reaching the call is the
+    ordinary exact call (a single store under a branch, the name unbound
+    otherwise). Classes are constructed, and outside symbols alone make an
+    `invokes_external` call, as a callee a condition chooses does.
+  - **What stays open.** The call stays unresolved with every store its
+    witness when any of these hold:
+    - a reaching store holds anything but a def, a method, a lambda, a class
+      or an outside symbol (`None`, a call's result, a tuple's element, a
+      module), or copies a name with more than one store;
+    - the name is a parameter (`run_defaulted_handler`: its caller's value
+      remains when the branch is skipped), a `for` target, augmented, an
+      opaque name (with, except, match), or declared `global` or `nonlocal`
+      anywhere in the module;
+    - its module has star imports;
+    - it is a module or class name that no store reaching the call always
+      binds, so it would fall back to a builtin or a global;
+    - it is a class body's name, called in a method.
+
+  Only the call through the name is resolved. In `models.py`,
   `register_callback_aliases` passes its parameter `handler` after
   `if replace_handler: handler = handle_delivery`; the argument keeps the
-  variable and gains no callback of `handle_delivery`.
+  variable and gains no callback of `handle_delivery`. The shapes are in
+  `TestBuildCallsWhatTheStoresOfANameAssignedUnderABranchPutThere`.
 - A def calling its own parameter, which it never rebinds, calls what the
   program's calls into the def hand that parameter, as the C adapter joins
   what a function's callers pass (critic, 2026-09-30: freqtrade's
@@ -606,9 +634,9 @@ condition, the subject and the first operand always run, as the C adapter
 walks an if's condition and the left of `&&`: after
 `if (handler := accept_client) and ready:`, `handler()` stays exact. A function
 declared under a branch keeps the exact calls of its own body, and an enclosed
-function reading the name sees the same unresolved value. A `def`, `class` or
-`import` of the name in that scope is one more witness, and once the name is
-also assigned there, one under a branch makes it conditional too
+function reading the name sees every store. A `def`, `class` or `import` of
+the name in that scope is one more store, and once the name is also assigned
+there, one under a branch makes it conditional too
 (`handler = flush_replies`, `if readable: def handler(): ...`). A call of an
 attribute of such a name is unresolved and names each module or class stored
 in it: after `codec = json` and `if flag: codec = pickle`, `codec.dumps()`
@@ -638,12 +666,15 @@ Missing equivalents, recorded rather than fabricated:
   callables is one input has nothing to apply to.
 - A call through an attribute is never resolved from its stores, even from a
   single store in `__init__`. The C adapter makes one store exact and several
-  stores alternatives. Only a call of a def's own parameter says that it runs
-  a function value.
+  stores alternatives. A call of a def's own parameter, of a callee a
+  condition chooses and of a name reassigned under a branch say that they
+  run a function value; a call through an attribute never does.
 - Assignments without a branch still resolve to the last one in the scope,
   even at a call written before it: after `handler = accept_client`,
   `handler()`, `handler = flush_replies`, the call is an exact call of
   `flush_replies`. The C adapter gives unconditional stores alternatives.
+  Only a name with a store under a branch takes the stores that reach the
+  call (Handler tables).
 - A function, class or import bound under a branch with no assignment of that
   name (`try: from fast import loads`, `except ImportError: def loads(...)`)
   still resolves to its last binding.
