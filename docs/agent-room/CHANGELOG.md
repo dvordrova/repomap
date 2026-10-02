@@ -31,6 +31,21 @@
     CFLAGS row and `make test`.
   - `internal/makefile` unit tests: conditionals, `.DEFAULT_GOAL`, a
     define block, a continued line.
+- **Page wording (839fa463):** a recipe row citing a manifest row says
+  "Inferred from manifest settings"; before, any entrypoint among its refs
+  won. redis's `make` cites main beside the Makefile's default goal.
+- **Warm runs (binary from 839fa463, report format 97; only orientation
+  re-asked):**
+  - redis 20261002-153614: `make` cites Makefile:27 default goal,
+    Makefile:49 and PRGNAME (22). The notes start the four programs and
+    `make bench`.
+  - Lua 20261002-155113: `make` cites makefile:113 ("builds liblua.a and
+    the lua executable; run ./lua afterwards") and makefile:124;
+    `make` in testes/libs cites its makefile:11.
+  - No "ships no manifest". The notes name no compiler or platform
+    condition, although the cited rows and their anchors carry `CC= gcc`
+    and `-DLUA_USE_LINUX`. Saying them would need a prompt line, a second
+    question change, not made.
 
 ## 2026-10-02 — The final walk's display stumbles: titles in sight, inputs named whole, a reading kept on its path, a library's entries by part (lead, 5297a765)
 
