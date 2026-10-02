@@ -92,6 +92,24 @@
   b's "/y").
 - **Open:** a literal that does reach an address through exponentially
   many paths is still walked path by path; no repository showed one.
+- **Lua, no model, c:lua:** HEAD 4c0e6a59 sat in facts for 10 min (36 min
+  CPU), ignored SIGTERM and was killed (exit 137 at 841 s); with the fix the
+  run exits 0 in 5.8 s.
+- **Lua acceptance (online, cold, `--no-serve --no-open`),
+  20261002-125509-lua-7a5431c1625d:** binary from a clean export of
+  a5455eb6 plus one uncommitted hunk (below). Exit 0 in 61 s, 7/7 analyzed:
+  c:lua and c:onelua.c executables, testes/libs lib1, lib11, lib2-v2, lib2,
+  lib21 `.so` libraries; 1,745 facts; rejected.jsonl 161 rows (134
+  atlas_role_helper uncertain). A headless walk of the home, every program
+  link and each library's connections had no page errors; each `.so` reads
+  "Component · C library", reaching lua and onelua.c through the Auxiliary
+  library and Core API.
+- **Not committed:** without the fix the first try failed at render:
+  `unknown UI message "shared_library"`. C indexed a `-shared` program
+  under its adapter kind, which the report has no word for (the C fixture's
+  upper.so has it too). The hunk indexes it as `library`, as its outcome
+  scope is, with a fixture assertion. build.go and c_test.go carry another
+  agent's uncommitted C work, so it waits for them.
 
 ## 2026-10-02 — Main flow side paths on etcd and redis (data 1)
 
