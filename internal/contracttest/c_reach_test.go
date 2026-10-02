@@ -62,8 +62,9 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 	}{
 		// The command functions only the table and staticsyms.h's integer
 		// casts name still run: the table exists before main.
-		{server, []string{"net.c:netConnect"}},
-		{client, []string{"loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopMain", "loop.c:loopProcessEvents",
+		// loopNowMs is util/watch.c's clock: neither program reads it.
+		{server, []string{"loop.c:loopNowMs", "net.c:netConnect"}},
+		{client, []string{"loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopMain", "loop.c:loopNowMs", "loop.c:loopProcessEvents",
 			"loop.c:loopSetBeforeSleep", "loop.c:loopStop", "loop.c:oom", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiPoll",
 			"net.c:netListen", "strbuf.c:sbConsume"}},
 		{dump, []string{"strbuf.c:sbConsume"}},

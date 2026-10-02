@@ -571,16 +571,17 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 		return listed
 	}
 	// The client links the server's event loop and runs none of it; the
-	// server runs all of it.
+	// server runs all of it but loopNowMs, util/watch.c's clock, which
+	// neither runs.
 	want := []string{"loop.c:oom run by kvd", "loop.c:loopCreate run by kvd", "loop.c:loopCreateFileEvent run by kvd", "loop.c:loopDeleteFileEvent run by kvd",
-		"loop.c:loopSetBeforeSleep run by kvd", "loop.c:loopProcessEvents run by kvd", "loop.c:loopMain run by kvd", "loop.c:loopStop run by kvd",
+		"loop.c:loopSetBeforeSleep run by kvd", "loop.c:loopProcessEvents run by kvd", "loop.c:loopMain run by kvd", "loop.c:loopStop run by kvd", "loop.c:loopNowMs",
 		"loop_poll.c:loopApiCreate run by kvd", "loop_poll.c:loopApiAddEvent run by kvd", "loop_poll.c:loopApiPoll run by kvd",
 		"net.c:netListen run by kvd", "strbuf.c:sbConsume run by kvd"}
 	if listed := neverRuns("kvcli"); !reflect.DeepEqual(listed, want) {
 		t.Fatalf("the client lists %v as never run, want %v", listed, want)
 	}
 	// The server never connects; the client does.
-	if listed, want := neverRuns("kvd"), []string{"net.c:netConnect run by kvcli"}; !reflect.DeepEqual(listed, want) {
+	if listed, want := neverRuns("kvd"), []string{"loop.c:loopNowMs", "net.c:netConnect run by kvcli"}; !reflect.DeepEqual(listed, want) {
 		t.Fatalf("the server lists %v as never run, want %v", listed, want)
 	}
 }

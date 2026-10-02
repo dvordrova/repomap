@@ -128,6 +128,11 @@ func (b *builder) spelled(code, statement *Node) (spelledRead, bool) {
 	return spelledRead{call: recorded, shape: shape, words: strings.Join(words, "\x00")}, true
 }
 
+// sameTarget says two calls name the same target.
+func sameTarget(a, b target) bool {
+	return a.ref == b.ref && a.external == b.external && a.unresolved == b.unresolved && slices.Equal(a.alternatives, b.alternatives)
+}
+
 // joinSpellings gives each later read of a group the first read's call.
 func joinSpellings(reads []spelledRead) {
 	for i, first := range reads {
@@ -136,7 +141,7 @@ func joinSpellings(reads []spelledRead) {
 		}
 		for _, later := range reads[i+1:] {
 			if later.call == nil || later.call == first.call || later.call.sameValueAs != nil || later.shape != first.shape || later.words == first.words ||
-				later.call.direct != first.call.direct || later.call.from != first.call.from {
+				!sameTarget(later.call.direct, first.call.direct) || later.call.from != first.call.from {
 				continue
 			}
 			later.call.sameValueAs = first.call

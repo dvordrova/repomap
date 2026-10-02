@@ -79,7 +79,43 @@
     },
     {
       "id": "f20",
+      "path": "util/fixedclock.c"
+    },
+    {
+      "id": "f21",
       "path": "util/ping.c"
+    },
+    {
+      "id": "f22",
+      "path": "util/watch.c"
+    },
+    {
+      "id": "f23",
+      "path": "wire/Makefile"
+    },
+    {
+      "id": "f24",
+      "path": "wire/encode.c"
+    },
+    {
+      "id": "f25",
+      "path": "wire/escape.c"
+    },
+    {
+      "id": "f26",
+      "path": "wire/escape_none.c"
+    },
+    {
+      "id": "f27",
+      "path": "wire/selftest.c"
+    },
+    {
+      "id": "f28",
+      "path": "wire/wire.h"
+    },
+    {
+      "id": "f29",
+      "path": "wire/wirecat.c"
     }
   ]
 }

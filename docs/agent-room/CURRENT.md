@@ -241,6 +241,14 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   packages is test code whole, so a folded root distribution's `tests/`
   leaves the product map by the test-only part rule
   ([Report](../contracts/REPORT.md), [Python](../contracts/PYTHON.md)).
+- **C builds (owner and skeptic, 2026-10-02):** each archive the build writes
+  is a library target of its members (`c:liblua.a`), the programs linking it
+  keeping their whole analysis; a nested makefile whose default goal compiles
+  none of its units is read on its `all` (Lua 5.1.5's `src/`: `c:src/liblua.a`,
+  `c:src/lua`, `c:src/luac`), never on another named goal; a name several
+  units define goes to the definer a shared link line or archive takes, and
+  otherwise every definer stays as an alternative, the program kept, never
+  chosen by where it is written ([C](../contracts/C.md)).
 - **Data ownership:** an extraction belongs to the programs holding one of its
   files. One no program holds in a code file (tests, fixtures, scripts) or
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is

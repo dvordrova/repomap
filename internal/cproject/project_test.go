@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // writeRepository writes files under a new temporary root. The root keeps
@@ -407,8 +408,30 @@ func TestDiscoverWithoutBuildDescription(t *testing.T) {
 	if _, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app/"), store); err == nil || !strings.Contains(err.Error(), "app/win32.c") {
 		t.Fatalf("a library with a unit clang cannot parse: %v", err)
 	}
-	if _, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:clash/main.c"), nil); err == nil || !strings.Contains(err.Error(), "twice is defined in several units: clash/one.c, clash/two.c") {
+	// Two definitions of a needed name and no build saying which is linked:
+	// both stay, as alternatives, and the program is read (owner,
+	// 2026-10-02).
+	clash, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:clash/main.c"), nil)
+	if err != nil {
 		t.Fatalf("two definitions of a needed name: %v", err)
+	}
+	if !reflect.DeepEqual(clash.Alternatives, []Alternative{{Name: "twice", Units: []string{"clash/one.c", "clash/two.c"}}}) ||
+		!reflect.DeepEqual(clash.AlternativeUnits, []string{"clash/one.c", "clash/two.c"}) || !slices.Equal(unitPaths(clash.Units), []string{"clash/main.c", "clash/one.c", "clash/two.c"}) {
+		t.Fatalf("alternatives %+v, alternative units %v, units %v", clash.Alternatives, clash.AlternativeUnits, unitPaths(clash.Units))
+	}
+	indexed, err := Index(repository, clash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var call *programindex.RelationInput
+	for i, relation := range indexed.Input.Relations {
+		if relation.Kind == programindex.RelationCalls && strings.Contains(relation.FromRef, "@main") {
+			call = &indexed.Input.Relations[i]
+		}
+	}
+	if call == nil || call.Resolution != programindex.ResolutionAlternatives || len(call.ToRefs) != 2 ||
+		!strings.Contains(call.Witnesses[0].Detail, "call of twice, defined in clash/one.c and clash/two.c; the build does not say which is linked") {
+		t.Fatalf("main's call of twice: %+v", call)
 	}
 	// A unit clang cannot parse fails its program with clang's words.
 	var observed bool
@@ -801,28 +824,88 @@ func TestDiscoverReadsADirectorysOwnMakefile(t *testing.T) {
 	}
 }
 
-// Of units in several directories defining one name, the closure takes the
-// one in the directory of the unit needing it (Lua 5.1.5's etc/noparser.c
-// and src/llex.c both define luaX_init, which src/lstate.c calls); a tie
-// left in that directory still fails.
-func TestAClosurePrefersTheNeedingUnitsDirectory(t *testing.T) {
+// Of units defining one name, the closure takes the one the build links with
+// the unit needing it, never the one written beside it (external review,
+// 2026-10-02): librun.a archives app/run.o with lib/setup.o, so app/run.c's
+// setup is lib/setup.c's, not app/setup_stub.c's in its own directory.
+// Without a build saying so, both definitions stay as alternatives.
+func TestAClosureTakesTheDefinitionTheBuildLinks(t *testing.T) {
 	files := map[string]string{
-		"app/main.c":    "int run(void);\nint main(void) { return run(); }\n",
-		"app/run.c":     "int setup(void);\nint run(void) { return setup(); }\n",
-		"app/setup.c":   "int setup(void) { return 1; }\n",
-		"other/setup.c": "int setup(void) { return 2; }\n",
-		"other/extra.c": "int extra(void) { return 3; }\n",
+		"app/main.c":       "int run(void);\nint main(void) { return run(); }\n",
+		"app/run.c":        "int setup(void);\nint run(void) { return setup(); }\n",
+		"app/setup_stub.c": "int setup(void) { return 0; }\n",
+		"lib/setup.c":      "int setup(void) { return 2; }\n",
+	}
+	closure := func(files map[string]string) *Parsed {
+		root, repository := writeRepository(t, files)
+		project, err := Discover(t.Context(), root, repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app/main.c"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	silent := closure(files)
+	if got := unitPaths(silent.Units); !slices.Equal(got, []string{"app/main.c", "app/run.c", "app/setup_stub.c", "lib/setup.c"}) ||
+		!reflect.DeepEqual(silent.Alternatives, []Alternative{{Name: "setup", Units: []string{"app/setup_stub.c", "lib/setup.c"}}}) ||
+		!reflect.DeepEqual(silent.AlternativeUnits, []string{"app/setup_stub.c", "lib/setup.c"}) {
+		t.Fatalf("the build silent: units %v, alternatives %+v, alternative units %v", got, silent.Alternatives, silent.AlternativeUnits)
+	}
+	files["Makefile"] = "CFLAGS = -O2\nall: librun.a\nlibrun.a: app/run.o lib/setup.o\n\tar rcs librun.a app/run.o lib/setup.o\n"
+	built := closure(files)
+	if got := unitPaths(built.Units); !slices.Equal(got, []string{"app/main.c", "app/run.c", "lib/setup.c"}) || len(built.Alternatives) != 0 || len(built.AlternativeUnits) != 0 {
+		t.Fatalf("the build deciding: units %v, alternatives %+v", got, built.Alternatives)
+	}
+}
+
+// Each archive the archiver writes is a library of its members (external
+// review and owner, 2026-10-02: Lua's liblua.a, whose C API a program with a
+// main reads as unreachable code): anchored on its rule even when the rule
+// names it through a variable, naming the link lines that link it, while
+// each link line keeps all of its own units and names the archives it
+// links. Its members join no directory's library. An archive with no member
+// a compile line produced is an observation and no target.
+func TestAnArchiveIsALibraryOfItsMembers(t *testing.T) {
+	files := map[string]string{
+		"Makefile": "LIB = libfoo.a\nCFLAGS = -O2\nall: $(LIB) prog libext.a\n\n" +
+			"$(LIB): a.o b.o\n\tar rcs $@ a.o b.o\n\n" +
+			"prog: main.o $(LIB)\n\t$(CC) -o prog main.o $(LIB)\n\n" +
+			"libext.a: vendor.o\n\tar rcs libext.a vendor.o\n\nvendor.o:\n\ttouch vendor.o\n",
+		"a.c":    "int b(void);\nint a(void) { return b(); }\n",
+		"b.c":    "int b(void) { return 2; }\n",
+		"main.c": "int a(void);\nint main(void) { return a(); }\n",
 	}
 	root, repository := writeRepository(t, files)
 	project, err := Discover(t.Context(), root, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app/main.c"), nil)
-	if err != nil {
-		t.Fatal(err)
+	var selectors []string
+	for _, program := range project.Programs {
+		selectors = append(selectors, program.Selector)
 	}
-	if got := unitPaths(parsed.Units); !slices.Equal(got, []string{"app/main.c", "app/run.c", "app/setup.c"}) {
-		t.Fatalf("closure took %v", got)
+	if !slices.Equal(selectors, []string{"c:libfoo.a", "c:prog"}) {
+		t.Fatalf("programs %v", selectors)
+	}
+	library, prog := programBySelector(t, project, "c:libfoo.a"), programBySelector(t, project, "c:prog")
+	if library.Kind != ProgramLibrary || !slices.Equal(unitPaths(library.Units), []string{"a.c", "b.c"}) || library.Anchor != (Site{Path: "Makefile", Line: 5}) ||
+		!reflect.DeepEqual(library.Evidence, []Observation{{Kind: "c_archive", Path: "Makefile", Line: 5, Fields: map[string]string{"output": "libfoo.a", "consumers": "prog"}, Values: []string{"a.c", "b.c"}}}) {
+		t.Fatalf("the archive: %+v", library)
+	}
+	if prog.Kind != ProgramExecutable || !slices.Equal(unitPaths(prog.Units), []string{"a.c", "b.c", "main.c"}) || prog.Anchor != (Site{Path: "Makefile", Line: 8}) ||
+		prog.Evidence[0].Fields["archives"] != "libfoo.a" {
+		t.Fatalf("the program linking it: %+v", prog)
+	}
+	var without []Observation
+	for _, observation := range project.Observations {
+		if observation.Kind == "c_archive_without_units" {
+			without = append(without, observation)
+		}
+	}
+	if !reflect.DeepEqual(without, []Observation{{Kind: "c_archive_without_units", Path: "libext.a", Values: []string{"vendor.o"}}}) {
+		t.Fatalf("an archive of no corpus member: %+v", without)
 	}
 }

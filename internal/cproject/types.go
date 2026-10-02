@@ -104,6 +104,12 @@ type UnitSpec struct {
 	// in a unit no link line links. It is nil for linked units, whose main
 	// is located by Parse.
 	Main *Position `json:"main,omitempty"`
+	// Outputs are, for a closure program's units, the build outputs whose
+	// inputs take the unit: link lines' outputs and archives, expanded
+	// through archives as a link's inputs are ("liblua.a", "lua"). Of
+	// several units defining a name, the linker closure takes the one that
+	// shares an output with the unit needing it; nothing else decides.
+	Outputs []string `json:"outputs,omitempty"`
 }
 
 // IncludedSource is a .c file that another corpus file #includes. It belongs
@@ -274,6 +280,13 @@ type Parsed struct {
 	// Outside are included .c files that none of the program's units entered
 	// on this platform.
 	Outside []string `json:"outside,omitempty"`
+	// Alternatives are the names several of a closure program's units
+	// define where the build does not say which one it links: "loopNowMs is
+	// defined in loop.c and util/fixedclock.c; the build does not say which
+	// is linked". AlternativeUnits are the units it holds only as such a
+	// definition, or for what one needs: alternatives, never linked members.
+	Alternatives     []Alternative `json:"alternatives,omitempty"`
+	AlternativeUnits []string      `json:"alternative_units,omitempty"`
 }
 
 // Main is the program's main definition.

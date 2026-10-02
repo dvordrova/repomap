@@ -54,40 +54,83 @@ directory with the root's command on its own makefile:
 1. Its default goal's compile and link lines join the build's, as the
    root's do: Lua's `testes/libs` gives five shared libraries,
    `c:testes/libs/lib1.so` …, anchored on its makefile's rules.
-2. When that goal compiles none of its units, they are compiled as that
+2. When that goal compiles none of its units and the makefile has an `all`
+   rule, `make -n -B -w -o <makefile> all` is taken as the default goal's
+   lines are: compile, archive and link lines. Lua 5.1.5's `src/Makefile`
+   asks for a platform by default and builds `liblua.a`, `lua` and `luac` on
+   `all`: `c:src/liblua.a`, `c:src/lua`, `c:src/luac`. No other named goal is
+   run: a platform's goal (`make macosx`) is a choice the build leaves to its
+   reader, so Lua 5.1.5's platform flags (`-DLUA_USE_MACOSX`, readline) are
+   not read; that is a known limit.
+3. When neither compiles any of its units, they are compiled as that
    makefile compiles their objects: one `make -n -B -k -w -o <makefile>
    x.o …` naming each unit's object relative to the directory, its own rule
    or make's built-in rule fed its `CFLAGS` and `CPPFLAGS`. Only their
    compile lines are taken, never a link line: a program is then found by
    its main (`c:etc/min.c`). Lua 5.1.5's `etc/Makefile` only prints "Please
-   choose a target" by default. A default goal compiling some of its units
-   leaves the others out, as the platform's build does (D3).
+   choose a target" by default and has no `all`. A goal compiling some of its
+   units leaves the others out, as the platform's build does (D3).
 
 Each unit records the makefile that compiled it and whether its flags come
 from that makefile's object rule (`UnitSpec.Makefile`, `ObjectRule`); the
 root's units name none. A run that fails is a `c_build_error` on its
-makefile, and step 2 still runs after step 1 fails; with `-k`, an object no
-rule makes fails the run while the others print, so a unit only the output
-leaves without a line is a `c_unit_unbuilt` on its makefile, not a build
-error. A program whose units kept clang's defaults because their makefile's
-runs failed carries that failure (`BuildErr`). The root's own units are
-never read by step 2: what its default goal leaves out is the platform's
-choice. Measured 2026-10-02 on moby, deploy, go, ghidra and kubernetes: 0, 0,
+makefile, and the next step still runs after one fails; with `-k`, an object
+no rule makes fails the run while the others print, so a unit only the
+output leaves without a line is a `c_unit_unbuilt` on its makefile, not a
+build error. A program whose units kept clang's defaults because their
+makefile's runs failed carries that failure (`BuildErr`). The root's own
+units are never read by steps 2 and 3: what its default goal leaves out is
+the platform's choice. Measured 2026-10-02 on moby, deploy, go, ghidra and kubernetes: 0, 0,
 2, 2 and 2 nested runs, none failing, discovery 2–9 s.
 
 Each link line is one program (`c:<output>`, anchored on its makefile rule)
 whose files are the units it links; a `-shared`/`-dynamiclib` line is a shared
-library. Compile lines without `-o` map `x.o` to `x.c` through make's working
-directory. Main is located when the program is parsed, not during discovery.
+library. Each archive the archiver writes (`ar` with an `r` or `q`
+operation) is a library of its own, `c:<archive>` (`ProgramLibrary`), whose
+files are its members, expanded as a link's inputs are, eight deep, a member
+no compile line produced going to its `Missing` (external review and owner,
+2026-10-02: the library is often the product, and Lua's C API reads as its
+entries, never as code `lua`'s main does not reach). Lua's `makefile` writes
+`liblua.a` and links it into `lua`: `c:liblua.a` (its 33 files) and `c:lua`
+(`lua.c` and the same 33). The archive is not folded into the programs that
+link it; each keeps its whole analysis, and a link line's `c_link` names the
+archives it links (`fields.archives`). An archive with no member a compile
+line produced is a `c_archive_without_units` observation and no target. A
+partial link (`-o x.o`) is expanded like an archive and is no target. A link
+expands an archive whole, not member by member in link order as a linker
+pulls them: Lua 5.1.5's `luac` links all of `liblua.a`'s members, a known
+limit. A rule names its output as written, else through a variable the same
+makefile assigns it to (`LUA_T= lua` and `$(LUA_T): …` anchor `c:lua` on
+`makefile:124`), one level deep, else line 0. Compile lines without `-o` map
+`x.o` to `x.c` through make's working directory. Main is located when the program is parsed, not during discovery.
 A unit no link line links (every unit without a build description, and with
 a `compile_commands.json`, which has no link lines) that has an exact,
 non-static `main` with a body (a filtered clang parse, since
 `-ast-dump-filter` matches substrings) is a program `c:<path>` whose files the
 linker closure decides: each unresolved external name goes to the one unit
-that defines it, or, of units in several directories defining it, to the one
-in the directory of the unit needing it (Lua 5.1.5's `etc/noparser.c` and
-`src/llex.c` both define `luaX_init`, which `src/lstate.c` calls); units of
-one directory defining it alike fail the program. Units no program links and that define no main are their
+that defines it. Of several units defining it, the build decides: the one a
+build output (a link line's output or an archive, expanded through archives
+as a link's inputs are, never a `c:<dir>/` grouping: `UnitSpec.Outputs`)
+takes together with the unit needing it, when exactly one is; a unit the
+build takes is never preferred over one it does not, and where a unit is
+written never decides (external review, 2026-10-02: a directory's own
+`fixedclock.c` may be the alternative its makefile does not link). Lua
+5.1.5's `src/lstate.c` calls `luaX_init`, which `src/llex.c` and
+`etc/noparser.c` define: `liblua.a` archives `lstate.c` with `llex.c`, so
+`c:etc/min.c` takes `llex.c`. Where the build says nothing, and no unit the
+program needs for another name defines it, every definer stays as an
+alternative (owner, 2026-10-02: alternatives, as an interface's
+implementations are, never a reason to fail): the program holds them all,
+records "{name} is defined in a, b; the build does not say which is linked"
+(`Parsed.Alternatives`, printed beside the program when it is parsed), marks
+the units it holds only as such a definition, or for what one needs, as
+alternatives, never linked members (`Parsed.AlternativeUnits`), and projects
+each definition as an object at its place, a call of the name having them all
+as its targets (`ResolutionAlternatives`); a function value naming it, and a
+read of a variable several alternatives define, name none of them. Two units
+the program links
+(not alternatives) defining one name differently still fail it. Units no
+program links and no archive takes and that define no main are their
 directory's library (`c:<dir>/`). A `.c` file another file `#include`s belongs
 to its includer; one no parsed unit enters on this platform (an `#ifdef` chose
 another backend) is outside this platform's build, and the run prints it
@@ -97,7 +140,9 @@ every program that links them.
 Discovery offers the target portfolio the files only one program compiles
 (a program whose every file is shared offers its link line's file); every
 unit of a program and its link-line file restore it. Native evidence rows are
-`c_link` (the makefile line, `fields.output`, `values` = linked files),
+`c_link` (the makefile line, `fields.output`, `fields.archives`, `values` =
+linked files), `c_archive` (the archive's rule, `fields.output`,
+`fields.consumers` = the link outputs that link it, `values` = its files),
 `c_main` and `c_library`; the portfolio prompt defines them.
 
 ## Native tooling and platform view
@@ -591,18 +636,39 @@ Install clang on the normal PATH: on macOS the Command Line Tools
 ## Verification
 
 `testdata/repositories/c` is the cumulative executable repository and
-`testdata/contracts/c.files.json` binds its exact inventory. Its `upper/`
-and `util/` have makefiles the root never enters
-(`TestCFixtureReadsADirectorysOwnMakefile`: `c:upper/upper.so`, a shared
-library its makefile links with `-I..`, and `c:util/ping.c`, compiled by
-`util/Makefile`'s object rule; `TestCFixtureNestedInARepositoryReadsItsMakefile`
-reads the whole fixture below a root without a makefile), and
-`TestDiscoverReadsADirectorysOwnMakefile` and
-`TestAClosurePrefersTheNeedingUnitsDirectory` cover a makefile that fails, an
-object no rule makes and the closure's directory tie-break. The native
-equivalents exist: Go reads every `go.mod`'s module, JS/TS the deepest
+`testdata/contracts/c.files.json` binds its exact inventory. Its `upper/`,
+`util/` and `wire/` have makefiles the root never enters
+(`TestCFixtureReadsADirectorysOwnMakefile`): `c:upper/upper.so`, a shared
+library its makefile links with `-I..`; `c:util/ping.c`, compiled by
+`util/Makefile`'s object rule; `c:util/watch.c`, whose `loopNowMs` `loop.c`
+and `util/fixedclock.c` both define with no build line deciding (`make watch`
+and `make watch-replay` each link one, and neither is read): both stay as
+alternatives, its program read, and `util/fixedclock.c` is also `c:util/`;
+and `wire/Makefile`, which asks for a platform by default and builds on
+`all` as Lua 5.1.5's `src/Makefile` does: `c:wire/libwire.a`, an archive
+anchored on its `$(LIB):` rule, `c:wire/wirecat`, which links it, and
+`c:wire/selftest.c`, built by hand, whose `wireEscape` is `escape.c`'s,
+which `libwire.a` archives with `encode.c`, never `escape_none.c` beside it
+(`c:wire/`). `TestCFixtureNestedInARepositoryReadsItsMakefile` reads the
+whole fixture below a root without a makefile. `TestDiscoverReadsADirectorysOwnMakefile`,
+`TestAClosureTakesTheDefinitionTheBuildLinks` and
+`TestAnArchiveIsALibraryOfItsMembers` cover a makefile that fails, an object
+no rule makes, the build deciding or not among definitions, an archive with
+no member a compile line produced and a rule named through a variable. The
+native equivalents exist: Go reads every `go.mod`'s module, JS/TS the deepest
 `package.json`, Clojure each `deps.edn` or `project.clj` up to the nested
 ones, Python every project manifest with the deepest root deciding a file.
+Several definitions of one name kept as alternatives have no equivalent in
+Go, Python or JS/TS: Go refuses two package-level definitions of a name at
+compile time and chooses among files by build constraints, which `go list`
+evaluates for the host before the Go adapter reads anything; Python binds a
+name when its module runs, and an import resolves to one module along the
+search path, the nearest case (two roots providing one module) being the
+package views' (PYTHON); JS/TS resolve each import to one file through
+`package.json` and the compiler. Clojure's nearest case, two files declaring
+one namespace on the classpath, is a missing equivalent, recorded rather than
+fabricated. A library a build packages for others to link has its analogue
+in each adapter's library targets, whose rules are their contracts'.
 The run tests cover discovery from link lines, repomap's own repository offering no C target
 and running no tool for its fixture, tooling sources beside a program, another
 adapter's explicit target, the files that restore each program, one parse per

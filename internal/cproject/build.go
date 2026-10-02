@@ -32,7 +32,10 @@ type Result struct {
 // the linker: a name with external linkage is one object per program, a static
 // function, variable or type is its definition location, so a header's static
 // inline function or a .c file several units include is one object. Two
-// external definitions of one name fail the program.
+// external definitions of one name fail the program, save a closure
+// program's alternatives (Parsed.Alternatives): each of their definitions is
+// an object at its place, and a call of the name has them all as its
+// alternative targets.
 //
 // Direct calls resolve across units; a call of a platform or package
 // function is invokes_external. A function passed as an argument is
@@ -61,6 +64,10 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 		imported: map[string]bool{}, importers: map[string]dependencies.Importer{}, escaped: map[string]bool{},
 		fieldRoles: map[*Node]fieldRole{}, assigned: map[*Node]*Node{},
 		callOf: map[*Node]*call{}, joined: map[*Node]bool{},
+		alternatives: map[string]bool{}, alternativeFunctions: map[string][]string{},
+	}
+	for _, alternative := range parsed.Alternatives {
+		b.alternatives[alternative.Name] = true
 	}
 	for _, unit := range parsed.Units {
 		b.scopes = append(b.scopes, newUnitScope(unit))
@@ -104,9 +111,16 @@ type builder struct {
 	externalFunctions map[string]string // name -> function ref
 	externalVariables map[string]string // name -> variable ref
 	definedAt         map[string]Position
-	functions         []*function
-	functionByRef     map[string]*function
-	tables            []table
+	// alternatives are the external names several units of a closure
+	// program define where the build does not say which it links
+	// (Parsed.Alternatives): each definition is an object of its own, at its
+	// place, and alternativeFunctions are a function name's definitions, in
+	// unit order, the targets of a call of it.
+	alternatives         map[string]bool
+	alternativeFunctions map[string][]string
+	functions            []*function
+	functionByRef        map[string]*function
+	tables               []table
 
 	slots    map[string]*slot
 	slotKeys []string
@@ -460,14 +474,14 @@ func (b *builder) defineRecord(info *recordInfo) {
 // functionRef is a function definition's identity: its name when it has
 // external linkage, else its definition location.
 func (b *builder) functionRef(s *unitScope, node *Node) string {
-	if s.internal[node.Name] {
+	if s.internal[node.Name] || b.alternatives[node.Name] {
 		return fmt.Sprintf("c:function:%s#%s", positionKey(node.Loc.Site()), node.Name)
 	}
 	return "c:function:@" + node.Name
 }
 
 func (b *builder) variableKey(s *unitScope, node *Node) string {
-	if s.internal[node.Name] {
+	if s.internal[node.Name] || b.alternatives[node.Name] {
 		return fmt.Sprintf("c:variable:%s#%s", positionKey(node.Loc.Site()), node.Name)
 	}
 	return "c:variable:@" + node.Name
@@ -484,12 +498,18 @@ func (b *builder) defineFunctionsAndVariables() error {
 				continue
 			}
 			switch {
+			case node.Kind == "FunctionDecl" && hasBody(node) && b.alternatives[node.Name]:
+				if ref := b.functionRef(scope, node); !slices.Contains(b.alternativeFunctions[node.Name], ref) {
+					b.alternativeFunctions[node.Name] = append(b.alternativeFunctions[node.Name], ref)
+				}
 			case node.Kind == "FunctionDecl" && hasBody(node):
 				ref := b.functionRef(scope, node)
 				if err := b.defineOnce("function", node.Name, site); err != nil {
 					return err
 				}
 				b.externalFunctions[node.Name] = ref
+			case node.Kind == "VarDecl" && node.StorageClass != "extern" && b.alternatives[node.Name]:
+				// Each definition is its own object; a read names none.
 			case node.Kind == "VarDecl" && node.StorageClass != "extern":
 				ref := b.variableKey(scope, node)
 				if node.Init != "" {
@@ -510,7 +530,7 @@ func (b *builder) defineFunctionsAndVariables() error {
 			switch {
 			case node.Kind == "FunctionDecl" && hasBody(node):
 				ref := b.functionRef(scope, node)
-				if !scope.internal[node.Name] && b.definedAt["function "+node.Name] != site {
+				if !scope.internal[node.Name] && !b.alternatives[node.Name] && b.definedAt["function "+node.Name] != site {
 					continue
 				}
 				fn := b.functionByRef[ref]
@@ -530,7 +550,7 @@ func (b *builder) defineFunctionsAndVariables() error {
 				}
 			case node.Kind == "VarDecl" && node.StorageClass != "extern":
 				ref := b.variableKey(scope, node)
-				if !scope.internal[node.Name] && node.Init == "" && b.definedAt["variable "+node.Name].File != "" && b.definedAt["variable "+node.Name] != site {
+				if !scope.internal[node.Name] && !b.alternatives[node.Name] && node.Init == "" && b.definedAt["variable "+node.Name].File != "" && b.definedAt["variable "+node.Name] != site {
 					continue // a tentative definition of a variable another unit initializes
 				}
 				if scope.internal[node.Name] && scope.statics[node.Name] != node {
@@ -822,6 +842,17 @@ func (b *builder) emitCalls() {
 		}
 		r := p.RelationInput{SourceRef: c.relationRef, Kind: p.RelationCalls, FromRef: c.from, Location: at, Patterns: []p.RelationPatternInput{pattern}}
 		switch {
+		case len(c.direct.alternatives) > 0:
+			// Several units define the name and the build does not say
+			// which the program links: each is a target.
+			r.ToRefs, r.Resolution = slices.Clone(c.direct.alternatives), p.ResolutionAlternatives
+			var places []string
+			for _, ref := range c.direct.alternatives {
+				if at := b.objects[ref].Location; at != nil {
+					places = append(places, at.Path)
+				}
+			}
+			r.Witnesses = []p.Witness{{Kind: "c_call", Detail: fmt.Sprintf("call of %s, defined in %s; the build does not say which is linked", c.selector, strings.Join(places, " and ")), Location: at}}
 		case c.direct.ref != "":
 			r.ToRefs, r.Resolution = []string{c.direct.ref}, p.ResolutionExact
 			if c.direct.external {
@@ -1025,7 +1056,13 @@ func (b *builder) input() (p.Input, error) {
 			return p.Input{}, err
 		}
 	}
-	target := p.TargetInput{Language: "c", Kind: string(program.Kind), Name: program.Name, Selector: program.Selector, AnchorFileRef: program.AnchorFileRef}
+	// The index's target kind is a word the report says: a shared library
+	// is a library there, as its outcome scope is.
+	kind := string(program.Kind)
+	if program.Kind == ProgramShared {
+		kind = string(ProgramLibrary)
+	}
+	target := p.TargetInput{Language: "c", Kind: kind, Name: program.Name, Selector: program.Selector, AnchorFileRef: program.AnchorFileRef}
 	// The executable a link line writes is named by its output (Makefile:49
 	// links redis-server); a program built by hand from its main unit has
 	// no name the build gives it.

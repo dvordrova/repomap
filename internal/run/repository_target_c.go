@@ -66,6 +66,15 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 				options.Output.State("C program", "parsed", "program: "+native.Selector,
 					"outside this platform's build: "+strings.Join(parsed.Outside, ", "))
 			}
+			if len(parsed.Alternatives) > 0 && options.Output != nil {
+				// Names several units define, the build silent on which is
+				// linked: every definer kept, as alternatives.
+				lines := []string{"program: " + native.Selector}
+				for _, alternative := range parsed.Alternatives {
+					lines = append(lines, alternative.Name+" is defined in "+strings.Join(alternative.Units, ", ")+"; the build does not say which is linked")
+				}
+				options.Output.State("C program", "alternatives", lines...)
+			}
 			return repositoryTargetDispatchBinding{
 				Target: target, ProgramFacts: &cRepositoryProgramFacts{Parsed: parsed, plan: plan}, ProgramFactsBound: true,
 				CPlatform: cPlatformView(parsed),
@@ -136,10 +145,13 @@ func cPlatformView(parsed *cproject.Parsed) *debugdump.CPlatform {
 		BuildError: parsed.Program.BuildErr,
 		Outside:    slices.Clone(parsed.Outside),
 	}
+	for _, alternative := range parsed.Alternatives {
+		view.Alternatives = append(view.Alternatives, alternative.Name+": "+strings.Join(alternative.Units, ", "))
+	}
 	for _, unit := range parsed.Units {
 		view.Units = append(view.Units, debugdump.CPlatformUnit{
 			Path: unit.Path, Built: unit.Built, Kept: slices.Clone(unit.Args), Dropped: slices.Clone(unit.Dropped),
-			Makefile: unit.Makefile, ObjectRule: unit.ObjectRule,
+			Makefile: unit.Makefile, ObjectRule: unit.ObjectRule, Alternative: slices.Contains(parsed.AlternativeUnits, unit.Path),
 		})
 	}
 	return view

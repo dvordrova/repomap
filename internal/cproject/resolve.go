@@ -838,6 +838,10 @@ type target struct {
 	ref        string // repository object, or external symbol object
 	external   bool
 	unresolved string // why nothing is known, for a repository declaration no unit defines
+	// alternatives are the definitions of a name several units define where
+	// the build does not say which is linked (Parsed.Alternatives); ref is
+	// then empty.
+	alternatives []string
 }
 
 // resolveFunction finds the function a reference names, the way the linker
@@ -853,6 +857,9 @@ func (b *builder) resolveFunction(s *unitScope, ref *DeclRef) target {
 	}
 	if definition, ok := b.externalFunctions[name]; ok {
 		return target{ref: definition}
+	}
+	if definitions := b.alternativeFunctions[name]; len(definitions) > 0 {
+		return target{alternatives: definitions}
 	}
 	if declaration := s.external[ref.ID]; declaration != nil {
 		return target{ref: b.externalSymbol("function", declaration.Name, declaration), external: true}
@@ -1477,7 +1484,7 @@ func (b *builder) findEscapes() {
 			}
 		case "DeclRefExpr":
 			if ref := n.ReferencedDecl; ref != nil && ref.Kind == "FunctionDecl" {
-				if fn := b.repositoryFunction(scope, ref); fn != "" {
+				for _, fn := range b.repositoryFunctions(scope, ref) {
 					b.escaped[fn] = true
 				}
 			}
@@ -1499,6 +1506,18 @@ func (b *builder) findEscapes() {
 	for _, t := range b.tables {
 		visit(t.scope, initializer(t.node))
 	}
+}
+
+// repositoryFunctions are the repository functions a reference names: the
+// one repositoryFunction names, else a name's alternative definitions.
+func (b *builder) repositoryFunctions(s *unitScope, ref *DeclRef) []string {
+	if fn := b.repositoryFunction(s, ref); fn != "" {
+		return []string{fn}
+	}
+	if !s.internal[ref.Name] {
+		return b.alternativeFunctions[ref.Name]
+	}
+	return nil
 }
 
 // repositoryFunction is the repository function a reference names, or "",

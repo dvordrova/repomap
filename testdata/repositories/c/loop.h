@@ -47,5 +47,6 @@ void loopSetBeforeSleep(loop *l, loopBeforeSleepProc *proc);
 int loopProcessEvents(loop *l);
 void loopMain(loop *l);
 void loopStop(loop *l);
+long long loopNowMs(void);
 
 #endif

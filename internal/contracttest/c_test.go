@@ -171,10 +171,11 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 		}
 	}
 	// Each link line is a program; tools/dump.c, which no link line links, is
-	// one through its own main. Every unit belongs to a program, so there is
-	// no library. upper/ and util/ have makefiles of their own (the test
-	// below).
-	if !reflect.DeepEqual(selectors, []string{"c:kvcli", "c:kvd", "c:tools/dump.c", "c:upper/upper.so", "c:util/ping.c"}) {
+	// one through its own main. Every root unit belongs to a program, so the
+	// root has no library. upper/, util/ and wire/ have makefiles of their
+	// own (the test below).
+	if !reflect.DeepEqual(selectors, []string{"c:kvcli", "c:kvd", "c:tools/dump.c", "c:upper/upper.so", "c:util/", "c:util/ping.c", "c:util/watch.c",
+		"c:wire/", "c:wire/libwire.a", "c:wire/selftest.c", "c:wire/wirecat"}) {
 		t.Fatalf("programs: %v", selectors)
 	}
 
@@ -449,10 +450,15 @@ func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
 // A directory's own makefile the root never reaches is read as a developer
 // runs make there (C.md "Nested makefiles"): upper/makefile's default goal
 // links upper.so, a shared library whose unit takes -I.. and -fPIC; util's
-// Makefile only lists its examples by default, so util/ping.c is compiled as
-// that makefile compiles ping.o, its flags only, and is a program through its
-// own main. Both parse in the build's view, ping's closure taking the root's
-// net.c.
+// Makefile only lists its examples by default and has no `all`, so its units
+// are compiled as that makefile compiles their objects, their flags only,
+// ping.c and watch.c programs through their own mains; wire's Makefile asks
+// for a platform by default and builds on `all`, as Lua 5.1.5's src/Makefile
+// does. All parse in the build's view: ping's closure takes the root's net.c;
+// watch's loopNowMs, which loop.c and util/fixedclock.c define and no build
+// line read decides between, keeps both as alternatives (owner, 2026-10-02),
+// never the one beside it; selftest's wireEscape is escape.c's, which
+// libwire.a archives with encode.c, never escape_none.c beside them.
 func TestCFixtureReadsADirectorysOwnMakefile(t *testing.T) {
 	fixture := loadCFixture(t)
 	var runs []string
@@ -462,7 +468,9 @@ func TestCFixtureReadsADirectorysOwnMakefile(t *testing.T) {
 			t.Fatalf("%s failed: %s", build.Path, build.Err)
 		}
 	}
-	if want := []string{"upper/makefile: make -n -B -w -o makefile", "util/Makefile: make -n -B -w -o Makefile", "util/Makefile: make -n -B -k -w -o Makefile ping.o"}; !reflect.DeepEqual(runs, want) {
+	if want := []string{"upper/makefile: make -n -B -w -o makefile", "util/Makefile: make -n -B -w -o Makefile",
+		"util/Makefile: make -n -B -k -w -o Makefile fixedclock.o ping.o watch.o", "wire/Makefile: make -n -B -w -o Makefile",
+		"wire/Makefile: make -n -B -w -o Makefile all"}; !reflect.DeepEqual(runs, want) {
 		t.Fatalf("nested runs %q, want %q", runs, want)
 	}
 	upper := fixture.program(t, "c:upper/upper.so")
@@ -489,6 +497,49 @@ func TestCFixtureReadsADirectorysOwnMakefile(t *testing.T) {
 	}
 	if units := cUnitPaths(fixture.parsed["c:upper/upper.so"].Units); !reflect.DeepEqual(units, []string{"upper/upper.c"}) {
 		t.Fatalf("upper.so parses %v", units)
+	}
+	// The report has words for an executable and a library, not for the
+	// adapter's own kinds: a shared library and an archive are indexed as
+	// libraries.
+	for _, selector := range []string{"c:upper/upper.so", "c:wire/libwire.a"} {
+		indexed, err := cproject.Index(fixture.repository, fixture.parsed[selector])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if kind := indexed.Input.Target.Kind; kind != "library" {
+			t.Fatalf("%s is indexed as %q, want library", selector, kind)
+		}
+	}
+	// watch's clock: two definitions, the build silent on which it links.
+	watch := fixture.parsed["c:util/watch.c"]
+	if units := cUnitPaths(watch.Units); !reflect.DeepEqual(units, []string{"loop.c", "net.c", "util/fixedclock.c", "util/watch.c"}) ||
+		!reflect.DeepEqual(watch.Alternatives, []cproject.Alternative{{Name: "loopNowMs", Units: []string{"loop.c", "util/fixedclock.c"}}}) ||
+		!reflect.DeepEqual(watch.AlternativeUnits, []string{"loop.c", "util/fixedclock.c"}) {
+		t.Fatalf("watch: units %v, alternatives %+v, alternative units %v", units, watch.Alternatives, watch.AlternativeUnits)
+	}
+	if clock := fixture.program(t, "c:util/"); clock.Kind != cproject.ProgramLibrary || !reflect.DeepEqual(cSpecPaths(clock.Units), []string{"util/fixedclock.c"}) {
+		t.Fatalf("util's library: %+v", clock)
+	}
+	// wire: the archive, the program linking it, and selftest's closure the
+	// archive decides.
+	library := fixture.program(t, "c:wire/libwire.a")
+	libraryRule, _ := fixture.at(t, "wire/Makefile", "$(LIB): encode.o", "")
+	if library.Kind != cproject.ProgramLibrary || library.Anchor != (cproject.Site{Path: "wire/Makefile", Line: libraryRule}) ||
+		!reflect.DeepEqual(cSpecPaths(library.Units), []string{"wire/encode.c", "wire/escape.c"}) ||
+		!reflect.DeepEqual(library.Evidence, []cproject.Observation{{Kind: "c_archive", Path: "wire/Makefile", Line: libraryRule,
+			Fields: map[string]string{"output": "wire/libwire.a", "consumers": "wire/wirecat"}, Values: []string{"wire/encode.c", "wire/escape.c"}}}) {
+		t.Fatalf("libwire.a: %+v", library)
+	}
+	wirecat := fixture.program(t, "c:wire/wirecat")
+	if !reflect.DeepEqual(cSpecPaths(wirecat.Units), []string{"wire/encode.c", "wire/escape.c", "wire/wirecat.c"}) || wirecat.Evidence[0].Fields["archives"] != "wire/libwire.a" {
+		t.Fatalf("wirecat: %+v", wirecat)
+	}
+	selftest := fixture.parsed["c:wire/selftest.c"]
+	if units := cUnitPaths(selftest.Units); !reflect.DeepEqual(units, []string{"wire/encode.c", "wire/escape.c", "wire/selftest.c"}) || len(selftest.Alternatives) != 0 {
+		t.Fatalf("selftest: units %v, alternatives %+v", units, selftest.Alternatives)
+	}
+	if raw := fixture.program(t, "c:wire/"); !reflect.DeepEqual(cSpecPaths(raw.Units), []string{"wire/escape_none.c"}) {
+		t.Fatalf("wire's library: %+v", raw)
 	}
 }
 
@@ -525,7 +576,10 @@ func TestCFixtureNestedInARepositoryReadsItsMakefile(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"c:" + prefix + "kvcli", "c:" + prefix + "kvd", "c:" + prefix + "tools/dump.c", "c:" + prefix + "upper/upper.so", "c:" + prefix + "util/ping.c"}
+	var want []string
+	for _, name := range []string{"kvcli", "kvd", "tools/dump.c", "upper/upper.so", "util/", "util/ping.c", "util/watch.c", "wire/", "wire/libwire.a", "wire/selftest.c", "wire/wirecat"} {
+		want = append(want, "c:"+prefix+name)
+	}
 	if !reflect.DeepEqual(selectors, want) {
 		t.Fatalf("programs %v, want %v", selectors, want)
 	}

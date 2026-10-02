@@ -27,7 +27,20 @@ type buildDescription struct {
 	compiles  []compileRecord
 	links     []linkRecord
 	archives  map[string][]string // absolute archive or partial-link object -> absolute members
-	entered   []string            // absolute directories make reported entering
+	// archiveRules are the archiver's lines (`ar rcs liblua.a …`), each
+	// archive a library target of its own (C.md "Build description and
+	// targets"); a partial link (`ld -r`, `-o x.o`) is expanded like one
+	// and is no target.
+	archiveRules []archiveRecord
+	entered      []string // absolute directories make reported entering
+}
+
+// archiveRecord is one archiver line: the archive as written and absolute,
+// the directory it ran in.
+type archiveRecord struct {
+	written string
+	output  string
+	dir     string
 }
 
 type compileRecord struct {
@@ -262,6 +275,9 @@ func parseDryRun(env parseEnv, output, start string) buildDescription {
 							description.archives[archive] = append(description.archives[archive], absolute(cwd, member))
 						}
 					}
+					if !slices.ContainsFunc(description.archiveRules, func(rule archiveRecord) bool { return rule.output == archive }) {
+						description.archiveRules = append(description.archiveRules, archiveRecord{written: words[2], output: archive, dir: cwd})
+					}
 				}
 			case compilerName.MatchString(program):
 				args := words[1:]
@@ -477,29 +493,7 @@ func linkPrograms(env parseEnv, description buildDescription) ([]Program, map[st
 	var observations []Observation
 	linked := map[string]bool{}
 	for _, link := range description.links {
-		var specs []UnitSpec
-		var missing []string
-		seen := map[string]bool{}
-		var add func(input string, depth int)
-		add = func(input string, depth int) {
-			if spec, ok := objects[input]; ok {
-				if key := unitKey(spec); !seen[key] {
-					seen[key] = true
-					specs = append(specs, spec)
-				}
-				return
-			}
-			if members, ok := description.archives[input]; ok && depth < 8 {
-				for _, member := range members {
-					add(member, depth+1)
-				}
-				return
-			}
-			missing = append(missing, relativeTo(env.roots, input))
-		}
-		for _, input := range link.inputs {
-			add(input, 0)
-		}
+		specs, missing, archives := expandInputs(env, description, objects, link.inputs)
 		name := relativeTo(env.roots, link.output)
 		if len(specs) == 0 {
 			observations = append(observations, Observation{Kind: "c_link_without_units", Path: name, Values: missing})
@@ -519,10 +513,144 @@ func linkPrograms(env parseEnv, description buildDescription) ([]Program, map[st
 		if link.shared {
 			kind = ProgramShared
 		}
+		fields := map[string]string{"output": name}
+		if len(archives) > 0 {
+			// The archives the line links, each a library target of its own.
+			fields["archives"] = strings.Join(archives, " ")
+		}
 		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: kind, Units: specs, Anchor: anchor, LinkArgs: link.args, Missing: missing,
-			Evidence: []Observation{{Kind: "c_link", Path: anchor.Path, Line: anchor.Line, Fields: map[string]string{"output": name}, Values: paths}}})
+			Evidence: []Observation{{Kind: "c_link", Path: anchor.Path, Line: anchor.Line, Fields: fields, Values: paths}}})
 	}
 	return programs, linked, observations
+}
+
+// expandInputs are the units a line's inputs take, expanded through
+// archives and partial links eight deep, the inputs no compile line of the
+// build produced, and the archives the archiver made among them, by path.
+func expandInputs(env parseEnv, description buildDescription, objects map[string]UnitSpec, inputs []string) ([]UnitSpec, []string, []string) {
+	var specs []UnitSpec
+	var missing, archives []string
+	seen := map[string]bool{}
+	var add func(input string, depth int)
+	add = func(input string, depth int) {
+		if spec, ok := objects[input]; ok {
+			if key := unitKey(spec); !seen[key] {
+				seen[key] = true
+				specs = append(specs, spec)
+			}
+			return
+		}
+		if members, ok := description.archives[input]; ok && depth < 8 {
+			if slices.ContainsFunc(description.archiveRules, func(rule archiveRecord) bool { return rule.output == input }) {
+				if name := relativeTo(env.roots, input); !slices.Contains(archives, name) {
+					archives = append(archives, name)
+				}
+			}
+			for _, member := range members {
+				add(member, depth+1)
+			}
+			return
+		}
+		missing = append(missing, relativeTo(env.roots, input))
+	}
+	for _, input := range inputs {
+		add(input, 0)
+	}
+	slices.Sort(archives)
+	return specs, missing, archives
+}
+
+// archivePrograms turns each archive the archiver made into a library
+// target of its members (C.md "Build description and targets"): Lua's
+// liblua.a, whose C API a program with a main reads as unreachable code.
+// Its evidence names the link lines that take it; an archive with no member
+// a compile line produced is an observation only.
+func archivePrograms(env parseEnv, description buildDescription) ([]Program, map[string]bool, []Observation) {
+	objects := map[string]UnitSpec{}
+	for _, record := range description.compiles {
+		objects[record.object] = record.spec
+	}
+	consumers := map[string][]string{}
+	for _, link := range description.links {
+		_, _, archives := expandInputs(env, description, objects, link.inputs)
+		for _, archive := range archives {
+			consumers[archive] = append(consumers[archive], relativeTo(env.roots, link.output))
+		}
+	}
+	var programs []Program
+	var observations []Observation
+	covered := map[string]bool{}
+	for _, rule := range description.archiveRules {
+		specs, missing, _ := expandInputs(env, description, objects, description.archives[rule.output])
+		name := relativeTo(env.roots, rule.output)
+		if len(specs) == 0 {
+			observations = append(observations, Observation{Kind: "c_archive_without_units", Path: name, Values: missing})
+			continue
+		}
+		sortUnits(specs)
+		var paths []string
+		for _, spec := range specs {
+			covered[unitKey(spec)] = true
+			paths = append(paths, spec.Path)
+		}
+		anchor := Site{Path: specs[0].Path}
+		if makefile := dirMakefile(env, rule.dir); makefile != "" {
+			anchor = Site{Path: makefile, Line: ruleLine(env, makefile, rule.written)}
+		}
+		fields := map[string]string{"output": name}
+		if users := consumers[name]; len(users) > 0 {
+			slices.Sort(users)
+			fields["consumers"] = strings.Join(slices.Compact(users), " ")
+		}
+		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: ProgramLibrary, Units: specs, Anchor: anchor, Missing: missing,
+			Evidence: []Observation{{Kind: "c_archive", Path: anchor.Path, Line: anchor.Line, Fields: fields, Values: paths}}})
+	}
+	return programs, covered, observations
+}
+
+// unitOutputs is, by unit key, the build outputs whose inputs take the unit:
+// each link line's output and each archive or partial link, expanded through
+// archives as linkPrograms expands a link's inputs, by its path from the
+// root.
+func unitOutputs(env parseEnv, description buildDescription) map[string][]string {
+	objects := map[string]UnitSpec{}
+	for _, record := range description.compiles {
+		objects[record.object] = record.spec
+	}
+	owners := map[string][]string{}
+	own := func(output string, inputs []string) {
+		name := relativeTo(env.roots, output)
+		seen := map[string]bool{}
+		var add func(input string, depth int)
+		add = func(input string, depth int) {
+			if spec, ok := objects[input]; ok {
+				if key := unitKey(spec); !seen[key] {
+					seen[key] = true
+					owners[key] = append(owners[key], name)
+				}
+				return
+			}
+			if members, ok := description.archives[input]; ok && depth < 8 {
+				for _, member := range members {
+					add(member, depth+1)
+				}
+			}
+		}
+		for _, input := range inputs {
+			add(input, 0)
+		}
+	}
+	for _, link := range description.links {
+		own(link.output, link.inputs)
+	}
+	for archive, members := range description.archives {
+		own(archive, members)
+	}
+	for key, names := range owners {
+		slices.Sort(names)
+		owners[key] = slices.Compact(names)
+	}
+	return owners
 }
 
 func relativeTo(roots []string, file string) string {
@@ -549,8 +677,10 @@ func dirMakefile(env parseEnv, dir string) string {
 	return ""
 }
 
-// ruleLine is the line of the rule whose targets name the link output as
-// written, or 0 when the rule names it through a variable.
+// ruleLine is the line of the rule whose targets name the output as
+// written, else of the rule whose targets name it through a variable the
+// same makefile assigns it to (`LUA_T= lua`, then `$(LUA_T): …`), one level
+// deep; 0 when neither is written.
 func ruleLine(env parseEnv, makefile, output string) int {
 	id, ok := env.repository.ID(makefile)
 	if !ok {
@@ -560,11 +690,31 @@ func ruleLine(env parseEnv, makefile, output string) int {
 	if err != nil {
 		return 0
 	}
-	rule := regexp.MustCompile(`^(?:[^:#=\t][^:#=]*\s)?` + regexp.QuoteMeta(output) + `(?:\s[^:#=]*)?::?(?:[^=]|$)`)
-	for number, line := range strings.Split(string(content.Bytes), "\n") {
-		if rule.MatchString(line) {
-			return number + 1
+	lines := strings.Split(string(content.Bytes), "\n")
+	find := func(target string) int {
+		rule := regexp.MustCompile(`^(?:[^:#=\t][^:#=]*\s)?` + target + `(?:\s[^:#=]*)?::?(?:[^=]|$)`)
+		for number, line := range lines {
+			if rule.MatchString(line) {
+				return number + 1
+			}
+		}
+		return 0
+	}
+	if line := find(regexp.QuoteMeta(output)); line > 0 {
+		return line
+	}
+	for _, line := range lines {
+		match := makeAssignment.FindStringSubmatch(line)
+		if match == nil || !slices.Contains(strings.Fields(match[2]), output) {
+			continue
+		}
+		name := regexp.QuoteMeta(match[1])
+		if at := find(`\$(?:\(` + name + `\)|\{` + name + `\})`); at > 0 {
+			return at
 		}
 	}
 	return 0
 }
+
+// makeAssignment is a makefile variable assignment: its name and value.
+var makeAssignment = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*(?::=|::=|\?=|\+=|=)\s*(.*?)\s*$`)

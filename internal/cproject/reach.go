@@ -54,15 +54,17 @@ func (b *builder) markUnreachable() {
 		switch n.Kind {
 		case "DeclRefExpr":
 			if ref := n.ReferencedDecl; ref != nil && ref.Kind == "FunctionDecl" {
-				if fn := b.repositoryFunction(scope, ref); fn != "" {
-					named(fn)
+				if fns := b.repositoryFunctions(scope, ref); len(fns) > 0 {
+					for _, fn := range fns {
+						named(fn)
+					}
 				} else if loadsCode[ref.Name] {
 					outside = true
 				}
 			}
 		case "CleanupAttr":
 			if ref := n.CleanupFunction; ref != nil {
-				if fn := b.repositoryFunction(scope, ref); fn != "" {
+				for _, fn := range b.repositoryFunctions(scope, ref) {
 					named(fn)
 				}
 			}
@@ -99,6 +101,10 @@ func (b *builder) markUnreachable() {
 				continue
 			}
 			fn := b.repositoryFunction(scope, &DeclRef{ID: node.ID, Kind: node.Kind, Name: node.Name})
+			if b.alternatives[node.Name] && hasBody(node) {
+				// An alternative definition is its own function.
+				fn = b.functionRef(scope, node)
+			}
 			if fn != "" && !scope.internal[node.Name] {
 				external = append(external, fn)
 				if scope.platform[node.Name] != nil || strings.HasPrefix(node.Name, "_") {

@@ -62,6 +62,10 @@ type CPlatform struct {
 	// Outside are the included sources no unit enters on this platform: an
 	// #if chose another backend.
 	Outside []string `json:"outside,omitempty"`
+	// Alternatives are the names several of the program's units define
+	// where the build does not say which it links, each "name: a, b"
+	// (C.md "Build description and targets").
+	Alternatives []string `json:"alternatives,omitempty"`
 }
 
 // CPlatformUnit is one translation unit's flags: those the allowlist kept
@@ -77,6 +81,10 @@ type CPlatformUnit struct {
 	// rather than a line of its default goal (C.md "Nested makefiles").
 	Makefile   string `json:"makefile,omitempty"`
 	ObjectRule bool   `json:"object_rule,omitempty"`
+	// Alternative says the program holds the unit only as a name's
+	// alternative definition, or for what one needs: no link line of the
+	// build says it is linked.
+	Alternative bool `json:"alternative,omitempty"`
 }
 
 // RunTiming is the Time stage of a run as data.

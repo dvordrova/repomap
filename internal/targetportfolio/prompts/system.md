@@ -34,9 +34,10 @@ Each native row cites its complete evidence through evidence_refs in the shared 
 - documented_command, documented_import: an exact fenced shell statement or import line from a guide; fields.heading is the nearest heading, fields.text the statement.
 - go_main: a Go main package root; fields.package is its import path.
 - own_main_packages, own_main_consumers, other_module_imports: fields.count and values list a Go module's own main packages, those of them that import its public packages, and imports of its public packages by other modules.
-- c_link: a link line of the C build description; fields.output is the program it writes and values are the C files it links.
+- c_link: a link line of the C build description; fields.output is the program it writes, fields.archives the archives it links, and values are the C files it links.
+- c_archive: an archive of the C build description, a library of its own; fields.output is the archive, fields.consumers the link lines' outputs that link it, and values are the C files it holds.
 - c_main: a C main definition in a file that no link line links.
-- c_library: values are the C files of one directory that no link line links and that define no main.
+- c_library: values are the C files of one directory that no link line or archive takes and that define no main.
 
 launch_file_executable records the source file's executable permission bit; it does not determine whether an interpreter can invoke that file. module_level_relative_import records direct module-level relative import syntax, including wildcard names. These observations are source facts, not execution results or role decisions. They do not cancel an author's shebang as a native candidate basis.
 

@@ -91,6 +91,15 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 
 	programs, linked, observations := linkPrograms(env, description)
 	project.Observations = append(project.Observations, observations...)
+	// Each archive is a library target of its members, which then join no
+	// directory's library.
+	archives, covered, observations := archivePrograms(env, description)
+	programs = append(programs, archives...)
+	project.Observations = append(project.Observations, observations...)
+	for key := range covered {
+		linked[key] = true
+	}
+	owners := unitOutputs(env, description)
 
 	// Units no link line links: a filtered parse finds an exact main.
 	var unlinked []int
@@ -142,12 +151,15 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 			libraries[dir] = append(libraries[dir], spec)
 			continue
 		}
+		// The closure reads which build outputs take each unit.
 		var pool []UnitSpec
 		for _, other := range units {
 			if unitKey(other) != unitKey(spec) && other.Main == nil {
+				other.Outputs = owners[unitKey(other)]
 				pool = append(pool, other)
 			}
 		}
+		spec.Outputs = owners[unitKey(spec)]
 		program := Program{Selector: "c:" + spec.Path, Name: spec.Path, Kind: ProgramExecutable, Units: []UnitSpec{spec}, Closure: true, Pool: pool,
 			Anchor:   Site{Path: spec.Main.File, Line: spec.Main.Line},
 			Evidence: []Observation{{Kind: "c_main", Path: spec.Main.File, Line: spec.Main.Line}}}
@@ -369,6 +381,8 @@ func parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 		}
 		failed = append(failed, i)
 	}
+	var alternatives []Alternative
+	var alternativeUnits []string
 	if program.Closure {
 		var pool []*Unit
 		for i := 1; i < len(units); i++ {
@@ -376,16 +390,29 @@ func parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 				pool = append(pool, units[i])
 			}
 		}
-		taken, unresolved, err := linkClosure(units[0], pool)
+		// The build outputs taking each unit, as the program's own specs
+		// say: the store may hold a unit parsed for another program.
+		outputs := map[*Unit][]string{}
+		for i, unit := range units {
+			if errs[i] == nil {
+				outputs[unit] = specs[i].Outputs
+			}
+		}
+		taken, err := linkClosure(units[0], pool, outputs)
 		if err != nil {
 			return nil, program.explain(err)
 		}
 		for _, i := range failed {
-			if name := firstMentioned(repository, specs[i], unresolved); name != "" {
+			if name := firstMentioned(repository, specs[i], taken.unresolved); name != "" {
 				return nil, program.explain(fmt.Errorf("%w; it may define %s, which %s uses", errs[i], name, program.Name))
 			}
 		}
-		units = taken
+		units = taken.units
+		alternatives, alternativeUnits = taken.alternatives, nil
+		for _, unit := range taken.alternative {
+			alternativeUnits = append(alternativeUnits, unit.Path)
+		}
+		slices.Sort(alternativeUnits)
 	}
 	slices.SortStableFunc(units, func(a, b *Unit) int {
 		if c := strings.Compare(a.Path, b.Path); c != 0 {
@@ -393,7 +420,7 @@ func parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 		}
 		return strings.Compare(unitKey(a.UnitSpec), unitKey(b.UnitSpec))
 	})
-	parsed := &Parsed{Program: program, Toolchain: tool, Units: units, Outside: outsideSources(program, units)}
+	parsed := &Parsed{Program: program, Toolchain: tool, Units: units, Outside: outsideSources(program, units), Alternatives: alternatives, AlternativeUnits: alternativeUnits}
 	for _, unit := range units {
 		for _, node := range unit.Decls {
 			if !exactMain(node) {

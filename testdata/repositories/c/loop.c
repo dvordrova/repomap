@@ -72,3 +72,12 @@ void loopMain(loop *l) {
 void loopStop(loop *l) {
     l->stop = 1;
 }
+
+#include <time.h>
+
+/* Milliseconds on the monotonic clock, for timing what the loop waits on. */
+long long loopNowMs(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}

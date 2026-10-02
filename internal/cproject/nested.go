@@ -20,10 +20,13 @@ var makefileNames = []string{"GNUmakefile", "makefile", "Makefile"}
 // .c units whose nearest makefile is its own that no line compiled yet,
 // shallow directories first. Its default goal is dry-run as the root's is,
 // and its compile and link lines join description; the units still
-// uncompiled are then compiled as that makefile compiles their objects
-// (`make -n -B -k -w -o <makefile> x.o …`), taking their compile lines only:
-// Lua 5.1.5's etc/Makefile prints "Please choose a target" by default and
-// compiles min.c with -I../src. It returns each dry run's record.
+// uncompiled, when it compiled none of them, are then built by its `all`
+// rule when it has one, as the default goal's are (Lua 5.1.5's src/Makefile:
+// liblua.a, lua, luac), and otherwise compiled as that makefile compiles
+// their objects (`make -n -B -k -w -o <makefile> x.o …`), taking their
+// compile lines only: Lua 5.1.5's etc/Makefile prints "Please choose a
+// target" by default and compiles min.c with -I../src. It returns each dry
+// run's record.
 func readNested(ctx context.Context, env parseEnv, description *buildDescription, skip func(string) bool) ([]Build, []Observation, map[string]string) {
 	makefileOf := map[string]string{}
 	for _, name := range makefileNames {
@@ -116,6 +119,11 @@ func readNested(ctx context.Context, env parseEnv, description *buildDescription
 			for archive, members := range read.archives {
 				description.archives[archive] = append(description.archives[archive], members...)
 			}
+			for _, rule := range read.archiveRules {
+				if !slices.ContainsFunc(description.archiveRules, func(known archiveRecord) bool { return known.output == rule.output }) {
+					description.archiveRules = append(description.archiveRules, rule)
+				}
+			}
 			return len(read.compiles)
 		}
 		// Its default goal, as the root's: what `make` there builds.
@@ -134,13 +142,35 @@ func readNested(ctx context.Context, env parseEnv, description *buildDescription
 			join(output, true)
 		}
 		builds = append(builds, build)
-		// Its units, when its default goal compiles none of them, as it
-		// compiles their objects: their flags only, never a link line. A
-		// default goal compiling some of them leaves the others out as this
-		// platform's build does (owner decision D3).
+		// A default goal compiling some of its units leaves the others out
+		// as this platform's build does (owner decision D3).
 		if left := pending(); len(left) < len(units) {
 			continue
 		}
+		// When it compiles none of them and the makefile has an `all` rule,
+		// what `all` builds, as the default goal's lines are taken: Lua
+		// 5.1.5's src/Makefile chooses a platform by default and builds
+		// liblua.a, lua and luac on `all`. No other named goal is run.
+		if ruleLine(env, makefileOf[dir], "all") > 0 {
+			all := []string{"make", "-n", "-B", "-w", "-o", makefile, "all"}
+			output, err := dryRun(ctx, absDir, all)
+			if ctx.Err() != nil {
+				return builds, observations, failed
+			}
+			build := Build{Kind: BuildMake, Path: makefileOf[dir], Command: all}
+			if err != nil {
+				build.Err, reason = err.Error(), err.Error()
+				observations = append(observations, Observation{Kind: "c_build_error", Path: makefileOf[dir], Fields: map[string]string{"error": build.Err}})
+			} else {
+				join(output, true)
+			}
+			builds = append(builds, build)
+			if left := pending(); len(left) < len(units) {
+				continue
+			}
+		}
+		// Its units, when neither compiles any of them, as it compiles their
+		// objects: their flags only, never a link line.
 		objects := []string{"make", "-n", "-B", "-k", "-w", "-o", makefile}
 		for _, unit := range units {
 			objects = append(objects, strings.TrimSuffix(strings.TrimPrefix(unit, dir+"/"), ".c")+".o")

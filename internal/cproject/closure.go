@@ -2,7 +2,6 @@ package cproject
 
 import (
 	"fmt"
-	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -128,34 +127,75 @@ func unitSymbols(unit *Unit) symbols {
 	return result
 }
 
+// Alternative is a name several units of a program define where the build
+// does not say which one it links (C.md "Build description and targets"):
+// every definer stays in the program, and a call of the name resolves to
+// them as alternatives, as an interface's implementations do (owner,
+// 2026-10-02: alternatives are never a reason to fail, never chosen by
+// where they are written).
+type Alternative struct {
+	Name  string   `json:"name"`
+	Units []string `json:"units"` // the units defining it, by path, sorted
+}
+
+// closure is what linkClosure takes for one program.
+type closure struct {
+	// units are every unit the program holds, the main unit first;
+	// alternative are those it holds only as a name's alternative
+	// definition, or for what such a unit needs: no link line of the build
+	// says they are linked.
+	units       []*Unit
+	alternative []*Unit
+	// alternatives are the names several of its units define, by name.
+	alternatives []Alternative
+	// unresolved are the names the repository declares that no taken or
+	// pool unit defines, sorted.
+	unresolved []string
+}
+
 // linkClosure takes the units a linker would take for main from pool: each
 // name main's units use and do not define goes to the one unit defining it.
-// Two units defining a needed name, or a unit whose definition clashes with
-// one already taken, fail the program.
-//
-// It also returns the names the repository declares that no taken or pool
-// unit defines, sorted.
-func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
+// Of several units defining it, the build decides: the one that shares a
+// build output (outputs: a link line's output or an archive taking the unit)
+// with the unit needing it, when exactly one does; a unit the build takes is
+// never preferred over one it does not. Where the build does not say, and no
+// unit the program needs for another name defines it, every definer is kept
+// as an alternative: Lua 5.1.5's src/llex.c and etc/noparser.c both define
+// luaX_init. Two units the program links (not alternatives) defining one name
+// differently fail it.
+func linkClosure(main *Unit, pool []*Unit, outputs map[*Unit][]string) (closure, error) {
 	table := map[*Unit]symbols{main: unitSymbols(main)}
 	for _, unit := range pool {
 		table[unit] = unitSymbols(unit)
 	}
-	taken := []*Unit{}
+	var result closure
 	inProgram := map[*Unit]bool{}
+	alternativeOnly := map[*Unit]bool{}
 	defined := map[string]struct {
 		definition
 		unit *Unit
 	}{}
+	definers := map[string][]string{}
+	alternativeName := func(name string, units ...*Unit) {
+		for _, unit := range units {
+			if !slices.Contains(definers[name], unit.Path) {
+				definers[name] = append(definers[name], unit.Path)
+			}
+		}
+	}
 	// A needed name with the unit that needs it: of several units defining
-	// it, the one in that unit's directory takes it.
+	// it, the one sharing a build output with that unit takes it.
 	type need struct {
 		name string
 		from *Unit
 	}
-	var queue []need
-	take := func(unit *Unit) error {
+	var queue, deferred []need
+	take := func(unit *Unit, alternative bool) error {
 		inProgram[unit] = true
-		taken = append(taken, unit)
+		result.units = append(result.units, unit)
+		if alternative {
+			alternativeOnly[unit] = true
+		}
 		names := make([]string, 0, len(table[unit].defs))
 		for name := range table[unit].defs {
 			names = append(names, name)
@@ -165,7 +205,13 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 			def := table[unit].defs[name]
 			if previous, ok := defined[name]; ok {
 				if !previous.tentative && !def.tentative && previous.at != def.at {
-					return fmt.Errorf("%s is defined in both %s and %s", name, previous.unit.Path, unit.Path)
+					// An alternative's definition beside another stays an
+					// alternative of it; two linked units clashing fail.
+					if !alternative && !alternativeOnly[previous.unit] {
+						return fmt.Errorf("%s is defined in both %s and %s", name, previous.unit.Path, unit.Path)
+					}
+					alternativeName(name, previous.unit, unit)
+					continue
 				}
 				if !previous.tentative || def.tentative {
 					continue
@@ -181,16 +227,10 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 		}
 		return nil
 	}
-	if err := take(main); err != nil {
-		return nil, nil, err
+	if err := take(main, false); err != nil {
+		return closure{}, err
 	}
-	unresolved := map[string]bool{}
-	for len(queue) > 0 {
-		name, from := queue[0].name, queue[0].from
-		queue = queue[1:]
-		if _, ok := defined[name]; ok {
-			continue
-		}
+	definersOf := func(name string) []*Unit {
 		var candidates, tentative []*Unit
 		for _, unit := range pool {
 			if def, ok := table[unit].defs[name]; ok && !inProgram[unit] {
@@ -204,46 +244,81 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 		if len(candidates) == 0 && len(tentative) == 1 {
 			candidates = tentative
 		}
-		// Units of several directories defining one name: the needing
-		// unit's directory decides, as its directory's makefile links its
-		// own objects (Lua 5.1.5's etc/noparser.c replaces luaX_init, and
-		// src/lstate.c, which calls it, links src/llex.c's).
-		if len(candidates) > 1 {
-			var near []*Unit
-			for _, unit := range candidates {
-				if path.Dir(unit.Path) == path.Dir(from.Path) {
-					near = append(near, unit)
+		return candidates
+	}
+	unresolved := map[string]bool{}
+	for {
+		for len(queue) > 0 {
+			name, from := queue[0].name, queue[0].from
+			queue = queue[1:]
+			if _, ok := defined[name]; ok {
+				continue
+			}
+			candidates := definersOf(name)
+			// Units defining one name: the build output that takes the unit
+			// needing it and exactly one of them decides (Lua's liblua.a
+			// archives src/lstate.c and src/llex.c, not etc/noparser.c).
+			if len(candidates) > 1 {
+				var linked []*Unit
+				for _, unit := range candidates {
+					if slices.ContainsFunc(outputs[unit], func(output string) bool { return slices.Contains(outputs[from], output) }) {
+						linked = append(linked, unit)
+					}
+				}
+				if len(linked) == 1 {
+					candidates = linked
 				}
 			}
-			if len(near) == 1 {
-				candidates = near
+			switch len(candidates) {
+			case 0:
+				// A platform or package function, or a repository
+				// declaration no parsed unit defines.
+				for _, unit := range result.units {
+					if table[unit].own[name] {
+						unresolved[name] = true
+					}
+				}
+			case 1:
+				if err := take(candidates[0], alternativeOnly[from]); err != nil {
+					return closure{}, err
+				}
+			default:
+				// Undecided until what the program needs for other names
+				// is taken: a unit it needs anyway may define it.
+				deferred = append(deferred, need{name, from})
 			}
 		}
-		switch len(candidates) {
-		case 0:
-			// A platform or package function, or a repository declaration
-			// no parsed unit defines.
-			for _, unit := range taken {
-				if table[unit].own[name] {
-					unresolved[name] = true
+		if len(deferred) == 0 {
+			break
+		}
+		pending := deferred
+		deferred = nil
+		for _, n := range pending {
+			if _, ok := defined[n.name]; ok {
+				continue
+			}
+			candidates := definersOf(n.name)
+			alternativeName(n.name, candidates...)
+			for _, unit := range candidates {
+				if err := take(unit, true); err != nil {
+					return closure{}, err
 				}
 			}
-		case 1:
-			if err := take(candidates[0]); err != nil {
-				return nil, nil, err
-			}
-		default:
-			var paths []string
-			for _, unit := range candidates {
-				paths = append(paths, unit.Path)
-			}
-			return nil, nil, fmt.Errorf("%s is defined in several units: %s", name, strings.Join(paths, ", "))
 		}
 	}
-	names := make([]string, 0, len(unresolved))
+	for _, unit := range result.units {
+		if alternativeOnly[unit] {
+			result.alternative = append(result.alternative, unit)
+		}
+	}
+	for name, paths := range definers {
+		slices.Sort(paths)
+		result.alternatives = append(result.alternatives, Alternative{Name: name, Units: paths})
+	}
+	slices.SortFunc(result.alternatives, func(a, b Alternative) int { return strings.Compare(a.Name, b.Name) })
 	for name := range unresolved {
-		names = append(names, name)
+		result.unresolved = append(result.unresolved, name)
 	}
-	slices.Sort(names)
-	return taken, names, nil
+	slices.Sort(result.unresolved)
+	return result, nil
 }
