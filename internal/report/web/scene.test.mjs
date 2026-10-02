@@ -90,6 +90,9 @@ function checkScene(name,model,geometry,scene,problems){
     const c=units.programCard,height=program?2*c.pad+words.title.length*c.line+(words.role.length?words.role.length*c.textLine+6:0)+(words.purpose.length?words.purpose.length*c.textLine+6:0)
       :28+words.title.length*21.25+(words.lines.length?6+words.lines.length*18:0);
     if(height>node.rect.height/node.text+1)problems.push(['words',`${where}: ${node.id}'s words take ${height.toFixed(0)} of ${(node.rect.height/node.text).toFixed(0)}`]);
+    // A part's card is no taller than what it shows needs (the lint's 45%:
+    // words reaching under half its height read as an empty card).
+    if(node.display==='card'&&(height-14)/(node.rect.height/node.text)<.45)problems.push(['words',`${where}: ${node.id}'s words fill ${(100*(height-14)/(node.rect.height/node.text)).toFixed(0)}% of its card`]);
   }
   const rect=new Map(scene.nodes.map(node=>[node.id,node.rect]));
   const portAt=new Map(scene.ports.map(port=>[port.id,port.point]));

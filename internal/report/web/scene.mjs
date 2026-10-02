@@ -100,10 +100,15 @@ export function sceneAt(model,geometry,level=[],selection={}){
     return finish();
   }
   // Inside a program: its frame, its areas closed but the one entered, its
-  // loose parts; one text scale for every title at the level.
+  // loose parts; one text scale for every title at the level, the entered
+  // area's. The program's own boxes beside the area entered keep the
+  // program's text, their words as large as their cards (owner,
+  // 2026-10-02: litestream's loose "Replica client backends" had read at
+  // the area's text in a card twice its parts' size, four fifths empty).
   const programNode=model.nodes.get(program),partText=geometry.scales.get(program)?.scale||1;
-  text=level.length>1?geometry.text.get(level[1])||partText:geometry.text.get(program)||partText;
-  box(program,'frame',frameOf(program),text,{program:true});
+  const own=geometry.text.get(program)||partText;
+  text=level.length>1?geometry.text.get(level[1])||partText:own;
+  box(program,'frame',frameOf(program),own,{program:true});
   for(const child of programNode.children){
     const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
     if(node.kind==='area'&&level[1]===child){
@@ -116,9 +121,9 @@ export function sceneAt(model,geometry,level=[],selection={}){
       for(const route of geometry.routes.get(child)||[])edges.push(edgeOf(route,model,new Set([...looked,...node.children])));
     }else if(node.kind==='area'){
       // A closed area shows where its parts stand, never a blank box.
-      box(child,'area',rect,text,{lane:node.item?.lane||'',ghosts:node.children.map(id=>rectOf(id)).filter(Boolean)});markersFor(child);
+      box(child,'area',rect,own,{lane:node.item?.lane||'',ghosts:node.children.map(id=>rectOf(id)).filter(Boolean)});markersFor(child,own);
     }
-    else{box(child,level[1]===child?'deep':'card',rect,text,{lane:node.item?.lane||''});if(level[1]!==child)markersFor(child);else deepFor(child);}
+    else{box(child,level[1]===child?'deep':'card',rect,own,{lane:node.item?.lane||''});if(level[1]!==child)markersFor(child,own);else deepFor(child);}
   }
   // A program's own arrows; those of the area entered count as looked at.
   const lookedHere=new Set([...looked,...(level[1]?[level[1]]:[])]);
@@ -150,10 +155,10 @@ export function sceneAt(model,geometry,level=[],selection={}){
     for(const side of ['in','out'])own.rest[side].forEach((marker,i)=>markers.push({
       id:`${id}:${side}:${marker.kind}`,box:id,side,index:i,count:own.rest[side].length,rect:r,...marker}));
   }
-  function markersFor(id){
+  function markersFor(id,boxText){
     const rect=rectOf(id),own=model.markersOf(id);
     for(const side of ['in','out'])own[side].forEach((marker,index)=>markers.push({
-      id:`${id}:${side}:${marker.kind}`,box:id,side,index,count:own[side].length,rect,...marker}));
+      id:`${id}:${side}:${marker.kind}`,box:id,side,index,count:own[side].length,rect,...(boxText?{text:boxText}:{}),...marker}));
   }
   function finish(){
     // Quiet arrows stand only where an end is looked at.
