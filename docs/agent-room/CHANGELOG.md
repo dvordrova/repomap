@@ -1,5 +1,48 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — casdoor's web reaches its server by the server's own name (data 1)
+
+- **Why "other: Casdoor":** the destination question offered the server as
+  `github.com/casdoor/casdoor` (`d1`, `program: true`). Across web's six
+  windows: d1 in 3 throughout, 55 d1 / 13 "other: Casdoor" in 1, almost all
+  "other: Casdoor" in 2 (52, 26). The free answer named no offered value,
+  so after 604bc0ca 91 calls had no program.
+- **e2e17fb4 + 948acd38:** a program is offered by the one name the
+  toolchain gives its executable (`TargetMeta.Executables`), the name the
+  report titles it by, else its target name. It keeps the target name
+  where that executable name is another program's or a system's the
+  systems question named. The program asking keeps its target name in
+  `program`. A skeptic accepted the executable fact, rejected a second
+  `module` field, and asked for the collision guard. e2e17fb4 had renamed
+  the asking program too. That re-asked casdoor's server windows, which
+  offer no program, and one draw named idp/casdoor.go's GetUserInfo
+  "Adyen"; 948acd38 reverts that rename.
+- **casdoor runs** (own build of each commit from a clean export; HEAD
+  includes eade699f; exit 0):
+  - 20261002-102026 (e2e17fb4): 11 live destination windows.
+  - 20261002-102920 (948acd38): 0 live calls. Against 043704, the
+    destination rows change only on web: 277 → the server ("casdoor"
+    offered, written "Casdoor" with `destination_target` t1), and two
+    free names recased.
+  - report.json: web's 277 calls carry `destination_target` t1. Web's
+    Outside holds Affiliation Data Service and Static File Server only.
+  - The one "Casdoor" left is t1's: idp/casdoor.go's 2 calls to an
+    upstream Casdoor identity provider, in Identity providers.
+  - The home map reads web → casdoor before (001520, through the joints)
+    and after. Screenshots: scratchpad `dest/shots/casdoor-{before,after}-{home,web}.png`.
+  - freqtrade and redis are offered as before (executable = target name);
+    etcd's server, etcdctl and etcdutl are covered by
+    `TestAProgramIsOfferedByItsExecutablesName`. They were not run online.
+- **Outside grouping by "Called from": not landed.** casdoor's Custom
+  Logout Endpoint is posted by object/provider.go's callProviderLogoutUrl,
+  which is in Core data models, so the scene's call-site part was right.
+  The column's "Called from" is `reached_from`, a different fact. Grouping
+  by it, re-derived from saved runs, moved systems in redis 2/2,
+  litestream 9/9 (every storage backend left Replica client backends),
+  freqtrade 5/8 and casdoor 86/95 (every identity provider went to API
+  controllers). Markers would stay on the call site. A skeptic said do not
+  land. Patch kept: scratchpad `dest/outside-calledfrom-not-landed.patch`.
+
 ## 2026-10-02 — Review items 1 and 3: etcd's POSTs read apart, freqtrade's commands first (data 2)
 
 - **1da657f8, item 1 (etcd):** "Which entry is Campaign, which is Lock?"
