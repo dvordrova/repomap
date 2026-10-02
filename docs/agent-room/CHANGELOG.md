@@ -1,5 +1,23 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The Inputs column reads kinds, then the saved part
+
+- **Kinds first, as the canvas:** the column's kinds stand in the canvas's
+  order (`inputKindOrder` = `sceneInputKinds`), each with its mark; within a
+  kind, inputs by the part where each takes effect, read from `#rm-scene`
+  `inputs[id].parts` (one part), parts by title, the rest after them.
+- **No derivation left in 29-operation-view.js:** `inputOwner`,
+  `inputGroups` and the `reaching` scan (O(inputs × edges) per card open)
+  are gone; `rmSavedScene` reads `parts`, the handler's part and
+  `reaching` (format 96, data 2's 0313c22b). A report without `reaching`
+  shows no "Inputs reaching" list.
+- **Checks:** `TestTheInputsColumnReadsKindsThenTheSavedPart` (replaces
+  `…GroupsInputsByPart`), the collection order test. Renders (redis,
+  casdoor at 96; etcd 20261001-190107 via a format-95 copy of this tree): every listed input
+  (242, 1112, 1178) stands under its saved part, kinds and marks in the
+  canvas's order in all 25 collections, the reaching lists equal to
+  `reaching` (redis 102/76, casdoor 620/8).
+
 ## 2026-10-02 — The inputs reaching each part and system are saved (data 2)
 
 - report.json 96 saves `scene.reaching` (`#rm-scene` `reaching`): by part

@@ -633,11 +633,14 @@ function rmCollectionView(ctx,node,collection){
   // function, eight times); each catalogue of it under a quiet line saying
   // where its inputs are declared, then its inputs.
   var kinds=[];collection.groups.forEach(function(group){if(kinds.indexOf(group.kind)<0)kinds.push(group.kind);});
-  // Within a kind, its inputs by the groups the canvas draws in the
-  // collection (29-operation-view.js inputGroups), in the canvas's order,
-  // each under its part's box, the loose ones after them; a kind of more
-  // than twelve inputs in several groups folds each group to its box.
-  var parted=ctx.inputGroups?ctx.inputGroups(node.id):null,unsaid=new Set();
+  // Kinds stand as the canvas stands them (owner, 2026-10-01: the canvas
+  // stands inputs by kind), in its order with its marks; within a kind, its
+  // inputs by the part where each takes effect, as saved (#rm-scene
+  // inputs[id].parts, 29-operation-view.js inputPart; owner, 2026-09-28:
+  // inputs answer "where it takes effect"), the parts by title, each under
+  // its box, the inputs taking effect in no one part after them; a kind of
+  // more than twelve inputs in several parts folds each part to its box.
+  var unsaid=new Set();
   // Two inputs sharing a word are told apart by the subcommands they are
   // options of (reviewer, 2026-09-30: freqtrade's two "--erase", of
   // download-data and of install-ui): each subcommand's options name them
@@ -671,13 +674,18 @@ function rmCollectionView(ctx,node,collection){
   }
   kinds.forEach(function(kind){
     var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
-    var inParts=parted?parted.groups.filter(function(part){return part.inputs.some(function(id){return all.indexOf(id)>=0;});}):[],fold=inParts.length>1&&all.length>12;
+    var byPart=new Map();
+    all.forEach(function(id){var part=ctx.inputPart?ctx.inputPart(id):'';if(!part||!ctx.nodeById(part))return;if(!byPart.has(part))byPart.set(part,[]);if(byPart.get(part).indexOf(id)<0)byPart.get(part).push(id);});
+    var inParts=Array.from(byPart).map(function(pair){return {part:pair[0],title:ctx.nodeById(pair[0]).dataset.title||'',inputs:pair[1]};});
+    inParts.sort(function(a,b){return a.title.localeCompare(b.title)||a.part.localeCompare(b.part);});
+    var fold=inParts.length>1&&all.length>12;
     var section=rmEl('section','map-collection-group'),heading=rmEl('h6','map-reading-count');
     // A kind chosen in the component's reading, or Settings in the
     // collection's frame, lands on its own section: Background work on the
     // first of its scheduled and continuous sections.
     section.dataset.kind=kind;
     if(rmPendingKind&&[].concat(rmPendingKind).indexOf(kind)>=0){section.dataset.readingAnchor='';rmPick(section);rmPendingKind='';}
+    var mark=globalThis.rmKindMark?.(kind);if(mark)heading.appendChild(mark);
     heading.appendChild(rmEl('span','',rmT(rmInputKindTitles[kind]||'Inputs')));
     rmLights(ctx,heading,all);section.appendChild(heading);
     // A catalogue's lines stand once, above its first inputs read; the

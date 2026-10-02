@@ -1,11 +1,9 @@
 // One repository drawing. Selection changes emphasis and reading, never layout.
 // All IDs, containment and operation paths come from the rendered report.
 function rmSystemProjection(nodes, edges) {
-  var byID={},parents={},inputOwner={};
+  var byID={},parents={};
   nodes.forEach(function(n){byID[n.id]=n;});
-  nodes.forEach(function(n){if(n.inputOwner&&byID[n.inputOwner])inputOwner[n.id]=n.inputOwner;});
   nodes.forEach(function(n){(n.children||[]).forEach(function(id){parents[id]=n.id;});});
-  edges.forEach(function(e){if(byID[e.from]?.activation && e.label==='implemented in' && byID[e.to] && !byID[e.to].activation)inputOwner[e.from]=e.to;});
   function leaves(id,seen){seen=seen||new Set();if(seen.has(id)||!byID[id])return [];seen.add(id);var n=byID[id];return n.children?.length?n.children.flatMap(function(c){return leaves(c,new Set(seen));}):[id];}
   var visible=nodes.filter(function(n){return !n.children?.length;}).map(function(n){return n.id;});
   var representatives={};nodes.forEach(function(n){representatives[n.id]=[n.id];});
@@ -29,34 +27,7 @@ function rmSystemProjection(nodes, edges) {
     var active=selection('',operation).active;
     return !active.has(id)&&!leaves(id).some(function(leaf){return active.has(leaf);});
   }
-  // The groups the canvas draws inside an Inputs collection
-  // (web/overview.mjs inputGroupsByPart), for the column to read the same
-  // groups in the same order (reviewer, 2026-09-30: Redis's column had
-  // listed ninety requests A to Z beside the canvas's groups): each input by
-  // the part its handler is in, else the one part its code takes it in
-  // ("declared in", "looked up in"); the groups by their part's title; the
-  // rest loose after them. Null when fewer than two groups form.
-  var takenIn=null;
-  function inputGroups(id,titleOf){
-    var collection=byID[id];if(!collection||collection.branch!=='inputs')return null;
-    if(!takenIn){
-      takenIn={};
-      edges.forEach(function(e){if((e.label==='declared in'||e.label==='looked up in')&&byID[e.from]?.activation&&byID[e.to]&&!byID[e.to].activation)(takenIn[e.from]=takenIn[e.from]||new Set()).add(e.to);});
-    }
-    function partOf(input){return inputOwner[input]||(takenIn[input]&&takenIn[input].size===1?Array.from(takenIn[input])[0]:'');}
-    var groups=new Map(),loose=[];
-    (collection.children||[]).filter(function(input){return byID[input]?.activation;}).forEach(function(input){
-      var owner=partOf(input);
-      if(!owner||!byID[owner]){loose.push(input);return;}
-      if(!groups.has(owner))groups.set(owner,[]);
-      groups.get(owner).push(input);
-    });
-    if(groups.size<2)return null;
-    var list=Array.from(groups).map(function(pair){return {part:pair[0],title:titleOf(pair[0]),frame:id+'~'+pair[0],inputs:pair[1]};});
-    list.sort(function(a,b){return String(a.title).localeCompare(String(b.title))||a.frame.localeCompare(b.frame);});
-    return {groups:list,loose:loose};
-  }
-  return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection,outside:outside,inputGroups:inputGroups};
+  return {visible:visible,areas:areas,representatives:representatives,parents:parents,leaves:leaves,selection:selection,outside:outside};
 }
 // An input chosen from Find, a link, a reading or its own tile is entered as
 // its path: the canvas frames the part holding its handler and the path's
@@ -549,14 +520,35 @@ function rmEntryLanding(link,nodes,component){
   var owner=component();
   return owner?{node:owner,source:null,entry:true}:null;
 }
+// The facts saved with the report that the column reads (#rm-scene,
+// REPORT.md's Scene model; owner, 2026-10-01: "у html должна быть простая
+// задача — вот данные, показываю"): where each input takes effect, its
+// `parts`, the handler's when `handled`, else those its code takes it in;
+// and, where the report saves them, the inputs reaching each part or
+// system. Read as saved: the column derives none of them.
+function rmSavedScene(doc){
+  var saved=null;try{saved=JSON.parse(doc.getElementById('rm-scene')?.textContent||'null');}catch(_){saved=null;}
+  var inputs=saved&&saved.inputs&&typeof saved.inputs==='object'?saved.inputs:{};
+  function parts(id){var fact=inputs[id];return fact&&Array.isArray(fact.parts)?fact.parts:[];}
+  return {
+    // The one part an input takes effect in; '' when it takes effect in
+    // several, or in none (its program).
+    part:function(id){var at=parts(id);return at.length===1?at[0]:'';},
+    // The part holding its handler, when it is handled in one.
+    handlerPart:function(id){var at=parts(id);return inputs[id]?.handled&&at.length===1?at[0]:'';},
+    // The inputs reaching a part or an outside system; null when the
+    // report saves none.
+    reaching:function(id){var reaching=saved&&saved.reaching;return reaching&&typeof reaching==='object'?(Array.isArray(reaching[id])?reaching[id]:[]):null;}
+  };
+}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
   nodes.forEach(function(n){byID[n.id]=n;});
   map.querySelectorAll('[data-map-alias]').forEach(function(n){aliases[n.id]=n.dataset.mapAlias;});
   var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(rmPage.data(e,'calls')||[]).map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;}),label:e.dataset.label||''};});
-  var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
-  var projection=rmSystemProjection(model,rawEdges),scope='',operation=null,surface=null,ready=null;
+  var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation};});
+  var projection=rmSystemProjection(model,rawEdges),scene=rmSavedScene(document),scope='',operation=null,surface=null,ready=null;
   // Whether the camera may stand away from the pinned input's own tile: on its
   // path's start, or on a part read since.
   var inputAway=false;
@@ -803,16 +795,10 @@ function rmEntryLanding(link,nodes,component){
   }
   // A name linking to a place in the code, the place said on its hover.
   function rmPlaceLink(source,name){var link=repomapMembers.sourceLink(Object.assign({},source,{Text:name}));link.title=[source.Text,link.title].filter(Boolean).join('\n');return link;}
-  // The group each input stands in on the canvas (projection.inputGroups),
-  // by its part's title; built once.
-  var groupTitles=null;
-  function inputGroupTitle(id){
-    if(!groupTitles){
-      groupTitles={};
-      nodes.forEach(function(frame){if(frame.dataset.branch!=='inputs')return;var parted=projection.inputGroups(frame.id,function(part){return byID[part]?byID[part].dataset.title:'';});if(parted)parted.groups.forEach(function(group){group.inputs.forEach(function(input){groupTitles[input]=group.title;});});});
-    }
-    return groupTitles[id]||'';
-  }
+  // The part an input takes effect in, as saved (#rm-scene), when it is
+  // one part the page draws.
+  function inputPart(id){var part=byID[scene.part(id)];return part&&!part.dataset.activation&&!part.dataset.branch?part:null;}
+  function inputGroupTitle(id){return inputPart(id)?.dataset.title||'';}
   function nodeByHref(href){return href?nodes.find(function(n){return n.getAttribute('href')===href||'#'+n.id===href;})||null:null;}
   // What the reading column reads with (31-reading-column.js): every name
   // it reads is read in the report and shown on the canvas, the camera
@@ -825,7 +811,7 @@ function rmEntryLanding(link,nodes,component){
     readNode:function(n){surface?.clearMember?.();select(n,true,null,true);},
     light:function(ids){surface?.light?.(ids);},
     openConnection:function(id,key){return openConnection(id,key);},
-    inputGroups:function(id){return projection.inputGroups(id,function(part){return byID[part]?byID[part].dataset.title:'';});}
+    inputPart:function(id){return inputPart(id)?.id||'';}
   };};
   // The frame holding what is read, and going up to it: from a declaration
   // to its part, which is read without it; from a part to its area or
@@ -890,7 +876,7 @@ function rmEntryLanding(link,nodes,component){
   // in its part, as the path's steps are, when that part lists it; a
   // modifier-click still opens its code.
   function readsHandler(n,card){
-    var name=card.querySelector('.map-card-handler>a'),part=byID[projection.inputOwner[n.id]],key=n.dataset.handlerSource||n.dataset.handlerOpen;
+    var name=card.querySelector('.map-card-handler>a'),part=byID[scene.handlerPart(n.id)],key=n.dataset.handlerSource||n.dataset.handlerOpen;
     if(!name||!part||part.dataset.activation||!key)return;
     var symbols=rmPage.data(part,'symbols')||[];
     if(!symbols.some(function(symbol){return symbol.href===key||symbol.open===key;}))return;
@@ -925,13 +911,16 @@ function rmEntryLanding(link,nodes,component){
     var group=document.getElementById((n.getAttribute('href')||'').slice(1));
     if(!n.dataset.activation){
       if(!n.dataset.branch)card.querySelector('.map-related-operations')?.remove();
-      var selectedMembers=new Set(projection.leaves(n.id));selectedMembers.add(n.id);
-      var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
-      var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);},function(input){return inputGroupTitle(input.id);});
-      if((rmPage.data(n,'concepts')||[]).length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
-      var partReading=card.querySelector('.map-part-reading');
-      if(partReading)partReading.appendChild(inputs);
-      else if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
+      // The inputs reaching it, as saved (#rm-scene reaching); a report
+      // saving none says nothing of them.
+      var partReading=card.querySelector('.map-part-reading'),saidReaching=(partReading||!n.dataset.branch||n.dataset.branch==='communication')?scene.reaching(n.id):null;
+      if(saidReaching){
+        var reaching=saidReaching.map(function(id){return byID[id];}).filter(function(input){return input&&input.dataset.activation;});
+        var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);},function(input){return inputGroupTitle(input.id);});
+        if((rmPage.data(n,'concepts')||[]).length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
+        if(partReading)partReading.appendChild(inputs);
+        else card.querySelector('.map-card-intro').after(inputs);
+      }
     }
     if(partReading){
       // The part's own reading (31-reading-column.js) replaces its copied
@@ -1129,7 +1118,7 @@ function rmEntryLanding(link,nodes,component){
     });
     var relations=rawEdges;
     try{
-      surface=await rmCreateFlow(map,stage,items,relations,projection.areas,projection.inputOwner,{
+      surface=await rmCreateFlow(map,stage,items,relations,projection.areas,{},{
         select:function(id,center){select(byID[id],true,null,center?'center':false);},
         // A zoom that brings another frame has the column read it, the
         // camera staying; a pinch leaves an input's path alone, the
@@ -1155,7 +1144,7 @@ function rmEntryLanding(link,nodes,component){
   map.areaDescriptions=function(n){return path(n.id).filter(function(id){return id!==n.id&&byID[id].dataset.branch==='area'&&projection.leaves(id).length===1;}).map(function(id){
     var area=byID[id];return (area.dataset.title!==n.dataset.title?area.dataset.title+': ':'')+area.dataset.summary;
   });};
-  map.operationChoices=function(id){var children=new Set(projection.leaves(id));return nodes.filter(function(n){return n.dataset.activation&&((n.dataset.near||'').split(/\s+/).some(function(near){return children.has(near);})||children.has(projection.inputOwner[n.id]));});};
+  map.operationChoices=function(id){var children=new Set(projection.leaves(id));return nodes.filter(function(n){return n.dataset.activation&&((n.dataset.near||'').split(/\s+/).some(function(near){return children.has(near);})||children.has(scene.handlerPart(n.id)));});};
   map.chooseOperation=function(id){return select(byID[id],true);};
   map.explorationPath=function(){return rmExplorationPath(operation,path(scope).map(function(id){return byID[id];}),map.explorerMember);};
   map.explorationLabel=function(){return map.explorationPath().map(function(segment,index){return (index?segment.sep:'')+segment.title;}).join('')||rmT('System map');};

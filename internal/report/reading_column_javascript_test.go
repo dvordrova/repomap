@@ -160,7 +160,7 @@ func TestAnInputsHandlerNameReadsItsDeclaration(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "  function readsHandler(n,card){", "  map.addEventListener('repomap:inspect'")
 	runSystemJS(t, `
 const strings={id:'strings',dataset:{symbols:JSON.stringify([{name:'getCommand',href:'h/getCommand'}])}};
-const byID={strings},projection={inputOwner:{get:'strings',orphan:'strings'}},read=[];
+const byID={strings},scene={handlerPart:id=>({get:'strings',orphan:'strings'})[id]||''},read=[];
 function readDeclaration(part,key){read.push([part.id,key]);}
 const link=()=>({listeners:{},addEventListener(k,f){this.listeners[k]=f;}});
 const cardWith=name=>({querySelector:s=>s==='.map-card-handler>a'?name:null});

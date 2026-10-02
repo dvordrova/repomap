@@ -931,7 +931,10 @@ type pageCollectionGroup struct {
 	Inputs    []string `json:"inputs"`
 }
 
-var inputKindOrder = []string{"request", "command", "setting", "interaction", "continuous", "scheduled"}
+// inputKindOrder is the order the canvas stands an Inputs collection's
+// kinds in (scene.go sceneInputKinds, web/model.mjs inputKinds), which the
+// column reads them in too (owner, 2026-10-01).
+var inputKindOrder = sceneInputKinds
 
 func inputCollection(children []string, node func(string) pageMapNode) string {
 	byName := func(ids []string) []string {

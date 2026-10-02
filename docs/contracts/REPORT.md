@@ -1146,8 +1146,8 @@ into one line with their count and callees, each row inside with its sources.
 A list with folds has one "Open all" control that opens and closes them
 together. A list longer than forty stands by groups, each closed under its
 name (reviewer, 2026-09-30: lists of up to 336 rows had stood under one
-heading): inputs reaching a part by program, kind and the canvas's input
-group; a declaration's other users and a catalogue's inputs by part; a
+heading): inputs reaching a part by program, kind and the part where
+each takes effect; a declaration's other users and a catalogue's inputs by part; a
 part's declarations by type and kind; its callers and callees by file, its
 variables by type; a path's calls by caller and many parts each closed; a
 program's files by folder. Every closed section shows its ▶ (▼ open), the same wherever it
@@ -1517,13 +1517,20 @@ inputs are listed or declared, where they are looked up and what else the
 declaring code uses, the model's words that some are matched by name to
 another program's inputs, and its inputs one to a line, each reading its
 input, a name that is a sentence (a query parameter's description) in the
-reading's own type, not code; then the inputs no catalogue holds; requests
-first. Within each, the inputs stand in the groups the canvas draws in the
-collection, in its order, one group per part, its box the heading, each
-catalogue's lines once inside it, the loose ones after them (reviewer,
-2026-09-30: Redis's ninety requests had read A to Z beside the canvas's
-groups; freqtrade's had been headed by a catalogue's module); a kind of more
-than twelve inputs in several groups folds each group to its box. A
+reading's own type, not code; then the inputs no catalogue holds. The
+kinds stand in the canvas's order with its marks (page_reading.go
+inputKindOrder, scene.go sceneInputKinds; owner, 2026-10-01). Within a
+kind, the inputs stand by the part where each takes effect, as saved
+(`#rm-scene` `inputs[id].parts`, one part; owner, 2026-09-28: inputs
+answer "where it takes effect"), the parts by title, its box the heading,
+each catalogue's lines once inside it, the inputs taking effect in several
+parts or in none after them (reviewer, 2026-09-30: Redis's ninety requests
+had read A to Z; freqtrade's had been headed by a catalogue's module); a
+kind of more than twelve inputs in several parts folds each part to its
+box. The column reads where an input takes effect, its handler's part and
+the inputs reaching a part or system (`reaching`) from the saved scene and
+derives none of them; a report saving no `reaching` shows no "Inputs
+reaching" list. A
 catalogue whose every input has no established handler says "Where these
 take effect is not established." once, under its own lines, never for the
 kind (owner, 2026-09-30: Redis's had followed serverCron, which is

@@ -295,7 +295,7 @@ func TestATilesMoreRowTakesNoFieldsPlace(t *testing.T) {
 }
 
 // An Inputs collection reads its catalogues and its other inputs by kind,
-// requests first, each list by name; a component is named without the kind
+// in the canvas's order of kinds, each list by name; a component is named without the kind
 // its label adds when no other component shares the name.
 func TestInputCollectionListsItsInputsByKindAndName(t *testing.T) {
 	nodes := map[string]pageMapNode{
@@ -304,9 +304,12 @@ func TestInputCollectionListsItsInputsByKindAndName(t *testing.T) {
 		"o3": {FullTitle: "-p", Activation: "command", Catalogue: "flags"},
 		"o4": {FullTitle: "port", Activation: "setting"},
 		"o5": {FullTitle: "bind", Activation: "setting"},
+		"o6": {FullTitle: "click", Activation: "interaction"},
+		"o7": {FullTitle: "loop", Activation: "continuous"},
+		"o8": {FullTitle: "cron", Activation: "scheduled"},
 	}
 	var collection pageInputCollection
-	if err := json.Unmarshal([]byte(inputCollection([]string{"o3", "o1", "o4", "o2", "o5"}, func(id string) pageMapNode { return nodes[id] })), &collection); err != nil {
+	if err := json.Unmarshal([]byte(inputCollection([]string{"o6", "o3", "o7", "o1", "o4", "o8", "o2", "o5"}, func(id string) pageMapNode { return nodes[id] })), &collection); err != nil {
 		t.Fatal(err)
 	}
 	var groups, kinds []string
@@ -316,10 +319,12 @@ func TestInputCollectionListsItsInputsByKindAndName(t *testing.T) {
 	for _, kind := range collection.Kinds {
 		kinds = append(kinds, kind.Kind+" "+strings.Join(kind.Inputs, ","))
 	}
-	if want := []string{"request o1 o2,o1", "command o3 o3", "setting  o5,o4"}; !slices.Equal(groups, want) {
+	// The kinds in the canvas's order (owner, 2026-10-01): scheduled
+	// before continuous before interaction.
+	if want := []string{"request o1 o2,o1", "command o3 o3", "setting  o5,o4", "scheduled  o8", "continuous  o7", "interaction  o6"}; !slices.Equal(groups, want) {
 		t.Fatalf("groups %q, want %q", groups, want)
 	}
-	if want := []string{"request o2,o1", "command o3", "setting o5,o4"}; !slices.Equal(kinds, want) {
+	if want := []string{"request o2,o1", "command o3", "setting o5,o4", "scheduled o8", "continuous o7", "interaction o6"}; !slices.Equal(kinds, want) {
 		t.Fatalf("kinds %q, want %q", kinds, want)
 	}
 	server := &pageSection{ShortLabel: "redis-server (executable)", Kind: "executable"}
