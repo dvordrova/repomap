@@ -1,5 +1,46 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The Main flow says what its steps are (review item 2, lead)
+
+- **eade699f (phase 2):** a decided split keeps the calls the path did not
+  follow (`FlowStep.Passed`, orientation 2), read folded under "also
+  calls:". No new model question. Warm runs with the lead's eade699f build,
+  exit 0:
+  - freqtrade 20261002-100744: 1 live orientation call. It is the same
+    repository-wide request; its only change is the edge label "start_list_data
+    (inline)" → "(inline, 2)" from 37269079. The 27 glossary calls follow
+    from that new answer's prose. FreqtradeBot.process's line names
+    IStrategy, DataProvider.refresh, enter_positions and exit_positions.
+  - othello 20261002-101950 and redis 20261002-102031: 0 live calls.
+- **1126c59a (phase 1):** all from saved data:
+  - each run of steps stands under its part's box (description on hover);
+  - a method says its type's line once, "Type — line", at two lines until
+    clicked;
+  - a step names the inputs it handles: freqtrade start_trading "handles the
+    command trade", redis setCommand "handles the request set", othello setup
+    "implements the extension point setup";
+  - the flow closes with "The path stops here. …";
+  - an input's "What it does:" reads "Its calls:", and a class in "Its flow"
+    reads its line.
+- **490d227a:** without `--learn`, "About this run" says questions were not
+  generated, and search drops "Questions and answers" (owner, 2026-10-02).
+- **6b0b5a6a:** df253d15's bundle, built from a clean export with a linked
+  `node_modules`, had empty dependency notices. Rebuilt in the tree, whose
+  web sources match HEAD.
+- **Walk** (`render` of the three runs, headless Chromium, loopback): the
+  path was freqtrade Commands → trade → "Its flow" → Main flow, then othello
+  and redis.
+  - Part boxes, type lines (clicked open from 41 to 142 px), handled inputs
+    reading their input, the closing line, and the trimmed search kinds all
+    held. There were no page errors.
+  - Screenshots: scratchpad `canvas-rewrite/lead/flow/shots/`.
+- **Left open (outside this scope):**
+  - etcd's walk picks a shutdown path;
+  - redis reaches readQueryFromClient through serverCron → syncWithMaster →
+    createClient, a replication path;
+  - Worker stands in Utility helpers.
+  The part boxes make these read more authoritatively.
+
 ## 2026-10-02 — casdoor's web reaches its server by the server's own name (data 1)
 
 - **Why "other: Casdoor":** the destination question offered the server as
