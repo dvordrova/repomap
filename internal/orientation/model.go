@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 const (
@@ -74,7 +76,13 @@ type FlowStep struct {
 	// this one: a subject the helper question decided serves others' work,
 	// never a step of its own (Lua's handle_script reaches lua_pcallk
 	// through docall).
-	Through  []string     `json:"through,omitempty"`
+	Through []string `json:"through,omitempty"`
+	// Basis is, for a step the step before calls as a method of a
+	// repository type implementing the interface it calls, no observed flow
+	// giving the value, "implements" (ProgramIndex Relation.Basis): known by
+	// method set, never a traced call (etcd's gateway reaching
+	// electionServer.Campaign).
+	Basis    string       `json:"basis,omitempty"`
 	Branches []FlowBranch `json:"branches,omitempty"`
 	Passed   []FlowBranch `json:"passed,omitempty"`
 	Paths    []FlowPath   `json:"paths,omitempty"`
@@ -98,6 +106,7 @@ type FlowBranch struct {
 	Via       string   `json:"via,omitempty"`
 	Site      string   `json:"site,omitempty"`
 	Through   []string `json:"through,omitempty"`
+	Basis     string   `json:"basis,omitempty"`
 }
 
 // MainFlow is the one end-to-end path the reader should follow first.
@@ -253,16 +262,23 @@ func validThrough(through []string) bool {
 	return !slices.ContainsFunc(through, func(id string) bool { return !validText(id) })
 }
 
+// validBasis checks how a flow step or branch is known: observed (empty)
+// or by the implementations of the interface called.
+func validBasis(basis string) bool {
+	return basis == "" || basis == programindex.BasisImplements
+}
+
 // validFlowSteps checks a flow's steps and, on a step that parts, each of
 // its paths the same way.
 func validFlowSteps(steps []FlowStep) error {
 	for position, step := range steps {
 		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) ||
-			!validThrough(step.Through) {
+			!validThrough(step.Through) || !validBasis(step.Basis) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
 		for _, branch := range append(slices.Clone(step.Branches), step.Passed...) {
-			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) || !validThrough(branch.Through) {
+			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) || !validThrough(branch.Through) ||
+				!validBasis(branch.Basis) {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
 			}
 		}

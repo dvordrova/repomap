@@ -67,7 +67,10 @@ function rmFlowRow(ctx,data,call,opts,helper){
     var site=rmEl('details','map-flow-row map-flow-dispatch'+(helper?' map-flow-helper':'')),head=rmEl('summary','map-flow-head');
     head.appendChild(rmEl('span','map-flow-twist'));
     if(call.macro)head.appendChild(rmEl('span','map-flow-plain',call.macro+(call.every?'':' ')));
-    if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of these')));
+    // A call through an interface no observed value fills: its method,
+    // implemented by the repository's types (page_flow.go Implements).
+    if(call.implements){var said=rmEl('span','map-flow-implements');said.append(rmDotBreaks(rmEl('span','map-flow-plain',call.implements)),' ',rmEl('span','map-flow-one',rmT('implemented in this repository by these')),' ',rmEl('span','map-flow-implemented meta','('+rmT('by method set, not a traced call')+')'));head.appendChild(said);}
+    else if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of these')));
     head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
     site.addEventListener('toggle',function(){
       if(!site.open||site.dataset.drawn)return;site.dataset.drawn='1';
@@ -79,7 +82,11 @@ function rmFlowRow(ctx,data,call,opts,helper){
   }
   var key=decl.key||decl.href||decl.open,cycle=opts.ancestors.has(key),target=cycle?null:rmFlowOwner(ctx,data,decl),path=opts.path+'>'+(call.kind||'calls')+':'+key;
   var row=rmEl(target?'details':'div','map-flow-row'+(helper?' map-flow-helper':'')),head=rmEl(target?'summary':'div','map-flow-head');
-  head.append(rmEl('span','map-flow-twist'),rmFlowName(ctx,decl,call));
+  var named=rmFlowName(ctx,decl,call);
+  // The one implementation of an interface no observed value fills says so
+  // beside its name (page_flow.go Implements).
+  if(call.implements){var both=rmEl('span','map-flow-implements');both.append(named,' ',rmEl('span','map-flow-implemented meta','('+rmT('the one implementation of {0} in this repository',call.implements)+'; '+rmT('by method set, not a traced call')+')'));named=both;}
+  head.append(rmEl('span','map-flow-twist'),named);
   if(cycle)head.appendChild(rmEl('span','map-flow-above meta',rmT('↑ shown above')));
   row.appendChild(head);
   if(target){
@@ -128,6 +135,8 @@ function rmFlowList(ctx,data,own,opts){
   list.rmOutside=outside;list.rmCaller=(data.decls[own.decl]||{}).name||'';
   if(root)opts.changed=function(){var line=Array.prototype.find.call(list.children,function(child){return child.classList&&child.classList.contains('map-flow-also');});if(line)line.remove();var also=alsoLine();if(also)list.appendChild(also);};
   function partOf(call){
+    // Implementations in several parts stand under none of them.
+    if(call.implements&&call.one)return '\0';
     if(call.decl!==undefined)return (data.decls[call.decl]||{}).part||'';
     if(call.one)return (data.decls[call.one[0]]||{}).part||'';
     return '\0';

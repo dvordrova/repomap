@@ -965,10 +965,19 @@ var russianUI = map[string]string{
 	// connections apart (target.html).
 	"calls nothing":                  "ничего не вызывает",
 	"implementation not established": "реализация не установлена",
-	"it calls":                       "вызывает",
-	"Elsewhere in":                   "Ещё в части",
-	"not from these entries:":        "не из этих точек входа:",
-	"uses the headers or types of":   "использует заголовки или типы:",
+	// A call through an interface no observed value fills, known by the
+	// repository's implementations of it (target.html, partials.html,
+	// 32-flow.js; GO: Relation.Basis "implements").
+	"implemented in this repository by":                                      "в этом репозитории реализуют",
+	"implemented in this repository by these":                                "в этом репозитории реализуют эти",
+	"the one implementation of {0} in this repository":                       "единственная реализация {0} в этом репозитории",
+	"by method set, not a traced call":                                       "по набору методов, а не прослеженный вызов",
+	"an implementation in this repository, by method set, not a traced call": "реализация в этом репозитории, по набору методов, а не прослеженный вызов",
+	"by method set":                "по набору методов",
+	"it calls":                     "вызывает",
+	"Elsewhere in":                 "Ещё в части",
+	"not from these entries:":      "не из этих точек входа:",
+	"uses the headers or types of": "использует заголовки или типы:",
 
 	// An input's case whose lines call nothing the reading holds (32-flow.js).
 	"No call is read in the lines of its case.": "В строках этого случая не прочитано ни одного вызова.",

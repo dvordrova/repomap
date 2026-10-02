@@ -58,6 +58,13 @@ type pageFlowCall struct {
 	// local_request_Election_Campaign_0 calling server.Campaign, an
 	// interface's method, at gw/v3election.pb.gw.go:62.
 	Unresolved bool `json:"unresolved,omitempty"`
+	// Implements is, for a call through an interface whose value no
+	// observed flow gives, the interface's method as the code calls it
+	// (ProgramIndex Relation.Basis "implements", GO): its Decl or One are
+	// the methods the repository's types implementing it declare, known by
+	// method set, never a traced call (etcd's server.Campaign:
+	// electionServer, electionProxy and UnimplementedElectionServer).
+	Implements string `json:"implements,omitempty"`
 	// Launch marks a call starting a program the code does not name
 	// (unnamedLaunch): its function's reading says so, where no outside
 	// system stands for it.
@@ -300,7 +307,10 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		}
 		callee := declare(edge.ToSubjectID)
 		arity := arities[edge.RelationID]
-		key := edge.ToSubjectID + "\x00" + kind + "\x00" + arity
+		// A call known by the interface's implementations is a row of its
+		// own beside a traced call of the same callee, whichever comes first:
+		// each site keeps how it is known.
+		key := edge.ToSubjectID + "\x00" + kind + "\x00" + arity + "\x00" + edge.Basis
 		launch := edge.Location != nil && flow.launches[programindex.Location{Path: edge.Location.Path, Line: edge.Location.Line, Column: max(1, edge.Location.Column)}]
 		if listed, seen := at[key]; seen && calls[listed].One == nil {
 			if site != nil && !slices.ContainsFunc(calls[listed].Sites, func(other pageReadingSite) bool { return other.At == site.At }) {
@@ -311,6 +321,9 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			continue
 		}
 		call := pageFlowCall{Kind: kind, Possible: possible, Launch: launch, Arity: arity}
+		if edge.Basis == programindex.BasisImplements {
+			call.Implements = builder.implementedName(index.Target.ID, callerID, edge.RelationID)
+		}
 		if site != nil {
 			call.Sites = []pageReadingSite{*site}
 		}
@@ -384,6 +397,17 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		}
 	}
 	return calls
+}
+
+// implementedName is the interface method a call on the implements basis
+// calls, as the code calls it (calledName of its relation).
+func (builder *pageBuilder) implementedName(targetID, callerID, relationID string) string {
+	for _, relation := range builder.callRelations(targetID)[callerID] {
+		if relation.ID == relationID {
+			return calledName(relation)
+		}
+	}
+	return ""
 }
 
 // groupFlowByPart stands a flow's calls under each part once (reviewer,

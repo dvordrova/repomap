@@ -787,3 +787,107 @@ func TestAMainFlowStepSaysTheHelperItIsReachedThrough(t *testing.T) {
 		}
 	}
 }
+
+// etcd's gateway calls server.Campaign on a value no observed flow gives: its
+// targets are the methods the repository's types implementing
+// ElectionServer declare (ProgramIndex Relation.Basis "implements"). The
+// page reads the call as the interface's method implemented in this
+// repository by them, by method set, never as a traced call: in the Calls
+// column, among an entry's own calls and on a Main flow step and its
+// passed candidates, a single implementation included, in both languages.
+func TestACallKnownByItsInterfacesImplementationsSaysSo(t *testing.T) {
+	at := &programindex.Location{Path: "gw/v3election.pb.gw.go", Line: 62, Column: 29}
+	witness := []programindex.Witness{{Kind: "go_ssa_dynamic_handoff", Detail: "go.etcd.io/etcd/server/v3/etcdserver/api/v3election/v3electionpb.ElectionServer.Campaign func(context.Context) error"}}
+	relation := programindex.Relation{ID: "e27300", Kind: programindex.RelationCalls, FromID: "n1", ToIDs: []string{"n2", "n3"}, Resolution: programindex.ResolutionAlternatives,
+		Dispatch: programindex.DispatchInterface, Basis: programindex.BasisImplements, Location: at, Witnesses: witness}
+	edge := func(to string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: "n1", ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationID: "e27300", RelationKind: programindex.RelationCalls,
+			Resolution: programindex.ResolutionAlternatives, Location: at, Basis: programindex.BasisImplements}
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g1", Title: "Election", MemberSubjectIDs: []string{"n1", "n2", "n3"}}},
+		StructuralEdges: []groupindex.StructuralEdge{edge("n2"), edge("n3")}}
+	b := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "t1"},
+		Objects: []programindex.Object{{ID: "n1", Name: "local_request_Election_Campaign_0"}, {ID: "n2", Name: "Campaign", OwnerID: "n4"}, {ID: "n3", Name: "Campaign", OwnerID: "n5"},
+			{ID: "n4", Name: "electionServer"}, {ID: "n5", Name: "electionProxy"}},
+		Relations: []programindex.Relation{relation}}}}},
+		subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://example.test/etcd", blobPrefix: "/blob/", revision: "r"}}
+	declared := map[string]int{"n2": 0, "n3": 1}
+	calls := b.flowOf(&index, "n1", func(id string) int {
+		if position, ok := declared[id]; ok {
+			return position
+		}
+		return -1
+	}, nil)
+	if len(calls) != 1 || calls[0].Implements != "v3electionpb.ElectionServer.Campaign" || !slices.Equal(calls[0].One, []int{0, 1}) || calls[0].Unresolved {
+		t.Fatalf("the implemented call: %+v", calls)
+	}
+	own, _ := b.ownCalls("t1", "n1")
+	if len(own) != 1 || own[0].Anchor.Text != "v3electionpb.ElectionServer.Campaign" || !slices.Equal(own[0].Implementers, []string{"electionServer.Campaign", "electionProxy.Campaign"}) || own[0].Unresolved {
+		t.Fatalf("the entry's own call: %+v", own)
+	}
+
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "one of 2", Basis: programindex.BasisImplements,
+		Passed: []orientation.FlowBranch{{SubjectID: "h2", Via: "one of 2", Basis: programindex.BasisImplements}}}, section, map[string]bool{})
+	if !step.Implemented || step.Passed == nil || !step.Passed.Names[0].Implemented {
+		t.Fatalf("the step's basis: %+v, passed %+v", step, step.Passed)
+	}
+	for language, words := range map[DisplayLanguage][2]string{
+		English: {"an implementation in this repository, by method set, not a traced call", "(by method set)"},
+		Russian: {"реализация в этом репозитории, по набору методов, а не прослеженный вызов", "(по набору методов)"},
+	} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "etcd", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+			t.Fatal(err)
+		}
+		if html := out.String(); !strings.Contains(html, words[0]) || !strings.Contains(html, words[1]) {
+			t.Fatalf("%v: the step or its passed candidate does not say how it is known: %s", language, html)
+		}
+	}
+}
+
+// One callee reached once by a traced call and once as the one
+// implementation of an interface no observed value fills stands twice, each
+// row with its own site and how it is known, whichever the code lists first.
+func TestATracedCallAndAnImplementationOfTheSameCalleeKeepTheirBasis(t *testing.T) {
+	traced := &programindex.Location{Path: "server.go", Line: 10, Column: 2}
+	implemented := &programindex.Location{Path: "server.go", Line: 20, Column: 2}
+	witness := []programindex.Witness{{Kind: "go_ssa_dynamic_handoff", Detail: "example.com/app.Store.Put func(string)"}}
+	relations := []programindex.Relation{
+		{ID: "e1", Kind: programindex.RelationCalls, FromID: "n1", ToIDs: []string{"n2"}, Resolution: programindex.ResolutionExact, Location: traced, Witnesses: witness},
+		{ID: "e2", Kind: programindex.RelationCalls, FromID: "n1", ToIDs: []string{"n2"}, Resolution: programindex.ResolutionExact, Dispatch: programindex.DispatchInterface,
+			Basis: programindex.BasisImplements, Location: implemented, Witnesses: witness},
+	}
+	edge := func(relation programindex.Relation) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: "n1", ToSubjectID: "n2", Role: groupindex.EdgeRelationTarget, RelationID: relation.ID, RelationKind: programindex.RelationCalls,
+			Resolution: relation.Resolution, Location: relation.Location, Basis: relation.Basis}
+	}
+	for _, order := range [][]int{{0, 1}, {1, 0}} {
+		index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g1", Title: "Store", MemberSubjectIDs: []string{"n1", "n2"}}},
+			StructuralEdges: []groupindex.StructuralEdge{edge(relations[order[0]]), edge(relations[order[1]])}}
+		b := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "t1"},
+			Objects: []programindex.Object{{ID: "n1", Name: "save"}, {ID: "n2", Name: "Put"}}, Relations: relations}}}},
+			subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://example.test/app", blobPrefix: "/blob/", revision: "r"}}
+		calls := b.flowOf(&index, "n1", func(id string) int {
+			if id == "n2" {
+				return 0
+			}
+			return -1
+		}, nil)
+		said := map[string]string{}
+		for _, call := range calls {
+			if call.Decl == nil || *call.Decl != 0 || len(call.Sites) != 1 {
+				t.Fatalf("order %v: a row is not the callee at one site: %+v", order, calls)
+			}
+			said[call.Sites[0].At] = call.Implements
+		}
+		if len(calls) != 2 || said["server.go:10"] != "" || said["server.go:20"] != "app.Store.Put" {
+			t.Fatalf("order %v: rows %+v read %v", order, calls, said)
+		}
+	}
+}

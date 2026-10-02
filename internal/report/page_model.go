@@ -310,6 +310,9 @@ type pageBuilder struct {
 	// and namesOf its declarations' names (ownCalls).
 	callsFrom map[string]map[string][]programindex.Relation
 	namesOf   map[string]map[string]string
+	// ownersOf are, by program, its declarations' owners by object ID
+	// (ownCalls: a method an implements-basis call runs, with its type).
+	ownersOf map[string]map[string]string
 	// declarationEnds is the last line of each declaration by its place
 	// (path, line, column), from every program's index, built once.
 	declarationEnds map[string]int
@@ -1036,6 +1039,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		}
 	}
 	row.Through = builder.flowThrough(step.TargetID, step.Through)
+	row.Implemented = step.Basis == programindex.BasisImplements
 	row.Fork = builder.flowFork(step)
 	row.Passed = builder.flowPassed(step)
 	builder.flowStepOwn(&row, step, section)
@@ -1284,6 +1288,7 @@ func (builder *pageBuilder) flowBranchNames(targetID string, branches []orientat
 			}
 		}
 		name.Through = builder.flowThrough(targetID, branch.Through)
+		name.Implemented = branch.Basis == programindex.BasisImplements
 		result = append(result, name)
 		names, spellings = append(names, name.Name), append(spellings, groupindex.Where(name.Name, file, part))
 	}

@@ -144,13 +144,13 @@ func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, grap
 	var rows []FlowStep
 	branch := func(candidate groupindex.SpineStep) FlowBranch {
 		reach := walk.met[candidate.Edge].reach
-		return FlowBranch{SubjectID: stepSubject(candidate), Via: reach.via, Site: reach.site, Through: slices.Clone(reach.through)}
+		return FlowBranch{SubjectID: stepSubject(candidate), Via: reach.via, Site: reach.site, Through: slices.Clone(reach.through), Basis: reach.basis}
 	}
 	for position, step := range path.Steps {
 		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
 		if step.Edge >= 0 {
 			reach := walk.met[step.Edge].reach
-			row.Via, row.Site, row.Through = reach.via, reach.site, slices.Clone(reach.through)
+			row.Via, row.Site, row.Through, row.Basis = reach.via, reach.site, slices.Clone(reach.through), reach.basis
 		}
 		for _, candidate := range path.Passed[position] {
 			row.Passed = append(row.Passed, branch(candidate))
@@ -162,7 +162,7 @@ func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, grap
 		if strings.HasPrefix(row.Via, "its member ") {
 			if len(rows) > 0 {
 				previous := rows[len(rows)-1]
-				row.Via, row.Site, row.Through = previous.Via, previous.Site, previous.Through
+				row.Via, row.Site, row.Through, row.Basis = previous.Via, previous.Site, previous.Through, previous.Basis
 				rows = rows[:len(rows)-1]
 				if len(rows) > 0 {
 					rows[len(rows)-1].Passed = append(rows[len(rows)-1].Passed, previous.Passed...)

@@ -210,6 +210,12 @@ type pageSpineStep struct {
 	Part    string `json:"part,omitempty"`
 	Members []int  `json:"members,omitempty"`
 	Helper  bool   `json:"helper,omitempty"`
+	// Implemented marks a step the step before calls as a method of a
+	// repository type implementing the interface it calls, no observed
+	// flow giving the value (StructuralEdge.Basis "implements"): known by
+	// method set, never a traced call (etcd's gateway reaching
+	// electionServer.Campaign and electionProxy.Campaign).
+	Implemented bool `json:"implemented,omitempty"`
 }
 
 // pageWay is one way a request reaches a dispatch site: the input it
@@ -439,7 +445,8 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 			}
 		}
 		spineStep := func(step groupindex.SpineStep) pageSpineStep {
-			result := pageSpineStep{Decl: decls.of(step.SubjectID), Part: partOf[step.SubjectID], Helper: step.Helper}
+			result := pageSpineStep{Decl: decls.of(step.SubjectID), Part: partOf[step.SubjectID], Helper: step.Helper,
+				Implemented: step.Edge >= 0 && step.Edge < len(index.StructuralEdges) && index.StructuralEdges[step.Edge].Basis == programindex.BasisImplements}
 			for _, member := range step.Members {
 				if member != step.SubjectID {
 					result.Members = append(result.Members, decls.of(member))

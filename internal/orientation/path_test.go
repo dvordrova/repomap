@@ -494,3 +494,58 @@ func TestAStepsWorkPassesThroughItsHelpers(t *testing.T) {
 		t.Fatalf("a flow through helpers does not seal: %v", err)
 	}
 }
+
+// A step the step before calls as a method of a repository type
+// implementing the interface it calls, no observed flow giving the value,
+// keeps that basis, as a split's candidate does: the page says it is known
+// by method set, never a traced call (etcd's gateway reaching
+// electionServer.Campaign).
+func TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis(t *testing.T) {
+	subject := func(id string) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "gw.go", Line: 1, Column: 1}}}
+	}
+	calls := func(from, to string, resolution programindex.Resolution, basis string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationID: from + "-" + basis,
+			RelationKind: programindex.RelationCalls, Resolution: resolution, Basis: basis}
+	}
+	implements, alternatives := programindex.BasisImplements, programindex.ResolutionAlternatives
+	index := groupindex.Index{
+		Target:   programindex.Target{ID: "t1", Name: "gateway", Seeds: []programindex.TargetSeed{{ObjectID: "handle", Kind: programindex.SeedCallable}}},
+		Subjects: []groupindex.Subject{subject("handle"), subject("serverCampaign"), subject("proxyCampaign")},
+		Groups:   []groupindex.Group{{ID: "g1", Title: "Election", Core: true, MemberSubjectIDs: []string{"handle", "serverCampaign", "proxyCampaign"}}},
+		StructuralEdges: []groupindex.StructuralEdge{
+			calls("handle", "serverCampaign", alternatives, implements), calls("handle", "proxyCampaign", alternatives, implements),
+		},
+	}
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		return llm.Verdict{Choice: "serverCampaign", Probabilities: map[string]float64{"serverCampaign": 0.8, "proxyCampaign": 0.2}}, true
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, Input{Groups: []groupindex.Index{index}}, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := walk.flow.Steps
+	if len(steps) != 2 || steps[1].SubjectID != "serverCampaign" || steps[1].Basis != implements || len(steps[0].Passed) != 1 || steps[0].Passed[0].Basis != implements {
+		t.Fatalf("the flow is %+v, want handle then serverCampaign, both candidates on the implements basis", steps)
+	}
+	if steps[0].Basis != "" {
+		t.Fatalf("the seed took a basis: %+v", steps[0])
+	}
+	if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {
+		t.Fatalf("a flow on the implements basis does not seal: %v", err)
+	}
+	// A traced call of the same method is how the step is reached, in
+	// either order of the code's relations.
+	traced := calls("handle", "serverCampaign", programindex.ResolutionExact, "")
+	for _, edges := range [][]groupindex.StructuralEdge{append([]groupindex.StructuralEdge{traced}, index.StructuralEdges...), append(slices.Clone(index.StructuralEdges), traced)} {
+		both := index
+		both.StructuralEdges = edges
+		walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, Input{Groups: []groupindex.Index{both}}, "t1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if steps := walk.flow.Steps; len(steps) != 2 || steps[1].Basis != "" || steps[1].Via != "called" || len(steps[0].Passed) != 1 || steps[0].Passed[0].Basis != implements {
+			t.Fatalf("with a traced call the flow is %+v", steps)
+		}
+	}
+}

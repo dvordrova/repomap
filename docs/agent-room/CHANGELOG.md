@@ -88,6 +88,21 @@
   - litestream 20261002-200012: `WriteLTXFile` is unchanged (alternatives of 8 with 4–5 omitted, observed), and 14 unresolved interface calls became implements alternatives.
     - Its Main flow changed: ReplicateCommand.Run now offers what constructors decided as helpers reach (DirectoryMonitor.run handed to go through NewDirectoryMonitor, Server's handlers through NewServer), and the path goes to DirectoryMonitor.run.
     - This is the helper look-through of 63bc5e8d, not this change. Recorded for the helper-chain follow-up.
+- **The basis reaches the reader** (control review, 2026-10-02 19:59): the orientation keeps it on Main flow steps and their candidates (`FlowStep.Basis`, `FlowBranch.Basis`). The page says it in four places:
+  - in a declaration's Calls, as the interface's method followed by "implemented in this repository by these (by method set, not a traced call)", or for a single implementation "(the one implementation of {0} in this repository; by method set, not a traced call)";
+  - among an entry's own calls, with each implementation named by its type;
+  - on a Main flow step and in its folds;
+  - in an input's flow, as "(by method set)".
+  - The wording is in English and Russian.
+- **A traced call and an implementation of the same callee stay apart.** Each keeps its own site, whichever comes first (control review, 20:42).
+  - In the Calls column they are separate rows.
+  - In the walk, the traced call is how the step is reached.
+  - Tests: `TestATracedCallAndAnImplementationOfTheSameCalleeKeepTheirBasis`, `TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis`.
+- **Browser walk** on a fresh ordinary etcd run, 20261002-203238 (binary from HEAD 089f4708 plus these files, all cached):
+  - Find `local_request_Election_Campaign_0`, then Other declarations, then the declaration. Its Calls read "v3electionpb.ElectionServer.Campaign implemented in this repository by these (by method set, not a traced call)", and opening the row lists electionProxy.Campaign, electionServer.Campaign and UnimplementedElectionServer.Campaign.
+  - The POST /v3electionpb.Election/Campaign request's flow goes "then into" each of them "(by method set)".
+  - The Main flow's Server step passes "store.HashStorage through NewMaintenanceServer (by method set)".
+  - Screenshots: `j10-etcd-01-campaign-calls.png` and `j10-etcd-02-input-flow.png`.
 
 ## 2026-10-02 — No README line in atlas inputs (data 1)
 

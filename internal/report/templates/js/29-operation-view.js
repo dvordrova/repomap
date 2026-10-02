@@ -271,6 +271,9 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     if(node){var box=rmEl('button','system-path-part',node.dataset.title);box.type='button';box.addEventListener('click',function(){choose(node);});line.appendChild(box);}
     line.appendChild(name(entry.decl));
     if((entry.members||[]).length){line.appendChild(document.createTextNode(' ('));entry.members.forEach(function(member,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(member));});line.appendChild(document.createTextNode(')'));}
+    // A method of a type implementing the interface the step before calls,
+    // no observed value filling it, says how it is known.
+    if(entry.implemented)line.appendChild(rmEl('span','meta map-flow-implemented',' ('+rmT('by method set')+')'));
     var said=typeLine(entry.decl);if(said)line.appendChild(said);
     return line;
   }

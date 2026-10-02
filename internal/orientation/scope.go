@@ -45,6 +45,11 @@ type flowEdge struct {
 	at      string
 	through []string
 	said    []string
+	// basis is, for a call whose target is a method of a repository type
+	// implementing the called interface, no observed flow giving the value,
+	// programindex.BasisImplements (GO): the page says so, never a traced
+	// call.
+	basis string
 }
 
 // asked is how a candidate is reached as the categorizer reads it: "one of
@@ -112,7 +117,19 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 	}
 	seen := map[[2]string]bool{}
 	add := func(from string, edge flowEdge) {
-		if !graph.member(from) || !graph.member(edge.to) || from == edge.to || seen[[2]string{from, edge.to}] {
+		if !graph.member(from) || !graph.member(edge.to) || from == edge.to {
+			return
+		}
+		if seen[[2]string{from, edge.to}] {
+			// A traced call of a callee the declaration also reaches as an
+			// interface's implementation is how it is reached.
+			if edge.basis == "" {
+				for position, known := range graph.out[from] {
+					if known.to == edge.to && known.basis != "" {
+						graph.out[from][position] = edge
+					}
+				}
+			}
 			return
 		}
 		seen[[2]string{from, edge.to}] = true
@@ -140,6 +157,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 			if edge.Resolution == programindex.ResolutionAlternatives {
 				reach = flowEdge{to: edge.ToSubjectID, via: fmt.Sprintf("one of %d", alternatives[edge.RelationID]), site: edge.FromSubjectID, at: siteOf(edge.Location)}
 			}
+			reach.basis = edge.Basis
 			add(edge.FromSubjectID, reach)
 		case programindex.RelationPassesCallback:
 			via := "handed over"

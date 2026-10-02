@@ -28,6 +28,10 @@ type pageStepName struct {
 	// Through are, for a split's candidate, the helpers the work passes
 	// through on its way to it (orientation FlowBranch.Through).
 	Through []pageStepName
+	// Implemented is, for a split's candidate, that it is a method of a
+	// repository type implementing the interface called, known by method
+	// set (orientation FlowBranch.Basis).
+	Implemented bool
 }
 
 // pageStepRegistration is one place a step's callable is registered: the

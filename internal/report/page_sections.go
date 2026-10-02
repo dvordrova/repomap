@@ -404,6 +404,11 @@ type pageFlowStep struct {
 	// way to this step (orientation FlowStep.Through), each a name read as
 	// a step's is: Lua's lua_pcallk, called through docall.
 	Through []pageStepName
+	// Implemented is, for a step the step before calls as a method of a
+	// repository type implementing the interface it calls, no observed
+	// flow giving the value (orientation FlowStep.Basis), that it is known
+	// by method set, never a traced call.
+	Implemented bool
 	// OneOf is, for a step reached as one of the callables a call through a
 	// value may run, that reach in words ("one of the calls serverCron may
 	// make"), never a count; Via is then empty.
@@ -1704,6 +1709,11 @@ type pageOwnCall struct {
 	Anchor     *pageAnchor
 	Unresolved bool
 	More       bool
+	// Implementers are, for a call through an interface whose value no
+	// observed flow gives, the methods the repository's types implementing
+	// it declare (Relation.Basis "implements"): the call reads as the
+	// interface's method, implemented by them, never a traced call.
+	Implementers []string
 }
 
 // ownCalls are the calls an entry makes itself, in written order, each name
@@ -1739,6 +1749,15 @@ func (builder *pageBuilder) ownCalls(programTargetID, objectID string) ([]pageOw
 	for _, relation := range relations {
 		if len(relation.ToIDs) == 0 {
 			add(calledName(relation), relation, relation.Resolution == programindex.ResolutionUnresolved)
+			continue
+		}
+		if relation.Basis == programindex.BasisImplements {
+			if name := calledName(relation); name != "" && !seen[name] {
+				add(name, relation, false)
+				for _, to := range relation.ToIDs {
+					calls[len(calls)-1].Implementers = append(calls[len(calls)-1].Implementers, builder.typedName(programTargetID, to))
+				}
+			}
 			continue
 		}
 		for _, to := range relation.ToIDs {
@@ -1801,10 +1820,29 @@ func (builder *pageBuilder) objectNames(programTargetID string) map[string]strin
 				name = name[strings.LastIndex(name, "/")+1:]
 			}
 			names[object.ID] = name
+			if object.OwnerID != "" {
+				if builder.ownersOf == nil {
+					builder.ownersOf = map[string]map[string]string{}
+				}
+				if builder.ownersOf[programTargetID] == nil {
+					builder.ownersOf[programTargetID] = map[string]string{}
+				}
+				builder.ownersOf[programTargetID][object.ID] = object.OwnerID
+			}
 		}
 	}
 	builder.namesOf[programTargetID] = names
 	return names
+}
+
+// typedName is a declaration's name with its type's, a method read as
+// electionServer.Campaign (ownCalls).
+func (builder *pageBuilder) typedName(programTargetID, objectID string) string {
+	names := builder.objectNames(programTargetID)
+	if owner := builder.ownersOf[programTargetID][objectID]; owner != "" && names[owner] != "" {
+		return names[owner] + "." + names[objectID]
+	}
+	return names[objectID]
 }
 
 // calledName is the name a call no implementation is established for is

@@ -2018,7 +2018,15 @@ and the walk ran into the collector; looked through at every depth, f_parser
 reached the VM by the stack's error handler and the ways wandered the error
 and collector code, 20 requests where there had been 1; now handle_script
 goes on to lua_pcallk through docall 5 of 5, 0.68-0.74;
-`TestAStepsWorkPassesThroughItsHelpers`). No unit whose closure enters no
+`TestAStepsWorkPassesThroughItsHelpers`). A step or candidate the step
+before calls as a method of a repository type implementing the interface it
+calls, no observed flow giving the value, keeps that basis
+(`FlowStep.Basis`, `FlowBranch.Basis`: `implements`, GO), a traced call of
+the same callee winning; the page reads it as known by method set, never a
+traced call, as it reads such a call in a declaration's Calls ("implemented
+in this repository by these"), among an entry's own calls and in an input's
+flow (`TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis`,
+`TestACallKnownByItsInterfacesImplementationsSaysSo`). No unit whose closure enters no
 part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the
