@@ -43,7 +43,20 @@
     var section=document.getElementById(n.dataset.owner)||n.closest('section'),id=section.id,href=n.getAttribute('href');
     if(href&&href[0]==='#'&&!n.dataset.activation&&!n.dataset.branch)groupNodes[href.slice(1)]=n;
     var found=nodeKind(n.dataset);if(!found)return;
-    add({title:n.dataset.title,summary:nodeSummary(n.dataset),additionalText:map.areaDescriptions(n).concat(n.dataset.declaredBy?[n.dataset.declaredBy]:[]).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,
+    // An input is found by the name its list gives it, the words telling
+    // it apart included, and by its registration as written and the words
+    // its handler declares (control review, 2026-10-02: etcd's
+    // "POST /v3electionpb.Election/Campaign · RegisterElectionHandlerServer"
+    // was indexed as "POST", and Campaign found no input).
+    var title=n.dataset.title,also=[];
+    if(n.dataset.activation&&typeof rmPage!=='undefined'&&rmPage.data){
+      var apart=(rmPage.data(n,'apart')||[]).map(function(word){return word.word;}).filter(Boolean);
+      if(apart.length)title+=' '+apart.join(' · ');
+      var path=rmPage.data(n,'inputPath');
+      (path&&path.checks||[]).forEach(function(check){if(check&&check.name)also.push(check.name);});
+      if(n.dataset.written)also.push(n.dataset.written);
+    }
+    add({title:title,summary:nodeSummary(n.dataset),additionalText:map.areaDescriptions(n).concat(n.dataset.declaredBy?[n.dataset.declaredBy]:[],also).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,
       kind:found.kind,type:found.type,node:n,map:map});
   });
   // One entry per declaration, by its file and line: adlist.c's listCreate,

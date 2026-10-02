@@ -55,3 +55,27 @@ assert.deepEqual(undecided.memberships.map(m=>m.title),['redis-server / Not on t
 assert.deepEqual(tileRows(undecided),{head:'saveparam',fields:[]});
 `)
 }
+
+// Find "Campaign" as an operation found nothing on etcd: its inputs were
+// indexed by their titles alone ("POST"), the words telling them apart and
+// their registration as written unread (control review, 2026-10-02). An
+// input is found by the name its list gives it and by its words, and it
+// opens itself.
+func TestFindIndexesAnInputByItsToldApartName(t *testing.T) {
+	code := systemJSPiece(t, "40-find.js", "  function nodeKind(d){", "  // A declaration off the map stays findable") +
+		systemJSPiece(t, "40-find.js", "  document.querySelectorAll('[data-map-explorer] [data-node]')", "  // One entry per declaration")
+	runSystemJS(t, `
+const entries=[],components={server:'server (executable)'},groupNodes={};
+function add(entry){entry.haystack=(entry.title+' '+(entry.additionalText||'')).toLowerCase();entries.push(entry);}
+function rmT(text){return text;}
+const map={displayedNode:n=>n,areaDescriptions:()=>[]};
+const input={dataset:{title:'POST',activation:'request',owner:'server',handler:'RegisterElectionHandlerServer',written:'mux.Handle(http.MethodPost, pattern_Election_Campaign_0, func(…) {…})'},closest:()=>map,getAttribute:()=>null};
+rmPage.data=((n,key)=>key==='apart'?[{word:'/v3electionpb.Election/Campaign'},{word:'RegisterElectionHandlerServer'}]:key==='inputPath'?{checks:[{name:'/v3/election/campaign'}]}:null);
+const document={getElementById:id=>id==='server'?{id:'server',querySelector:()=>null}:null,querySelectorAll:()=>[input]};
+`+code+`
+assert.equal(entries.length,1);
+assert.equal(entries[0].title,'POST /v3electionpb.Election/Campaign · RegisterElectionHandlerServer','named as its list names it');
+assert.ok(['campaign','/v3/election/campaign','pattern_election_campaign_0'].every(word=>entries[0].haystack.includes(word)),'found by its words and its registration as written: '+entries[0].haystack);
+assert.equal(entries[0].node,input,'it opens the input itself');
+`)
+}

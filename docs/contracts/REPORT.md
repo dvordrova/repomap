@@ -1308,7 +1308,11 @@ the component list and one visible Find field. All is the list's default and
 runs the whole-map action, clearing selection, input context and the visible
 Find query after recording the new visit. The main toolbar holds search and
 camera controls; search keeps its full inventory, with no type/style
-switches. Show whole map above the canvas moves only the camera; the reading,
+switches. An input is found by the name its list gives it, the words
+telling it apart included, and by its registration as written and the words
+its handler declares, and a result opens that input as its list does
+(control review, 2026-10-02: etcd's Campaign inputs, indexed as "POST",
+were found by no Operations search). Show whole map above the canvas moves only the camera; the reading,
 its emphasis and any input path stay. The "−" beside it steps out one level,
 as a zoom mark steps in one, also moving only the camera: from a part's tiles
 to the frame holding it, from an open area to its component, from an open
