@@ -301,55 +301,50 @@ func TestARequestsWaysInAreChainsInCallOrder(t *testing.T) {
 	}
 }
 
-// A Main flow step citing a registration reads the callable it registers,
-// registered where the step's own path reaches: readQueryFromClient is
-// registered in createClient, which acceptHandler (the step before) calls,
-// and in beforeSleep's resume path, which it does not; the step names the
-// first and links its line, never an arbitrary first site (owner,
-// 2026-09-29: it had linked redis.c:1414). Unreached, every site is named.
-func TestARegistrationStepIsRegisteredOnItsOwnPath(t *testing.T) {
+// A Main flow step whose callable a registration hands over reads where the
+// walk found it registered and what runs it, as orientation saved them
+// (version 3), the page deriving none: readQueryFromClient is registered
+// by createClient, which acceptHandler, a callable aeProcessEvents may call
+// through a value, calls; the hop through the value reads "may call" in
+// words, never a count, and "registers it" links the registering line.
+func TestARegistrationStepReadsItsSavedRegistration(t *testing.T) {
 	builder, index := flowFixture()
 	add := func(id, name string, line int) {
 		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Kind: groupindex.SubjectObject,
 			Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "redis.c", Line: line, Column: 1}}}}
 	}
+	add("events", "aeProcessEvents", 275)
 	add("accept", "acceptHandler", 2500)
 	add("create", "createClient", 2450)
-	add("sleep", "beforeSleep", 1400)
 	add("read", "readQueryFromClient", 2386)
-	index.Groups[0].MemberSubjectIDs = append(index.Groups[0].MemberSubjectIDs, "accept", "create", "sleep", "read")
-	index.StructuralEdges = append(index.StructuralEdges, groupindex.StructuralEdge{FromSubjectID: "accept", ToSubjectID: "create", Role: groupindex.EdgeRelationTarget,
-		RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, Location: &programindex.Location{Path: "redis.c", Line: 2510}})
+	index.Groups[0].MemberSubjectIDs = append(index.Groups[0].MemberSubjectIDs, "events", "accept", "create", "read")
 	builder.indexes = []groupindex.Index{index}
-	registration := func(id, owner string, line int) facts.Fact {
-		return facts.Fact{ID: id, Kind: facts.KindRegistration, TargetID: "t1", Symbol: "readQueryFromClient", ObjectID: "read", OwnerID: owner,
-			Anchor: &facts.Anchor{Path: "redis.c", Line: line}, Registrar: &facts.Registrar{Name: "aeCreateFileEvent"}}
+	builder.data.Facts = &facts.Result{Facts: []facts.Fact{{ID: "a151", Kind: facts.KindRegistration, TargetID: "t1", Symbol: "readQueryFromClient", ObjectID: "read", OwnerID: "create",
+		Anchor: &facts.Anchor{Path: "redis.c", Line: 2456}, Registrar: &facts.Registrar{Name: "aeCreateFileEvent"}}}}
+	builder.factsByID = builder.data.Facts.ByID()
+	section := builder.byProgram["t1"]
+	section.programTargetID = "t1"
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "read", Via: "one of 5", Site: "events",
+		Registered: []orientation.FlowRegistration{{FactID: "a151", Chain: []orientation.FlowHop{{SubjectID: "events"}, {SubjectID: "accept", Possible: true}, {SubjectID: "create"}}}}},
+		section, map[string]bool{})
+	if step.Label != "readQueryFromClient" || len(step.Registers) != 1 || step.Registers[0].At == nil || step.Registers[0].At.Text != "redis.c:2456" {
+		t.Fatalf("the step reads %q registered %+v", step.Label, step.Registers)
 	}
-	builder.data.Facts = &facts.Result{Facts: []facts.Fact{registration("a147", "sleep", 1414), registration("a151", "create", 2456)}}
-	section := &pageSection{ID: "t1", programTargetID: "t1"}
-	said := func(path *pageStepPath) []string {
-		var row pageFlowStep
-		if !builder.registeredStep(&row, builder.data.Facts.Facts[0], section, path) {
-			t.Fatal("the registration step was not read")
+	for _, language := range []DisplayLanguage{English, Russian} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
 		}
-		var out []string
-		for _, site := range row.Registers {
-			var by []string
-			for _, name := range site.By {
-				by = append(by, name.Name)
-			}
-			out = append(out, strings.Join(by, " → ")+" @"+site.At.Text)
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+			t.Fatal(err)
 		}
-		if row.Label != "readQueryFromClient" {
-			t.Fatalf("the step reads %q", row.Label)
+		chain := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(out.String()[strings.Index(out.String(), `<span class="flow-chain">`):], "")
+		chain = chain[:strings.Index(chain, map[DisplayLanguage]string{English: "registers it", Russian: "регистрирует его"}[language])]
+		want := map[DisplayLanguage]string{English: "aeProcessEvents may call acceptHandler → createClient ", Russian: "aeProcessEvents может вызвать acceptHandler → createClient "}[language]
+		if chain != want {
+			t.Fatalf("%v: the registration reads %q, want %q", language, chain, want)
 		}
-		return out
-	}
-	if got := said(&pageStepPath{shown: []string{"accept"}, runners: map[string]bool{}}); !slices.Equal(got, []string{"acceptHandler → createClient @redis.c:2456"}) {
-		t.Fatalf("after acceptHandler the step is registered at %q", got)
-	}
-	if got := said(&pageStepPath{shown: []string{"h1"}, runners: map[string]bool{}}); !slices.Equal(got, []string{"beforeSleep @redis.c:1414", "createClient @redis.c:2456"}) {
-		t.Fatalf("off every path the step names %q", got)
 	}
 }
 
@@ -406,7 +401,7 @@ func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
 	_, resizeAnchor := builder.subjectDisplay(resize.subject)
 	flow := &pageFlow{Steps: []pageFlowStep{{Label: "tryResizeHashTables", Key: declarationKey(resizeAnchor)}}}
 	var said []string
-	for _, work := range builder.ownWork(section, flow, &pageStepPath{runners: map[string]bool{"events": true}}) {
+	for _, work := range builder.ownWork(section, flow, map[string]bool{"events": true}) {
 		var how []string
 		for _, site := range work.Registers {
 			var by []string
@@ -446,7 +441,7 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 	builder, _ := flowFixture()
 	section := builder.byProgram["t1"]
 	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called",
-		Passed: []orientation.FlowBranch{{SubjectID: "h1", Via: "called"}, {SubjectID: "h2", Via: "called"}}}, section, &pageStepPath{runners: map[string]bool{}})
+		Passed: []orientation.FlowBranch{{SubjectID: "h1", Via: "called"}, {SubjectID: "h2", Via: "called"}}}, section, map[string]bool{})
 	if step.Passed == nil || step.Fork != nil || len(step.Passed.Names) != 2 {
 		t.Fatalf("passed %+v, fork %+v", step.Passed, step.Fork)
 	}
@@ -578,7 +573,7 @@ func TestAMainFlowSaysEachStepsPartTypeAndInputs(t *testing.T) {
 func TestAFlowsViaAndForkNameTheSitesFunctionNotItsLine(t *testing.T) {
 	builder, _ := flowFixture()
 	section := builder.byProgram["t1"]
-	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "h2", Via: "one of 2", Site: "cron"}, section, &pageStepPath{runners: map[string]bool{}})
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "h2", Via: "one of 2", Site: "cron"}, section, map[string]bool{})
 	fork := builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Branches: []orientation.FlowBranch{
 		{SubjectID: "h1", Via: "one of 2", Site: "cron"}, {SubjectID: "h2", Via: "one of 2", Site: "cron"}}})
 	var names []string
@@ -667,8 +662,8 @@ func TestAPartedFlowReadsAsItsTrunkThenEachWay(t *testing.T) {
 			{Steps: []orientation.FlowStep{step("h2"), step("lookup"), step("resize"), step("x4")}},
 		},
 		Branches: []orientation.FlowBranch{{SubjectID: "save", Via: "called"}, {SubjectID: "log", Via: "called"}}}
-	row := builder.flowStep(fork, section, &pageStepPath{runners: map[string]bool{}})
-	row.Ways = builder.flowWays(fork, section, &pageStepPath{runners: map[string]bool{}})
+	row := builder.flowStep(fork, section, map[string]bool{})
+	row.Ways = builder.flowWays(fork, section, map[string]bool{})
 	row.Fork = builder.flowFork(fork)
 	if len(row.Ways) != 2 || row.Ways[0].Head.Label != "getCommand" || row.Ways[0].Folded ||
 		row.Ways[1].Head.Label != "setCommand" || !row.Ways[1].Folded || len(row.Ways[1].Rest) != 3 {

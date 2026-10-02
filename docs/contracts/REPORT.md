@@ -793,18 +793,15 @@ GroupsIndex names it everywhere in the report ("ReplicateCommand.Run
 citing a
 registration of a repository callable, or naming a callable some
 registration hands over, reads as that callable, never as the registrar
-(owner, 2026-09-29), with how it comes to run, from the program's facts and
-calls: where it is registered, as the run of exact calls from the most recent
-earlier step (the program's entries for the first) to the function making
-the registering call ("{a} → {b} registers it"), for every
-registration of that callable the step reaches, or every one when it reaches
-none, never an arbitrary first one, registrations by the same run read once;
-and what runs it, each function calling it through a value (a dispatch's
-alternatives, a call through a function value resolved to it alone, an open
-call whose stores name it), after the run of exact calls from the entries to
-that function the first time the flow shows it ("{entry} → … → {runner}
-runs it"), from the last runner already shown on that run ("{runner} → …
-runs it"). The step's name and every name in
+(owner, 2026-09-29), with where it is registered and what runs it as the
+walk saved them (orientation `FlowStep.Registered` and `RunBy`, version 3,
+READING); the page derives none of it. A run of calls reads its hops in
+words, never a count: "→" for an exact call, "may call" for a callable the
+name before may call through a value, "hands over" for one it hands over
+("aeProcessEvents may call acceptHandler → createClient registers it"; redis
+had read "processTimeEvents → serverCron → syncWithMaster → createClient
+registers it", the replication path exact calls alone found). The step's
+name and every name in
 its registration and runners read that declaration; the words "registers it"
 link the registering call's line; the step prints no line (owner, 2026-09-29).
 What a step is comes from saved data alone (external review, 2026-10-02: the
@@ -839,8 +836,13 @@ order and each callable once, save one the Main flow names. Each names its
 registering function alone ("{callable} — {registrar} registers it"), never a
 run of calls from the entries (litestream's Replica.monitor had read "… →
 ReplicateCommand.Run → Store.Close → … → Replica.Start registers it", the
-shortest exact route, through its shutdown). What runs it reads as
-a Main flow step's runners do. A callable no saved registration hands over
+shortest exact route, through its shutdown). What runs it is each function
+calling it through a value (a dispatch's alternatives, a call through a
+function value resolved to it alone, an open call whose stores name it),
+after the run of exact calls from the entries to that function, from the
+last declaration the Main flow already shows on that run ("{runner} → …
+runs it"), a runner once read named alone after: a page-side reading of
+saved facts, which a run without a model has too. A callable no saved registration hands over
 is its name alone. Nothing is looked for beyond the saved kinds and
 facts, so a program without such inputs lists none. Pointing at a line lights
 its input's tile. A scheduled or continuous input's own reading opens at that

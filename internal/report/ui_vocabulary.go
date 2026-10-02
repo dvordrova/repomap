@@ -76,6 +76,8 @@ var russianUI = map[string]string{
 	"{0} expands to a call of {1}":          "{0} разворачивается в вызов {1}",
 	"a macro":                               "макрос",
 	"also calls:":                           "также вызывает:",
+	"may call":                              "может вызвать",
+	"hands over":                            "передаёт",
 	"− helpers":                             "− вспомогательные",
 	"called at {0}":                         "вызывается в {0}",
 	"↑ shown above":                         "↑ показано выше",

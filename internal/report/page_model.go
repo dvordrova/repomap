@@ -870,21 +870,21 @@ func anchorList(anchor *pageAnchor) []pageAnchor {
 // through one example on all four pages, including the two it never touches,
 // which reads as a claim about that target and is not one.
 //
-// The path it returns is what its steps named, for the work the program
-// runs on its own (ownWork).
-func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath) {
+// The set it returns is what its steps and their runs of calls name, for
+// the work the program runs on its own (ownWork).
+func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, map[string]bool) {
 	orient := builder.data.Orientation
 	if orient == nil || len(orient.MainFlow.Steps) == 0 {
 		return nil, nil
 	}
 	flow := &pageFlow{Title: orient.MainFlow.Title}
 	here := false
-	path := &pageStepPath{runners: map[string]bool{}}
+	shown := map[string]bool{}
 	previous := ""
 	var subjects []string
 	for _, step := range orient.MainFlow.Steps {
-		row := builder.flowStep(step, section, path)
-		row.Ways = builder.flowWays(step, section, path)
+		row := builder.flowStep(step, section, shown)
+		row.Ways = builder.flowWays(step, section, shown)
 		if row.Target == "" {
 			here = true
 		}
@@ -907,7 +907,7 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath
 	if !here {
 		return nil, nil
 	}
-	return flow, path
+	return flow, shown
 }
 
 // flowWayShown is how many steps a way of a parted flow shows before the
@@ -917,14 +917,14 @@ const flowWayShown = 3
 
 // flowWays are the ways a flow goes on from the step where it parts, each
 // read as the trunk's steps are, a way parting again holding its own.
-func (builder *pageBuilder) flowWays(step orientation.FlowStep, section *pageSection, path *pageStepPath) []pageFlowWay {
+func (builder *pageBuilder) flowWays(step orientation.FlowStep, section *pageSection, shown map[string]bool) []pageFlowWay {
 	var ways []pageFlowWay
 	for _, way := range step.Paths {
 		var rows []pageFlowStep
 		var subjects []string
 		for _, wayStep := range way.Steps {
-			row := builder.flowStep(wayStep, section, path)
-			row.Ways = builder.flowWays(wayStep, section, path)
+			row := builder.flowStep(wayStep, section, shown)
+			row.Ways = builder.flowWays(wayStep, section, shown)
 			rows, subjects = append(rows, row), append(subjects, builder.flowStepSubject(wayStep))
 		}
 		if len(rows) == 0 {
@@ -1003,7 +1003,7 @@ func (builder *pageBuilder) flowStepSubject(step orientation.FlowStep) string {
 	return ""
 }
 
-func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, path *pageStepPath) pageFlowStep {
+func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, shown map[string]bool) pageFlowStep {
 	row := pageFlowStep{Explanation: step.Explanation, Via: step.Via}
 	if step.Site != "" {
 		if name, ok := builder.flowName(step.TargetID, step.Site); ok {
@@ -1020,13 +1020,20 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 			row.Label = factLabel(fact)
 			row.Anchor = builder.links.factAnchor(fact)
 			owner = builder.byFacts[fact.TargetID]
-			// A registration of a repository callable is that callable,
-			// with where it is registered and what runs it.
-			if owner == section && fact.Kind == facts.KindRegistration && fact.ObjectID != "" && builder.registeredStep(&row, fact, section, path) {
-				return row
+			// A registration of a repository callable reads as that
+			// callable, never as the registrar (owner, 2026-09-29).
+			if owner == section && fact.Kind == facts.KindRegistration && fact.ObjectID != "" {
+				if ref, ok := builder.subject(section.programTargetID, fact.ObjectID); ok && ref.subject.Object != nil && ref.subject.Object.Location != nil {
+					own := builder.stepName(section, fact.ObjectID)
+					_, anchor := builder.subjectDisplay(ref.subject)
+					row.Label, row.Part, row.Key, row.Anchor = own.Name, own.Part, own.Key, anchor
+					builder.flowRegistrations(&row, step, section)
+					shown[fact.ObjectID] = true
+					return row
+				}
 			}
 			if owner == section && fact.ObjectID != "" {
-				path.shown = append(path.shown, fact.ObjectID)
+				shown[fact.ObjectID] = true
 			}
 		}
 	case step.SubjectID != "":
@@ -1035,15 +1042,13 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 			// A method reads with its type: Main.Run, not one of Runs.
 			row.Label = builder.withType(ref.programTargetID, ref.subject, row.Label)
 			owner = builder.byProgram[ref.programTargetID]
-			// A callable some registration hands over reads the same way
-			// whether the step names it or its registration.
-			if owner == section && builder.data.Facts != nil {
-				for _, fact := range builder.data.Facts.OfKind(facts.KindRegistration) {
-					if builder.byFacts[fact.TargetID] == section && fact.ObjectID == step.SubjectID && fact.OwnerID != "" {
-						if builder.registeredStep(&row, fact, section, path) {
-							return row
-						}
-						break
+			// A callable a registration hands over reads where the walk
+			// found it registered and what runs it, as saved.
+			if owner == section {
+				builder.flowRegistrations(&row, step, section)
+				for _, runner := range step.RunBy {
+					for _, hop := range runner.Chain {
+						shown[hop.SubjectID] = true
 					}
 				}
 			}
@@ -1056,7 +1061,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		row.Target = owner.Name
 	}
 	if owner == section && step.SubjectID != "" {
-		path.shown = append(path.shown, step.SubjectID)
+		shown[step.SubjectID] = true
 	}
 	// A declaration of this program is read in its part.
 	if owner == section && step.SubjectID != "" && row.Anchor != nil {

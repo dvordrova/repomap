@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	Version          = 2
+	Version          = 3
 	ArtifactFilename = "orientation.json"
 	RejectedFilename = "rejected.jsonl"
 
@@ -61,7 +61,8 @@ type RecipeStep struct {
 // between them), and Branches, the candidates no way follows. At a split the
 // categorizer decided, Passed are the candidates the path did not follow
 // (version 2): the calls of the step it goes on beside (freqtrade's
-// FreqtradeBot.process passes IStrategy).
+// FreqtradeBot.process passes IStrategy). Registered and RunBy (version 3)
+// say where a registered callable is registered and what runs it.
 type FlowStep struct {
 	TargetID    string       `json:"target_id"`
 	FactID      string       `json:"fact_id,omitempty"`
@@ -72,6 +73,11 @@ type FlowStep struct {
 	Branches    []FlowBranch `json:"branches,omitempty"`
 	Passed      []FlowBranch `json:"passed,omitempty"`
 	Paths       []FlowPath   `json:"paths,omitempty"`
+	// Registered and RunBy are, for a step whose callable a registration
+	// hands over, where it is registered and what runs it, as the walk
+	// reaches them (readRegistrations, version 3).
+	Registered []FlowRegistration `json:"registered,omitempty"`
+	RunBy      []FlowRunner       `json:"run_by,omitempty"`
 }
 
 // FlowPath is one way a Main flow goes on from a split: its steps, the last
@@ -247,6 +253,16 @@ func validFlowSteps(steps []FlowStep) error {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
 			}
 		}
+		for _, registration := range step.Registered {
+			if !validText(registration.FactID) || !validChain(registration.Chain) {
+				return fmt.Errorf("orientation: flow step %d registration is invalid", position)
+			}
+		}
+		for _, runner := range step.RunBy {
+			if !validChain(runner.Chain) {
+				return fmt.Errorf("orientation: flow step %d runner is invalid", position)
+			}
+		}
 		if (step.FactID == "") == (step.SubjectID == "") {
 			return fmt.Errorf("orientation: flow step %d needs exactly one of fact_id or subject_id", position)
 		}
@@ -266,6 +282,20 @@ func validFlowSteps(steps []FlowStep) error {
 		}
 	}
 	return nil
+}
+
+// validChain checks a run of hops: at least one, each naming a subject, the
+// first reached by nothing.
+func validChain(chain []FlowHop) bool {
+	if len(chain) == 0 || chain[0].Possible || chain[0].Handed {
+		return false
+	}
+	for _, hop := range chain {
+		if !validText(hop.SubjectID) || hop.Possible && hop.Handed {
+			return false
+		}
+	}
+	return true
 }
 
 // Snapshot validates and returns an independently owned copy.
@@ -344,6 +374,14 @@ func cloneFlowSteps(steps []FlowStep) []FlowStep {
 	for position := range owned {
 		owned[position].Branches = cloneSlice(steps[position].Branches)
 		owned[position].Passed = cloneSlice(steps[position].Passed)
+		owned[position].Registered = cloneSlice(steps[position].Registered)
+		for at := range owned[position].Registered {
+			owned[position].Registered[at].Chain = cloneSlice(steps[position].Registered[at].Chain)
+		}
+		owned[position].RunBy = cloneSlice(steps[position].RunBy)
+		for at := range owned[position].RunBy {
+			owned[position].RunBy[at].Chain = cloneSlice(steps[position].RunBy[at].Chain)
+		}
 		if steps[position].Paths != nil {
 			owned[position].Paths = make([]FlowPath, len(steps[position].Paths))
 			for at, path := range steps[position].Paths {

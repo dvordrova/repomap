@@ -347,7 +347,9 @@ type pageFlowStep struct {
 	Part string
 	Key  string
 	// Registers and RunBy are, for a step citing a registration, where the
-	// callable it names is registered and what runs it (registeredStep).
+	// callable it names is registered and what runs it: a Main flow step's
+	// as orientation saved them (flowRegistrations), a callable run on its
+	// own as its saved facts say (ownWorkReading).
 	Registers []pageStepRegistration
 	RunBy     [][]pageStepName
 	// Via is how the step before reaches it, as code says it ("called",
@@ -554,8 +556,11 @@ func (builder *pageBuilder) buildSections() {
 		section.InboundCount = section.NativeRouteCount() + len(section.Requests)
 		section.InputsCount = section.InboundCount + len(section.Activities)
 		section.Coverage = sectionCoverage(section)
-		var shown *pageStepPath
+		var shown map[string]bool
 		section.Flow, shown = builder.flow(section)
+		if shown == nil {
+			shown = map[string]bool{}
+		}
 		section.OwnWork = builder.ownWork(section, section.Flow, shown)
 		if section.Flow == nil {
 			if index := builder.graphIndex(section.programTargetID); index != nil {

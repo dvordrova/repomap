@@ -17,12 +17,14 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/cproject"
 	"github.com/dvordrova/repomap/internal/debugdump"
-	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 // cTestRepository is a small C repository: two programs the Makefile links
@@ -408,12 +410,14 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 }
 
 // A Main flow step citing a registration reads as the callable it
-// registers, never as the registrar, with the run of calls registering it
-// and what runs it (owner, 2026-09-29: three of redis-server's six steps
-// read aeCreateFileEvent, and aeMain, aeProcessEvents and createClient
-// were gone). kvd's main registers acceptHandler with loopCreateFileEvent,
-// acceptHandler registers readQueryFromClient, and loopProcessEvents runs
-// both through fe->rfileProc.
+// registers, never as the registrar, with where the walk found it
+// registered, as orientation saved it (version 3): kvd's main registers
+// acceptHandler with loopCreateFileEvent, acceptHandler registers
+// readQueryFromClient, and loopProcessEvents may call each through
+// fe->rfileProc, so readQueryFromClient, reached as one of those, reads
+// "loopProcessEvents may call acceptHandler registers it" (owner,
+// 2026-09-29: three of redis-server's six steps read aeCreateFileEvent, and
+// aeMain, aeProcessEvents and createClient were gone).
 func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 	root, _ := cumulativeEvidenceRepository(t, "c")
 	debugDir := t.TempDir()
@@ -426,47 +430,54 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("run: %v\n%s", runErr, console.String())
 	}
-	restored, err := report.ReadRunReceipt(filepath.Join(debugDir, "latest"))
+	latest := filepath.Join(debugDir, "latest")
+	restored, err := report.ReadRunReceipt(latest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	data := restored.Data()
-	registered := func(symbol string) facts.Fact {
-		for _, fact := range data.Facts.OfKind(facts.KindRegistration) {
-			if fact.Symbol == symbol && fact.Registrar != nil && fact.Registrar.Name == "loopCreateFileEvent" {
-				return fact
+	program, err := programindex.ReadFile(filepath.Join(latest, programindex.ArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(filepath.Join(latest, groupindex.ArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := groupindex.Decode(encoded, program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A reader choosing the event loop, then the client's read handler.
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		for _, choice := range []string{"loopMain", "loopProcessEvents", "readQueryFromClient"} {
+			if slices.ContainsFunc(question.Options, func(option llm.Option) bool { return option.Name == choice }) {
+				return llm.Verdict{Choice: choice, Probabilities: map[string]float64{choice: 0.9}}, true
 			}
 		}
-		t.Fatalf("kvd has no registration of %s", symbol)
-		return facts.Fact{}
+		return llm.Verdict{}, false
+	}}
+	flowWalked, _, err := orientation.WalkFlow(t.Context(), llm.Executor{}, categorizer, orientation.Input{Facts: *data.Facts, Groups: []groupindex.Index{index}}, index.Target.ID, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	// The step naming the callable itself (a subject) reads as the step
-	// naming its registration does.
-	target := data.Facts.Facts[0].TargetID
-	data.Orientation = &orientation.Result{MainFlow: orientation.MainFlow{Title: "A request", Steps: []orientation.FlowStep{
-		{TargetID: target, FactID: registered("acceptHandler").ID, Explanation: "accepts"},
-		{TargetID: target, FactID: registered("readQueryFromClient").ID, Explanation: "reads"},
-		{TargetID: target, SubjectID: registered("sendReplyToClient").ObjectID, Explanation: "replies"},
-	}}}
+	data.Orientation = &orientation.Result{MainFlow: flowWalked}
 	html, err := report.RenderHTMLWithOptions(data, restored.RenderOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
 	flow := mainFlowSection(t, string(html))
 	var said []string
-	for _, step := range regexp.MustCompile(`<li class="flow-step"[^>]*><span class="flow-what"><code>([^<]+)</code></span>.*?<span class="flow-how">(.*?)</span><span class="model`).FindAllStringSubmatch(flow, -1) {
+	for _, item := range strings.Split(flow, `<li class="flow-step"`)[1:] {
+		step := regexp.MustCompile(`^[^>]*><span class="flow-what"><code>([^<]+)</code></span>.*?<span class="flow-how">(.*?)</span><span class="flow-via">`).FindStringSubmatch(item)
+		if step == nil {
+			continue
+		}
 		how := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(step[2], "")
 		how = regexp.MustCompile(` (registers|runs) it`).ReplaceAllString(how, " $1 it; ")
 		said = append(said, step[1]+": "+strings.TrimSuffix(how, "; "))
 	}
-	want := []string{
-		"acceptHandler: main registers it; main → loopMain → loopProcessEvents runs it",
-		"readQueryFromClient: acceptHandler registers it; loopProcessEvents runs it",
-	}
-	if len(said) == 3 && strings.HasPrefix(said[2], "sendReplyToClient: ") && strings.HasSuffix(said[2], "registers it; loopProcessEvents runs it") {
-		said = said[:2]
-	}
-	if !reflect.DeepEqual(said, want) {
+	if want := []string{"readQueryFromClient: loopProcessEvents may call acceptHandler registers it"}; !reflect.DeepEqual(said, want) {
 		t.Fatalf("the Main flow reads %q\nwant %q\n%s", said, want, flow)
 	}
 	if strings.Contains(flow, "<code>loopCreateFileEvent</code>") {

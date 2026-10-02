@@ -130,6 +130,7 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 		return flowWalk{}, failure
 	}
 	walk.flow.Steps = walk.flowSteps(path, targetID, graph)
+	readRegistrations(walk.flow.Steps, nil, graph, input.Facts.OfKind(facts.KindRegistration))
 	walk.flow.Title = flowTitle(walk.flow.Steps, graph)
 	return walk, nil
 }

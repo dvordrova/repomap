@@ -2017,7 +2017,20 @@ kept on the step (`FlowStep.Passed`, orientation version 2; external review,
 2026-10-02: freqtrade's FreqtradeBot.process passes IStrategy, where the
 strategy takes part) and read in words, folded under "also calls:", never
 "one of N": the step does not run one of them, it may run each. No model is
-asked anything new for them, the walk's own split keeping them. The
+asked anything new for them, the walk's own split keeping them. A step whose callable a registration hands over keeps where it is
+registered and what runs it (`FlowStep.Registered` and `RunBy`, orientation
+version 3), read over the same edges the walk walks (exact calls, a
+dispatch's alternatives, a function value's possible callees, hand-overs)
+from the latest earlier step of the path reaching a registering function,
+the fewest hops first and every run of that length kept, each hop saying
+whether it is reached through a value (`Possible`) or handed over
+(`Handed`); a registration no earlier step reaches is its registering
+function alone, and a runner is a function calling the callable through a
+value other than the site the step is reached from (redis's
+readQueryFromClient: aeProcessEvents may call acceptHandler, which calls
+createClient, where exact calls alone had found serverCron → syncWithMaster;
+`TestARegisteredStepIsRegisteredWhereThePathReaches`). The report only
+displays them. The
 candidates no way follows stay the step's folded "one of N" line, and the
 split is journaled under `flow_fork` with its lead and the ways followed. No
 answer at all ends the path at a named fork of every candidate. The report

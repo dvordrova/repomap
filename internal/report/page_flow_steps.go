@@ -7,18 +7,24 @@ import (
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // pageStepName is a declaration a Main flow step names beside its own:
 // read in its part (Part, Key) when one holds it, and a link into its code
 // (Code, all of its lines on a static page; Open, a served page's source).
+// On a run of calls, Possible and Handed say how the name before reaches
+// it, in words: a callable it may call through a value ("may call"), one it
+// hands over ("hands over"); neither, an exact call ("→").
 type pageStepName struct {
-	Name string
-	Part string
-	Key  string
-	Code string
-	Open string
+	Name     string
+	Part     string
+	Key      string
+	Code     string
+	Open     string
+	Possible bool
+	Handed   bool
 }
 
 // pageStepRegistration is one place a step's callable is registered: the
@@ -31,36 +37,39 @@ type pageStepRegistration struct {
 	At *pageAnchor
 }
 
-// pageStepPath is what a Main flow's earlier steps named, in order: the
-// declarations a later registration is reached from, and the functions
-// already shown running registered callables with the calls reaching them.
-type pageStepPath struct {
-	shown   []string
-	runners map[string]bool
-	// alone names each registration by its registering function alone,
-	// with no run of calls reaching it (ownWork).
-	alone bool
+// flowRegistrations are a Main flow step's saved registrations and runners
+// (orientation FlowStep.Registered and RunBy, version 3), each run of calls
+// read as a step's names are; the page derives none of them.
+func (builder *pageBuilder) flowRegistrations(row *pageFlowStep, step orientation.FlowStep, section *pageSection) {
+	chain := func(hops []orientation.FlowHop) []pageStepName {
+		names := make([]pageStepName, len(hops))
+		for position, hop := range hops {
+			names[position] = builder.stepName(section, hop.SubjectID)
+			names[position].Possible, names[position].Handed = hop.Possible, hop.Handed
+		}
+		return names
+	}
+	for _, registration := range step.Registered {
+		said := pageStepRegistration{By: chain(registration.Chain)}
+		if fact, known := builder.factsByID[registration.FactID]; known {
+			said.At = builder.links.factAnchor(fact)
+		}
+		row.Registers = append(row.Registers, said)
+	}
+	for _, runner := range step.RunBy {
+		row.RunBy = append(row.RunBy, chain(runner.Chain))
+	}
 }
 
-// registeredStep reads a step citing a registration (owner, 2026-09-29:
-// three of redis-server's six steps had read the registrar,
-// aeCreateFileEvent, and aeMain, aeProcessEvents and createClient were
-// gone) as the callable it registers, a name reading it, with how it comes
-// to run, all from the program's own facts and calls:
-//
-//   - where it is registered: of the registrations of that callable in this
-//     program, those whose registering function the most recent earlier step
-//     reaches by exact calls, each with that run of calls (acceptHandler →
-//     createClient); none reached, every one (from an entry when one reaches
-//     it). Never an arbitrary first one: readQueryFromClient's step had linked
-//     the one in beforeSleep's resume path;
-//   - what runs it: each function calling it through a value (a dispatch's
-//     alternatives, a call through a function value, or an open call whose
-//     stores name it), after the run of exact calls from the program's
-//     entries reaching that function the first time the flow shows it (main
-//     → aeMain → aeProcessEvents), from the last runner already shown on
-//     that run when there is one.
-func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, section *pageSection, path *pageStepPath) bool {
+// ownWorkReading reads a callable a program runs on its own from its saved
+// facts: each registration of it by its registering function alone (no run
+// of calls from the entries is chosen: litestream's Replica.monitor had read
+// "main → Main.Run → ReplicateCommand.Run → Store.Close → … → Replica.Start
+// registers it", the shortest of the program's exact calls, through its
+// shutdown), and each function calling it through a value, after the run of
+// exact calls from the program's entries reaching that function, from the
+// last declaration the Main flow already shows on that run.
+func (builder *pageBuilder) ownWorkReading(row *pageFlowStep, fact facts.Fact, section *pageSection, shown map[string]bool) bool {
 	index := builder.graphIndex(section.programTargetID)
 	if index == nil || builder.data.Facts == nil {
 		return false
@@ -69,17 +78,7 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 	if !known || ref.subject.Object == nil || ref.subject.Object.Location == nil {
 		return false
 	}
-	named := func(subjectID string) pageStepName { return builder.stepName(section, subjectID) }
-	names := func(chain []string) []pageStepName {
-		out := make([]pageStepName, len(chain))
-		for i, id := range chain {
-			out[i] = named(id)
-		}
-		return out
-	}
-	// The step's name is the callable's, its link all of the callable's
-	// lines; the registering call's line is its registration's.
-	own := named(fact.ObjectID)
+	own := builder.stepName(section, fact.ObjectID)
 	_, ownAnchor := builder.subjectDisplay(ref.subject)
 	row.Label, row.Part, row.Key, row.Anchor = own.Name, own.Part, own.Key, ownAnchor
 	var calls []int
@@ -88,91 +87,44 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 			calls = append(calls, position)
 		}
 	}
-	var entries []string
-	for _, entry := range index.Entries {
-		entries = append(entries, entry.SubjectID)
-	}
-	fromEntries := func(to string) []string {
-		for _, entry := range entries {
-			if chain := chainOf(index, calls, entry, to); chain != nil {
-				return chain
-			}
-		}
-		return nil
-	}
-	var sites []facts.Fact
-	for _, other := range builder.data.Facts.OfKind(facts.KindRegistration) {
-		if other.TargetID == fact.TargetID && other.ObjectID == fact.ObjectID && other.OwnerID != "" {
-			sites = append(sites, other)
-		}
-	}
-	registration := func(site facts.Fact, chain []string) pageStepRegistration {
-		if chain == nil {
-			chain = []string{site.OwnerID}
-		}
-		return pageStepRegistration{By: names(chain), At: builder.links.factAnchor(site)}
-	}
-	starts := path.shown
-	if len(starts) == 0 {
-		starts = entries
-	}
-	// Work a program runs on its own is registered where its registering
-	// function stands: no run of calls from the entries is chosen for it
-	// (litestream's Replica.monitor had read "main → Main.Run →
-	// ReplicateCommand.Run → Store.Close → … → Replica.Start registers it",
-	// the shortest of the program's exact calls, through its shutdown).
-	if path.alone {
-		for _, site := range sites {
-			row.Registers = append(row.Registers, registration(site, nil))
-		}
-		starts = nil
-	}
-	for at := len(starts) - 1; at >= 0 && row.Registers == nil; at-- {
-		for _, site := range sites {
-			if chain := chainOf(index, calls, starts[at], site.OwnerID); chain != nil {
-				row.Registers = append(row.Registers, registration(site, chain))
-			}
-		}
-	}
-	if row.Registers == nil {
-		for _, site := range sites {
-			row.Registers = append(row.Registers, registration(site, fromEntries(site.OwnerID)))
-		}
-	}
-	// Registrations by the same run of calls read once, linking the first
-	// registering call: sizeWorkspace had read "canvas registers it" four
-	// times, one function's four calls.
 	byChain := map[string]bool{}
-	row.Registers = slices.DeleteFunc(row.Registers, func(site pageStepRegistration) bool {
-		var key strings.Builder
-		for _, name := range site.By {
-			key.WriteString(name.Name + "\x00" + name.Key + "\x00")
+	for _, other := range builder.data.Facts.OfKind(facts.KindRegistration) {
+		if other.TargetID != fact.TargetID || other.ObjectID != fact.ObjectID || other.OwnerID == "" {
+			continue
 		}
-		seen := byChain[key.String()]
-		byChain[key.String()] = true
-		return seen
-	})
+		owner := builder.stepName(section, other.OwnerID)
+		// Registrations by one function read once, linking the first
+		// registering call: sizeWorkspace had read "canvas registers it"
+		// four times, one function's four calls.
+		if key := owner.Name + "\x00" + owner.Key; !byChain[key] {
+			byChain[key] = true
+			row.Registers = append(row.Registers, pageStepRegistration{By: []pageStepName{owner}, At: builder.links.factAnchor(other)})
+		}
+	}
 	for _, runner := range builder.runnersOf(section.programTargetID, fact.ObjectID) {
 		chain := []string{runner}
-		if !path.runners[runner] {
-			// From the entries, or from the last runner already shown on
-			// the way: "aeProcessEvents → processTimeEvents runs it" after
-			// "main → aeMain → aeProcessEvents runs it".
-			if reached := fromEntries(runner); reached != nil {
-				chain = reached
-				for at := len(reached) - 2; at > 0; at-- {
-					if path.runners[reached[at]] {
-						chain = reached[at:]
-						break
+		if !shown[runner] {
+			for _, entry := range index.Entries {
+				if reached := chainOf(index, calls, entry.SubjectID, runner); reached != nil {
+					chain = reached
+					for at := len(reached) - 2; at > 0; at-- {
+						if shown[reached[at]] {
+							chain = reached[at:]
+							break
+						}
 					}
+					break
 				}
 			}
-			path.runners[runner] = true
 		}
-		row.RunBy = append(row.RunBy, names(chain))
-		path.shown = append(path.shown, chain...)
+		// A runner once read is named alone after.
+		shown[runner] = true
+		names := make([]pageStepName, len(chain))
+		for position, id := range chain {
+			names[position] = builder.stepName(section, id)
+		}
+		row.RunBy = append(row.RunBy, names)
 	}
-	path.shown = append(path.shown, fact.ObjectID)
 	return true
 }
 
@@ -248,12 +200,12 @@ type pageOwnWork struct {
 // Main flow of client commands): its inputs of the scheduled kind, then of
 // the continuous kind (the ways-in order, outerKindRank), each in its saved
 // order and each callable once, save one the Main flow already names. A
-// registration of it reads as registeredStep reads it, from the program's
-// entries, a runner the flow has already reached by its entries named
-// alone ("serverCron — main → initServer registers it; aeProcessEvents runs
-// it"); a callable no saved registration hands over is its name alone.
+// registration of it reads as ownWorkReading reads it, a runner the flow
+// already shows named alone ("serverCron — initServer registers it;
+// aeProcessEvents → processTimeEvents runs it"); a callable no saved
+// registration hands over is its name alone.
 // Nothing is looked for beyond the saved kinds and facts.
-func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *pageStepPath) []pageOwnWork {
+func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, shownSubjects map[string]bool) []pageOwnWork {
 	index := builder.graphIndex(section.programTargetID)
 	if index == nil {
 		return nil
@@ -275,9 +227,6 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *
 			}
 		}
 	}
-	if path == nil {
-		path = &pageStepPath{runners: map[string]bool{}}
-	}
 	seen := map[string]bool{}
 	var work []pageOwnWork
 	for _, operation := range operations {
@@ -293,7 +242,7 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *
 		row := pageOwnWork{Input: operationNodeID(section.ID, operation.ID)}
 		fact, registered := builder.factsByID[operation.FactID]
 		if !registered || fact.Kind != facts.KindRegistration || fact.ObjectID != operation.SubjectID || fact.OwnerID == "" ||
-			!builder.registeredStep(&row.pageFlowStep, fact, section, &pageStepPath{runners: path.runners, alone: true}) {
+			!builder.ownWorkReading(&row.pageFlowStep, fact, section, shownSubjects) {
 			own := builder.stepName(section, operation.SubjectID)
 			row.pageFlowStep = pageFlowStep{Label: own.Name, Anchor: anchor, Part: own.Part, Key: own.Key}
 		}
