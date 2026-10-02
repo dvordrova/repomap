@@ -285,7 +285,12 @@ func deriveRoot(target programindex.Target) string {
 
 func deriveManifest(target programindex.Target) string {
 	for _, source := range target.Sources {
-		if source.FileRef == target.AnchorFileRef && isManifestName(path.Base(source.Path)) {
+		if source.FileRef != target.AnchorFileRef {
+			continue
+		}
+		// A C program's makefile, whose link or archive rule it stands on,
+		// is its build's manifest, as a go.mod or a package.json is.
+		if name := path.Base(source.Path); isManifestName(name) || target.Language == "c" && isMakefileName(name) {
 			return source.Path
 		}
 	}

@@ -490,7 +490,9 @@ These rows enter the same places graph and question table, with producer
 declarations and corpus membership distinguished from compiler call edges.
 There are no old-format readers.
 Observed entrypoint seeds and manifest values from the existing facts result
-also enter this graph, with their exact source and component context. They are
+(package.json, Pipfile, pyproject.toml, requirements, go.mod, deps.edn,
+project.clj, shadow-cljs.edn, and a C program's makefile: C "A makefile as the
+build's manifest") also enter this graph, with their exact source and component context. They are
 available to both Learn proposals and question retrieval without requiring a
 key-symbol interpretation. Native launch identities stay local; no framework
 command, call edge or new architecture group is inferred. Corpus-excluded

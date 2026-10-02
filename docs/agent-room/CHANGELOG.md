@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A C program's makefile is its build's manifest (data 2)
+
+- **Problem (external control, 15:18 UTC):** Lua's "How to run" gave `make`,
+  explained as "the repository ships no manifest, so no build command is
+  evidenced". The makefile exists (`all` at 113, `CC= gcc` at 83).
+- **Cause:** the facts quoted manifests by file name (package.json, Pipfile,
+  pyproject.toml, requirements, go.mod, deps.edn, project.clj,
+  shadow-cljs.edn). A makefile was none. The orientation request had no
+  build rows for a C target, so the model's accepted note said "no
+  manifest". The page's "Inferred from an entrypoint" is page wording and
+  was true.
+- **Fix (request preparation):**
+  - A C target's makefile, the one its link or archive rule stands on, is
+    its manifest (facts `deriveManifest`).
+  - `internal/makefile` reads it into `manifest` rows, each at its line:
+    `default_goal`, read through the makefile's variables;
+    `rule.<target>` with what it needs and runs (objects and special
+    targets excluded); `variable.<NAME>` for the variables the goal's
+    commands and make's own compiles use, each under its conditional.
+  - Lua: `default_goal` = `all: liblua.a lua — runs: touch all` (113),
+    `CC= gcc`, `MYCFLAGS … -DLUA_USE_LINUX`.
+  - redis-1.3.6: `all:` with its four programs (27), CFLAGS and CCLINK
+    `when ifeq ($(uname_S),SunOS)` and `when not`, `make test`.
+  - Other languages' makefiles stay no manifest. The prompt is unchanged;
+    only the evidence changes.
+- **Tests:**
+  - `TestKvdOrientationReadsTheMakefileAsTheBuildsManifest`: the C
+    fixture's request lists `default_goal all: kvd kvcli` (Makefile:7), the
+    CFLAGS row and `make test`.
+  - `internal/makefile` unit tests: conditionals, `.DEFAULT_GOAL`, a
+    define block, a continued line.
+
 ## 2026-10-02 — The final walk's display stumbles: titles in sight, inputs named whole, a reading kept on its path, a library's entries by part (lead, 5297a765)
 
 Display only, from saved data. Verified with `repomap render` of the final runs

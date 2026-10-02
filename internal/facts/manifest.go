@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/clojureproject"
+	"github.com/dvordrova/repomap/internal/makefile"
 )
 
 type manifestRow struct {
@@ -17,6 +18,13 @@ type manifestRow struct {
 }
 
 var pinnedVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
+
+// isMakefileName is a makefile GNU make reads by itself. It is a manifest
+// only as a C target's own (deriveManifest): a docs/Makefile of another
+// language's repository is no build of its program.
+func isMakefileName(name string) bool {
+	return name == "Makefile" || name == "makefile" || name == "GNUmakefile"
+}
 
 func isManifestName(name string) bool {
 	switch name {
@@ -138,6 +146,12 @@ func parseManifest(name string, lines []string) ([]manifestRow, error) {
 		return parsePyproject(lines), nil
 	case name == "go.mod":
 		return parseGoMod(lines), nil
+	case isMakefileName(name):
+		var rows []manifestRow
+		for _, row := range makefile.Read(lines) {
+			rows = append(rows, manifestRow{key: row.Key, value: row.Value, line: row.Line})
+		}
+		return rows, nil
 	case name == "deps.edn" || name == "project.clj" || name == "shadow-cljs.edn":
 		var rows []manifestRow
 		for _, row := range clojureproject.ReadManifest(name, []byte(strings.Join(lines, "\n"))).Rows(name) {

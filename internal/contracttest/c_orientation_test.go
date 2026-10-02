@@ -122,6 +122,54 @@ func callHeads(calls []any) ([]string, []int) {
 	return names, lines
 }
 
+// The Makefile is kvd's manifest, as a go.mod or a package.json is: the
+// recipe question reads what `make` builds by default, the rules a reader
+// runs (`make test`, with its commands) and the CFLAGS its compiles use, each
+// at its line, so a run recipe can cite the build instead of saying there
+// is none.
+func TestKvdOrientationReadsTheMakefileAsTheBuildsManifest(t *testing.T) {
+	run := runKvdOrientation(t)
+	var overview struct {
+		Targets []struct {
+			Name, Manifest string
+		}
+		Facts []struct {
+			Kind, Anchor, Key, Value string
+		}
+	}
+	if err := json.Unmarshal(run.asked.bodies(t)[0], &overview); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range overview.Targets {
+		if target.Manifest != "Makefile" {
+			t.Fatalf("%s's manifest is %q, want Makefile", target.Name, target.Manifest)
+		}
+	}
+	rows := map[string]string{}
+	for _, fact := range overview.Facts {
+		if fact.Kind == "manifest" {
+			rows[fact.Key] = fact.Anchor + " " + fact.Value
+		}
+	}
+	goal, _ := run.fixture.at(t, "Makefile", "all: kvd kvcli", "")
+	test, _ := run.fixture.at(t, "Makefile", "test: kvd kvcli", "")
+	flags, _ := run.fixture.at(t, "Makefile", "CFLAGS = ", "")
+	for key, want := range map[string]string{
+		"default_goal":    fmt.Sprintf("Makefile:%d all: kvd kvcli", goal),
+		"variable.CFLAGS": fmt.Sprintf("Makefile:%d -std=c99 -O2 -g -Wall -D_DEFAULT_SOURCE -DLOOP_POLL", flags),
+	} {
+		if rows[key] != want {
+			t.Fatalf("manifest row %s = %q, want %q (rows %v)", key, rows[key], want, rows)
+		}
+	}
+	if row := rows["rule.test"]; !strings.HasPrefix(row, fmt.Sprintf("Makefile:%d kvd kvcli — runs: ./kvd &", test)) {
+		t.Fatalf("make test reads %q", row)
+	}
+	if _, object := rows["rule.kvd.o"]; object {
+		t.Fatal("an object's rule is no command a reader runs")
+	}
+}
+
 type kvdOrientation struct {
 	fixture cFixture
 	graph   atlas.Graph

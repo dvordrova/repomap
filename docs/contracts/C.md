@@ -439,6 +439,32 @@ which run nothing of their own, keep theirs.
 
 ## Facts and claims
 
+### A makefile as the build's manifest
+
+A C program's makefile, the one its link or archive rule stands on, is its
+manifest, as a go.mod, a package.json or a deps.edn is (facts
+`deriveManifest`; owner 2026-10-02, after Lua's "How to run" said "the
+repository ships no manifest" beside the makefile whose dry run made
+`liblua.a` and `lua`). The facts quote it through `internal/makefile` as
+`manifest` rows a run recipe can cite, each at its line:
+- `default_goal`: what `make` builds when given no goal (`.DEFAULT_GOAL`,
+  else GNU make's first rule naming no special target or pattern), its
+  prerequisites read through the makefile's own variables and its commands
+  (Lua: `all: liblua.a lua`, makefile:113; the fixture: `all: kvd kvcli`,
+  Makefile:7);
+- `rule.<target>`: each other rule a reader may run (`make test`, with
+  what it needs and runs), never an object's (`x.o`) or a special target;
+- `variable.<NAME>`: the assignments of the variables the goal's commands and
+  make's own compiles and links use (CC, CFLAGS, CPPFLAGS, LDFLAGS, LDLIBS),
+  followed through the variables their values name, each under its
+  conditional (`variable.CFLAGS when ifeq ($(uname_S),SunOS)` and `when not
+  ifeq …` in redis-1.3.6; Lua's `MYCFLAGS … -DLUA_USE_LINUX`, `CC= gcc`).
+A makefile is read as text, as the other manifests are; what the build does
+is the dry run's. A makefile elsewhere in a repository of another language
+(a docs/Makefile) is no manifest. A program built from a main unit with no
+build line (a closure program, every unit with clang's defaults) has none
+(`TestKvdOrientationReadsTheMakefileAsTheBuildsManifest`).
+
 Config reads, SQL statements and registrations are the language-neutral facts
 over those patterns: `getenv("KEY")` is a config read, an SQL literal passed to
 a library call is an SQL statement, and an external call that receives a
