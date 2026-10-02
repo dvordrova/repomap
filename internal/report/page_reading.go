@@ -1077,8 +1077,16 @@ func componentEntries(section *pageSection) string {
 		}
 		if section.EntryPart != "" && item.Key != "" && item.Key == section.EntrySource {
 			item.Part = "#" + section.EntryPart
-		} else if part := section.EntryParts[item.Key]; item.Key != "" && part != "" {
+		} else if part := section.EntryParts[entry.ObjectID]; entry.ObjectID != "" && part != "" && entry.Anchor != nil &&
+			section.EntryAt[entry.ObjectID] == entry.Anchor.Path+":"+strconv.Itoa(entry.Anchor.Line) {
+			// Joined by its subject where the fact stands at that declaration,
+			// and read by the key its part lists it under. A module run as a
+			// script stands at its __main__ block, not at the module's first
+			// line, and keeps that place (freqtrade.main at main.py:82).
 			item.Part = "#" + part
+			if key := section.EntryKeys[entry.ObjectID]; key != "" {
+				item.Key = key
+			}
 		}
 		entries = append(entries, item)
 	}

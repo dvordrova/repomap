@@ -1467,7 +1467,12 @@ library's entries are its exports (PROGRAM_INDEX `target.exports`, the
 without a model shows lists none of them; with nothing else to run, it says
 that no manifest row or launch entrypoint was found and that a library's
 exports are its API, not ways to run it. Each entry names the part holding
-it (GroupsIndex's Entries) and reads its function there; a list over twelve,
+it (GroupsIndex's Entries), joined by its subject wherever its fact stands at
+that declaration, never by a link's key (Lua 5.1.5 has no remote, so offline
+no entry has one, and served its fact's place carries no column where its
+declaration's does; its 159 exports had stood flat), and reads its function
+there by the key its part lists it under; a module run as a script keeps its
+own place, its `__main__` block (freqtrade.main at main.py:82); a list over twelve,
 in the home's list of programs and in the component's reading alike, folds
 by those parts, each closed under its box and its count (liblua.a's
 156: Core API · 83, Auxiliary library · 34, Standard libraries · 24,

@@ -120,10 +120,16 @@ type pageSection struct {
 	// program by its own code goes on the map.
 	EntryGroup string
 	// EntryParts are the parts holding the program's entries by their
-	// declaration keys (GroupsIndex's Entries): each seed's and each
-	// export of a library, which the component's Entry list reads in its
-	// part and folds by it.
+	// subjects (GroupsIndex's Entries): each seed's and each export of a
+	// library, which the component's Entry list reads in its part and
+	// folds by it. EntryKeys are those entries' declaration keys as their
+	// parts list them, EntryAt where each is declared (path:line). A link's
+	// key cannot join them: a repository with no remote has none, and a
+	// served page's fact anchor stands without the column its declaration's
+	// has (Lua 5.1.5's 159 exports had stood flat).
 	EntryParts map[string]string
+	EntryKeys  map[string]string
+	EntryAt    map[string]string
 }
 
 // pageOffMapEntry is a launch point the map of parts does not draw.
@@ -172,11 +178,14 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 	offEntries := map[string]bool{}
 	for _, entry := range index.Entries {
 		if entry.GroupID != "" {
-			if key := declarationKeyOf(builder, index.Target.ID, entry.SubjectID); key != "" {
-				if section.EntryParts == nil {
-					section.EntryParts = map[string]string{}
-				}
-				section.EntryParts[key] = groupAnchorID(section.ID, entry.GroupID)
+			if section.EntryParts == nil {
+				section.EntryParts, section.EntryKeys, section.EntryAt = map[string]string{}, map[string]string{}, map[string]string{}
+			}
+			section.EntryParts[entry.SubjectID] = groupAnchorID(section.ID, entry.GroupID)
+			section.EntryKeys[entry.SubjectID] = declarationKeyOf(builder, index.Target.ID, entry.SubjectID)
+			if ref, known := builder.subject(index.Target.ID, entry.SubjectID); known && ref.subject.Object != nil && ref.subject.Object.Location != nil {
+				location := ref.subject.Object.Location
+				section.EntryAt[entry.SubjectID] = location.Path + ":" + strconv.Itoa(location.Line)
 			}
 			continue
 		}
@@ -294,9 +303,10 @@ func operationsByFile(rows []pageGroupOperation) []pageOperationFile {
 }
 
 type pageEntrypoint struct {
-	Symbol string
-	Kind   string
-	Anchor *pageAnchor
+	Symbol   string
+	Kind     string
+	Anchor   *pageAnchor
+	ObjectID string
 }
 
 // pageStart is one entrypoint read forward: the symbol, the group it is in,
@@ -728,9 +738,10 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 	section.Calls = builder.outboundRequests(section.programTargetID, "")
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindEntrypoint) {
 		section.Entrypoints = append(section.Entrypoints, pageEntrypoint{
-			Symbol: shortEntrypointName(fact.Symbol),
-			Kind:   strings.ReplaceAll(fact.Key, "_", " "),
-			Anchor: builder.links.factAnchor(fact),
+			Symbol:   shortEntrypointName(fact.Symbol),
+			Kind:     strings.ReplaceAll(fact.Key, "_", " "),
+			Anchor:   builder.links.factAnchor(fact),
+			ObjectID: fact.ObjectID,
 		})
 	}
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindDependency) {

@@ -130,36 +130,66 @@ func TestTheEntrypointsLinkLandsOnTheProgramsEntry(t *testing.T) {
 
 // liblua.a's Entry list named 156 exports in one flat list, each a link to
 // its source: GroupsIndex stands each in its part, and the page says which,
-// so the list folds by part and an entry reads its function there.
+// so the list folds by part and an entry reads its function there. The
+// export is joined to its part by its subject, never by a link's key: Lua
+// 5.1.5 has no remote, so offline every key is empty, and served its
+// export fact's anchor stands without the column its declaration's has
+// (etc/noparser.c:21:0 against :21:16); its 159 exports had stood flat.
 func TestALibrarysExportsNameTheirParts(t *testing.T) {
 	object := func(id, name string, line int) groupindex.Subject {
 		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction,
-			Location: &programindex.Location{Path: "lapi.c", Line: line, Column: 1}}}
+			Location: &programindex.Location{Path: "lapi.c", Line: line, Column: 16}}}
 	}
-	index := groupindex.Index{
-		Target:   programindex.Target{ID: "t1", Exports: []programindex.TargetExport{{ObjectID: "n1"}, {ObjectID: "n2"}, {ObjectID: "n3"}}},
-		Subjects: []groupindex.Subject{object("n1", "lua_pushnil", 10), object("n2", "luaL_checkint", 20), object("n3", "lua_settop", 30)},
-		Groups:   []groupindex.Group{{ID: "g1", Title: "Core API", MemberSubjectIDs: []string{"n1", "n3"}}, {ID: "g2", Title: "Auxiliary library", MemberSubjectIDs: []string{"n2"}}},
-	}
-	groupindex.Derive(&index)
-	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{},
-		links: pageLinks{repositoryURL: "https://example.test/lua", blobPrefix: "/blob/", revision: "r"}}
-	for _, subject := range index.Subjects {
-		builder.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject}
-	}
-	anchor := func(line int) *pageAnchor { return builder.links.anchorPointer("lapi.c", line, 1) }
-	section := &pageSection{ID: "t1", programTargetID: "t1", FactsAvailable: true, Entrypoints: []pageEntrypoint{
-		{Symbol: "lua_pushnil", Kind: "export", Anchor: anchor(10)}, {Symbol: "luaL_checkint", Kind: "export", Anchor: anchor(20)}, {Symbol: "lua_settop", Kind: "export", Anchor: anchor(30)}}}
-	builder.fillSectionOffMap(section)
-	var entries []pageEntry
-	if err := json.Unmarshal([]byte(componentEntries(section)), &entries); err != nil {
-		t.Fatal(err)
-	}
-	parts := map[string]string{}
-	for _, entry := range entries {
-		parts[entry.Name] = entry.Part
-	}
-	if parts["lua_pushnil"] != "#t1-g1" || parts["lua_settop"] != "#t1-g1" || parts["luaL_checkint"] != "#t1-g2" {
-		t.Fatalf("the exports' parts: %v", parts)
+	for _, links := range []struct {
+		name  string
+		links pageLinks
+	}{
+		{"linked to its remote", pageLinks{repositoryURL: "https://example.test/lua", blobPrefix: "/blob/", revision: "r"}},
+		{"offline with no remote", pageLinks{}},
+		{"served", pageLinks{sourceIDs: map[string]string{"lapi.c": "s1"}}},
+	} {
+		index := groupindex.Index{
+			Target: programindex.Target{ID: "t1", Seeds: []programindex.TargetSeed{{ObjectID: "n4"}},
+				Exports: []programindex.TargetExport{{ObjectID: "n1"}, {ObjectID: "n2"}, {ObjectID: "n3"}}},
+			Subjects: []groupindex.Subject{object("n1", "lua_pushnil", 10), object("n2", "luaL_checkint", 20), object("n3", "lua_settop", 30), object("n4", "lapi", 1)},
+			Groups:   []groupindex.Group{{ID: "g1", Title: "Core API", MemberSubjectIDs: []string{"n1", "n3", "n4"}}, {ID: "g2", Title: "Auxiliary library", MemberSubjectIDs: []string{"n2"}}},
+		}
+		groupindex.Derive(&index)
+		builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{}, links: links.links}
+		for _, subject := range index.Subjects {
+			builder.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject}
+		}
+		// The facts' anchors carry no column.
+		export := func(name, id string, line int) pageEntrypoint {
+			return pageEntrypoint{Symbol: name, Kind: "export", Anchor: builder.links.anchorPointer("lapi.c", line, 0), ObjectID: id}
+		}
+		// A module run as a script: its fact stands at its __main__ block
+		// (line 82), its subject at the module's first line.
+		script := export("lapi", "n4", 82)
+		script.Kind = "callable"
+		section := &pageSection{ID: "t1", programTargetID: "t1", FactsAvailable: true, Entrypoints: []pageEntrypoint{
+			export("lua_pushnil", "n1", 10), export("luaL_checkint", "n2", 20), export("lua_settop", "n3", 30), script}}
+		builder.fillSectionOffMap(section)
+		var entries []pageEntry
+		if err := json.Unmarshal([]byte(componentEntries(section)), &entries); err != nil {
+			t.Fatal(err)
+		}
+		parts, keys := map[string]string{}, map[string]string{}
+		for _, entry := range entries {
+			parts[entry.Name], keys[entry.Name] = entry.Part, entry.Key
+		}
+		if parts["lua_pushnil"] != "#t1-g1" || parts["lua_settop"] != "#t1-g1" || parts["luaL_checkint"] != "#t1-g2" {
+			t.Fatalf("%s: the exports' parts: %v", links.name, parts)
+		}
+		// Read in its part by the key the part lists it under.
+		if want := declarationKeyOf(&builder, "t1", "n1"); keys["lua_pushnil"] != want {
+			t.Fatalf("%s: lua_pushnil read by %q, its part lists %q", links.name, keys["lua_pushnil"], want)
+		}
+		// The script keeps its own place, its __main__ block, never moved to
+		// the module's first line (control review, 2026-10-02: freqtrade.main
+		// had moved from main.py:82 to :1).
+		if want := declarationKey(builder.links.anchorPointer("lapi.c", 82, 0)); parts["lapi"] != "" || keys["lapi"] != want {
+			t.Fatalf("%s: the script read in %q by %q, want its own place %q", links.name, parts["lapi"], keys["lapi"], want)
+		}
 	}
 }
