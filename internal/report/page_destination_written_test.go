@@ -24,3 +24,26 @@ func TestADestinationSaysWhereItsValueEnds(t *testing.T) {
 		t.Fatalf("a started program reads %q", written)
 	}
 }
+
+// The value all a destination's walks end in stands on its card as the
+// argument its calls hand over (ArgumentValue, read "Argument value"), never
+// as what the code wrote for an input (Written) nor as its address: casdoor's
+// Object Storage had read its object key "%s/%s" unlabelled.
+func TestADestinationsWalkedValueIsItsArgumentValue(t *testing.T) {
+	at := pageAnchor{Path: "util/path.go", Line: 61, Href: "#util-path-go-L61"}
+	key := pageOutboundUse{Value: "%s/%s", Steps: []pageOutboundStep{{Name: "uploadFile"}, {Name: "UrlJoin", Anchor: at}}}
+	view := pageView{Sections: []*pageSection{{ID: "t1", ShortLabel: "casdoor", Map: &pageMap{}, Outbound: []pageOutbound{
+		{ID: "t1-out-put", Destination: "Object Storage", KindLabel: "SDK", Uses: []pageOutboundUse{key}},
+		{ID: "t1-out-list", Destination: "Object Storage", KindLabel: "SDK", Uses: []pageOutboundUse{key}},
+	}}}}
+	for _, node := range view.SystemMap().Nodes {
+		if node.Branch != "communication" || node.FullTitle != "Object Storage" || node.Children == "" {
+			continue
+		}
+		if node.ArgumentValue != "%s/%s" || node.Written != "" || node.Source != at {
+			t.Fatalf("the destination's walked value is not its argument value: %+v", node)
+		}
+		return
+	}
+	t.Fatal("no Object Storage destination on the system map")
+}

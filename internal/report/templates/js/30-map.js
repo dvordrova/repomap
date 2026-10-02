@@ -607,6 +607,10 @@ function rmDeclarationRelations(map,node,key,nodes){
       // its arity and flags ({"rpush",rpushCommand,3,REDIS_CMD_BULK|…}).
       // A setting's comparison as written links its line (owner, 2026-09-29).
       if (node.dataset.written) html += '<p class="map-card-written">' + (node.dataset.source ? '<a target="_blank" href="'+escapeText(node.dataset.source)+'"><code>' + escapeText(rmWrittenShort(node.dataset.written)) + '</code></a>' : '<code>' + escapeText(rmWrittenShort(node.dataset.written)) + '</code>') + '</p>';
+      // A destination's one walked value is the argument its calls hand
+      // over, linked to where it is written, never its address: casdoor's
+      // Object Storage had read its object key "%s/%s" unlabelled.
+      if (node.dataset.argumentValue) html += '<p class="map-card-written">' + rmT.html('Argument value') + ': ' + (node.dataset.source ? '<a target="_blank" href="'+escapeText(node.dataset.source)+'"><code>' + escapeText(rmWrittenShort(node.dataset.argumentValue)) + '</code></a>' : '<code>' + escapeText(rmWrittenShort(node.dataset.argumentValue)) + '</code>') + '</p>';
       if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       // An input with no handler established says where it is parsed.
@@ -617,7 +621,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // Remote Pairlist Server had read "…/RemotePairList.py:46" under its
       // linked get().
       var place=function(text){return String(text||'').replace(/:\d+(?::\d+)?$/,'')||rmT('Source');};
-      if(source) {if(!node.dataset.written) html += '<p class="map-card-source">'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(place(node.getAttribute('data-source-text')))+'</a></p>';}
+      if(source) {if(!node.dataset.written&&!node.dataset.argumentValue) html += '<p class="map-card-source">'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(place(node.getAttribute('data-source-text')))+'</a></p>';}
       else if(node.dataset.open) html += '<p class="map-card-source"><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(place(node.dataset.sourceText))+'</a></p>';
       else if(node.dataset.noSource==='true') html += '<p class="map-card-source"><span title="'+escapeText(rmT('No source'))+'">'+escapeText(place(node.dataset.sourceText))+'</span></p>';
       html += '</div>';

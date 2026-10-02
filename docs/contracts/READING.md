@@ -1505,7 +1505,16 @@ chains end in, as written, with the chains; any other row offers only
 literals that can be addresses (no format templates, nothing from
 formatting, logging, time or string packages). A walk ending in one value is
 asked like several (2026-10-03): what reached the call is not therefore
-where it connects. The `address` question asks where the other end of the
+where it connects. The whole catalogue is offered beside every chain, read
+or not, and the criteria judge each value: a mode with no place, such as
+an in-memory database, never answers. headscale's migrations had answered
+`:memory:` beside unread `file:{c.Path}` and Postgres chains and now answer
+unknown 5/5; casdoor's Microsoft Graph users URL beside the next page's
+unread link, its DingTalk token URL beside a configured one and litestream's
+nats URL beside its configured one keep their written endpoints. A code cut
+offering only absolute URLs beside unread chains was refused: it was a
+spelling filter (it dropped `localhost:6379`, socket and database-file
+URLs, configuration keys, and kept `https://%s`). The `address` question asks where the other end of the
 call is: the `a*` of a value that writes where the call connects, of the
 kind the call reaches (a URL whose host is written, whatever placeholders
 follow it in its path or query; a host and port, a socket path or a

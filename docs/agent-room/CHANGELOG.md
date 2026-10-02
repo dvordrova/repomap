@@ -1,5 +1,36 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A destination's walked value reads "Argument value"; a placeless mode never answers an address (data 1)
+
+- **Destination card:** the one value all of a destination's walks end in (`destinationWritten`) had stood unlabelled on its map card and reading, the way an input's registration does (`Written`).
+  - It is now its own field, `ArgumentValue` (`data-argument-value`), and the card says "Argument value: …", linked to where it is written.
+  - It is never shown as an address, and no destination node carries `Written`.
+  - In the fresh casdoor report, 44 destinations carry one. LDAP's card and reading read "Argument value: `%s:%d`", and no visible element reads "Address" there.
+  - Test: `TestADestinationsWalkedValueIsItsArgumentValue`.
+- **headscale's `:memory:`:** its migrations and version checks answered `:memory:`, the one alternative read beside unread `file:{c.Path}` and Postgres chains.
+  - **First rule (removed):** leave a row with any unread chain unasked. It turned casdoor's DingTalk, Microsoft Graph and Gravatar URLs, litestream's nats and etcd's metrics URL to unknown. Reading their uses showed that the unread chains are alternatives of the same URL argument, not headers, bodies or tokens: a configured OAuth token URL and two token-templated oapi URLs, the next page's link from the response, and favicon links scraped from sites.
+  - **Second rule (refused by the skeptic, never committed):** beside unread chains, offer only values `addressKey` reads as endpoints. It was a spelling filter: it drops `localhost:6379`, socket, `file:///` and `sqlite:///` URLs and configuration keys, keeps `https://%s` and the merged default `https://cdn.casbin.org`, and judges DingTalk's URL and `:memory:` differently from the same position.
+  - **Committed:** the whole catalogue is offered, as before. The criteria name "a mode with no place such as an in-memory database (`:memory:`)" among the values that never answer.
+- **Draws on saved requests** (5 each, old criteria → new):
+  - headscale db.go:1089 and :1183: `:memory:` 5/5 → unknown 5/5.
+  - Unchanged: DingTalk's token URL, Graph's users URL, nats and etcd's metrics URL 5/5; storage.go:171 and etcd's `/`/`key` unknown 5/5.
+  - Gravatar 3/5 and the docker image 5/5 hold their URL and image.
+  - The 102-row probe (3 draws): only headscale's eight `:memory:` rows moved, all to unknown (291 of 306 judged right, as before).
+- **Warm runs** (HEAD b00dd0ba plus these files; exit 0; contracttest green in 4 chunks; `web/` node tests 170/170):
+
+| Repo | Run | Against round 2 |
+|---|---|---|
+| casdoor | 225344 | ormer.go:212 and :226 back to `dataSourceName` (draws) |
+| headscale | 225916 | eight `:memory:` → unknown |
+| litestream | 230132 | unchanged; nats kept |
+
+  - Against the runs before any address change: casdoor 42 → unknown, 6 unknown → URL or host; headscale 4 → unknown (the docker volume, db.go:1089's `:memory:`, two SQL fragments).
+  - casdoor keeps DingTalk, Graph, Entra ID and Gravatar.
+- **Open (CURRENT):**
+  - `GetConfigString`'s merged defaults (data 2's queue);
+  - etcd's gRPC method as its own field;
+  - "answer the first" when several values count: one alternative shown as the address. The skeptic suggests saving "one of N chains, M not read" as a code fact beside it.
+
 ## 2026-10-03 — A closure's call finds the stores where its body may run (lead)
 
 - **Found:** the control review's Node table of 22:06.

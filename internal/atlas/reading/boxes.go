@@ -913,7 +913,10 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				// one value is asked like several: what reached the call is
 				// not therefore where it connects (casdoor's LDAP dials ended
 				// in "%s:%d", an oss List in an object key's "%s/%s",
-				// freqtrade's inspector in the table "trades").
+				// freqtrade's inspector in the table "trades"). The whole
+				// catalogue is offered beside the chains, read or not; the
+				// criteria refuse what writes no place (headscale's ":memory:"
+				// beside its unread "file:{c.Path}" and Postgres chains).
 				askAddress := outgoing && state.address == ""
 				// Without captions an outgoing row with no address to
 				// choose has nothing to decide and is not sent.

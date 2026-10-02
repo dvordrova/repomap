@@ -1674,8 +1674,11 @@ name to a line under one closed "Its calls", each reading its record (owner,
 2026-09-30: freqtrade's Outside had opened every record, 59,592 px). Under
 its name a destination says where the value naming what its calls reach
 ends, as written, linked to that line, when all its records' readable walks
-end at one address or expression (`destinationWritten`): Redis's Primary
-reads `server.masterhost`, where it had read its name alone. No
+end at one value or expression (`destinationWritten`, `ArgumentValue`):
+Redis's Primary reads "Argument value: `server.masterhost`", where it had
+read its name alone. It is the argument the calls hand over, never the
+destination's address (2026-10-03: casdoor's Object Storage had read its
+object key `%s/%s` unlabelled). No
 record opens by default and nothing is counted. A call's own reading names a
 callable written inline as "anonymous function in {function}" (GroupsIndex
 `ObjectFacts.Inline`), in its address sources too, with no place and no

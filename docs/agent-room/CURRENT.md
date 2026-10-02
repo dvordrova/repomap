@@ -296,22 +296,28 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   records' one walked value). Saved-request draws: 291 of 306 judged right
   against 67 before; storage.go:171 and adapter.go:206 answer unknown 5/5,
   LinkedIn and Weibo keep their URLs, Entra ID's token URL 20/20.
+- **Unread alternatives and a destination's walked value (2026-10-03):** the
+  address criteria name a mode with no place (an in-memory database) among
+  the values that never answer: headscale's migrations, which had answered
+  `:memory:` beside unread `file:{c.Path}` and Postgres chains, answer
+  unknown, while casdoor's DingTalk, Microsoft Graph and litestream's nats
+  keep their written endpoints beside their unread alternatives. A
+  destination's card says the one value all its walks end in as "Argument
+  value", never as its address.
 - **Open, outside this decision:**
-  - The walk's catalogue carries artefacts: casdoor's `GetConfigString`
-    merges every key's default (`https://cdn.casbin.org`, a logger JSON)
-    into each read, joins a value to itself (`dataSourceNamedataSourceName`)
-    and gives the key read (`dataSourceName`) instead of `{env:…}`.
-    proxy.go:44's SOCKS dial answers `https://cdn.casbin.org` because of it.
-  - headscale's migration and version-check calls answer `:memory:`, the
-    one alternative the walk read, beside unread `file:{c.Path}` and
-    Postgres chains (nats keeps its default URL the same way). Owner's call.
+  - The walk's catalogue carries artefacts (data 2's queue): casdoor's
+    `GetConfigString` merges every key's default (`https://cdn.casbin.org`,
+    a logger JSON) into each read, joins a value to itself
+    (`dataSourceNamedataSourceName`) and gives the key read
+    (`dataSourceName`) instead of `{env:…}`. proxy.go:44's SOCKS dial
+    answers `https://cdn.casbin.org` because of it.
   - etcd's gRPC clients no longer show their RPC method as an address; if
     the method should show, it needs its own field.
-  - A destination still says under its name the one value all its walks end
-    in (`destinationWritten`, unlabelled): casdoor's Object Storage card can
-    read `%s/%s` there.
-  - The saved field for a chain's value is still `DestinationUse.Address`;
-    renaming it is a format change.
+  - The saved field for a chain's value stays `DestinationUse.Address` (an
+    internal name; no format bump).
+  - "The first when several count" shows one alternative as the address
+    (LinkedIn, DingTalk beside its unread token URL). A code fact "one of N
+    chains, M not read" saved beside it would say so.
 - **Known prompt drift (2026-09-29):** READING says a symbol that runs the
   handed callable in place, wraps or stores it is `binds` `none`;
   `internal/atlas/lines/prompts/entry_options.md`'s `none` names only a

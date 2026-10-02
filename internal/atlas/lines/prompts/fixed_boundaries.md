@@ -51,7 +51,8 @@ Fill only the columns in `fill`:
     each of them: answer the first.
   - Answer `unknown` when no value does. A value that writes no host, port,
     socket or file path and is no such setting says nowhere: a bare word or
-    identifier (a field, a table or a key) or `/`. Nor does a template whose
+    identifier (a field, a table or a key), `/`, or a mode with no place
+    such as an in-memory database (`:memory:`). Nor does a template whose
     host or server is itself a placeholder (`%s:%d`, `app:%s@tcp(%s:%d)/%s`,
     `https://%s/api/users`), which shows how the address is built, not where
     it is; a key, a name or a path inside the destination (an object or a

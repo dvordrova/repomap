@@ -246,6 +246,12 @@ type pageMapNode struct {
 	// Written is an input's registration as the code wrote it: a table's
 	// row with its arity and flags.
 	Written string
+	// ArgumentValue is, on a destination, the one value all its calls'
+	// walks end in, as written (destinationWritten), with Source its line:
+	// the argument the calls hand over, read "Argument value", never the
+	// destination's address (casdoor's Object Storage had read its object
+	// key "%s/%s" unlabelled).
+	ArgumentValue string
 	// Key is an input's own key word beyond its name (GroupsIndex
 	// Operation.Key), which tells two same-named inputs apart.
 	Key string

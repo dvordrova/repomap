@@ -628,9 +628,18 @@ func TestWalkedValuesAreAskedWhereTheCallConnects(t *testing.T) {
 	// destination among them.
 	upload := atlas.SymbolCall{Kind: "invokes_external", Name: "oss.StorageInterface.Put", Line: 16, Column: 5, API: &atlas.CallAPI{Package: "github.com/casdoor/oss", Receiver: "StorageInterface", Name: "Put"},
 		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{{Kind: "literal", Text: "avatars/%s"}, {Kind: "literal", Text: "%s/%s"}}}}}}
+	// A connection value the code read in one branch and could not read in
+	// the other (headscale's ":memory:" beside "file:{c.Path}"): asked with
+	// every chain beside it; the criteria refuse a mode that writes no place.
+	open := atlas.SymbolCall{Kind: "invokes_external", Name: "sql.Open", Line: 18, Column: 5, API: &atlas.CallAPI{Package: "database/sql", Name: "Open"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{{Kind: "literal", Text: ":memory:"}, {Kind: "unknown", Text: "cfg.Path"}}}}}}
+	// A users URL the code read beside the next page's link it did not
+	// (Microsoft Graph's OdataNextLink): offered, and chosen.
+	page := atlas.SymbolCall{Kind: "invokes_external", Name: "http.Get", Line: 20, Column: 5, API: &atlas.CallAPI{Package: "net/http", Name: "Get"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{{Kind: "literal", Text: "https://graph.example/v1.0/users"}, {Kind: "unknown", Text: "result.NextLink"}}}}}}
 	file := atlas.Place{ID: "file:store", Kind: atlas.PlaceFile, Path: "store.go", TargetIDs: []string{"service"}, File: &atlas.FileFacts{}}
 	owner := atlas.Place{ID: "symbol:save", Kind: atlas.PlaceSymbol, Path: file.Path, Parent: file.ID, LineNo: 10, TargetIDs: []string{"service"},
-		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:save", Name: "Save", Signature: "func Save(b *bolt.Bucket)"}, Calls: []atlas.SymbolCall{put, post, upload}}}
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:save", Name: "Save", Signature: "func Save(b *bolt.Bucket)"}, Calls: []atlas.SymbolCall{put, post, upload, open, page}}}
 	asked := map[string][]any{}
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
@@ -660,13 +669,13 @@ func TestWalkedValuesAreAskedWhereTheCallConnects(t *testing.T) {
 	r.places = map[string]atlas.Place{file.ID: file, owner.ID: owner}
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.api = map[string]apiRole{"go.etcd.io/bbolt.Bucket.Put": {talks: atlas.BoundaryDB}, "net/http.Post": {talks: atlas.BoundaryClientRequest}, "github.com/casdoor/oss.StorageInterface.Put": {talks: atlas.BoundarySDK}}
-	r.arguments = map[string]ArgumentChoice{"go.etcd.io/bbolt.Bucket.Put": {Position: 1}, "net/http.Post": {Position: 1}, "github.com/casdoor/oss.StorageInterface.Put": {Position: 1}}
+	r.api = map[string]apiRole{"go.etcd.io/bbolt.Bucket.Put": {talks: atlas.BoundaryDB}, "net/http.Post": {talks: atlas.BoundaryClientRequest}, "github.com/casdoor/oss.StorageInterface.Put": {talks: atlas.BoundarySDK}, "database/sql.Open": {talks: atlas.BoundaryDB}, "net/http.Get": {talks: atlas.BoundaryClientRequest}}
+	r.arguments = map[string]ArgumentChoice{"go.etcd.io/bbolt.Bucket.Put": {Position: 1}, "net/http.Post": {Position: 1}, "github.com/casdoor/oss.StorageInterface.Put": {Position: 1}, "database/sql.Open": {Position: 1}, "net/http.Get": {Position: 1}}
 	r.boxOf = map[string]string{file.ID: "store"}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for external, options := range map[string][]any{put.Name: {"unknown", "a1"}, post.Name: {"unknown", "a1"}, upload.Name: {"unknown", "a1", "a2"}} {
+	for external, options := range map[string][]any{put.Name: {"unknown", "a1"}, post.Name: {"unknown", "a1"}, upload.Name: {"unknown", "a1", "a2"}, open.Name: {"unknown", "a1"}, page.Name: {"unknown", "a1"}} {
 		if !reflect.DeepEqual(asked[external], options) {
 			t.Fatalf("%s's walked values were not asked: %v (asked %v)", external, asked[external], asked)
 		}
@@ -675,11 +684,11 @@ func TestWalkedValuesAreAskedWhereTheCallConnects(t *testing.T) {
 	for _, boundary := range r.target(TargetMeta{ID: "service"}).Boundaries {
 		addresses[boundary.External], sources[boundary.External] = boundary.Address, len(boundary.Uses)
 	}
-	if addresses[put.Name] != "" || addresses[upload.Name] != "" || addresses[post.Name] != "https://hooks.example/notify" {
+	if addresses[put.Name] != "" || addresses[upload.Name] != "" || addresses[open.Name] != "" || addresses[post.Name] != "https://hooks.example/notify" || addresses[page.Name] != "https://graph.example/v1.0/users" {
 		t.Fatalf("addresses after the decision: %v", addresses)
 	}
 	// Every walked value stays the call's evidence, accepted or not.
-	if sources[put.Name] != 1 || sources[upload.Name] != 2 || sources[post.Name] != 1 {
+	if sources[put.Name] != 1 || sources[upload.Name] != 2 || sources[open.Name] != 2 || sources[post.Name] != 1 || sources[page.Name] != 2 {
 		t.Fatalf("a decision dropped a chain: %v", sources)
 	}
 }
