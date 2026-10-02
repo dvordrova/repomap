@@ -2,6 +2,15 @@
 // Docked map details follow the hovered node immediately.
 var repomapPreview = (function () {
   var active = null, pointer = {x:0,y:0}, waiting = null, bindings = new WeakMap(), restoringFocus = false;
+  // A wheel or a scroll moves the page under a resting pointer: what comes
+  // under it there is not pointed at until the pointer moves (`still`), and
+  // a card waiting for the pointer to rest (`dwelling`) waits again (final
+  // journeys, 2026-10-02: wheeling freqtrade's column with the pointer on a
+  // term had opened its explanation over the flow).
+  var still = null, dwelling = null;
+  function scrolled() { still={x:pointer.x,y:pointer.y}; if(dwelling) dwelling(); }
+  function moved(point) { return !still || Math.hypot(point.x-still.x,point.y-still.y)>=2; }
+  document.addEventListener('wheel',scrolled,{capture:true,passive:true});
   function ownerOf(target) {
     for(var node=target;node instanceof Element;node=node.parentElement)if(bindings.has(node))return node;
     return null;
@@ -41,6 +50,7 @@ var repomapPreview = (function () {
     }
     // Test the previous corridor before moving its apex. Testing after the
     // update would always accept the pointer because it is the new apex.
+    if(moved(next)) still=null;
     var protectedPath=towardCard(next);
     if(active && active.exit) active.exit=protectedPath ? next : null;
     pointer=next;
@@ -86,27 +96,33 @@ var repomapPreview = (function () {
       trigger.classList.add('preview-active'); place();
       trigger.dispatchEvent(new Event('repomap:preview'));
     }
-    function enter(event) {
+    // An enter is the pointer coming onto the trigger, or (`resumed`) the
+    // pointer moving on a trigger a scroll brought under it.
+    function enter(event,resumed) {
       if(ownerOf(event.target)!==trigger)return;
       if(active?.pinned&&active!==item)return;
       // Enter/leave may be synthesized after layout, with rounded positions.
       // Only pointermove resumes a hover after layout, never mouseenter alone.
       if(event.type==='mouseenter' && trigger.closest('[data-map]')?.previewStationaryPoint) return;
-      if(event.type==='mouseenter') pointer={x:event.clientX,y:event.clientY};
+      var entering=event.type==='mouseenter'||resumed;
+      if(event.type==='mouseenter' && !moved({x:event.clientX,y:event.clientY})){item.unpointed=true;return;}
+      item.unpointed=false;
+      if(entering) pointer={x:event.clientX,y:event.clientY};
       // A card that asks for it opens only once the pointer rests on its
       // trigger (`hoverDelay`, ms), never as it passes: a term's card had
       // opened over the canvas as a reader's pointer crossed "Redis".
-      if(options.hoverDelay&&event.type==='mouseenter'){
+      if(options.hoverDelay&&entering){
         clearTimeout(dwell);
-        dwell=setTimeout(function(){if(trigger.matches(':hover')&&!(active?.pinned&&active!==item))show(false);},options.hoverDelay);
+        dwelling=function(){clearTimeout(dwell);dwelling=null;item.unpointed=true;};dwelling.item=item;
+        dwell=setTimeout(function(){dwelling=null;if(trigger.matches(':hover')&&!(active?.pinned&&active!==item))show(false);},options.hoverDelay);
         return;
       }
-      if (active && active!==item && event.type==='mouseenter' && towardCard()) {
+      if (active && active!==item && entering && towardCard()) {
         waiting=function(){ if(trigger.matches(':hover')) show(); };
       } else show(false);
     }
     function leave(event) {
-      if(event.type==='mouseleave')clearTimeout(dwell);
+      if(event.type==='mouseleave'){clearTimeout(dwell);item.unpointed=false;if(dwelling?.item===item)dwelling=null;}
       if (active!==item||item.pinned) return;
       if (inspector) {
         // The description stays readable, but leaving the node ends its
@@ -124,7 +140,8 @@ var repomapPreview = (function () {
         hide();
       },220);
     }
-    trigger.addEventListener('mouseenter',enter); trigger.addEventListener('mouseleave',leave);
+    trigger.addEventListener('mouseenter',function(event){enter(event,false);}); trigger.addEventListener('mouseleave',leave);
+    trigger.addEventListener('pointermove',function(event){if(item.unpointed&&moved({x:event.clientX,y:event.clientY}))enter(event,true);});
     // A pointer's press focuses the trigger too: only a keyboard's focus
     // opens a delayed card, its click pins it.
     trigger.addEventListener('focusin',function(event){if(ownerOf(event.target)===trigger&&(!options.hoverDelay||trigger.matches(':focus-visible')))show(false);}); trigger.addEventListener('focusout',leave);
@@ -152,7 +169,7 @@ var repomapPreview = (function () {
     var inMap=active&&active.docked&&e.target.closest('[data-map]')===active.card.closest('[data-map]');
     if(active&&!inMap&&!e.target.closest('.preview-active,.map-card,.map-inspector,.source-card'))active.hide();
   });
-  document.addEventListener('scroll',function(e){if(active && !active.pinned && !active.card.closest('.map-inspector') && !(e.target.closest && e.target.closest('.map-card,.source-card')))active.hide();},true);
+  document.addEventListener('scroll',function(e){scrolled();if(active && !active.pinned && !active.card.closest('.map-inspector') && !(e.target.closest && e.target.closest('.map-card,.source-card')))active.hide();},true);
   window.addEventListener('resize',function(){if(active&&!active.docked){if(active.pinned)active.place();else active.hide();}});
   return {bind:bind,freeze:function(map){map.previewStationaryPoint={x:pointer.x,y:pointer.y};},showFor:function(trigger){var b=bindings.get(trigger);if(b)b.show();return !!b;}};
 })();

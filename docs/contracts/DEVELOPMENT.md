@@ -263,7 +263,11 @@ each once, and no fold holding more than 67 rows of one kind (the 95th
 percentile of the folded lists of the four reports measured on 2026-09-30)
 under no named fold of their own. Each offender is printed with its level.
 Leaving an input path and the programs list's clickable rows are checked on
-the same reports.
+the same reports, and two column behaviours: every input's reading (60
+spread evenly where there are more) opens with no line cut at the column's
+top, and a wheel that brings a term under a resting pointer opens no hover
+card until the pointer moves on it (skipped where no reading has a term the
+column can scroll there).
 
 Install the pinned browser once with `npx playwright install chromium
 --only-shell` from `internal/report/web`. Browser downloads use Playwright's

@@ -10,6 +10,9 @@ import {journeys,journeyHelpers,lintLevel,lintOutside,lintPath,collapsedLists,lo
 // A journey prints PASS or FAIL and never fails the run; a lint fails it,
 // naming each offender with its level.
 const reports=(process.env.REPOMAP_JOURNEY_REPORTS||'').split(',').filter(Boolean);
+// No trace: it snapshots the whole page at every step, and a rendered
+// report's page made sixty readings take fifteen minutes on etcd, not one.
+test.use({trace:'off'});
 
 async function open(page,index){
   await page.goto(`/journey-${index}.html`);
@@ -25,6 +28,15 @@ async function settle(page){
     // after the camera stops redraws the cards.
     const v=await page.evaluate(()=>JSON.stringify(document.querySelector('[data-map]').captureViewport?.())+document.querySelector('.map-inspector')?.textContent.length+':'+document.querySelector('.flow-root')?.innerHTML.length);
     stable=v===previous?stable+1:0;previous=v;await page.waitForTimeout(120);
+  }
+}
+// The reading column at rest: its words, its scroll and its height alike
+// over three looks.
+async function settleColumn(page){
+  let previous='',stable=0;
+  for(let i=0;i<40&&stable<3;i++){
+    const now=await page.evaluate(()=>{const c=document.querySelector('.map-inspector-content');return c?`${c.textContent.length}:${c.scrollTop}:${c.scrollHeight}:${c.querySelectorAll('.term-mention').length}`:'';});
+    stable=now===previous?stable+1:0;previous=now;await page.waitForTimeout(150);
   }
 }
 const repoOf=page=>page.evaluate(()=>(document.querySelector('.report-toolbar .repo')?.textContent||document.title||'').trim());
@@ -124,6 +136,95 @@ for(const [index,file] of reports.entries()){
     // By one search after another, from the whole map.
     for(const id of inputs){await page.evaluate(id=>document.querySelector('[data-map]').findNode(document.getElementById(id)),id);await settle(page);}
     await leave();await agree('two searches in a row');
+    expect(errors).toEqual([]);
+  });
+
+  // A reading opens on whole lines: one opened at its section (an input's
+  // path) stands at its first lines when that section is already in sight,
+  // and the column's top edge never cuts a line (final journeys,
+  // 2026-10-02: etcd's Campaign reading, scrolled as far as it went toward
+  // its empty flow, had its registration line cut under the heading).
+  // Every input with a path when there are at most 60, else 60 spread
+  // evenly over them.
+  test(`readings open on whole lines in ${basename(file)}`,async({page})=>{
+    test.setTimeout(900_000);
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await open(page,index);await settle(page);
+    const inputs=await page.evaluate(()=>[...document.querySelectorAll('[data-map-explorer] [data-node][data-activation]')].filter(n=>n.dataset.inputPath).map(n=>({id:n.id,title:n.dataset.title})));
+    expect(inputs.length,'inputs with a path').toBeGreaterThan(0);
+    const sample=inputs.length<=60?inputs:Array.from({length:60},(_,i)=>inputs[Math.floor(i*inputs.length/60)]);
+    const cut=[];
+    for(const input of sample){
+      await page.evaluate(id=>document.querySelector('[data-map-explorer]').exploreNode(id),input.id);await settleColumn(page);
+      const line=await page.evaluate(()=>{
+        const content=document.querySelector('.map-inspector-content');if(!content)return '';
+        const edge=content.getBoundingClientRect().top+content.clientTop,range=document.createRange();
+        const walker=document.createTreeWalker(content,NodeFilter.SHOW_TEXT);
+        for(let node=walker.nextNode();node;node=walker.nextNode()){
+          if(!node.data.trim())continue;
+          range.selectNodeContents(node);
+          for(const r of range.getClientRects())if(r.top<edge-1&&r.bottom>edge+1)return `"${node.data.trim().slice(0,70)}" cut ${Math.round(edge-r.top)} of its ${Math.round(r.height)}px`;
+        }
+        return '';
+      });
+      if(line)cut.push(`${input.title}: ${line}`);
+    }
+    console.log(`${basename(file)}: ${sample.length} readings opened, ${cut.length} with a line cut at the top`);
+    expect(cut,'no reading opens with a line cut at the column\'s top').toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  // Scrolling opens no hover card: a term the wheel brings under a resting
+  // pointer waits for the pointer to move (final journeys, 2026-10-02:
+  // wheeling freqtrade's column with the pointer on a term had opened its
+  // explanation over the flow). The term is found in the home's reading,
+  // a program's, or an input's, one the column can scroll under a pointer
+  // resting above it.
+  test(`a wheel opens no hover card in ${basename(file)}`,async({page})=>{
+    test.setTimeout(300_000);
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await open(page,index);await settle(page);
+    const readings=[null,...await page.evaluate(()=>[...document.querySelectorAll('[data-map-explorer] [data-node]')].filter(n=>n.dataset.branch==='component').map(n=>n.id).slice(0,6)),
+      ...await page.evaluate(()=>[...document.querySelectorAll('[data-map-explorer] [data-node][data-activation]')].filter(n=>n.dataset.inputPath).map(n=>n.id).slice(0,10))];
+    // A term below a spot of the column that is no trigger, the column able
+    // to scroll it there.
+    const findTerm=()=>page.evaluate(()=>{
+      const content=document.querySelector('.map-inspector-content');if(!content)return null;
+      const box=content.getBoundingClientRect(),room=content.scrollHeight-content.clientHeight-content.scrollTop;
+      for(const term of content.querySelectorAll('.term-mention')){
+        const r=term.getClientRects()[0];if(!r||!r.width)continue;
+        const x=r.left+Math.min(r.width/2,20),y=box.top+40+r.height/2,by=r.top+r.height/2-y;
+        // A term drawn where it stands: the one the pointer would reach there.
+        if(document.elementFromPoint(x,r.top+r.height/2)?.closest('.term-mention')!==term)continue;
+        if(by<30||by>room-4||y>box.bottom-20)continue;
+        const there=document.elementFromPoint(x,y);
+        if(!there||!content.contains(there)||there.closest('button,a,[aria-haspopup]'))continue;
+        term.dataset.wheelTerm='';return {x,y,by:Math.round(by),name:term.textContent.trim()};
+      }
+      return null;
+    });
+    let found=null;
+    for(const id of readings){
+      if(id)await page.evaluate(id=>document.querySelector('[data-map-explorer]').exploreNode(id),id);
+      else await page.evaluate(()=>document.querySelector('[data-map-explorer]').showWholeMap());
+      await settleColumn(page);
+      if((found=await findTerm()))break;
+    }
+    test.skip(!found,'no term the column can scroll under a resting pointer');
+    await page.mouse.move(found.x,found.y-30,{steps:2});await page.mouse.move(found.x,found.y,{steps:2});await page.waitForTimeout(100);
+    // Wheeled down a little at a time, as a reader reads on, until the term
+    // stands under the pointer.
+    const under=()=>page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('[data-wheel-term]'),[found.x,found.y]);
+    expect(await page.evaluate(()=>!!document.querySelector('[data-wheel-term]')),'the column keeps the term it was read with').toBe(true);
+    for(let i=0;i<80&&!await under();i++){await page.mouse.wheel(0,15);await page.waitForTimeout(60);}
+    await page.waitForTimeout(1500);
+    const after=await page.evaluate(([x,y])=>({under:!!document.elementFromPoint(x,y)?.closest('[data-wheel-term]'),
+      opened:[...document.querySelectorAll('.source-card')].filter(card=>!card.hidden&&card.getClientRects().length).map(card=>card.id||card.className)}),[found.x,found.y]);
+    expect(after.under,`the wheel brought "${found.name}" under the pointer`).toBe(true);
+    expect(after.opened,`a hover card opened as the wheel brought "${found.name}" under the resting pointer`).toEqual([]);
+    // The pointer moving on it opens its card, after its rest.
+    await page.mouse.move(found.x+3,found.y,{steps:2});await page.waitForTimeout(1200);
+    expect(await page.evaluate(()=>!document.getElementById('rm-term-preview')?.hidden),`"${found.name}" pointed at opens its card`).toBe(true);
     expect(errors).toEqual([]);
   });
 

@@ -553,7 +553,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   outside a pinned input path a zoom that enters a level, changes what the
   column reads, and there is no duplicate node preview. A navigation, click
   or camera move cannot trigger a different hover emphasis under a
-  stationary pointer; real pointer movement resumes hover. The map uses the
+  stationary pointer; real pointer movement resumes hover. So on the whole
+  page: a wheel or a scroll that brings a term, a source mark or any other
+  hover card's trigger under a resting pointer opens nothing until the
+  pointer moves on it (final journeys, 2026-10-02: wheeling freqtrade's
+  column with the pointer resting on a term had opened its explanation over
+  the flow). The map uses the
   available window width independently of prose width. Every section and
   source link stays reachable from the page.
 
@@ -899,7 +904,13 @@ line, its line link going with it.
 
 An input's reading is drawn in the Inputs blue of its tile and collection,
 never core's rose: its heading's bar and kind and its links. A chosen input's
-reading opens at its path (owner, 2026-09-27). It names its handler ("handled
+reading opens at its path (owner, 2026-09-27): the column brings that
+section to its top. Where the reading ends before the column can scroll
+that far, a section already in sight leaves the reading at its first lines,
+else the column scrolls as far as it goes; its top edge stands between
+lines, never through one (final journeys, 2026-10-02: etcd's Campaign
+reading, scrolled as far as it went toward its empty flow, had its
+registration line cut under the heading). It names its handler ("handled
 by {handler}"), a method with its type and an input one case of its
 handler declares with that case as written ("Main.Run (case "replicate")";
 never a bare "Run"), reading that declaration in its part when the part

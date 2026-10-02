@@ -807,8 +807,8 @@ function rmDeclarationRelations(map,node,key,nodes){
         // An arrow end opened from the canvas opens that connection alone.
         if(anchor&&!restoring)card.querySelectorAll('.map-frame-connections>details[open]').forEach(function(detail){if(detail!==anchor)detail.open=false;});
         var chosen=card.querySelector('.map-concepts:not([hidden])');
-        if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))content.scrollTop+=chosen.getBoundingClientRect().top-content.getBoundingClientRect().top;
-        if(anchor&&!restoring){content.scrollTop+=anchor.getBoundingClientRect().top-content.getBoundingClientRect().top-8;anchor.removeAttribute('data-reading-anchor');}
+        if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))rmOpenAt(content,chosen,0);
+        if(anchor&&!restoring){rmOpenAt(content,anchor,8);anchor.removeAttribute('data-reading-anchor');}
         inspectionPending=false;rmExpandAllWord(card);
       }});
     }
@@ -948,6 +948,55 @@ function rmDeclarationRelations(map,node,key,nodes){
   }
 })();
 
+// A reading opened at one of its sections starts there: the column scrolls
+// the section to its top (`room` above it). Where the reading ends before
+// the column can scroll that far, a section already in sight (its top and
+// room for three lines, 48px) keeps the reading at its first lines; else
+// the column scrolls as far as it goes.
+// Either way its top edge stands between lines, never through one (final
+// journeys, 2026-10-02: etcd's Campaign reading, scrolled as far as it went
+// toward its empty flow, had its registration line cut under the column's
+// heading).
+function rmOpenAt(content,section,room){
+  var top=section.getBoundingClientRect().top-content.getBoundingClientRect().top-content.clientTop;
+  var want=content.scrollTop+top-room,most=content.scrollHeight-content.clientHeight;
+  if(want<=most+.5){
+    content.scrollTop=want;
+    // A line just above the section is hidden whole, the section still in
+    // sight.
+    var cut=rmTopCut(content);if(cut)content.scrollTop+=Math.min(Math.ceil(cut.bottom-cut.edge),room);
+    return;
+  }
+  if(top>=0&&top+48<=content.clientHeight)return;
+  content.scrollTop=most;
+  // A block the edge cuts is shown from its own top; one taller than half
+  // the column from the cut line's.
+  for(var pass=0;pass<3;pass++){
+    var line=rmTopCut(content);if(!line)return;
+    var block=line.node.parentElement;
+    while(block!==content&&/^inline/.test(getComputedStyle(block).display))block=block.parentElement;
+    var at=block.getBoundingClientRect().top;
+    if(block===content||line.edge-at>content.clientHeight/2)at=line.top;
+    content.scrollTop-=Math.ceil(line.edge-at);
+  }
+}
+// The text line a scrolling column's top edge cuts, if any.
+function rmTopCut(content){
+  var edge=content.getBoundingClientRect().top+content.clientTop,range=document.createRange(),found=null;
+  var walker=document.createTreeWalker(content,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:function(node){
+    if(node.nodeType===3)return node.data.trim()?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
+    var r=node.getBoundingClientRect();
+    return r.height&&(r.bottom<=edge||r.top>=edge)?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_SKIP;
+  }});
+  for(var node=walker.nextNode();node&&!found;node=walker.nextNode()){
+    range.selectNodeContents(node);
+    Array.prototype.some.call(range.getClientRects(),function(r){
+      if(r.top<edge-1&&r.bottom>edge+1){found={node:node,top:r.top,bottom:r.bottom,edge:edge};return true;}
+      return false;
+    });
+  }
+  return found;
+}
 // An opened block of a scrolling column is brought into view: the column
 // scrolls by what the block overflows at its foot, and never further than
 // bringing the block's own top (its summary) to the column's top.
