@@ -497,9 +497,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   own title fits (owner, 2026-09-29). A part too dense for its tiles to be
   read there is shown as its frame instead: its card closed at the scale a
   part is read at, the chosen declaration alone in it as its tile, the
-  camera staying when that card is in sight (owner, 2026-09-29). Open: the
-  scene canvas still enters such a part as its magnifier does, the tile
-  not centred and no dense part closed (CURRENT). The page data gives each
+  camera staying when that card is in sight (owner, 2026-09-29;
+  `scene.mjs` `memberView`). The page data gives each
   tile its file and the same source link its reading uses, served or
   static.
 
