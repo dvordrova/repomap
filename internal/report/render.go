@@ -929,7 +929,21 @@ func pageTemplateFuncs(language DisplayLanguage) template.FuncMap {
 
 func pageTemplateFuncsWith(language DisplayLanguage, data *pageData) template.FuncMap {
 	return template.FuncMap{
-		"t":                func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
+		"t": func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
+		// oneOf is a "one of the calls" reading's name, or the words for
+		// one no function holds (the "one-of-calls" template).
+		"oneOf": func(from *pageStepName, otherwise string) pageOneOf { return pageOneOf{From: from, Else: otherwise} },
+		// tAround is a message with one name in it, before and after the
+		// name: the template writes the name as an element between them, in
+		// the place each language puts it.
+		"tAround": func(key string) ([]string, error) {
+			text, err := uiText(language, key, "\x00")
+			if err != nil {
+				return nil, err
+			}
+			before, after, _ := strings.Cut(text, "\x00")
+			return []string{before, after}, nil
+		},
 		"outboundGroups":   groupOutbound,
 		"operationsByFile": operationsByFile,
 		"pagedata":         data.ref,

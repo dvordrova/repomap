@@ -353,14 +353,18 @@ type pageFlowStep struct {
 	Registers []pageStepRegistration
 	RunBy     [][]pageStepName
 	// Via is how the step before reaches it, as code says it ("called",
-	// "one of 94", "handed to quil.core.sketch.setup"); ViaFrom, for one of
-	// a dispatch site's alternatives, the function holding the site, a name
-	// read as a step's is ("one of 94 from call"), never a file and line.
+	// "handed to quil.core.sketch.setup"); ViaFrom, for one of a dispatch
+	// site's alternatives, the function holding the site, a name read as a
+	// step's is ("one of the calls call may make"), never a file and line.
 	// Fork, on the last step of a flow ending at an undecided split, holds
 	// the candidates it could go on through, read folded under one line.
 	Via     string
 	ViaFrom *pageStepName
-	Fork    *pageFlowFork
+	// OneOf is, for a step reached as one of the callables a call through a
+	// value may run, that reach in words ("one of the calls serverCron may
+	// make"), never a count; Via is then empty.
+	OneOf bool
+	Fork  *pageFlowFork
 	// Passed, on a step where the walk decided a split, are the candidates
 	// the path did not follow, read folded under "also calls:".
 	Passed *pageFlowFork
@@ -395,10 +399,22 @@ type pageFlowWay struct {
 
 // pageFlowFork is a Main flow's named fork: its line ("one of 94" from
 // call, "one of 5") and each candidate's name.
+// pageOneOf is what the "one-of-calls" template reads: the function whose
+// call through a value may run the callable, or the words said when no
+// function is known.
+type pageOneOf struct {
+	From *pageStepName
+	Else string
+}
+
 type pageFlowFork struct {
 	Label string
 	From  *pageStepName
 	Names []pageStepName
+	// OneOf is an undecided fork, read in words: "one of the calls {From}
+	// may make" when its candidates share one dispatch site, else "one of
+	// the calls it may make", never a count.
+	OneOf bool
 }
 
 // pageFlowHandles are the inputs of one kind a Main flow step handles: the

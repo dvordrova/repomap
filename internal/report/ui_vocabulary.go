@@ -942,6 +942,14 @@ var russianUI = map[string]string{
 
 	// Where an outside call is written, beside "Called from" (rmReachedFrom).
 	"Made in": "Где сделан вызов",
+
+	// A Main flow step or fork reached as one of the callables a call
+	// through a value may run, and a long way's folded rest, in words,
+	// never a count (page_model.go, partials.html).
+	"one of the calls {0} may make":             "один из вызовов, которые может сделать {0}",
+	"one of the calls the step before may make": "один из вызовов, которые может сделать предыдущий шаг",
+	"one of the calls it may make":              "один из вызовов, которые он может сделать",
+	"the rest of this way":                      "остальные шаги этого пути",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

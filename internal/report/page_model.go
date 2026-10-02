@@ -1005,6 +1005,11 @@ func (builder *pageBuilder) flowStepSubject(step orientation.FlowStep) string {
 
 func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, shown map[string]bool) pageFlowStep {
 	row := pageFlowStep{Explanation: step.Explanation, Via: step.Via}
+	// One of the callables a call through a value may run reads in words,
+	// never "one of 94" (owner: no digits in the column).
+	if strings.HasPrefix(step.Via, "one of ") {
+		row.Via, row.OneOf = "", true
+	}
 	if step.Site != "" {
 		if name, ok := builder.flowName(step.TargetID, step.Site); ok {
 			row.ViaFrom = &name
@@ -1171,17 +1176,17 @@ func markFlowRuns(rows []*pageFlowStep, before *pageFlowStep) {
 }
 
 // flowFork is a walked flow's fork, when its last step ends at one: one
-// line, the candidates' shared "one of N" and the function holding their
-// dispatch site when they share them, else "one of N", and each
-// candidate's name reading its declaration.
+// line in words, "one of the calls {site} may make" with the function
+// holding their dispatch site when the candidates share one, else "one of
+// the calls it may make", never a count, and each candidate's name reading
+// its declaration.
 func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
 	if len(step.Branches) == 0 {
 		return nil
 	}
-	fork := &pageFlowFork{Label: fmt.Sprintf("one of %d", len(step.Branches))}
+	fork := &pageFlowFork{OneOf: true}
 	first := step.Branches[0]
 	if strings.HasPrefix(first.Via, "one of ") && slices.IndexFunc(step.Branches, func(branch orientation.FlowBranch) bool { return branch.Via != first.Via || branch.Site != first.Site }) < 0 {
-		fork.Label = first.Via
 		if first.Site != "" {
 			if name, ok := builder.flowName(step.TargetID, first.Site); ok {
 				fork.From = &name

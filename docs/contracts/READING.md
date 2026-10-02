@@ -2034,15 +2034,18 @@ readQueryFromClient: aeProcessEvents may call acceptHandler, which calls
 createClient, where exact calls alone had found serverCron → syncWithMaster;
 `TestARegisteredStepIsRegisteredWhereThePathReaches`). The report only
 displays them. The
-candidates no way follows stay the step's folded "one of N" line, and the
+candidates no way follows stay the step's folded line, which the report
+reads in words ("one of the calls `call` may make", never a count), and the
 split is journaled under `flow_fork` with its lead and the ways followed. No
 answer at all ends the path at a named fork of every candidate. The report
 reads the trunk, then, under the step where it parts, each way as a short
 path of its own, one name per line; a way longer than three steps shows its
-first step and folds the rest. There is no count cap, and no unit is on a
+first step and folds the rest under "the rest of this way" (ru "остальные
+шаги этого пути"), never a count. There is no count cap, and no unit is on a
 path twice. No step is written by a model:
 each is its declaration with its accepted atlas line (`Explanation`) and how
-the step before reaches it (`Via`: "called", "one of 94", "handed to …"); one
+the step before reaches it (`Via`: "called", "one of 94", "handed to …",
+the report reading "one of 94" in words); one
 of a dispatch site's alternatives keeps the declaration holding the site
 (`Site`), never its file and line, which only the categorizer's option reads.
 Candidates of one split sharing a name are told apart
