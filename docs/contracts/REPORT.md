@@ -124,30 +124,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - The ordinary entrance includes every saved request, command, activity and
   interaction. Each component's input nodes form one blue display frame,
   headed "Inputs" (the colour key's word), outside the component in the
-  layer next to it, its arrow straight into it; the component is named by
-  that arrow, by the frame's zoom-mark accessible name and in the location
-  row. Its distant summary shows the actual
-  catalogue types (requests, commands, background work, interactions, other
-  operations); zoom reveals the named input nodes. Inside, inputs are grouped
-  by the part holding their handler (the saved implementation owner), or,
-  for an input whose handler is not established, the one part its Inputs
-  arrow goes into, each group framed, titled and ordered by that part's name,
-  its inputs in rows wider than tall; choosing its title
-  reads that part, but a click where one of its inputs stands while the group
-  is closed reads that input's kind in the collection, as choosing the kind
-  does (owner, 2026-09-30: "я в колонке не вижу, что я тыкнул на канвасе
-  инпут какой-то"). The collection opens to its groups first, each closed
-  like a closed area with a zoom mark entering it, no smaller than a card its
-  title reads in where the collection is entered whole; a collection's
-  groups open to their inputs together when its own inputs' headings read
-  (14px to open, 12px to stay open), whatever another collection's do.
-  Its magnifier, as an Outside frame's, enters it whole, its tiles at most
-  at their own size. An input with
-  neither stays loose after the groups and opens with them; a collection
-  whose inputs share one part keeps them loose. The groups are display
-  containment, not architectural areas, and add no relation. A tile says its
-  kind by a small muted mark before its name (Primer Octicons, the kind's
-  name on hover), never by a printed kind row; the same mark stands before
+  layer next to it, its arrow into it; the component is named by that
+  arrow, by the frame's zoom-mark accessible name and in the location row.
+  Closed, it shows its kinds' marks, each named on hover; its magnifier
+  enters it. Entered, its inputs stand by kind, never by part ("Scene
+  model"), each kind a framed group titled by its name and mark, its
+  inputs' tiles in rows. A click on a kind's mark on the closed frame, or
+  on an input marker on a box, reads that kind in the collection, as
+  choosing the kind does (owner, 2026-09-30: "я в колонке не вижу, что я
+  тыкнул на канвасе инпут какой-то"); a click on an open kind's group reads
+  the collection, on a tile its input. The groups are display containment,
+  not architectural areas, and add no relation. A tile says its kind by a
+  small muted mark before its name (Primer Octicons), never by a printed
+  kind row; the same mark stands before
   a kind's name in the reading column and the map's key, and a kind with
   no mark of its own (an entry whose kind is not established) wears a
   neutral dot. A collection lists its kinds as the column names its
@@ -157,13 +146,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Inputs and Outside frames are named with their program in Connections and
   cards ("← Inputs · redis-server"), and a part's reading is headed "Part".
 - An input whose handler is not established (GroupsIndex `handler_unknown`:
-  an option a call declares, a value handed over) has no owner: it stands
-  loose, no implementation arrow binds it, and such a request is no route and
-  joins no portal. From saved `DeclaredBy` and catalogue data its Inputs arrow
-  goes into the part where its code takes it in: an option or word into its
-  declaring function's part ("declared in …"), a table's row into the part
-  of every function reading the table ("looked up in …"), none when nothing
-  reads the table. The arrow means "taken in here", never "implemented in":
+  an option a call declares, a value handed over) has no owner: no
+  implementation arrow binds it, and such a request is no route and joins no
+  portal. From saved `DeclaredBy` and catalogue data its relation from the
+  Inputs goes into the part where its code takes it in, where its marker
+  stands ("declared here" on hover): an option or word into its declaring
+  function's part ("declared in …"), a table's row into the part of every
+  function reading the table ("looked up in …"), none when nothing reads
+  the table. The relation means "taken in here", never "implemented in":
   its card and Connections line count inputs, not handlers, the reading still
   says the handler is not established, and the function is no handler for
   reach or phases. Every collection's Inputs arrow goes into its own
@@ -178,10 +168,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
 - External communication records without an exact local peer stand, per
   program, in one amber Outside frame beside it (owner, 2026-09-29): one
-  chip per destination its records name, every chip one size, in rows
-  toward a square, naming it whole in at most two lines (its type down to
-  nine pixels when it must), the rest on hover,
-  and the records naming none in one muted "not established" chip last.
+  chip per destination its records name, every chip one size, in rows in
+  the order "Scene model" gives (its buckets included), naming it in at
+  most two lines, its whole name on hover, and the records naming none in
+  one muted "not established" chip last.
   A destination's calls are read in the column when its chip is clicked,
   the camera staying; no call tile is drawn, and the program's arrows to
   its destinations are one arrow to its Outside frame, the calls behind it
@@ -192,63 +182,47 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the first program's destination, with an arrow from each program making
   it. A system several programs call (the same destination name in each:
   the reading names one service behind a package alike in every program)
-  stands once too, each program's calls its own tiles and arrows (owner,
+  stands once too, each program's calls its own arrow (owner,
   2026-09-30: "both targets use the database"). Such systems stand in an
   Outside frame of the programs calling them, named after them, its first
   program first ("cmd/litestream, cmd/litestream-test"), in its arrow
   cards, reading and breadcrumb; a system one program calls stays in that
   program's frame. An Outside frame and its chips are display collections,
   not inferred components.
-- A program entered (the location names it, its frame across or down three
-  quarters of the canvas, the camera not on the whole map, which leaves
-  room beside it) stands its Inputs and every Outside frame it calls into
-  as ports just outside its border (owner, 2026-09-30: variant B); the
-  whole map keeps their frames. Nothing beyond the program is drawn: on
-  its left its input kinds' icons and one mark for each program whose
-  arrows come in, on its right its systems, each wearing the mark of the
-  kind its calls' facts give (database, request, queue, SDK; a plain dot
-  for none), and one mark for each program it calls, each level with the
-  part calling it most. Every part calling a system or a program has its
-  own line to that mark, straight across or turning once in a lane of the
-  border's gutter, else along its own route inside; a program's arrows in
-  run from its mark to the parts they reach, and an input kind's from its
-  icon to the parts its inputs reach. These lines are quiet: drawn
-  only while their mark or part is pointed at, focused or chosen, the parts
-  behind the mark outlined (owner: hover answers what is this). Those of the
-  area or part the camera stands in, and of the mark or system chosen, stay
-  drawn whatever the pointer crosses, grey unless pointed at; the pointer
-  coming onto one keeps it and its card (owner, 2026-09-30). The ports keep
-  one screen size at every level, each item 24 pixels and its icon 16, the
-  capsule hugging them: closer than the program was laid out for, they
-  stand on its border where the camera shows it, else on the canvas's edge
-  nearest that border, in their order and inside the canvas, each line cut
-  where it crosses its item's lane by that edge (six pixels apart per item)
-  and run along it to its item; a line wholly beyond the canvas is not
-  drawn. They are placed where the camera comes to rest and never grow with
-  the map (owner, 2026-10-01). The geometry lint reports a port item off
-  that size (`port-size`). A mark is named in one line when pointed at or
-  reached by the keyboard; a click reads that kind, system or program, a
-  capsule elsewhere all of them, the camera staying.
+- A program entered draws nothing beyond itself: its inputs and outside
+  systems stand as markers on its boxes' edges and its links to other
+  programs end on ports of its border ("Scene model"), the whole map
+  keeping its Inputs and Outside frames. A system's marker wears the mark
+  its calls' facts give (database, request, queue, SDK, runs a program; a
+  plain dot for none), a port the program mark. A marker or a port pointed
+  at names what it stands for, one name to a line (owner: hover answers
+  what is this), and lights every marker reaching one of its systems or
+  taking one of its inputs. A click reads that kind in its collection, that
+  system (the Outside frame when the marker stands for several) or the
+  program its port names first, the camera staying; reached by the
+  keyboard, each is a button, Enter reading it. Markers and ports keep one
+  screen size at every level and never grow with the map (owner,
+  2026-10-01); the geometry lint reports a port item off 20 to 28 pixels
+  (`port-size`).
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay
   intact. Missing, partial or ambiguous matches stay separate; equal
   destination text never establishes the link. Both endpoint sources,
   operation membership and possible status survive the display projection.
-  Source-owned cross-component links connect the same common canvas. A
-  dependency between two programs already drawn between one's part and the
-  other's part or input is not drawn again between the programs.
+  Source-owned cross-component links connect the same common canvas: the
+  whole map draws them as one arrow between the two programs, an entered
+  program as its box's port.
 
 - Outside frames and their chips are amber, parts and area frames neutral; core parts are
   rose, entry parts green, inputs blue and external communications amber,
   identities the saved lanes supply. Each colour means one thing (owner,
   2026-09-28): purple is a link and nothing else, a key declaration is bold
   ink with no colour of its own, and an input's name on the canvas is the
-  inputs' blue. Core/entry cards carry distinct diamond/arrow glyphs on the
-  top border near its left end, clear of an arrow entering at its middle,
-  shared with the legend and accessible names, instead of Core/Entrypoints
-  above every title. The border stops at the entry arrow, and the legend draws the
-  same arrow.
+  inputs' blue. A closed area's card carries a distinct diamond (core) or
+  arrow (entry) glyph on its top border near its left end, the legend
+  drawing the same glyphs, instead of Core/Entrypoints above every title; a
+  part shows its lane by its colour.
 - An area's mark is its GroupsIndex container's (READING): the core mark when
   any part in it is the domain, the entry's area included (owner,
   2026-09-27); the entry mark only on the area holding the program's entry (a
@@ -256,7 +230,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   stands in it; otherwise none, or the dependencies mark. Only the part
   holding the program's launch point has the entry mark; a part that only
   takes requests or listens has none and does not make its area the entry,
-  its inputs' blue arrows showing where the outside calls in. The component
+  its inputs' blue markers showing where the outside calls in. The component
   reference's "Input responsibilities" list holds only the entry part. A
   launch point no part holds makes no entry part and no canvas label; the
   component's heading, reading and "Not on the map" list name it as the
@@ -277,11 +251,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   results) recedes every part, frame and arrow it does not involve. The
   pointer or an open arrow end changes nothing else: what it outlines and
   darkens comes forward, everything else stays as with nothing pointed at, so
-  crossing the gaps between tiles flashes nothing. Frames grouped under one
-  destination's text recede with their heading only when none of them is
-  involved.
-- Component frames keep their language, kind, role and purpose above their
-  parts. Colour never replaces the visible type cues or the independent
+  crossing the gaps between tiles flashes nothing.
+- Colour never replaces the visible type cues or the independent
   fact/model provenance in the reading panel. Text keeps at least 4.5:1
   contrast; meaningful frames and connections, non-selected neighbours
   included, at least 3:1; only what a chosen emphasis does not involve
@@ -300,13 +271,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   keeps the input and its source-backed call-path explanation, which no
   grouped connection reading replaces. No first part or operation is chosen
   automatically. Search, Find and explicit destination clicks move to their
-  exact result when it is out of sight, at a readable scale, opening its
-  enclosing frames in the fixed world; a hidden child's bounds inside the
+  exact result when it is out of sight, entering the level that holds it
+  at no less than that level's entry zoom; a hidden child's bounds inside the
   viewport do not count as visible. The camera moves only to what is out of
-  sight, otherwise the canvas marks it (owner, 2026-09-28): a fully visible,
-  legible part opened from a reading, a frame (a component, an area, an
-  Inputs collection) drawn and mostly in sight, and a declaration whose tile
-  is drawn in sight keep the camera.
+  sight, otherwise the canvas marks it (owner, 2026-09-28): a box drawn
+  wholly in sight, the level entered itself, and a declaration of the part
+  entered keep the camera.
 
 - Dark arrows and outlines have exactly one reason: search results, the part
   or frame under the pointer, the pinned input path, or the selected part's
@@ -323,12 +293,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - GroupsIndex marks an arrow quiet (`Connection.Quiet`, defined in READING,
   Quiet: initialization or a call into a helper, only in a target that serves
   something, never emptying a map); a call into a helper stays quiet even on
-  an input's path. The canvas draws a quiet arrow only while one of its ends
-  is looked at (the part the camera stands in, or a part of the area chosen
-  or zoomed into, whatever the pointer crosses; a whole program looks at
-  nothing in particular) and decides nothing of its own: it is drawn as its
-  calls are, solid or dashed, never in a style the key does not name. An arrow drawing several
-  relations is quiet only when all of them are. The system canvas is the
+  an input's path. The canvas draws a quiet arrow only where one of its ends
+  is looked at: inside the box entered (an entered program draws all of its
+  own) or the box chosen, whatever the pointer crosses. It decides nothing
+  of its own: it is drawn as its calls are, solid or dashed, never in a
+  style the key does not name. An arrow drawing several relations is quiet
+  only when all of them are. The system canvas is the
   page's one figure; the page writes no static picture of it.
 - Hover temporarily replaces the dark emphasis and never unions another
   area's edges into a pinned input path. What the chosen path or selection
@@ -356,70 +326,49 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   path pinned and the camera still, as every canvas click reads without
   moving (owner, 2026-09-29): a card's body anywhere reads its card with the
   ordinary pointer, and only its magnifier zooms. Entering the path, the
-  camera frames every part the trace reaches from the handler's part when
-  they fit at a scale where their headings stay readable (their layer
-  open); when they do not, it frames the destination first, the part the
-  trace reaches in most steps (the first of equals in call order), then
-  the handler's part and the others as fit, at that scale, so the dark
-  arrows leaving the frame show the way back. Leaving the path returns to
-  what was read before the first path entered, camera and all, never to an
+  camera enters the area holding every part the trace reaches, else their
+  program, and frames those parts at no less than that level's entry zoom,
+  their top left first when they do not fit there. Leaving the path returns
+  to what was read before the first path entered, camera and all, never to an
   earlier path; with nothing read before it (a link, a reload), to the
   whole map the column then names. The path's parts, and a closed
   frame standing for parts hidden in it, are outlined in the path's dark. An
-  input without a trace is entered as its tile, and such a tile clicked keeps
-  the camera. "Show input" stands in the reading card while the camera may be
-  away from the input's tile (on its path, or on a part read since) and
-  frames the tile within its group, the inputs its handler's part takes,
-  never the whole collection; a group larger than a readable camera is
-  entered at the tile. Once the tile is framed there is nothing to return
-  to; choosing it again returns to the path. The input's reading is under
+  input without a trace is entered at its kind's group, and such a tile
+  clicked keeps the camera. "Show input" stands in the reading card while
+  the camera may be away from the input's tile (on its path, or on a part
+  read since) and frames the tile's kind group in its collection, never the
+  whole collection; a group larger than the canvas at the collection's
+  entry zoom is entered at its top left. Once the tile is framed there is
+  nothing to return to; choosing it again returns to the path. The input's reading is under
   "An input's reading" below.
 
-- The looked-at frame marks its arrow ends: hovering an area or a part inside
-  it marks the area's; pointing anywhere in an open component (its space,
-  border or title) marks the component's, as choosing it does. A closed
-  component marks nothing and takes no marks of an open one beside it.
-  Nothing on the map is a digit (owner, 2026-09-28): no part number badges,
+- Nothing on the map is a digit (owner, 2026-09-28): no part number badges,
   digit chips, key line explaining numbers or numbered/arrows switch.
-  No plaque stands on an arrow's end (owner, 2026-09-29): the arrow is its
+  Nothing stands on an arrow's end (owner, 2026-09-29): the arrow is its
   own handle, its end an ordinary head on the border it enters. Both
   directions of a pair of frames share one route. The same real endpoints
-  stay connected across zoom levels. While an end's card is open or kept, the parts behind that end take
-  the dark outline in place (a closed frame hiding them takes it for them)
-  and the end's arrows are dark; the end recedes nothing, and the
-  parts at the arrow's other end stay as they are.
+  stay connected across zoom levels. An arrow pointed at is dark and the
+  boxes at its two ends take the dark outline; nothing recedes.
   Dark arrows are drawn over every grey one in a halo of the canvas's
-  colour, and while one is dark the grey ones fade, but for those between
-  the parts looked at; boxes are untouched (owner, 2026-09-30: "you can't
-  tell where it comes from").
+  colour, and while one is dark the grey ones fade; boxes are untouched
+  (owner, 2026-09-30: "you can't tell where it comes from").
 
-- A card (a label's calls) opens on intent, only after the pointer pauses on
+- A card (an arrow's calls) opens on intent, only after the pointer pauses on
   its handle; a handle crossed on the way elsewhere opens nothing. A
   connection's handle is its drawn arrow, at every level: a wide unpainted
   hit path along it, under the boxes it joins, which take the pointer first.
-  The pointer on an arrow is on the connection of the head nearest it. A
-  head stands for the incoming
-  connection of the area or component it points into; a head on a destination,
-  the inputs or a loose part, for the outgoing connection of the frame at the
-  other end; on the looked-at frame's border, for its own direction; an
-  arrow of the part the camera stands in, a short one or one whose head is
-  beyond the canvas, for that part's connection. A part's short arrows are
-  thirty screen pixels, their heads in sight, and its magnifier leaves room
-  for them. An arrow between two parts of one frame is the calling part's
-  connection to the other and opens its card. An arrow crossing no border
-  of the frame its head names (a port's line into a part) opens that
-  connection's card at its head. The geometry lint rests the pointer on
-  sampled arrows at every level and reports one that opens no card
-  (`no-card`). An arrowhead stands outside its frame's border. A card stands flush with its
-  handle, outside the frame being read so it covers none of its parts, clear
-  of the handle, on the side with room and wholly inside the canvas; a label's
-  card goes out through the border its label stands on. Without room outside
-  the frame it stands beside its handle toward the roomier side. It moves with
-  the map but keeps the screen's type size, placed again when the zoom
-  changes. While a card is open or kept, the frame being read stays: the way
-  to the card crosses parts, frames and empty canvas without changing emphasis
-  or labels. Leaving the handle, the pointer is safe inside the triangle
-  between where it left and the card: the card lasts and no other handle on
+  The pointer on an arrow is on the connection of the head nearest it: in
+  that direction, the outgoing connection of the box the arrow leaves, else
+  (from a port or an Inputs frame) the incoming connection of the box it
+  enters. An arrow between two parts of one frame is the calling part's
+  connection to the other and opens its card. The geometry lint rests the
+  pointer on sampled arrows at every level and reports one that opens no
+  card (`no-card`). An arrowhead stands outside its frame's border. A card
+  stands flush beside its handle, clear of it, on the side with room and
+  wholly inside the canvas. While a card is open or kept, the frame being
+  read stays: the way to the card crosses parts, frames and empty canvas
+  without changing emphasis. Leaving the handle, the pointer is safe inside
+  the triangle between where it left and the card: the card lasts and no other handle on
   the way takes it; moving from an arrow onto its own card is not leaving.
   A click on a card keeps it open; a click on an arrow reads in the column
   the frame whose connection it
@@ -458,104 +407,58 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   under it by part, each part opening to their names. Go decides set
   membership and size from the relations' retained targets; the browser only
   counts what stands behind the arrow. A caller calling every member itself,
-  or handing over part of a set, keeps its rows. A label's card always shows
-  the whole end.
+  or handing over part of a set, keeps its rows.
 
-- The layout is computed in `internal/report/web/split-layout.mjs` and
-  `layout.mjs`; this contract states only what the reader sees and what the
-  layout must never do. The component frame wraps its contents, with no
-  aspect padding around a compound column. Outer arrows stop at participant
-  frames even while their contents are open; continuations to inner parts
-  are not painted, and the arrow's card at the boundary stands for the
-  explored area's inner parts behind it. Shared participant labels keep every
-  matching part and source. Aggregated strokes are display geometry drawn
-  once, not semantic relations; original endpoints, certainty, possible
-  status and source relations stay distinct in the reading data and
-  operation paths, and every original edge ID and relation survives the
-  bundling.
-  Each area and each program is laid out by ELK layered. Nothing on the
-  canvas is packed into a grid; what does not fit the canvas is the
-  camera's job (owner, 2026-09-30, who judged the layered Core "ахуенно"
-  and the grid "пиздец"). An area's layout fits the initial canvas with its
-  part headings readable at the size their layer stays open at, then takes
-  the fewest detours, then the squarer box; when none fits, the one
-  shrinking least, but never a wrapped arrangement whose arrows run more
-  than half again as long as the same direction unwrapped. An area none of
-  whose arrangements fits keeps its layered arrangement and the camera
-  handles it (entered at its first parts, the rest a pan away). Its parts
-  keep their own size, that of the loose parts beside it, so an area is as
-  large as what it holds, with no second
-  member-list height; but no closed card of a component (an area or a loose
-  part) is smaller than nine twentieths of its largest area on either side,
-  or half again its own size, an area so grown holding its parts in its
-  middle and a loose part drawn open at its parts' size, as tall as its card,
-  in the middle of its box, its arrows' ends following its border. A
-  program's part in no area is a card of its own size when the program has
-  no area (a script). A closed loose part's title and description take the
-  largest size at which both still fit its box, no smaller than eleven
-  pixels where its program is entered. The arrows between a component's areas keep the interiors' spacing in
-  the unit of those areas' median height. A closed card's title reads at
-  twelve pixels where its layer opens, or where its program is entered
-  whole when that is closer; its description takes the whole lines left
-  under that title, the last ending after a whole word with "…", its whole
-  text on hover. When that cuts it, the heading is drawn up to two fifths
-  smaller, its title still eleven pixels where its program is entered, if
-  that lets it read whole, or else in two lines. A program's
-  title grows as the camera leaves it only within the band its frame keeps
-  for it, never over its first area. The magnifier frames a part whole only
-  while its declarations still read at eleven pixels there; else at that
-  size, its head and first column in sight. A closed group shows its name and nested-content hint,
-  then reveals its objects directly at the next common layer; there is no
-  intermediate member-list view. An architectural area holds at least two
-  parts (reading draws none smaller; GroupsIndex keeps no container of fewer
-  than two groups) and every group is a node of its component's map, so the
-  page draws every area it is given as a frame. Participant, input and
-  Outside frames keep their boundary even with one child.
-  Component summaries list their immediate areas in the order the model
-  listed them, then their loose parts, so folding a wrapper never removes its
-  responsibility from the overview; placement still follows the connections.
-  The parts entrance below the map lists each component's areas the same
-  way, then its loose parts by name, with the saved area caption; the single
-  card and its source reading keep the part's own title. A loose part beside
-  areas is their closed summaries' peer while they are closed: the same
-  first-reveal heading fit and column width as neighbouring groups, promising
-  no hidden children. Its box is its own card's, whatever the areas beside it
-  hold, so on the component overview its title can read smaller than theirs;
-  this is accepted. Once the areas open it is their parts' peer: the same
-  card at the same scale, filling its box. A component without areas keeps
-  its direct parts' fitted headings. Input collections stay outside the
-  component at every scale.
+- The canvas's layout, levels, camera, words and markers are specified in
+  "Scene model" below; this section states only what the reader sees
+  besides. Areas and programs are laid out by ELK layered, never packed
+  into a grid; what does not fit the canvas is the camera's job (owner,
+  2026-09-30, who judged the layered Core "ахуенно" and the grid
+  "пиздец"). Arrows keep room between frames (owner, 2026-09-29): the
+  whole map's lanes stand as far apart as ELK spaces its edges. Layout runs
+  off the main thread, in an ELK worker inside the self-contained page.
+- An arrow joins two boxes of its level: one into an entered area stops at
+  its frame, its card standing for the parts behind it, and the arrows
+  inside an area are drawn where it is entered. Relations sharing a pair of
+  boxes use one route, dashed only when every original relation is
+  possible. A call left unresolved whose store witnesses name its
+  candidates is possible toward each of them (READING, Operation
+  ownership): dashed like alternatives, its rows in the source details
+  reading "possible" in the muted text, the key's dashed stroke saying what
+  it is. Aggregated strokes are display geometry drawn once, not semantic
+  relations: original endpoints, certainty, possible status and source
+  relations stay distinct in the reading data and operation paths, every
+  original edge ID and relation survives the bundling, and the drawing
+  invents no relation. A program is a member of its own connections: a
+  call reaching a running copy of it (page_system_map.go) has its card and
+  column line.
+- A closed area's card shows faint outlines where its parts stand, never a
+  blank box, as a program's card does once drawn large; only a box that can be
+  entered has a magnifier. An architectural area holds at least two parts
+  (reading draws none smaller; GroupsIndex keeps no container of fewer than
+  two groups), and the canvas draws every area it is given; Inputs and Outside
+  frames keep their boundary even with one child. A title wraps only between
+  words, as the browser wraps: closing punctuation stays with the word before
+  and an opening bracket with the word after, so no line starts with ")" or is
+  ")" alone. A word breaks inside only when it alone is wider than the line,
+  after a separator or between camelCase words when it can, never before
+  closing punctuation; a path breaks only after a "/", a segment itself only
+  when it alone is wider than the line, and never before its extension. Map
+  titles are drawn as those measured lines, laid out once against their box at
+  its level's text size, so zoom and pan never rewrap them; a part's title
+  leaves room for its magnifier.
+- A level is entered framed whole at no less than its entry zoom; a box
+  larger than the canvas there is entered at its top left, the rest a pan
+  away. A part's magnifier enters it at the zoom its declarations read at
+  (eleven pixels): the part whole when it fits there, else its head and
+  first column at the canvas's top left. Entering a level (a magnifier, a
+  reading, an input's path) sets it before the camera moves, and that move
+  never changes it.
 
-  Detail is synchronized by hierarchy depth. The whole-map layer shows
-  targets, external participants and input collections. When the first
-  participant's contents become readable, every participant reveals its next
-  level; when the first area's do, every area at that depth reveals its
-  objects. The trigger is the largest child heading at that depth: 14px to
-  enter, 12px to retain on retreat. The first layer also opens when any
-  root's longest screen dimension reaches 75% of the canvas's, retained down
-  to 65%. Whole-map fit always keeps summaries. Pan does not change layers;
-  Back restores the common hysteresis state. Smaller siblings never delay or
-  independently close the layer. A detail switch changes no camera
-  coordinates, box dimensions or routes, and no layout runs during zoom.
-
-  Summaries lay out their complete text against their own frame at the
-  whole-map reading scale and zoom scales that fixed layout; pan clips a
-  card at the viewport edge, never squeezing or rewrapping it. Compact area
-  labels fit their complete names and hint to each group rectangle once;
-  smaller groups keep smaller text instead of going blank, and zoom enlarges
-  that layout without hiding or rewrapping it. A frame's outline is painted
-  once at both detail levels, with no second border over its title. Hover
-  and selection change outline paint only, never border geometry, padding,
-  title position or wrapping; nothing inside a card moves when an area is
-  looked at or chosen. Closed frames show a subtle outlined child element
-  with a question mark as their nested-content hint; the accessible action
-  and the card both enter the contents. A toolbar hint explains zooming and
-  dragging. Leaf cards and open frames promise no further hidden layer.
-
-  A part with declarations has a zoom button; zoomed far in, its
-  declarations stand inside its card as tiles, each a declaration to choose:
-  a type with its fields and methods under it, a function or a module's
-  variable alone. A module variable its file keeps only as its handle on the
+  A part with declarations has a magnifier; entered, its declarations
+  stand inside its card as tiles, each a declaration to choose: a type with
+  its fields and methods under it, a function or a module's variable alone.
+  A module variable its file keeps only as its handle on the
   platform is no tile (GroupsIndex `PlatformHandles`: a standard-library
   call's result only its file's functions read, Python's module logger);
   the reading still lists it. A tile keeps its link column, the longest
@@ -572,13 +475,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and is never cut with "…" (reviewer, 2026-09-30), the whole name on its
   hover.
   They stack in that order in their column, a column too tall spilling into
-  the next. No name is cut, and the columns share the card's width. Tiles
-  are drawn small enough to hold them all whole: nothing is counted away and
-  no scale is too small to search. The part's name stands over them at the
-  same screen size at any such scale. The zoom button enters at the scale
-  the declarations read at: the part whole when it fits, else its head and
-  first column at the canvas's top left. A drag over the declarations pans
-  the map; a drag that moved chooses nothing.
+  the next. No name is cut, and the columns share the card's width; the
+  tiles are drawn small enough that every tile stands, however many the
+  part holds. The part's name stands over them at the same screen size at
+  any such scale. A drag over the declarations pans the map; a drag that
+  moved chooses nothing.
 
   Pointing at a declaration darkens only its own arrows: its links to the
   part's other declarations, and the part's arrows carrying a call into it
@@ -586,165 +487,52 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   nothing recedes. A click on a tile chooses that declaration: the part is
   read with it named in the reading column, the tile keeps the read outline,
   its arrows stay dark, the declarations its links do not join recede while
-  it stays chosen, and the camera stays on a tile in sight. A modifier click
-  opens its code. A declaration the reading column names by its source
-  (Find's code hit, a declaration chosen in the reading, a restored visit) is
-  the one chosen on the canvas. A newly named one out of sight is shown with
-  its part at the zoom where the part's tiles are drawn and the part stands
-  whole across the canvas: framed whole when it fits, else across with the
-  tile centred down it, never deeper than the part's own title fits (owner,
-  2026-09-29); a restored visit keeps its camera. A part too dense for its
-  tiles to be read there (names below the size an open frame's text stays
-  open at) is shown as its frame instead: its card closed at the scale a
+  it stays chosen, and the camera stays. A modifier click opens its code. A
+  declaration the reading column names by its source (Find's code hit, a
+  declaration chosen in the reading, a restored visit) is the one chosen on
+  the canvas; a restored visit keeps its camera. A newly named one out of
+  sight is shown with its part at the zoom where the part's tiles are drawn
+  and the part stands whole across the canvas: framed whole when it fits,
+  else across with the tile centred down it, never deeper than the part's
+  own title fits (owner, 2026-09-29). A part too dense for its tiles to be
+  read there is shown as its frame instead: its card closed at the scale a
   part is read at, the chosen declaration alone in it as its tile, the
-  camera staying when that card is in sight (owner, 2026-09-29). The page
-  data gives each tile its file and the same source link its reading uses,
-  served or static.
+  camera staying when that card is in sight (owner, 2026-09-29). Open: the
+  scene canvas still enters such a part as its magnifier does, the tile
+  not centred and no dense part closed (CURRENT). The page data gives each
+  tile its file and the same source link its reading uses, served or
+  static.
 
-  Root summaries put saved area names before role, counts and purpose;
-  complete dense inventories scroll without dropping entries. An ordinary
-  wheel scrolls an overflowing inventory, staying with it past its end;
-  pinch passes through to the map. Anywhere else on the canvas, its location
-  row included, the wheel moves the map and never scrolls the page. One
-  pinch (ctrl+wheel) crosses at most one level boundary, going on or back,
-  and stops short of the next; a pause ends it. The levels are the whole
-  map, one per open hierarchy depth, then a part's tiles in sight; two layers
-  opening at one zoom are one boundary. Only a tick that would cross a
-  second boundary is held short of it. Secondary purpose text uses the
-  remaining complete lines, the full text in the reading column. Text and
-  controls stay inside their own frame; viewport clipping never moves them
-  to another corner. Where the reader is is said once, by the page's
-  breadcrumb, with the reading column's heading naming what is read and the
-  frame holding it (owner, 2026-09-29). The canvas keeps its location only
-  for assistive technology and for a layout that failed. Root summaries and
-  revealed interiors are exclusive.
-
-  Arrows between groups and participants stop at their boundaries, open or
-  closed; routes inside one group keep their part-to-part endpoints, and
-  connections wholly inside a group reveal with its objects. Relations
-  sharing a directed visible pair use one route, dashed only when every
-  original relation is possible. A call left unresolved whose store
-  witnesses name its candidates is possible toward each of them (READING,
-  Operation ownership): dashed like alternatives, its rows in the source
-  details reading "possible" in the muted text, the key's dashed stroke
-  saying what it is. All original endpoint IDs and sources stay on the
-  route; the drawing invents no relation. Plaques sit just inside the frame,
-  centred on the arrow's connection point without moving it, and encode no
-  execution order. No route shows a diagonal clipping segment, and no
-  update drops arrows between animation frames. There is no additional
-  boundary route planner, A* layer, custom marker packing or replacement
-  path.
-  The initial overview fits all root component and communication frames.
-  The unpositioned drawing stays hidden, with a loading indicator in the
-  reserved canvas, until the fixed world and camera are both ready.
-  Workspace height accounts for the actual header and controls. In
-  whole-map mode a resize lays out the outer frames again, keeping every
-  interior, and fits the new bounds. Manual pan/zoom ends that mode, keeping
-  the reader's world and camera; choosing the whole map again may lay out
-  again. A pending resize layout cannot replace a world after a manual
-  gesture. Saved whole-map intent survives a changed geometry identity.
-  Component entrance fits the whole participant frame before a group is
-  explored, siblings on both sides in view; entering a group or a call then
-  uses its content scale. A focused area that fits the canvas with its
-  parts' headings at about twelve pixels is fitted whole, never wider than
-  the visible canvas; only an area too large even so is entered at its first
-  part at that scale. Entering a frame or an input's path opens what it
-  enters, keeping those frames open through the camera move even when the
-  camera ends smaller than a closed layer needs to open by itself.
-  Even in a short window the camera can show the complete root bounds, and
-  the initial layout accounts for readable root headings, not only the
-  bounding rectangle. Overview text has room at the fitted size:
-  small area lists show whole, a list taller than the canvas shows its first
-  entrance and scrolls the rest, a short component name never squeezes its
-  inventory into isolated words, and an oversized list never grows the world
-  repeatedly or collapses its width. Long words are not broken; a narrow
-  heading may continue below its zoom mark instead. A title wraps only
-  between words, as the browser wraps: closing punctuation stays with the
-  word before and an opening bracket with the word after, so no line starts
-  with ")" or is ")" alone. A word breaks inside only when it alone is wider
-  than the line, after a separator or between camelCase words when it can,
-  never before closing punctuation; a path breaks only after a "/", a
-  segment itself only when it alone is wider than the line, and never
-  before its extension. Map titles are drawn as those measured lines, never
-  broken again by the browser. A heading still short of its longest word
-  shrinks its type until it fits; a part's title leaves room for its zoom
-  button. A part's description takes at most three lines, the third
-  cut with an ellipsis, and never leaves the card an empty line. When the
-  whole-map fit cannot give a summary its room, the summary is drawn scaled
-  down whole, its zoom mark with it until zoom gives the mark its ordinary
-  size, as a small group keeps a smaller complete label; a frame too narrow
-  for its text at full size keeps that smaller summary rather than stand
-  blank. Compact component purposes use
-  the remaining whole lines, at most three, the last ending after a whole
-  word with "…", hidden if fewer than two lines fit; the complete purpose
-  stays in the reading column. A program's card lists no part named as the
-  program is (a script's one part, named by its file) and shows no role
-  worded as one of the areas it lists. A program of one or two parts and no
-  area (a script) takes its summary's proportion, its title, role and
-  description (at most three lines) with no empty card under them, its
-  parts in the middle of its frame. A program is a member of its own connections: a call reaching a
-  running copy of it (page_system_map.go) has its card and column line.
-  Beside an entered program, a neighbour's Inputs and Outside titles and
-  chips grow with the camera only to a program heading's size.
-  An Outside frame's summary is its chips, at their own size at the
-  preferred camera; beside its program entered it is drawn smaller about
-  where the program's arrow enters it, its chips at their own size there
-  and no larger, its other arrows' ends moved onto its drawn border.
-  The fixed world places frames, parts, complete input cards, component
-  purposes and grouped labels. The outer layout prefers readable text, then
-  a smaller world; unzipping is not forced on small maps. Arrows keep room
-  between frames (owner, 2026-09-29): the outer spacing is three fifths of
-  the interiors' in screen pixels at the camera it is laid out for, and a
-  correction that grows the boxes for a smaller camera grows it with them,
-  so it shrinks on screen only as the square root of that camera and never
-  below half; a summary may be drawn smaller than its reserve for it. When
-  the fit would shrink component inventories, collection headings or input
-  types below their readable size, a correction before display reserves the
-  missing space: at most four passes, each placing the grown boxes over the
-  same eight candidates, a root readable in the first placement staying
-  readable after the correction, never laying an interior out again, and no
-  zoom-time layout. A component grows whole, in the arrangement of its areas
-  (of both directions, with and without unzipping, all prepared once) nearest
-  the box it grows to, so its open areas fill its frame with no empty band.
-  Cross-participant labels take no interior space; their cards belong to
-  the outer endpoints. Components and input collections show no empty
-  padding around a long column and keep short catalogues compact. Their reserves are measured from the text, never a fixed
-  wider frame for every participant, and the fit that sizes them frames
-  exactly what the whole-map camera frames. Initial placement and resize use the same
-  inner canvas dimensions. Layout runs off the main thread, inside the
-  self-contained page. An initial failure leaves the ordinary report
-  available; a later one keeps the last complete world and offers reload;
-  neither leaves a permanent loading state or retries on the main thread.
-  Emphasis darkens and thickens a line, never its head: every arrowhead, a
+- On the canvas the wheel moves the map and never scrolls the page. Where
+  the reader is is said once, by the page's breadcrumb, with the reading
+  column's heading naming what is read and the frame holding it (owner,
+  2026-09-29); the canvas keeps its location only for assistive
+  technology. A toolbar hint explains zooming and dragging. The
+  unpositioned drawing stays hidden, with a loading indicator in the
+  reserved canvas, until the layout and the camera are both ready; the
+  workspace height accounts for the actual header and controls. A layout
+  failure on opening removes the canvas and leaves the ordinary report
+  available, with no loading state left. A resize lays every level out
+  again, fitting the whole map again or framing the level entered in its
+  new place; a failed relayout keeps the last world. Viewport history keeps
+  the camera, the level and the layout's identity: a saved camera returns
+  only on the same layout, else the whole map is fitted again, at rest or
+  whole as it was.
+- Emphasis darkens and thickens a line, never its head: every arrowhead, a
   link's head between declarations included, is an ordinary one's size.
   Strokes, casings, dashes, arrowheads, frame outlines and corner radii keep
-  their screen size at every zoom. Ordinary camera movement never rebuilds the
-  graph or remeasures unchanged text; only common detail-layer transitions
-  update displayed contents. The first click reads and zoom is separate
-  (owner, 2026-09-28): a click on a part, a frame's title, a component's, a
-  collection's or a destination's whole-map card, an area named on a
-  component's card, or an input's tile reads and marks it without moving the
-  camera; the magnifier, "+" and a double-click zoom.
-
-- The hover area persists through gaps between its labels and clears on
-  leaving the canvas, window blur, a hidden document or a click on empty
-  canvas. Hovering changes only the drawing, never the reading panel; only
-  clicking another card replaces the selected details, and there is no
-  duplicate node preview. Connection previews clear on leaving the
-  canvas/reading workspace, window blur or a new selection, and never cover
-  parts or routes. A pinned input keeps its exact saved path while other
-  parts are explored. All participants of a hovered area stay readable. The
-  map uses the available window width independently of prose width. The
-  initial view is the whole-map summary. Reset keeps the current level and
-  centres the selected item at readable scale (or the topmost part when
-  nothing is selected). A part is centred in the canvas; one taller than the
-  canvas shows its head just below the top. A regenerated layout
-  invalidates old camera coordinates and reveals the selected item instead.
-  A navigation, click or camera move cannot trigger a different hover
-  emphasis under a stationary pointer; real pointer movement resumes hover.
-  Viewport history includes its zoom, open areas and the fixed world's
-  geometry identity. Every section and source link stays reachable from the
-  page.
+  their screen size at every zoom. The first click reads and zoom is
+  separate (owner, 2026-09-28): a click on a box, a frame, a chip, a marker
+  or an input's tile reads and marks it without moving the camera; only the
+  magnifier, "+" and a zoom gesture zoom, never a double-click.
+- Hovering changes only the drawing, never the reading column, and clears
+  when the pointer leaves the canvas or crosses empty canvas; a click, or
+  outside a pinned input path a zoom that enters a level, changes what the
+  column reads, and there is no duplicate node preview. A navigation, click
+  or camera move cannot trigger a different hover emphasis under a
+  stationary pointer; real pointer movement resumes hover. The map uses the
+  available window width independently of prose width. Every section and
+  source link stays reachable from the page.
 
 An input path is its saved reach: GroupsIndex follows native call/execution
 edges (READING) and the page draws what it saved. Reads of declared values or
