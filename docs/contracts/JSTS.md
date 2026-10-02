@@ -391,19 +391,51 @@ function value (PYTHON, GO).
   - It is also a loop's body, a `try` or `catch` block, a `switch`'s cases,
     a labeled block a `break` may leave, what follows `?.`, or a default
     value.
-- **A call in another function or file.**
-  - A closure that is stored, returned or registered, and an importer, run
-    later, so any store may be what they find, as in Python.
-    `callFromClosure`'s returned arrow calls `acceptClient` or
-    `flushReplies`.
-  - A closure handed to a call as its argument runs at a time the index does
-    not know: an array's `map` runs it at once, a timer later. Only the
-    stores that reach the call it is handed to are its targets, as the
-    reviewer's rule for Python's comprehensions has it. A store after that
-    call is a witness only, and with no store before it the call stays open,
-    never exact. `callInMapBetweenStores` calls `flushReplies`, with
-    `acceptClient` as its witness; `callInMapBeforeStore` and
-    `callInTimerBeforeStore` stay open.
+- **A call in a closure.** A closure's body runs where the code holding it
+  runs it. The rule is the owner's principle of 2026-10-03: an edge never
+  claims a target no execution order would call, nor denies one some order
+  calls. Each point of the variable's own function or module where a
+  closure may run is a release of it.
+  - **Known release.** The closure is called where it is written
+    (`(() => h())()`), the `const` or function holding it is called, or a
+    `return` hands it back with no `finally` after. The body finds the
+    stores that reach that point.
+  - **Unknown release.** The closure is handed to a call (`map`,
+    `setTimeout`, a custom `defer` alike), stored, exported (the module's
+    end), read by another closure (that closure's releases), a class's
+    method, or an async or generator body. From that point on it runs at a
+    time the index does not know, so it finds the stores that reach the
+    point and every later one.
+  - **No store reaches a point.** The call stays open, its stores
+    witnesses. The `let` is still unassigned there (before its first store
+    or its declaration), so a body run at once throws and one run later
+    finds a later store.
+
+  The review's Node runs of 2026-10-03, held by the fixture:
+  - `callInMapBeforeStore`, `callInTimerBeforeStore`,
+    `callStoredBeforeStore` and `callImmediatelyBeforeStore` stay open.
+  - `callInMapBetweenStores`, `callInTimerBetweenStores` and
+    `callInDeferredBetweenStores` call `flushReplies` or `acceptClient`.
+  - `callImmediatelyBetweenStores` calls `flushReplies`;
+    `callReturnedAfterStore`, `callInMapOfConstant` and
+    `callInTimerBeforeConstant` call `acceptClient`.
+  - `callImmediatelyAsyncBetweenStores` and `callReturnedThroughFinally`
+    call either.
+  - `relayHelper`, which an exported function reads, calls `chainedHelper`,
+    declared after both.
+- **A call in another file.** It runs once the variable's module has run,
+  so it finds the stores that reach the module's end.
+- **A `const`.** A `const` has one immutable binding, and a write to it
+  throws. A call through it that names a plain function is exact to that
+  function wherever and whenever it runs, the call made directly, at once
+  or delayed before the declaration (ruling, 2026-10-03). A React
+  `useEffect(() => load())` written before `const load = ...` calls `load`.
+  A `let`, even one never reassigned, is not exempt; Python has no `const`.
+- **What a call edge means.** "If this call runs without throwing, it calls
+  X." An edge never says that the call runs. A read of a `const` before its
+  declaration throws, so `items.map(() => h()); const h = a;` reads exact
+  `a` although a non-empty `map` throws before `a` is defined: the accepted
+  limit of the `const` rule.
 - **Values.** A store's value is followed when it is:
   - a function declaration or a method with a body;
   - for `new`, a class's declared constructor;
@@ -432,9 +464,8 @@ function value (PYTHON, GO).
 
 The fixture's `callConstant`, `callChosenLet`, `callTypedLet`,
 `callOverwritten`, `callInLoop`, `callFromClosure`, `callAfterCompound`,
-`callFactory`, `callInMapOfConstant`, `callInMapBeforeStore`,
-`callInTimerBeforeStore`, `callInTimerBeforeConstant`,
-`callInMapBetweenStores` and `callFromClosureOverFactory` hold each case
+`callFactory`, the review's cases above and `callFromClosureOverFactory`
+hold each case
 (`TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere`).
 
 Missing equivalents, recorded rather than fabricated:
@@ -476,17 +507,15 @@ Missing equivalents, recorded rather than fabricated:
   through a property is never resolved from its stores. The C adapter makes
   one store exact and several stores alternatives.
 - A callback's timing is not known: telling `map` from `setTimeout` would
-  take a list of method names, which the index does not keep. A callback
-  therefore never takes a store written after the call it is handed to,
-  though a timer may well find it there: `callInTimerBeforeStore`'s callback
-  stays open with `acceptClient` as its witness, and so does
-  `callInTimerBeforeConstant`'s, whose constant is declared after the timer
-  call. React's `useEffect(() => load())` written before `const load = ...`
-  is that case: the effect runs after render, but the index cannot know it,
-  so the call stays open with `load` its witness (casdoor's web has nine:
-  `CaptchaModal`'s `loadCaptcha`, `handleCancel` and `handleOk`, and six
-  more). Python tells its eager comprehensions by syntax (PYTHON, Handler
-  tables).
+  take a list of method names, which the index does not keep. Python tells
+  its eager comprehensions by syntax (PYTHON, Handler tables).
+  - `map(() => h())` between `let h = a` and `h = b` calls `a` or `b`,
+    though `map` runs it at once and only `a` can be called.
+  - `setTimeout(() => h())` before `let h` is first assigned stays open,
+    though the timer finds the function.
+- A store after a release point is counted even in a branch that excludes
+  the point; module cycles, where an importer runs during the module's own
+  evaluation, are not considered.
 - No unresolved call through a property names the functions its stores could
   put there, so no such call draws the possible arrows the C, Go and Python
   witnesses draw; an open call through a variable names its stores.

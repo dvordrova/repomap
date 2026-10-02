@@ -173,10 +173,14 @@ export function callFactory(): void {
   handler();
 }
 
-// A closure handed to a call runs at a time the index does not know: an
-// array's `map` runs it at once, a timer later. Only the stores that reach
-// the call it is handed to are its targets; a later store stays a witness,
-// and with no store before, the call stays open, never exact.
+// A closure's body runs where the code that holds it runs it. Called there
+// (an IIFE, a call of the const holding it, a return handing it back), it
+// finds the stores that reach that point; handed to a call or stored, at a
+// time the index does not know, it may find those and every later store.
+// While a `let` may still be unassigned there and a function is stored only
+// later, the call is not established: an array's `map` runs it at once and
+// throws, a timer later and calls the function. A `const` read that does not
+// throw yields its one value. Each case is the review's Node run of 2026-10-03.
 export function callInMapOfConstant(items: number[]): void {
   const handler = acceptClient;
   items.map(() => handler());
@@ -184,6 +188,12 @@ export function callInMapOfConstant(items: number[]): void {
 
 export function callInMapBeforeStore(items: number[]): void {
   let handler!: () => void;
+  items.map(() => handler());
+  handler = acceptClient;
+}
+
+export function callInMapBetweenStores(items: number[]): void {
+  let handler: () => void = flushReplies;
   items.map(() => handler());
   handler = acceptClient;
 }
@@ -199,10 +209,49 @@ export function callInTimerBeforeConstant(): void {
   const handler = acceptClient;
 }
 
-export function callInMapBetweenStores(items: number[]): void {
+export function callInTimerBetweenStores(): void {
   let handler: () => void = flushReplies;
-  items.map(() => handler());
+  setTimeout(() => handler(), 0);
   handler = acceptClient;
+}
+
+let queued: () => void = flushReplies;
+
+function deferCall(run: () => void): void {
+  queued = run;
+}
+
+export function callInDeferredBetweenStores(): void {
+  let handler: () => void = flushReplies;
+  deferCall(() => handler());
+  handler = acceptClient;
+  queued();
+}
+
+export function callStoredBeforeStore(): void {
+  let handler!: () => void;
+  const callback = () => handler();
+  callback();
+  handler = acceptClient;
+}
+
+export function callImmediatelyBeforeStore(): void {
+  let handler!: () => void;
+  (() => handler())();
+  handler = acceptClient;
+}
+
+export function callImmediatelyBetweenStores(): void {
+  let handler: () => void = flushReplies;
+  (() => handler())();
+  handler = acceptClient;
+}
+
+export function callReturnedAfterStore(): () => void {
+  let handler: () => void = flushReplies;
+  const callback = () => handler();
+  handler = acceptClient;
+  return callback;
 }
 
 export function callFromClosureOverFactory(readable: boolean): () => void {
@@ -210,3 +259,35 @@ export function callFromClosureOverFactory(readable: boolean): () => void {
   if (readable) handler = makeHandler();
   return () => handler();
 }
+
+// An async body runs after its call has returned, a `finally` after the
+// return handing a closure back: both may find a later store. A helper read
+// through a chain of functions an export starts runs once the module has.
+export function callImmediatelyAsyncBetweenStores(): void {
+  let handler: () => void = flushReplies;
+  (async () => {
+    await 0;
+    handler();
+  })();
+  handler = acceptClient;
+}
+
+export function callReturnedThroughFinally(): () => void {
+  let handler: () => void = flushReplies;
+  const callback = () => handler();
+  try {
+    return callback;
+  } finally {
+    handler = acceptClient;
+  }
+}
+
+export function callThroughHelperChain(): number {
+  return relayHelper();
+}
+
+function relayHelper(): number {
+  return chainedHelper();
+}
+
+const chainedHelper = (): number => 1;

@@ -173,7 +173,10 @@ Missing equivalents, recorded rather than fabricated:
   (`(let [f (if seconds tick-seconds tick-millis)] (f ms))`): each function
   is only a `reads` of its var, where Python, JS/TS and Go call the
   functions a branch's stores put in a name as alternatives (PYTHON, JSTS,
-  Handler tables).
+  Handler tables). A closure captures a local's one immutable value
+  (`(let [f tick-millis] (fn [] (f ms)))`), so the question of when its body
+  runs, which JS/TS and Python answer by the closure's releases, does not
+  arise. The call is still one of these open calls.
 - A call of a function's own parameter (`(defn run [job] (job))`) stays that
   unresolved call: the vars its callers hand there are not joined to it, where
   the Python, Go, JS/TS and C adapters make them its targets (PYTHON, Handler

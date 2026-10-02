@@ -112,22 +112,38 @@ func TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere(t *testin
 		168: "callAfterCompound ->  unresolved  | acceptClient stored in handler@166",
 		// A factory's result is no plain function: the call of the constant stays.
 		173: "callFactory -> callFactory.handler exact ",
-		// A closure handed to a call takes the stores that reach that call;
-		// a later store is a witness, and with none before, it stays open.
-		182: "callInMapOfConstant -> acceptClient exact ",
-		187: "callInMapBeforeStore ->  unresolved  | acceptClient stored in handler@188",
-		193: "callInTimerBeforeStore ->  unresolved  | acceptClient stored in handler@194",
-		// A constant declared after the call a callback is handed to (a
-		// React effect's handler) is no store before it either.
-		198: "callInTimerBeforeConstant ->  unresolved  | acceptClient stored in handler@199",
-		204: "callInMapBetweenStores -> flushReplies exact  | acceptClient stored in handler@205",
+		// The review's Node runs: a closure finds the stores that reach where
+		// it is called, or, run at a time the index does not know, those and
+		// every later store; while the variable may be unassigned there with
+		// a function stored only later, the call stays open.
+		186: "callInMapOfConstant -> acceptClient exact ",
+		191: "callInMapBeforeStore ->  unresolved  | acceptClient stored in handler@192",
+		197: "callInMapBetweenStores -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@196, acceptClient stored in handler@198",
+		203: "callInTimerBeforeStore ->  unresolved  | acceptClient stored in handler@204",
+		// A const's read that does not throw yields its one value: the
+		// timer, handed its callback before the declaration, calls it.
+		208: "callInTimerBeforeConstant -> acceptClient exact ",
+		214: "callInTimerBetweenStores -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@213, acceptClient stored in handler@215",
+		226: "callInDeferredBetweenStores -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@225, acceptClient stored in handler@227",
+		233: "callStoredBeforeStore.callback ->  unresolved  | acceptClient stored in handler@235",
+		240: "callImmediatelyBeforeStore ->  unresolved  | acceptClient stored in handler@241",
+		246: "callImmediatelyBetweenStores -> flushReplies exact ",
+		252: "callReturnedAfterStore.callback -> acceptClient exact ",
 		// A store of no plain function leaves a closure's call open.
-		211: "callFromClosureOverFactory.returned_handler ->  unresolved  | acceptClient stored in handler@209",
+		260: "callFromClosureOverFactory.returned_handler ->  unresolved  | acceptClient stored in handler@258",
+		// An async body and a finally after a return find a later store; a
+		// helper a chain from an export reads runs once the module has.
+		270: "callImmediatelyAsyncBetweenStores -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@267, acceptClient stored in handler@272",
+		277: "callReturnedThroughFinally.callback -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@276, acceptClient stored in handler@281",
+		290: "relayHelper -> chainedHelper exact ",
 	}
 	for _, relation := range index.Relations {
 		line := lineOrZero(relation.Location)
 		expected, ok := want[line]
-		if !ok || relation.Location.Path != path || relation.Kind != programindex.RelationCalls || !strings.HasPrefix(expected, names[relation.FromID]+" ->") {
+		through := slices.ContainsFunc(relation.Witnesses, func(witness programindex.Witness) bool {
+			return witness.Kind == "typescript_call" && (witness.SourceExpression == "handler" || witness.SourceExpression == "chainedHelper")
+		})
+		if !ok || !through || relation.Location.Path != path || relation.Kind != programindex.RelationCalls || !strings.HasPrefix(expected, names[relation.FromID]+" ->") {
 			continue
 		}
 		var to, stores []string

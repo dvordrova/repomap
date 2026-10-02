@@ -114,6 +114,13 @@ LOOPS = (ast.For, ast.AsyncFor, ast.While)
 EAGER_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp)
 
 
+# A body that runs when it is called, consumed or awaited, not where it is
+# written (stored_callees' closures).
+CLOSURES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.GeneratorExp)
+TRIES = (ast.Try,) + ((ast.TryStar,) if hasattr(ast, "TryStar") else ())
+MODULE_END = (10 ** 9, 0)
+
+
 def store_span(node):
     """Where a store's statement starts and ends, for stored_callees."""
     start = statement_position(node)
@@ -325,6 +332,9 @@ class Scope:
         self.stores = {}
         self.branched = {}
         self.conditional_base = 0
+        # The AST node the scope is (the module's tree, a def, a class or a
+        # lambda), for stored_callees' walk of its body.
+        self.node = None
         # The scope's parameters, and the names it binds without a recorded
         # store (a for target, an augmented assignment): a value no store
         # names may be in them (stored_callees).
@@ -406,6 +416,10 @@ class Analyzer:
         # The names some scope of each module declares global or nonlocal:
         # that scope's stores of them are not their owner's (stored_callees).
         self.shared_names = {}
+        # Each module's nodes' parents and each scope's names read, for
+        # stored_callees.
+        self.parents = {}
+        self.body_indexes = {}
         # The keyword-only ones, which no positional argument fills; each
         # call a def makes of its own parameter, and each call into a
         # repository callable with what it hands (hand_parameter_calls).
@@ -649,6 +663,7 @@ class Analyzer:
 
         for module in decoded:
             scope = Scope(module["source_ref"], module["name"], "module")
+            scope.node = module["tree"]
             scope.declared_all = declared_all(module["tree"])
             self.module_scopes[module["name"]] = scope
             collector = Collector(self, module, scope)
@@ -1337,6 +1352,7 @@ class Collector(ast.NodeVisitor):
         )
         child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
+        child.node = node
         previous, self.scope = self.scope, child
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
@@ -1391,6 +1407,7 @@ class Collector(ast.NodeVisitor):
         child = Scope(ref, qname, "type", parent, class_ref=ref, class_qname=qname)
         child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
+        child.node = node
         previous, self.scope = self.scope, child
         for statement in node.body:
             self.visit(statement)
@@ -1417,6 +1434,7 @@ class Collector(ast.NodeVisitor):
         child = Scope(ref, qname, "lambda", parent, class_ref=parent.class_ref, class_qname=parent.class_qname)
         child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
+        child.node = node
         previous, self.scope = self.scope, child
         for argument in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
             self.add_variable(argument.arg, argument, True)
@@ -1851,27 +1869,9 @@ class RelationVisitor(ast.NodeVisitor):
         if not stores or owner is None or not self.settled_name(owner, name) or \
                 (owner.kind == "type" and owner is not self.scope):
             return [], []
-        position = statement_position(call)
-        within = lambda spans, start, end: any(first <= start and end <= last for first, last in spans)
-        lazily = owner is not self.scope or any(
-            scope is self.scope and isinstance(node, ast.GeneratorExp) for node, scope in self.enclosing)
-        if lazily:
-            # A call in a nested def, a lambda or a generator expression runs
-            # when it is called or consumed: any store may be what it finds.
-            reaching = list(stores)
-        else:
-            # A store whose statement ends before the call may reach it, from
-            # the last one no branch skips on; one after it only from the part
-            # of the outermost loop or eager comprehension around the call
-            # that runs again (repeating_spans).
-            before = sorted((store for store in stores if store["end"] <= position), key=lambda store: store["end"])
-            last = max((index for index, store in enumerate(before) if not store["conditional"]), default=0)
-            reaching = before[last:]
-            loops = [repeating_spans(node) for node, scope in self.enclosing
-                     if scope is self.scope and isinstance(node, LOOPS + EAGER_COMPREHENSIONS) and
-                     within(repeating_spans(node), position, position)]
-            if loops:
-                reaching += [store for store in stores if store["end"] > position and within(loops[0], store["start"], store["end"])]
+        if owner.node is None or self.body_index(owner)["evaluates"]:
+            return [], []
+        reaching = self.possible_stores(call, stores, owner)
         if not reaching or (owner.kind in ("module", "type") and all(store["conditional"] for store in reaching)):
             return [], []
         chosen = []
@@ -1885,6 +1885,166 @@ class RelationVisitor(ast.NodeVisitor):
                 return [], []
             chosen.append((origin, ref))
         return chosen, self.stored_function_witnesses(func, reaching)
+
+    def possible_stores(self, call, stores, owner):
+        """The stores that may be in the name when the call runs; [] when the
+        call is not established (owner rule: an edge never claims a target no
+        execution order would call, nor denies one some order calls).
+        - A call in the name's own scope: the stores that reach it
+          (ordered_stores), a list, set or dict comprehension running where
+          it stands.
+        - A call in a closure (a nested def, a lambda, a generator
+          expression): those of each point its body may run at
+          (closure_releases), what reaches a point the code there calls it
+          at, or, from a point on at a time the index does not know, what
+          reaches that point and every later store. No store reaching a
+          point leaves the call open: there the name is still unbound, so a
+          body run at once raises and one run later finds a later store."""
+        closure = self.outermost_closure(call, owner.node)
+        if closure is None:
+            return self.ordered_stores(stores, statement_position(call), call, owner.node)
+        # A body nested in another closure, an async def's, a generator's or
+        # a generator expression's runs after the point that calls it.
+        deferred = self.innermost_closure(call, owner.node) is not closure or isinstance(closure, (ast.AsyncFunctionDef, ast.GeneratorExp)) or \
+            any(isinstance(node, (ast.Yield, ast.YieldFrom)) and self.innermost_closure(node, owner.node) is closure for node in ast.walk(closure))
+        releases = self.closure_releases(closure, owner, frozenset())
+        if not releases:
+            return []
+        possible = []
+        for start, end, node, known in releases:
+            reaching = self.ordered_stores(stores, start, node, owner.node)
+            if not reaching:
+                return []
+            later = [] if known and not deferred else [store for store in stores if store["start"] >= end]
+            possible += [store for store in reaching + later if not any(store is seen for seen in possible)]
+        return possible
+
+    def ordered_stores(self, stores, position, node, owner_node):
+        # A store whose statement ends before the point may reach it, from
+        # the last one no branch skips on; one after it only from the part of
+        # the outermost loop or eager comprehension around the point that
+        # runs again (repeating_spans).
+        within = lambda spans, start, end: any(first <= start and end <= last for first, last in spans)
+        before = sorted((store for store in stores if store["end"] <= position), key=lambda store: store["end"])
+        last = max((index for index, store in enumerate(before) if not store["conditional"]), default=0)
+        reaching = before[last:]
+        loop = None
+        current = self.parent_of(node) if node is not None else None
+        while current is not None and current is not owner_node:
+            if isinstance(current, LOOPS + EAGER_COMPREHENSIONS) and within(repeating_spans(current), position, position):
+                loop = repeating_spans(current)
+            current = self.parent_of(current)
+        if loop:
+            reaching += [store for store in stores if store["end"] > position and within(loop, store["start"], store["end"])]
+        return reaching
+
+    def parent_of(self, node):
+        parents = self.analyzer.parents.get(self.module["name"])
+        if parents is None:
+            parents = {}
+            for parent in ast.walk(self.module["tree"]):
+                for child in ast.iter_child_nodes(parent):
+                    parents[id(child)] = parent
+            self.analyzer.parents[self.module["name"]] = parents
+        return parents.get(id(node))
+
+    def outermost_closure(self, node, owner_node):
+        outer, current = None, self.parent_of(node)
+        while current is not None and current is not owner_node:
+            if isinstance(current, CLOSURES):
+                outer = current
+            current = self.parent_of(current)
+        return outer
+
+    def innermost_closure(self, node, owner_node):
+        current = self.parent_of(node)
+        while current is not None and current is not owner_node:
+            if isinstance(current, CLOSURES):
+                return current
+            current = self.parent_of(current)
+        return None
+
+    def finally_after(self, statement, owner_node):
+        # Whether a `finally` of the scope runs after the return.
+        current = statement
+        while current is not None and current is not owner_node:
+            parent = self.parent_of(current)
+            if isinstance(parent, TRIES) and parent.finalbody and not any(current is part for part in parent.finalbody):
+                return True
+            current = parent
+        return False
+
+    def closure_releases(self, closure, owner, seen):
+        """The points of the name's own scope a closure's body may run at,
+        each (start, end, node, known): known when the code there calls it
+        (a lambda called where it is written, a call of the name holding it,
+        a return handing it back), else from that point on at a time the
+        index does not know (handed to a call, decorated, stored, read by
+        another closure, a class's method, the module's end for what an
+        importer may call)."""
+        parent = self.parent_of(closure)
+        point = lambda node, known: (statement_position(node), store_span(node)["end"], node, known)
+        if isinstance(parent, ast.Call) and parent.func is closure:
+            return [point(parent, True)]
+        holder = self.parent_of(parent) if isinstance(parent, (ast.keyword, ast.Starred)) else parent
+        if isinstance(holder, ast.Call) and holder.func is not closure and holder.func is not parent:
+            return [point(holder, False)]
+        if isinstance(parent, ast.Return):
+            return [point(parent, not self.finally_after(parent, owner.node))]
+        if isinstance(closure, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(parent, ast.ClassDef):
+                return [(start, end, node, False) for start, end, node, _ in self.name_releases(parent.name, owner, seen)]
+            releases = self.name_releases(closure.name, owner, seen)
+            return releases + ([point(closure, False)] if closure.decorator_list else [])
+        if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name) and \
+                len(owner.stores.get(parent.targets[0].id, [])) == 1:
+            return self.name_releases(parent.targets[0].id, owner, seen)
+        return [point(closure, False)]
+
+    def name_releases(self, name, owner, seen):
+        # The points a def, class or lambda named once may run at: each call
+        # of the name in its scope, each return of it, each other read from
+        # there on, the points that run a closure reading it, and, for a
+        # module's, its end, since an importer may call it.
+        if (id(owner), name) in seen:
+            return []
+        seen = seen | {(id(owner), name)}
+        point = lambda node, known: (statement_position(node), store_span(node)["end"], node, known)
+        releases = [(MODULE_END, MODULE_END, None, False)] if owner.kind == "module" else []
+        for node in self.body_index(owner)["names"].get(name, []):
+            scope_node = self.parent_of(node)
+            while scope_node is not None and not isinstance(scope_node, DEFINITIONS + (ast.Module,)):
+                scope_node = self.parent_of(scope_node)
+            scope = owner if scope_node is owner.node else self.analyzer.node_scopes.get(id(scope_node))
+            if scope is None or scope.owner(name) is not owner:
+                continue
+            inner = self.outermost_closure(node, owner.node)
+            if inner is not None:
+                releases += [(start, end, at, False) for start, end, at, _ in self.closure_releases(inner, owner, seen)]
+                continue
+            parent = self.parent_of(node)
+            if isinstance(parent, ast.Call) and parent.func is node:
+                releases.append(point(parent, True))
+            elif isinstance(parent, ast.Return):
+                releases.append(point(parent, not self.finally_after(parent, owner.node)))
+            else:
+                releases.append(point(node, False))
+        return releases
+
+    def body_index(self, owner):
+        # Each name the scope's body reads (nested scopes included), and
+        # whether it calls eval, exec, locals, globals or vars, which may
+        # write any name.
+        index = self.analyzer.body_indexes.get(id(owner))
+        if index is None:
+            index = {"names": {}, "evaluates": False}
+            for node in ast.walk(owner.node):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    index["names"].setdefault(node.id, []).append(node)
+                    if node.id in ("eval", "exec", "locals", "globals", "vars") and isinstance(self.parent_of(node), ast.Call):
+                        index["evaluates"] = True
+            self.analyzer.body_indexes[id(owner)] = index
+        return index
 
     def settled_name(self, owner, name):
         # Every value of the name is one of its owner's stores.

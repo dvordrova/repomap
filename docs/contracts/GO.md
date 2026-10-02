@@ -549,6 +549,14 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
   `tick := tickMillis` and `if seconds { tick = tickSeconds }`, `tick(ms)`
   calls the SSA phi of both functions, so both are its alternatives, dispatch
   `function_value` (`WatchTick`).
+- A call through a variable a closure captures
+  (`h := a; cb := func() { h() }; cb(); h = b`) is an unresolved
+  `function_value` call with no candidates. The variable lives on the heap,
+  and the SSA call through it names no function. The 2026-10-03 probe found
+  this for a closure called before and between the stores, one returned,
+  and one handed to a call. Go never claims a target there. JS/TS and
+  Python instead order such calls by the closure's releases (JSTS, PYTHON,
+  Handler tables).
 
 Missing equivalents, recorded rather than fabricated:
 

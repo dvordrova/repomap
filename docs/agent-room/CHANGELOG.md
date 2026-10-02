@@ -1,5 +1,40 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A closure's call finds the stores where its body may run (lead)
+
+- **Found:** the control review's Node table of 22:06.
+  - 5c46f902 gave `let h=a; setTimeout(() => h()); h=b` exact a (runtime b).
+  - It gave a custom `defer` exact a (runtime b).
+  - It gave `let h; const cb = () => h(); cb(); h=b` and the same IIFE exact b (runtime TypeError, b never called).
+  - CPython 3.14 showed the same false exacts in Python's 5424a8ac rule:
+    - a stored lambda or a def called before the store, and a lambda IIFE before the store, read exact b;
+    - an IIFE between the stores read {a, b} where only a runs.
+- **Principle (coordinator):** an edge never claims a target no execution order would call, nor denies one some order calls. No method-name lists.
+- **Rule** (JS `possibleStores`/`closureReleases`, Python `possible_stores`/`closure_releases`; skeptic-reviewed):
+  - A call in a closure finds the stores of each point of the variable's own scope where the body may run (its releases).
+  - **Known release:** the closure called where it is written, a call of the const, def or function holding it, or a return handing it back with no `finally` after. It gets the stores reaching that point.
+  - **Unknown release:** handed to a call, stored, decorated, exported or at a Python module's end, read by another closure (that closure's releases), a class's method, or an async or generator body. It gets the stores reaching the point plus every later one.
+  - No store reaching a point leaves the call open, with witnesses.
+  - A JS call in another file takes the stores reaching the module's end.
+  - **A `const` (ruling):** exact to its one plain function wherever it runs, since a read that does not throw yields its one value. JSTS.md states the edge meaning: "if this call runs without throwing, it calls X". `items.map(() => h()); const h = a;` reading exact `a` is the accepted limit.
+  - Python has no `const`. A scope calling eval, exec, locals, globals or vars leaves such calls open.
+- **Fixtures:**
+  - **JS** `stored-callbacks.ts` holds the review's cases:
+    - map, timer or IIFE before a `let` store: open;
+    - between stores: map, timer and defer give {flushReplies, acceptClient}, and the IIFE gives flushReplies;
+    - a returned closure after the store: acceptClient;
+    - a const in map or in a timer before its declaration: acceptClient;
+    - an async IIFE and a return through `finally`: either function;
+    - a helper chain from an export: exact.
+    - The review's own example.js and timing-guards runs agree: no false exact.
+  - **Python** `stored_callbacks.py` holds the CPython analogues:
+    - a closure, lambda or def called before the store: open;
+    - a lambda called between stores: flush_replies;
+    - a returned closure, map callback or queued lambda: either function.
+- **Native equivalents:** Go leaves a call through a captured variable unresolved with no candidates (probed: called before or between stores, returned, handed). Clojure closures capture an immutable local. C has no closures.
+- **casdoor web** (`--no-model --target jsts:web/package.json`): the relations JSON is byte-identical to the binary from before e2b5a25b (27,458 relations, 6,617 objects). Without the const rule, 13 React effect calls had gone open; with it they are exact again.
+- **Checks:** jstsproject, pythonprogramindex and contracttest (three serial groups) are green.
+
 ## 2026-10-03 — A page with no source link keeps every declaration's reading (control review P1, 20:42)
 
 - **What broke:** a render of a run with no remote (etcd 20261002-201509) or a served path with no openable ID left its anchors with a path and a line but neither a link nor `NoSource`. `declarationKey` returned "", so the readings dropped every declaration, Code search found nothing and function readings were never built.

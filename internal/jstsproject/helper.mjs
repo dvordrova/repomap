@@ -1342,37 +1342,56 @@ function conditionalWithin(node, scope) {
   return false
 }
 
-// The stores that may reach a site reading the variable (a call, an alias's
-// read): from those ending before it, the last no branch skips and all after
-// it, and a later one only inside the outermost loop of the variable's scope
-// around the site. A site in a closure that is stored, returned or
-// registered, or in an importer, runs later: any store may be what it finds,
-// as in Python. A closure handed to a call as its argument runs at a time
-// the index does not know (an array's `map` at once, a timer later): only the
-// stores that reach that call are its targets, each later store a witness
-// (`later`), and with none the call stays open.
-function reachingStores(declaration, site) {
+// The stores that may be in the variable when a site reading it (a call, an
+// alias's read) runs; undefined when some write cannot be followed, [] when
+// the call is not established (owner rule: an edge never claims a target no
+// execution order would call, nor denies one some order calls).
+// - A site in another file runs once the variable's module has run: the
+//   stores that reach the module's end.
+// - A site in the variable's own function or module: the stores that reach
+//   it (orderedStores).
+// - A site in a closure: those of each point its body may run at
+//   (closureReleases), what reaches a point the code there calls it at, or,
+//   from a point on at a time the index does not know, what reaches that
+//   point and every later store. No store reaching a point leaves the call
+//   open: there the variable is still unassigned, so a body run at once
+//   throws and one run later finds a later store.
+function possibleStores(declaration, site) {
   const { open, stores } = variableStores(declaration)
+  // A `const` has one immutable binding: a read of it that does not throw
+  // yields its declared value, wherever and whenever it runs, and a write to
+  // it throws. An edge says what a call that runs without throwing calls.
+  if (declaration.parent.flags & ts.NodeFlags.Const) return stores.filter((store) => store.declaration)
   if (open) return undefined
+  const sourceFile = declaration.getSourceFile()
+  if (site.getSourceFile() !== sourceFile) return orderedStores(declaration, sourceFile.endOfFileToken)
   const own = ownFunction(declaration)
-  if (site.getSourceFile() !== declaration.getSourceFile()) return stores
-  if (ownFunction(site) !== own) {
-    let outer
-    for (let current = site.parent; current && current !== own && !ts.isSourceFile(current); current = current.parent) {
-      if (ts.isFunctionLike(current) || ts.isPropertyDeclaration(current) || ts.isClassStaticBlockDeclaration?.(current)) outer = current
-    }
-    let handed = outer
-    while (handed?.parent && (ts.isParenthesizedExpression(handed.parent) || ts.isAsExpression(handed.parent) || ts.isSatisfiesExpression?.(handed.parent))) {
-      handed = handed.parent
-    }
-    const receiving = handed?.parent
-    if (!receiving || !(ts.isCallExpression(receiving) || ts.isNewExpression(receiving)) || !receiving.arguments?.includes(handed)) return stores
-    const before = reachingStores(declaration, receiving)
-    if (!before) return undefined
-    const reaching = [...before]
-    reaching.later = stores.filter((store) => !before.includes(store))
-    return reaching
+  const closure = outermostClosure(site, own)
+  if (!closure) return orderedStores(declaration, site)
+  // A body nested in another closure, an async one or a generator's runs
+  // after the point that calls its outermost closure, not at it.
+  const deferred = ownFunction(site) !== closure || Boolean(closure.asteriskToken) ||
+    Boolean(closure.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword))
+  const releases = closureReleases(closure, own, new Set())
+  if (releases.length === 0) return []
+  const possible = new Set()
+  for (const release of releases) {
+    const reaching = orderedStores(declaration, release.at)
+    if (reaching.length === 0) return []
+    reaching.forEach((store) => possible.add(store))
+    if (release.known && !deferred) continue
+    const end = release.at.end
+    stores.filter((store) => store.start >= end).forEach((store) => possible.add(store))
   }
+  return [...possible]
+}
+
+// The stores that reach a site of the variable's own function or module:
+// from those ending before it, the last no branch skips and all after it,
+// and a later one only inside the outermost loop of the variable's scope
+// around the site.
+function orderedStores(declaration, site) {
+  const { stores } = variableStores(declaration)
   const scope = variableScope(declaration), start = site.getStart()
   const before = stores.filter((store) => store.end <= start).sort((a, b) => a.end - b.end)
   let last = 0
@@ -1384,6 +1403,95 @@ function reachingStores(declaration, site) {
   }
   if (loop) reaching.push(...stores.filter((store) => store.end > start && store.start >= loop.getStart() && store.end <= loop.end))
   return reaching
+}
+
+const closureNode = (node) => ts.isFunctionLike(node) || ts.isPropertyDeclaration(node) || Boolean(ts.isClassStaticBlockDeclaration?.(node))
+
+// The outermost closure inside the variable's own function (or module)
+// around the node, if any.
+function outermostClosure(node, own) {
+  let outer
+  for (let current = node.parent; current && current !== own && !ts.isSourceFile(current); current = current.parent) {
+    if (closureNode(current)) outer = current
+  }
+  return outer
+}
+
+function unwrapHanded(node) {
+  let handed = node
+  while (handed.parent && (ts.isParenthesizedExpression(handed.parent) || ts.isAsExpression(handed.parent) ||
+      Boolean(ts.isSatisfiesExpression?.(handed.parent)) || ts.isNonNullExpression(handed.parent) || ts.isTypeAssertionExpression(handed.parent))) {
+    handed = handed.parent
+  }
+  return handed
+}
+
+// The points of the variable's own function or module a closure's body may
+// run at, each known (the code there calls it: an IIFE, a call of the const
+// or function holding it, a return handing it back) or not (handed to a
+// call, stored, exported, read by another closure, a class member): [] when
+// nothing there runs it.
+function closureReleases(closure, own, seen) {
+  const handed = unwrapHanded(closure), parent = handed.parent
+  if (parent && ts.isCallExpression(parent) && parent.expression === handed) return [{ at: parent, known: true }]
+  if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent)) && parent.arguments?.includes(handed)) return [{ at: parent, known: false }]
+  if (parent && ts.isReturnStatement(parent)) return [{ at: parent, known: !finallyAfter(parent, own) }]
+  if (closure.parent && (ts.isClassDeclaration(closure.parent) || ts.isClassExpression(closure.parent))) {
+    const type = closure.parent
+    const releases = ts.isClassDeclaration(type) && type.name ? nameReleases(type.name, own, seen) : [{ at: type, known: false }]
+    return releases.map((release) => ({ at: release.at, known: false }))
+  }
+  if (ts.isFunctionDeclaration(closure) && closure.name) return nameReleases(closure.name, own, seen)
+  if (parent && ts.isVariableDeclaration(parent) && parent.initializer === handed && ts.isIdentifier(parent.name) &&
+      (parent.parent.flags & ts.NodeFlags.Const)) return nameReleases(parent.name, own, seen)
+  return [{ at: handed, known: false }]
+}
+
+// The points a function or class named once may run at: each call of it in
+// the variable's own function or module, each return of it, each other read
+// from there on, the points that run a closure reading it, and the end of a
+// module exporting it.
+function nameReleases(name, own, seen) {
+  const checker = checkerForNode(name)
+  let symbol
+  try { symbol = checker?.getSymbolAtLocation(name) } catch {}
+  if (!symbol || seen.has(symbol)) return []
+  seen = new Set([...seen, symbol])
+  const sourceFile = name.getSourceFile()
+  const atEnd = { at: sourceFile.endOfFileToken, known: false }
+  const releases = declarationExported(name.parent) ? [atEnd] : []
+  for (const node of scopeIndex(sourceFile).names.get(name.text) || []) {
+    if (node === name) continue
+    let referenced
+    try {
+      referenced = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node
+        ? checker.getShorthandAssignmentValueSymbol(node.parent) : checker.getSymbolAtLocation(node)
+      if (ts.isExportSpecifier(node.parent)) referenced = checker.getExportSpecifierLocalTargetSymbol(node.parent) || referenced
+    } catch {}
+    if (referenced !== symbol) continue
+    if (ts.isExportSpecifier(node.parent) || ts.isExportAssignment(node.parent)) {
+      releases.push(atEnd)
+      continue
+    }
+    const inner = outermostClosure(node, own)
+    if (inner) {
+      releases.push(...closureReleases(inner, own, seen).map((release) => ({ at: release.at, known: false })))
+      continue
+    }
+    const used = unwrapHanded(node)
+    if (used.parent && ts.isCallExpression(used.parent) && used.parent.expression === used) releases.push({ at: used.parent, known: true })
+    else if (used.parent && ts.isReturnStatement(used.parent)) releases.push({ at: used.parent, known: !finallyAfter(used.parent, own) })
+    else releases.push({ at: node, known: false })
+  }
+  return releases
+}
+
+// Whether a `finally` of the variable's own function runs after the return.
+function finallyAfter(statement, own) {
+  for (let current = statement; current.parent && current.parent !== own && !ts.isSourceFile(current.parent); current = current.parent) {
+    if (ts.isTryStatement(current.parent) && current.parent.finallyBlock && current.parent.finallyBlock !== current) return true
+  }
+  return false
 }
 
 // What one store puts in the variable: its own function when the store is
@@ -1412,7 +1520,7 @@ function valueRefs(leaf, construct, seen = new Set()) {
   const variable = storedVariable(symbol)
   if (variable) {
     if (seen.has(variable)) return []
-    const reaching = reachingStores(variable, leaf)
+    const reaching = possibleStores(variable, leaf)
     if (!reaching || reaching.length === 0) return []
     const refs = []
     for (const store of reaching) {
@@ -1448,20 +1556,21 @@ function storedCallee(call) {
   const declaration = storedVariable(symbol)
   if (!declaration) return undefined
   const construct = ts.isNewExpression(call), seen = new Set([declaration])
-  const { open, stores } = variableStores(declaration)
+  const variable = variableStores(declaration), constant = Boolean(declaration.parent.flags & ts.NodeFlags.Const)
+  const open = variable.open && !constant, stores = constant ? variable.stores.filter((store) => store.declaration) : variable.stores
   const witnesses = (list) => list.flatMap((store) => storedValueRefs(store, construct, seen)
     .map((ref) => ({ ref, conditional: store.conditional, location: locationOf(store.value) })))
   if (!open && stores.length === 1 && stores[0].declaration && storedValueRefs(stores[0], construct, seen).length === 0) return undefined
-  const reaching = reachingStores(declaration, call)
-  if (reaching?.length > 0) {
+  const possible = possibleStores(declaration, call)
+  if (possible?.length > 0) {
     const refs = []
-    for (const store of reaching) {
+    for (const store of possible) {
       const found = storedValueRefs(store, construct, seen)
       if (found.length === 0) return { refs: [], stores: witnesses(stores) }
       refs.push(...found)
     }
     const unique = [...new Set(refs)].sort()
-    return { refs: unique, stores: [...(unique.length > 1 ? witnesses(reaching) : []), ...witnesses(reaching.later || [])] }
+    return { refs: unique, stores: unique.length > 1 ? witnesses(possible) : [] }
   }
   return { refs: [], stores: witnesses(stores) }
 }

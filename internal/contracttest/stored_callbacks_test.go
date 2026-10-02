@@ -58,10 +58,12 @@ func assertStoredCallbackLines(t *testing.T, relations []storedCallbackRelation,
 			continue
 		}
 		expected, ok := want[view.line]
-		if !ok || expected.kind != view.relation.Kind {
+		// A line may hold another call too, a lambda's own call around
+		// the call in its body: each line's expectation is its caller's.
+		if !ok || expected.kind != view.relation.Kind || view.from != expected.from {
 			continue
 		}
-		if view.from != expected.from || strings.Join(view.to, ",") != expected.to || view.relation.Resolution != expected.resolution {
+		if strings.Join(view.to, ",") != expected.to || view.relation.Resolution != expected.resolution {
 			t.Fatalf("line %d: %s %s -> %v %s, want %s -> %q %s", view.line, view.relation.Kind, view.from, view.to,
 				view.relation.Resolution, expected.from, expected.to, expected.resolution)
 		}
@@ -124,6 +126,17 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		184: {programindex.RelationCalls, "overwritten_before_call", "accept_client", exact},
 		// A comprehension in a loop meets the loop's later store again.
 		190: {programindex.RelationCalls, "comprehension_in_loop", "accept_client,flush_replies", alternatives},
+		// A closure finds the stores that reach where the code holding it
+		// calls it, or, run at a time the index does not know, those and
+		// every later store; with the name still unbound there, the call is
+		// not established (CPython 3.14 runs).
+		202: {programindex.RelationCalls, "lambda@202:16", "", unresolved},
+		209: {programindex.RelationCalls, "lambda@209:6", "", unresolved},
+		216: {programindex.RelationCalls, "lambda@216:6", "flush_replies", exact},
+		223: {programindex.RelationCalls, "callback", "", unresolved},
+		231: {programindex.RelationCalls, "lambda@231:16", "accept_client,flush_replies", alternatives},
+		239: {programindex.RelationCalls, "lambda@239:14", "accept_client,flush_replies", alternatives},
+		247: {programindex.RelationCalls, "lambda@247:19", "accept_client,flush_replies", alternatives},
 	})
 	for _, view := range relations {
 		if view.from == "fire" && view.relation.Kind == programindex.RelationCalls && len(view.to) != 0 {

@@ -574,9 +574,36 @@ supports:
     A list, set or dict comprehension runs where it stands, its body
     repeating like a loop's, so a store after it is never its target
     (`eager_list`, `eager_set`, `eager_dict`; `comprehension_in_loop` meets
-    its loop's later store). A call in a nested def, a lambda or a generator
-    expression runs when it is called or consumed and finds any store
-    (`deferred_generator`).
+    its loop's later store).
+  - **A call in a closure.** A closure is a nested def, a lambda or a
+    generator expression. Its body runs where the code holding it runs it,
+    under the owner's principle of 2026-10-03: an edge never claims a target
+    no execution order would call, nor denies one some order calls. This is
+    JS/TS's rule too (JSTS, Handler tables).
+    - **Known release.** A lambda called where it is written, a call of the
+      name holding the closure, or a `return` handing it back with no
+      `finally` after: the body finds the stores that reach that point.
+    - **Unknown release.** The closure is handed to a call, decorated,
+      stored, read by another closure (that closure's releases), a class's
+      method, an async or generator body, or a module-level definition at
+      the module's end, where an importer may call it. From that point on
+      it runs at a time the index does not know: it finds the stores that
+      reach the point and every later one.
+    - **No store reaches a point.** The call stays open. The name is still
+      unbound there, so a body run at once raises and one run later finds
+      a later store.
+
+    The CPython 3.14 runs of 2026-10-03 the fixture holds:
+    - `closure_called_before_store`, `lambda_called_before_store` and
+      `def_called_before_store` stay open;
+    - `lambda_called_between_stores` calls `flush_replies`;
+    - `closure_returned_after_store`, `callback_between_stores` and
+      `deferred_between_stores` call either function;
+    - `deferred_generator`, consumed by `list(calls)` after its store,
+      calls `accept_client`.
+
+    A scope that calls `eval`, `exec`, `locals`, `globals` or `vars` leaves
+    every such call open.
   - **Exact and alternatives.** One function reaching the call is the
     ordinary exact call (a single store under a branch, the name unbound
     otherwise). Classes are constructed, and outside symbols alone make an

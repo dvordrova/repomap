@@ -190,3 +190,61 @@ def comprehension_in_loop(items):
         [handler() for _ in [item]]
         if item:
             handler = accept_client
+
+
+# A closure's body runs where the code holding it runs it. Called there (a
+# lambda called where it is written, a call of the name holding it, a return
+# handing it back), it finds the stores that reach that point; handed to a
+# call or stored, at a time the index does not know, it may find those and
+# every later store. While the name is still unbound there, the call is not
+# established. Each case is a CPython 3.14 run of 2026-10-03.
+def closure_called_before_store(flag):
+    callback = lambda: handler()
+    callback()
+    if flag:
+        handler = accept_client
+
+
+def lambda_called_before_store(flag):
+    (lambda: handler())()
+    if flag:
+        handler = accept_client
+
+
+def lambda_called_between_stores(flag):
+    handler = flush_replies
+    (lambda: handler())()
+    if flag:
+        handler = accept_client
+
+
+def def_called_before_store(flag):
+    def callback():
+        handler()
+    callback()
+    if flag:
+        handler = accept_client
+
+
+def closure_returned_after_store(flag):
+    handler = flush_replies
+    callback = lambda: handler()
+    if flag:
+        handler = accept_client
+    return callback
+
+
+def callback_between_stores(flag):
+    handler = flush_replies
+    list(map(lambda _: handler(), [0]))
+    if flag:
+        handler = accept_client
+
+
+def deferred_between_stores(flag):
+    handler = flush_replies
+    queued = []
+    queued.append(lambda: handler())
+    if flag:
+        handler = accept_client
+    queued[0]()
