@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — othello's key-pressed and casdoor's own program in Outside (data 1)
+
+- **33f66a12, othello:** no commit dropped key-pressed in code. Every run
+  since 378a0679 offered the sketch entries the words `quil.core/sketch`,
+  `key-pressed` and a bare `Othello`, which was the title. 1300d794 changed
+  the boundary prompt, and the window now also held setup, update and draw.
+  The fresh answer named all twelve entries w3, "Othello". The window as
+  asked, drawn 5 times: 4 key-pressed, 1 "key-pressed Othello". Fix:
+  `labelWordsGiven` found no call at a keyword entry's place (its value's
+  anchor), so its words carried no `given`. It now finds the call holding
+  that keyword argument. With `Othello` given `title`, 5 of 5 draws chose
+  key-pressed. The Clojure fixture pins `Greeter (title)`, one key-pressed
+  input handled by on-key, and its keys n and u. The other languages have
+  no outside call handed two callables under keywords: recorded, not
+  fabricated.
+- **33f66a12, casdoor:** web answered "other: Casdoor" for 91 calls where
+  `github.com/casdoor/casdoor` was offered. `DestinationTarget` now reads a
+  free name as the last element of an offered program's import path when
+  only that program ends in it.
+- **Runs** (clean 33f66a12 build, default cache, exit 0):
+  - othello 20261002-035749: inputs key-pressed, mouse-moved, mouse-pressed,
+    setup, update and draw; 1, 2, h, n and u are values of key-pressed. The
+    journey passes. Lints went from 3 offenders to 1: the two "Othello
+    twice" repeats are gone. The Extension points empty box was already
+    there.
+  - casdoor 20261002-035754: all 277 web calls are joined to the server
+    program. "Casdoor" remains only for idp/casdoor.go's 2 calls to an
+    upstream Casdoor identity provider (`hostUrl`), another deployment. The
+    contract keeps a program's own copy out of its offers.
+
 ## 2026-10-02 — Final canvas acceptance table, browser suite and contracts after S5
 
 - **Final invariant table** (c5f6163b, clean export, pages opened with no
