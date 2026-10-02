@@ -562,7 +562,7 @@ func methodPattern(value string) (method, path string, ok bool) {
 
 // resolvesToAddress follows a dynamic argument to the literals it can carry.
 func resolvesToAddress(values *routeValueReader, argument programindex.PatternArgument) bool {
-	for _, literal := range values.argument(argument) {
+	for _, literal := range values.addresses(argument) {
 		if isAddressLiteral(literal.text) {
 			return true
 		}

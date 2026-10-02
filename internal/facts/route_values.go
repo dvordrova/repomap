@@ -21,9 +21,24 @@ type routeValueReader struct {
 	sites   map[sourcevalue.Anchor][]routeSourceCall
 	callers map[string][]routeSourceCall
 	owners  map[sourcevalue.Anchor][]string
+	// returns holds, per owner, the calls whose result the walk reads from
+	// that owner's return value: reading a call's result binds the call to
+	// the returning owner, so the owner's parameters may read that call.
+	returns map[sourcevalue.Anchor][]routeSourceCall
 	// keys is each expression's encoding, made once: many registrations
 	// reach the same expressions, and a key keeps its expression alive.
 	keys map[*sourcevalue.Value]string
+	// reach is what an expression can lead to under any branch, for each
+	// expression whose strongly connected component is complete.
+	reach map[string]routeReach
+}
+
+// routeReach says whether an expression leads to a literal, and to a text
+// that may be an address, through any of the steps the walk can take from it
+// under any fields, bindings, evidence or expressions already being read.
+type routeReach struct {
+	literal bool
+	address bool
 }
 
 type routeLiteral struct {
@@ -34,7 +49,7 @@ type routeLiteral struct {
 }
 
 func newRouteValueReader(target *targetContext) *routeValueReader {
-	r := &routeValueReader{target: target, sites: make(map[sourcevalue.Anchor][]routeSourceCall), callers: make(map[string][]routeSourceCall), owners: make(map[sourcevalue.Anchor][]string), keys: make(map[*sourcevalue.Value]string)}
+	r := &routeValueReader{target: target, sites: make(map[sourcevalue.Anchor][]routeSourceCall), callers: make(map[string][]routeSourceCall), owners: make(map[sourcevalue.Anchor][]string), returns: make(map[sourcevalue.Anchor][]routeSourceCall), keys: make(map[*sourcevalue.Value]string), reach: make(map[string]routeReach)}
 	for _, object := range target.input.Index.Objects {
 		if object.Location == nil || (object.Kind != programindex.ObjectFunction && object.Kind != programindex.ObjectMethod && object.Kind != programindex.ObjectLambda) {
 			continue
@@ -55,6 +70,9 @@ func newRouteValueReader(target *targetContext) *routeValueReader {
 			if at := target.patternAnchor(relation, pattern); at != nil {
 				key := sourcevalue.Anchor{Path: at.Path, Line: at.Line, Column: at.Column}
 				r.sites[key] = append(r.sites[key], call)
+				if returned := pattern.ResultValue; returned != nil && returned.Owner != nil {
+					r.returns[*returned.Owner] = append(r.returns[*returned.Owner], call)
+				}
 			}
 			for _, id := range relation.ToIDs {
 				r.callers[id] = append(r.callers[id], call)
@@ -68,23 +86,34 @@ func (r *routeValueReader) argument(argument programindex.PatternArgument) []rou
 	if text, templated, ok := literalValue(argument); ok {
 		return []routeLiteral{{text: text, possible: templated}}
 	}
-	return r.value(argument.Origin, nil, routeLiteral{}, make(map[string]bool))
+	return r.value(argument.Origin, nil, routeLiteral{}, make(map[string]bool), false)
 }
 
-func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, branch routeLiteral, active map[string]bool) []routeLiteral {
+// addresses reads an argument as argument does, leaving out branches that
+// lead to no address: every literal whose text may be an address remains,
+// and some others may.
+func (r *routeValueReader) addresses(argument programindex.PatternArgument) []routeLiteral {
+	if text, templated, ok := literalValue(argument); ok {
+		return []routeLiteral{{text: text, possible: templated}}
+	}
+	return r.value(argument.Origin, nil, routeLiteral{}, make(map[string]bool), true)
+}
+
+func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, branch routeLiteral, active map[string]bool, addresses bool) []routeLiteral {
 	if value == nil {
 		return nil
 	}
 	// The key is the expression alone: re-entering an expression that is
 	// still being read is recursion, and a recursive field access (a node
 	// reading its own `next`) would otherwise grow `fields` without end.
-	key, known := r.keys[value]
-	if !known {
-		encoded, _ := json.Marshal(value)
-		key = string(encoded)
-		r.keys[value] = key
-	}
+	key := r.key(value)
 	if active[key] {
+		return nil
+	}
+	// An expression that leads to no literal under any branch reads as
+	// nothing, as walking every path through its callers would find; with
+	// addresses, one that leads to no address reads as no address.
+	if reach := r.reachOf(value, key); !reach.literal || addresses && !reach.address {
 		return nil
 	}
 	active[key] = true
@@ -100,13 +129,13 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 		}
 	case "field":
 		if len(value.Parts) == 1 {
-			return r.value(&value.Parts[0], append([]string{value.Text}, fields...), branch, active)
+			return r.value(&value.Parts[0], append([]string{value.Text}, fields...), branch, active, addresses)
 		}
 	case "record":
 		if len(fields) > 0 {
 			for _, part := range value.Parts {
 				if part.Kind == "field_value" && part.Text == fields[0] && len(part.Parts) == 1 {
-					return r.value(&part.Parts[0], fields[1:], branch, active)
+					return r.value(&part.Parts[0], fields[1:], branch, active, addresses)
 				}
 			}
 		}
@@ -115,16 +144,18 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 		for i := range value.Parts {
 			next := cloneRouteLiteral(branch)
 			next.possible = true
-			result = append(result, r.value(&value.Parts[i], fields, next, active)...)
+			result = append(result, r.value(&value.Parts[i], fields, next, active, addresses)...)
 		}
 		return result
 	case "concat":
 		if len(fields) == 0 {
+			// A part is a piece of the text: its literals all count,
+			// addresses or not.
 			branches := []routeLiteral{branch}
 			for i := range value.Parts {
 				var next []routeLiteral
 				for _, previous := range branches {
-					for _, part := range r.value(&value.Parts[i], nil, cloneRouteLiteral(previous), active) {
+					for _, part := range r.value(&value.Parts[i], nil, cloneRouteLiteral(previous), active, false) {
 						part.text = previous.text + part.text
 						next = append(next, part)
 					}
@@ -142,7 +173,7 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 					continue
 				}
 				next := r.bind(branch, call, returned.Owner)
-				result = append(result, r.value(returned, fields, next, active)...)
+				result = append(result, r.value(returned, fields, next, active, addresses)...)
 			}
 			return result
 		}
@@ -159,26 +190,177 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 		var result []routeLiteral
 		for _, call := range calls {
 			next := r.bind(branch, call, value.Owner)
-			argument := call.pattern.ReceiverValue
-			if value.Kind == "parameter" {
-				argument = nil
-				for _, supplied := range call.pattern.Arguments {
-					if supplied.Position == value.Position && supplied.Keyword == "" || supplied.Keyword != "" && supplied.Keyword == value.Text {
-						argument = supplied.Origin
-						if argument == nil {
-							if text, _, ok := literalValue(supplied); ok {
-								argument = &sourcevalue.Value{Kind: "literal", Text: text}
-							}
-						}
-						break
-					}
-				}
-			}
-			result = append(result, r.value(argument, fields, next, active)...)
+			result = append(result, r.value(suppliedValue(value, call), fields, next, active, addresses)...)
 		}
 		return result
 	}
 	return nil
+}
+
+// suppliedValue is what a call hands to a formal parameter or receiver: the
+// argument at the parameter's position or keyword, or the literal written
+// there.
+func suppliedValue(value *sourcevalue.Value, call routeSourceCall) *sourcevalue.Value {
+	if value.Kind != "parameter" {
+		return call.pattern.ReceiverValue
+	}
+	for _, supplied := range call.pattern.Arguments {
+		if supplied.Position == value.Position && supplied.Keyword == "" || supplied.Keyword != "" && supplied.Keyword == value.Text {
+			if supplied.Origin != nil {
+				return supplied.Origin
+			}
+			if text, _, ok := literalValue(supplied); ok {
+				return &sourcevalue.Value{Kind: "literal", Text: text}
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+func (r *routeValueReader) key(value *sourcevalue.Value) string {
+	key, known := r.keys[value]
+	if !known {
+		encoded, _ := json.Marshal(value)
+		key = string(encoded)
+		r.keys[value] = key
+	}
+	return key
+}
+
+// reachOf says what an expression can lead to. The walk's results depend on
+// its fields, bindings, evidence and the expressions already being read; the
+// reach depends on none of them. It follows every step the walk can take
+// under any branch: each field of a record, every caller of a parameter's
+// owner and every call that reading a result binds to that owner. So an
+// expression without a literal in reach reads as nothing in every branch, and
+// one without an address in reach reads no address. The walk is unchanged:
+// reach only lets it skip what it would have found empty.
+//
+// The steps form a graph with cycles (recursion, mutual calls). Reach is
+// recorded for a whole strongly connected component once it is complete,
+// never for an expression whose component is still open, so a cycle cut
+// short is never remembered as leading nowhere.
+func (r *routeValueReader) reachOf(value *sourcevalue.Value, key string) routeReach {
+	if reach, done := r.reach[key]; done {
+		return reach
+	}
+	r.connect(value, key, &routeReachWalk{order: make(map[string]int), low: make(map[string]int), own: make(map[string]routeReach)})
+	return r.reach[key]
+}
+
+type routeReachWalk struct {
+	order map[string]int
+	low   map[string]int
+	own   map[string]routeReach
+	stack []string
+}
+
+// connect is Tarjan's strongly connected components over the walk's steps.
+func (r *routeValueReader) connect(value *sourcevalue.Value, key string, walk *routeReachWalk) {
+	walk.order[key] = len(walk.order)
+	walk.low[key] = walk.order[key]
+	walk.stack = append(walk.stack, key)
+	var own routeReach
+	r.steps(value, func(next *sourcevalue.Value) {
+		if next.Kind == "literal" {
+			own = own.with(routeReach{literal: true, address: isAddressLiteral(next.Text)})
+			return
+		}
+		nextKey := r.key(next)
+		if reach, done := r.reach[nextKey]; done {
+			own = own.with(reach)
+			return
+		}
+		if _, seen := walk.order[nextKey]; seen {
+			// Seen and not done: open on the stack, in this component.
+			walk.low[key] = min(walk.low[key], walk.order[nextKey])
+			return
+		}
+		r.connect(next, nextKey, walk)
+		if reach, done := r.reach[nextKey]; done {
+			own = own.with(reach)
+			return
+		}
+		walk.low[key] = min(walk.low[key], walk.low[nextKey])
+	})
+	walk.own[key] = own
+	if walk.low[key] != walk.order[key] {
+		return
+	}
+	at := len(walk.stack) - 1
+	for walk.stack[at] != key {
+		at--
+	}
+	component := walk.stack[at:]
+	walk.stack = walk.stack[:at]
+	var reach routeReach
+	for _, member := range component {
+		reach = reach.with(walk.own[member])
+	}
+	for _, member := range component {
+		r.reach[member] = reach
+	}
+}
+
+// steps hands over every expression the walk may read next from value under
+// any branch. A literal hands over itself; a concatenation hands over a
+// stand-in literal that may be an address, since its text is made of its
+// parts and the walk reads every part.
+func (r *routeValueReader) steps(value *sourcevalue.Value, next func(*sourcevalue.Value)) {
+	switch value.Kind {
+	case "literal":
+		next(value)
+	case "concat":
+		next(&routeConcatReach)
+	case "field":
+		if len(value.Parts) == 1 {
+			next(&value.Parts[0])
+		}
+	case "record":
+		for i := range value.Parts {
+			if part := &value.Parts[i]; part.Kind == "field_value" && len(part.Parts) == 1 {
+				next(&part.Parts[0])
+			}
+		}
+	case "alternatives":
+		for i := range value.Parts {
+			next(&value.Parts[i])
+		}
+	case "call_result":
+		if value.Anchor != nil {
+			for _, call := range r.sites[*value.Anchor] {
+				if call.pattern.ResultValue != nil {
+					next(call.pattern.ResultValue)
+				}
+			}
+		}
+	case "parameter", "receiver":
+		if value.Owner == nil {
+			return
+		}
+		// Unbound, the walk reads the owner's callers; bound, the call the
+		// branch bound, which is one of them or a call whose result it read.
+		var calls []routeSourceCall
+		if owner := r.ownerID(*value.Owner); owner != "" {
+			calls = r.callers[owner]
+		}
+		for _, group := range [][]routeSourceCall{calls, r.returns[*value.Owner]} {
+			for _, call := range group {
+				if supplied := suppliedValue(value, call); supplied != nil {
+					next(supplied)
+				}
+			}
+		}
+	}
+}
+
+// routeConcatReach stands for a concatenation's text in reach: a literal and
+// possibly an address.
+var routeConcatReach = sourcevalue.Value{Kind: "literal", Text: "/"}
+
+func (reach routeReach) with(other routeReach) routeReach {
+	return routeReach{literal: reach.literal || other.literal, address: reach.address || other.address}
 }
 
 func (r *routeValueReader) bind(branch routeLiteral, call routeSourceCall, owner *sourcevalue.Anchor) routeLiteral {

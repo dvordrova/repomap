@@ -1,5 +1,42 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The facts route walk skips what leads to no literal (data 2)
+
+- **What exploded on Lua (c:lua, 2078 objects, 11465 relations):** the
+  external calls `free(ptr)` and `realloc(ptr, nsize)` in `luaL_alloc`
+  (lauxlib.c:1065, 1069) hand over the dynamic argument `ptr`, so
+  registrationShape asked `resolvesToAddress` for it. `ptr` is luaL_alloc's
+  parameter 2; its callers are the `(*g->frealloc)(g->ud, block, …)` calls
+  (lmem.c, lstate.c), whose `block` comes from every caller of the
+  allocation functions through Lua's core. The walk followed every caller
+  path: 1,655 distinct expressions, about 600k reads in 40 s at depth up to
+  63, a quarter of them cut as recursion, and no literal at the end of any.
+  facts.Build had not finished after 60 s; the run held there.
+- **Fix (route_values.go):** before reading an expression, the walk asks
+  what it can lead to under any branch: reach over every step it could take
+  (each field of a record, every caller of a parameter's owner, every call
+  a result binding gives that owner), ignoring fields, bindings, evidence
+  and the expressions being read. Reach is Tarjan's components, recorded
+  per complete component, so a cut cycle is never remembered as empty. An
+  expression with no literal in reach reads as nothing; for
+  resolvesToAddress, one with no address literal and no concatenation reads
+  as no address (concatenation parts still read every literal). Everything
+  the walk returns is still computed by the unchanged walk.
+- **Same results:** facts.json, places.json, groups-index.json and every
+  program-index.json are byte-identical before/after on no-model runs of
+  redis-1.3.6 (4 C targets), litestream-v24 (3 Go, Python, JSTS) and etcd
+  (server, etcdctl, raftexample). A scratch differential read every
+  argument and receiver of those 12 indexes with the old and new walk:
+  49,621 arguments and 16,590 receivers, every literal list deep-equal (text, evidence order,
+  possible, bindings), resolvesToAddress equal.
+- **Lua:** facts.Build for c:lua takes 0.2–0.3 s (3,017 reads, 1,905 of
+  them skipped; `ptr` has no literal in reach).
+- **Tests:** 2^40 caller paths with a closing cycle (the old walk did not
+  finish in 30 s), and a cycle read from either end (a cut must not hide
+  b's "/y").
+- **Open:** a literal that does reach an address through exponentially
+  many paths is still walked path by path; no repository showed one.
+
 ## 2026-10-02 — Main flow side paths on etcd and redis (data 1)
 
 - **etcd (a poorly explained question):** the walk went startEtcd →
