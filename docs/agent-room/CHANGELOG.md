@@ -1,5 +1,33 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A Jev row over its envelope is packed or refused unsent, and an unbuilt C unit's failure says so (data 1, ff9af16f, fbd6bab3)
+
+- **Casdoor (fbd6bab3):**
+  - `InitAPI` (322 `web.Router` registrations) was one 150,741-byte question. Jev refused it with HTTP 400 `max_tokens_exceeded` (32k tokens for the state with one question), so the declaration had no `key_symbol`.
+  - A row that may exceed the envelope is now asked in a lossless packed form, in its place:
+    - bindings that differ only in their line become one row listing every line;
+    - the calls of one callee become one table, holding what they share once and a row per call;
+    - each packed field carries its own note, so no prompt changes.
+  - A row still over the bound goes alone. A row that would exceed the envelope even at the sparsest density is refused before sending (`over_envelope`), with its bytes, the density and the envelope.
+  - Two skeptic rounds:
+    - They chose this table form over a separate `api` catalogue (26 KB against 50 KB, with no change of `api`'s type).
+    - They required that a still-over row goes alone, so a refusal cannot take its neighbours' answers.
+- **Bounds from 15,521 saved Jev requests (tokens per byte):**
+  - Densest 0.471, median 0.270. Sparsest at 20 KB or more is 0.233.
+  - Jev answered single 105–110 KB questions at 0.263. Repomap's own `becomes` rows have no packed form, so a single bound at the densest density (67,940 bytes) would have refused them.
+  - A fit on character classes still erred by about a quarter either way.
+  - So: pack above 67,940 bytes, refuse above 137,339 bytes of state and question or 274,678 bytes of request, and let Jev decide in between, as before.
+- **Warm casdoor run 20261002-142133-casdoor-3ba730316608 (own binary, HEAD ff9af16f plus these files, exit 0):**
+  - The packed `InitAPI` request is 26,438 bytes and Jev counted 12,356 tokens: 0.467 a byte, as dense as the packed number lists were expected to be. It answered `key_symbol` yes.
+  - The other live request is the one `atlas_keys` window that now offers `InitAPI` as a key of its part.
+  - Every other request came from the cache: 1,418 across 16 stages.
+  - No `over_envelope` refusal.
+- **One-time cost:** a key-declaration row between 67,940 and 137,339 bytes that Jev used to answer unpacked now changes form. Its request misses the cache once.
+- **Litestream (ff9af16f):** a unit no build line compiles reads "no build line compiles src/litestream-vfs.c; parsed with clang's defaults (exit status 1): … 'litestream-vfs.h' file not found".
+  - It was checked by a `--no-model --target c:src/` run (20261002-142607-litestream-v24-de0f810fb6ff, exit 1, as the only target fails).
+  - The saved report keeps only `analysis_failed` for a failed target, so a render of the final run (20261002-131126) is byte-identical and cannot show the text.
+  - The expectation sits in `cproject`'s synthetic no-build-description test: the reason is not a language-cube fact.
+
 ## 2026-10-02 — C archives are libraries, a nested makefile's `all` is read, and an undecided definition stays an alternative (lead, 9760fb58)
 
 - **Archives (skeptic's option A, owner):**
