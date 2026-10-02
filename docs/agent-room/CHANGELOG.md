@@ -1,5 +1,50 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Main flow side paths on etcd and redis (data 1)
+
+- **etcd (a poorly explained question):** the walk went startEtcd →
+  Etcd.Close → EtcdServer.Stop → … → Member.Clone, the shutdown path.
+  - At startEtcd, Jev was offered StartEtcd (no line) and "Etcd; signature
+    struct; role: an embedded etcd server instance … serves peers, clients
+    and metrics". Etcd won 5 of 5 (lead 0.54–0.70).
+  - The path entered Etcd only through Close, handed to
+    RegisterInterruptHandler, and Err. The option said its type, not what
+    the path enters.
+- **12b38c84 (restored as 7a84dad4 after 7de7a254 reverted it from a stale
+  index):**
+  - A type entered through some of its members is said by them, each with
+    its reach ("enters Etcd.Close (handed to RegisterInterruptHandler),
+    Etcd.Err (called)"), never by the type's line or signature.
+  - A member of another type reads that type's line as the type's ("type
+    EtcdServer: …").
+  - A skeptic accepted this and asked for each member's reach.
+  - Rejected: "leads into every domain part / N of M": etcd 5 of 5, but
+    redis's dense splits fell from 0.34–0.43 to 0.08–0.32, with 1 of 5
+    parted.
+  - Draws, cache off, 5 each:
+    - etcd: StartEtcd 9 of 10 (lead 0.08–0.26), one draw parted.
+    - freqtrade, othello, litestream's Main.Run: unchanged.
+    - redis: no request change (C has no such types).
+  - Warm runs from my build of 12b38c84, all exit 0:
+    - etcd 20261002-113809: parts at startEtcd (one live draw under the
+      margin). Way 1: StartEtcd → EtcdServer.Start → raftNode.start →
+      start$1 → storage Save → WAL.Save → filePipeline.Open. Way 2: the
+      old shutdown path.
+    - redis 114831, freqtrade 114928, othello 120545: flows identical to
+      before.
+- **redis (a code rule, not landed):** the walk is right (aeProcessEvents
+  → readQueryFromClient, 5 of 5).
+  - The page's "registers it" chain reads "processTimeEvents → serverCron
+    → syncWithMaster → createClient". `registeredStep` finds the
+    registering function by exact calls only, and the client path
+    aeProcessEvents → acceptHandler (one of 5) → createClient needs a
+    through-a-value hop.
+  - Proposed and skeptic-reviewed: compute the chain in orientation over
+    the flow's own edges (exact calls, dispatch alternatives, open-call
+    possibles, hand-overs), shortest first. Ties are shown; possible hops
+    read as "one of N". Save it on FlowStep (orientation 3) and let the
+    report only display it.
+
 ## 2026-10-02 — A directory's own makefile the root never reaches (data 2)
 
 - **7de7a254:** a directory holding a makefile and C units no line
