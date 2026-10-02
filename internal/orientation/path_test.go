@@ -549,3 +549,81 @@ func TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis(t *testing.T) {
 		}
 	}
 }
+
+// A helper that only passes the call on to one further helper (a conduit:
+// the walk follows exactly one edge from it, to a helper, and it makes no
+// call the index leaves open) serves whoever it serves, so the walk passes
+// through it to the first helper doing more, whose non-helper calls are the
+// step's work and whose own helpers serve it. "./lua script.lua" runs in the
+// VM: lua_pcallk calls luaV_execute through luaD_call, ccall. A helper
+// calling two helpers, or with a hand-over or an open call besides, does
+// more than pass on.
+func TestAStepsWorkPassesThroughConduits(t *testing.T) {
+	type link struct{ from, to string }
+	program := func(edges []link, handed []link, open []string) Input {
+		subject := func(id string) groupindex.Subject {
+			result := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "vm.c", Line: 1, Column: 1}}}
+			if strings.HasPrefix(id, "H") {
+				result.Interpretation = &groupindex.Interpretation{Line: "Passes a call on.", Helper: true}
+			}
+			return result
+		}
+		index := groupindex.Index{
+			Target:   programindex.Target{ID: "t1", Name: "vm", Seeds: []programindex.TargetSeed{{ObjectID: "S", Kind: programindex.SeedCallable}}},
+			Subjects: []groupindex.Subject{subject("S"), subject("H1"), subject("H2"), subject("H3"), subject("H4"), subject("X"), subject("Y"), subject("Z")},
+			Groups: []groupindex.Group{{ID: "g1", Title: "API", MemberSubjectIDs: []string{"S", "H1", "H2", "H3", "H4"}},
+				{ID: "g2", Title: "Virtual machine", Core: true, MemberSubjectIDs: []string{"X", "Y", "Z"}}},
+		}
+		for _, edge := range edges {
+			index.StructuralEdges = append(index.StructuralEdges, groupindex.StructuralEdge{FromSubjectID: edge.from, ToSubjectID: edge.to, Role: groupindex.EdgeRelationTarget,
+				RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact})
+		}
+		for _, id := range open {
+			index.Unresolved = append(index.Unresolved, groupindex.UnresolvedCall{FromSubjectID: id})
+		}
+		var registrations []facts.Fact
+		for _, edge := range handed {
+			registrations = append(registrations, facts.Fact{Kind: facts.KindRegistration, TargetID: "t1", OwnerID: edge.from, ObjectID: edge.to, Text: "loop.on"})
+		}
+		return Input{Groups: []groupindex.Index{index}, Facts: facts.Result{Facts: registrations}}
+	}
+	reached := func(input Input) map[string]string {
+		graph := newFlowGraph(&input.Groups[0], input.Facts.Facts)
+		result := map[string]string{}
+		for _, candidate := range graph.candidates("S", []string{"S"}) {
+			result[candidate.unit] = candidate.reach.asked()
+		}
+		return result
+	}
+	chain := []link{{"S", "H1"}, {"H1", "H2"}, {"H2", "H3"}, {"H3", "X"}, {"H3", "H4"}, {"H4", "Y"}}
+	for _, test := range []struct {
+		name   string
+		edges  []link
+		handed []link
+		open   []string
+		want   map[string]string
+	}{
+		{"conduits pass on", chain, nil, nil, map[string]string{"X": "called through H1, H2, H3"}},
+		{"a hand-over is more than passing on", chain, []link{{"H1", "Z"}}, nil, map[string]string{"Z": "handed to loop.on through H1"}},
+		{"an open call is more than passing on", chain, nil, []string{"H1"}, map[string]string{}},
+		{"two helpers are more than passing on", []link{{"S", "H1"}, {"H1", "H2"}, {"H1", "H4"}, {"H2", "X"}, {"H4", "Y"}}, nil, nil, map[string]string{}},
+		{"a cycle of conduits ends", []link{{"S", "H1"}, {"H1", "H2"}, {"H2", "H1"}}, nil, nil, map[string]string{}},
+	} {
+		if got := reached(program(test.edges, test.handed, test.open)); !maps.Equal(got, test.want) {
+			t.Errorf("%s: S reaches %q, want %q", test.name, got, test.want)
+		}
+	}
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		return llm.Verdict{Choice: "X", Probabilities: map[string]float64{"X": 1}}, true
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, program(chain, nil, nil), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if steps := walk.flow.Steps; len(steps) != 2 || steps[1].SubjectID != "X" || !slices.Equal(steps[1].Through, []string{"H1", "H2", "H3"}) {
+		t.Fatalf("the flow is %+v, want S then X through H1, H2, H3", steps)
+	}
+	if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {
+		t.Fatalf("a flow through conduits does not seal: %v", err)
+	}
+}

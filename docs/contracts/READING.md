@@ -2009,7 +2009,16 @@ calls or hands over serves the step, so what it calls or hands over, other
 than further helpers, is the step's work, its option saying it ("called
 through docall") and the step taken keeping it (`FlowStep.Through`), while
 a helper's own helpers serve that helper (raising an error, growing a
-stack, allocating) and are not looked through (2026-10-02: Lua's
+stack, allocating) and are not looked through, unless it only passes the
+call on to one of them (a conduit: the walk follows exactly one edge from
+it, to a helper, and it makes no call the index leaves open), the walk then
+passing through to the first helper doing more, whose own helpers serve it.
+The reader's outcome for "./lua script.lua" is the file loaded, then run by
+the VM: handle_script lists luaL_loadfilex under "also calls:" and goes on
+to lua_pcallk through docall, which calls luaV_execute through luaD_call,
+ccall (`TestAStepsWorkPassesThroughConduits`; a helper calling two helpers,
+with a hand-over or an open call besides, does more than pass on, so the
+error and allocation helpers stay unread) (2026-10-02: Lua's
 handle_script runs the script through docall, a helper 0.77-0.81 over 8
 draws whatever the wording, and lua_load parses through
 luaD_protectedparser; dropped with all they reach, they had left

@@ -28,6 +28,9 @@ type flowGraph struct {
 	// core holds the declarations whose closure enters a core part; nil
 	// when no part of the program is core.
 	core map[string]bool
+	// open holds the declarations making a call the index leaves open with
+	// no possible target: work no edge says (conduit).
+	open map[string]bool
 }
 
 // flowEdge is one way a declaration reaches another: via says it as the
@@ -183,7 +186,11 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 	// of its possible targets, each function its stores put there (the
 	// map's possible arrows): redis's aeProcessEvents calls fe->rfileProc,
 	// which acceptHandler, readQueryFromClient and sendReplyToClient fill.
+	graph.open = map[string]bool{}
 	for _, call := range index.Unresolved {
+		if len(call.Possible) == 0 {
+			graph.open[call.FromSubjectID] = true
+		}
 		for _, end := range call.Possible {
 			add(call.FromSubjectID, flowEdge{to: end, via: fmt.Sprintf("one of %d", len(call.Possible)), site: call.FromSubjectID, at: siteOf(call.Location)})
 		}
@@ -257,7 +264,10 @@ func (graph *flowGraph) closuresEnteringCore() map[string]bool {
 // hands over, other than further helpers, is the step's work, said through
 // it ("called through docall"); a helper's own helpers serve that helper
 // (raising an error, growing a stack, allocating) and are not looked
-// through. Lua's handle_script runs the script through docall, a helper
+// through, unless it only passes the call on to one of them (conduit), the
+// walk then passing through to the first helper doing more ("./lua
+// script.lua" runs in the VM: lua_pcallk calls luaV_execute through
+// luaD_call, ccall). Lua's handle_script runs the script through docall, a helper
 // (0.77-0.81 over 8 draws), and lua_load parses through
 // luaD_protectedparser: dropped with all they reach, they had left
 // handle_script only luaL_loadfilex and lua_load only the collector's step,
@@ -293,10 +303,11 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 				}
 				edge.through, edge.said = passed[from].through, passed[from].said
 				if helper {
-					// A helper's own helpers serve it, not the step.
-					if len(edge.through) == 0 && !seen[edge.to] {
+					// A helper's own helpers serve it, not the step, unless it
+					// only passes the call on (conduit).
+					if (len(edge.through) == 0 || graph.conduit(from)) && !seen[edge.to] {
 						seen[edge.to] = true
-						passed[edge.to] = flowEdge{through: []string{edge.to}, said: []string{graph.qualified(edge.to)}}
+						passed[edge.to] = flowEdge{through: append(slices.Clone(edge.through), edge.to), said: append(slices.Clone(edge.said), graph.qualified(edge.to))}
 						queue = append(queue, edge.to)
 					}
 					continue
@@ -357,6 +368,23 @@ func (graph *flowGraph) coreParts(candidate flowCandidate) []string {
 		}
 	}
 	return parts
+}
+
+// conduit says a helper only passes the call on: the walk follows exactly
+// one edge from it, to a further helper, and it makes no call the index
+// leaves open. That helper serves whoever the conduit serves, so the walk
+// passes through it too (Lua's luaD_call, whose one call is ccall; f_call,
+// handed to luaD_pcall, whose one call is luaD_callnoyield, whose one is
+// ccall). A helper doing more than passing on (ccall: the VM, the stack's
+// checks, the C stack's error) does its job with its own helpers, which
+// serve it, not the step.
+func (graph *flowGraph) conduit(id string) bool {
+	edges := graph.out[id]
+	if len(edges) != 1 || graph.open[id] || !graph.decidedHelper(id) && !graph.decidedHelper(graph.unit(id)) {
+		return false
+	}
+	to := edges[0].to
+	return graph.decidedHelper(to) || graph.decidedHelper(graph.unit(to))
 }
 
 func (graph *flowGraph) decidedHelper(id string) bool {

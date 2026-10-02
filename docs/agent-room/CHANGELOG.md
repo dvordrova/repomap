@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — The Main flow passes through a helper that only passes the call on (data 2)
+
+- **The reader's outcome** for "./lua script.lua": the file is loaded, then the VM runs it.
+  - After 63bc5e8d the path ended at lua_pcallk. Its calls are luaD_call, luaD_pcall and the handed f_call, all helpers. luaD_call's one call is ccall; f_call's is luaD_callnoyield, whose one call is ccall. ccall calls luaV_execute.
+  - The control review asked for a rule with no numeric depth.
+- **Rule** (skeptic): a helper is a conduit when the walk follows exactly one edge from it, to a further helper, and it makes no call the index leaves open.
+  - A conduit serves whoever it serves, so the walk passes through conduits to the first helper doing more than passing on. That helper's non-helper calls and hand-overs are the step's work, and its own helpers serve it.
+  - The path stops looking through at that helper. ccall's own helpers are the stack checks and the C stack's error.
+  - `flowGraph.conduit`; `TestAStepsWorkPassesThroughConduits`; READING Main flow.
+- **Rejected,** measured offline on every step of seven repos' current flows:
+  - "A helper with no non-helper call is transparent" brought the error and collector chains straight back: handle_script reached the VM through pushargs, luaL_error, lua_error, luaG_errormsg, luaD_callnoyield, ccall.
+  - The conduit rule changed only Lua's lua_pcallk (luaV_execute and luaD_precall through luaD_call, ccall) and othello's dead end choose-at-depth (negamax and rules/apply-move through scored-move, child-score).
+- **Warm runs** with HEAD c306dff5 plus scope.go (binary eb5966a3), every exit 0:
+
+| Repo | Flow now | Orientation requests |
+|---|---|---|
+| lua 210209 | main > pmain > handle_script > lua_pcallk (through docall), then parts: luaV_execute (through luaD_call, ccall) > forprep > luaC_step (through luaG_runerror) > singlestep > sweepstep > sweeplist; luaD_precall (through luaD_call, ccall) > luaD_hook (through precallC) | 3 live |
+| lua-5.1.5 211444 | pmain parts: lua_pcall (through dotty) > luaD_call (through f_call) > luaD_precall > …; handle_script > luaL_loadfile > lua_load > f_parser (through luaD_protectedparser) > luaY_parser > chunk > statement > llex (through luaX_next) > luaC_step (through luaX_newstring) > … | 5 live |
+| othello 210256 | … choose > timed-deepen; choose-at-depth > negamax (through scored-move, child-score) > best-score > rules/apply-move (through child-score) | 0 |
+| redis 210303, etcd 210324, freqtrade 210900, litestream 211416 | unchanged | 0 |
+
+- **Draws:** at lua_pcallk, 5 uncached draws gave luaV_execute 0.50–0.56 and luaD_precall 0.44–0.50, under the margin, so the path parts there as the skeptic expected. luaL_loadfilex stays under handle_script's "also calls:".
+  - 5.1.5's parser is reached through 75493c70's conditional callee. Its luaD_call is no helper, so conduits change nothing there.
+- **Remaining, not changed here:** after the core work, both Luas end in the collector through one helper each: forprep's luaG_runerror, llex's luaX_newstring, luaD_precall's adjust_varargs. This is the one-level look-through of 63bc5e8d; the earlier long error chains do not return.
+  - litestream's ReplicateCommand.Run still goes to DirectoryMonitor.run, handed to go through the constructor NewDirectoryMonitor, which does more than pass on. That is a categorizer item if it keeps winning.
+
 ## 2026-10-03 — A comprehension runs where it stands (lead, fixes 2b69431a)
 
 - **Found:** the control review ran real Python 3.14. 2b69431a treated a call inside a list, set or dict comprehension as deferred, so a store after the comprehension counted: `[h() for _ in [0]]; if flag: h = b` became exact `b`, where at runtime both branches raise UnboundLocalError.
