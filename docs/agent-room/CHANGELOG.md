@@ -1,5 +1,45 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Final canvas acceptance table, browser suite and contracts after S5
+
+- **Final invariant table** (c5f6163b, clean export, pages opened with no
+  flag; the default format-95 runs of redis, litestream, freqtrade, othello,
+  casdoor, headscale, beets and etcd plus the four synthetic graphs): 12
+  runs, 151 levels, every cell on that commit and the scene canvas drawn on
+  every page; green but the beets whole map's lane room (7.1 px against
+  7.5, between map:system-component-t3|system-outside-t1-t2-t3-t5 and
+  map:system-component-t3|system-outside-t3), agreed as data. Table:
+  scratchpad canvas-rewrite/table/scene-full-c5f6163b/out/table.md.
+- **Journeys and reading lints** (the eight format-96 runs rendered by
+  38008c9d): journeys pass for redis, litestream and freqtrade; othello's
+  `key-pressed` is no input of that run. Leaving an input path and the
+  programs list's clickable rows pass on all eight. The reading lints fail
+  as before on the column's long folds (redis 39 … casdoor 100, etcd 90)
+  and, newly read on the scene canvas, on chip names the browser clamps
+  (casdoor 3, headscale 2, freqtrade 1), entered frames and cards whose
+  words fill under 45% (1–8 a report), lists repeating an entry, casdoor's
+  Outside naming Casdoor and etcd's "8.8.8.8:80" read as a file:line. The
+  lint knew no frame of the scene canvas: it now takes a box holding
+  another for a frame and counts a card's marks with its words (empty boxes
+  20–153 a report before, 1–8 after).
+- **Browser suite**: the specs that pinned the old canvas are deleted
+  (arrival, arrow-cards, arrow-handle, canvas, card-text, contrast,
+  edge-size, gesture-star, input-click, input-path, levels, loose-part,
+  part-frame, pointing, reveal, real-report; 46 of their 49 tests failed on
+  the scene canvas's DOM). `scene.spec.mjs` keeps the reader's actions on
+  the fixture, which now carries its saved scene (`saved-scene.mjs`, the
+  port of scene.go's rules, `reaching` included): an arrow's card and click,
+  "−" one level a press, one pinch one boundary, "Show whole map" keeping
+  the reading and fitting every box, an input kind's click, an arrow's
+  screen width, a worker failing before the first drawing. The breadcrumb
+  spec runs on a real report through the scene canvas. `make
+  ui-visual-test`: 9 passed, 2 skipped without `REPOMAP_REAL_RUN` (2 passed
+  with it).
+- **Contracts**: REPORT's first-screen canvas rules point at Scene model
+  (the old layout, wrapping, size floors and port frames gone); the owner's
+  2026-09-29 camera for a named declaration stays as open work. CURRENT and
+  DEVELOPMENT name the scene canvas as the page's one canvas.
+
 ## 2026-10-02 — The Inputs column reads kinds, then the saved part
 
 - **Kinds first, as the canvas:** the column's kinds stand in the canvas's
