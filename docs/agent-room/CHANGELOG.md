@@ -2,11 +2,11 @@
 
 ## 2026-10-02 — Inputs found by their told-apart names; a function's reading headed by its name (lead, ca27982e, 13935747)
 
-- **Search (ca27982e):** on etcd, Find "Campaign" as Operations said "No matches". An input was indexed by its title alone ("POST"); the words telling it apart (page data \`apart\`) and its registration as written (\`data-written\`) went unread.
+- **Search (ca27982e):** on etcd, Find "Campaign" as Operations said "No matches". An input was indexed by its title alone ("POST"); the words telling it apart (page data `apart`) and its registration as written (`data-written`) went unread.
   - It is now indexed by the name its list gives it, plus its registration and the words its handler declares.
   - On the etcd render, Campaign finds 4 inputs (Server and Client, in both programs). Lock finds Lock/Lock and /v3/lock/unlock among its 31.
-  - Opening a result reads the saved input itself: \`#t1-o340\`, its "Input:" line, handler, registration and path.
-  - JS test \`TestFindIndexesAnInputByItsToldApartName\`, which fails without the change.
+  - Opening a result reads the saved input itself: `#t1-o340`, its "Input:" line, handler, registration and path.
+  - JS test `TestFindIndexesAnInputByItsToldApartName`, which fails without the change.
 - **Function heading (13935747):** lua_gettop, opened from liblua.a's Entry list, read from "Called by" with no name above it.
   - A declaration's reading now heads with its name as its tile writes it (`lua_gettop(L: lua_State *): int`), the link into its code, and its file; "Called by" follows.
   - The three JS tests that pinned callers first now pin the name first. REPORT.md says the new order.
