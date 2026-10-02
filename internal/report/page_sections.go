@@ -742,6 +742,33 @@ func labelSections(sections []*pageSection) {
 	}
 }
 
+// nameEntrypoints names a program's entries as readings and tiles name a
+// declaration: a method with its type (withType), and entries still named
+// alike told apart by where they stand, a function by its package
+// (groupindex.TellApart). The start list, the Entry list and the
+// Entrypoints line read these names (reading lints, 2026-10-03: etcd's
+// start list had read "Reset in Auth API types" twice, two message types'
+// Reset, and "WithSnapshotCount in E2E test framework" twice, config's and
+// e2e's).
+func (builder *pageBuilder) nameEntrypoints(section *pageSection) {
+	names := make([]string, len(section.Entrypoints))
+	spellings := make([][]string, len(section.Entrypoints))
+	for position, entry := range section.Entrypoints {
+		name := entry.Symbol
+		if ref, known := builder.subject(section.programTargetID, entry.ObjectID); known && entry.ObjectID != "" {
+			name = builder.withType(section.programTargetID, ref.subject, name)
+		}
+		file := ""
+		if entry.Anchor != nil {
+			file = entry.Anchor.Path
+		}
+		names[position], spellings[position] = name, groupindex.Where(name, file, "")
+	}
+	for position, told := range groupindex.TellApart(names, spellings) {
+		section.Entrypoints[position].Symbol = told
+	}
+}
+
 // factsTargetFor matches the same compact target identity across graph and facts.
 func (builder *pageBuilder) factsTargetFor(
 	programTargetID string,
@@ -775,6 +802,7 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 			ObjectID: fact.ObjectID,
 		})
 	}
+	builder.nameEntrypoints(section)
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindDependency) {
 		section.Dependencies = append(section.Dependencies, pageDependency{
 			Name: fact.Key, Version: fact.Value, Anchor: builder.links.factAnchor(fact),

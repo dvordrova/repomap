@@ -867,7 +867,11 @@ of its calls."
 Each step's twist, opening its calls in place, is always shown. A program no
 model flow passes reads forward from its entry in a start list: each
 entrypoint with its part and key (the declaration its fact names), its name
-linking to all of its code, then the outgoing connections it makes itself,
+linking to all of its code and named as a reading names a declaration, a
+method with its type and two entries of one name told apart by their
+package (reading lints, 2026-10-03: etcd's start list had read "Reset"
+twice, two message types', and "WithSnapshotCount" twice; the Entry list and
+the Entrypoints line read the same names), then the outgoing connections it makes itself,
 in written order, the first few, each line once; several call sites of one
 caller calling one callee are one step, the next distinct connection taking
 the freed place, each on a line of its own. Another member's connection is

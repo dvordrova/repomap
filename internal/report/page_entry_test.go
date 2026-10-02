@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"html/template"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -206,5 +208,72 @@ func TestALibrarysExportsNameTheirParts(t *testing.T) {
 		if want := declarationKey(builder.links.anchorPointer("lapi.c", 82, 0)); parts["lapi"] != "" || keys["lapi"] != want {
 			t.Fatalf("%s: the script read in %q by %q, want its own place %q", links.name, parts["lapi"], keys["lapi"], want)
 		}
+	}
+}
+
+// Entries named alike are told apart as readings and tiles tell them: a
+// method by its type, a function by its package (reading lints, 2026-10-03:
+// etcd's start list had read "Reset in Auth API types" twice, two message
+// types' Reset, and "WithSnapshotCount in E2E test framework" twice,
+// config's and e2e's). The start list and the Entry list say the same.
+func TestEntriesNamedAlikeAreToldApart(t *testing.T) {
+	object := func(id, name string, kind programindex.ObjectKind, owner, path string, line int) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: name, Kind: kind, OwnerID: owner,
+			Location: &programindex.Location{Path: path, Line: line, Column: 1}}}
+	}
+	index := groupindex.Index{
+		Target: programindex.Target{ID: "t1"},
+		Subjects: []groupindex.Subject{
+			object("user", "*User", programindex.ObjectType, "", "api/authpb/auth.pb.go", 70),
+			object("role", "Role", programindex.ObjectType, "", "api/authpb/auth.pb.go", 120),
+			object("r1", "Reset", programindex.ObjectMethod, "user", "api/authpb/auth.pb.go", 81),
+			object("r2", "Reset", programindex.ObjectMethod, "role", "api/authpb/auth.pb.go", 129),
+			object("w1", "WithSnapshotCount", programindex.ObjectFunction, "", "tests/framework/config/cluster.go", 84),
+			object("w2", "WithSnapshotCount", programindex.ObjectFunction, "", "tests/framework/e2e/cluster.go", 223),
+			object("new", "NewCluster", programindex.ObjectFunction, "", "tests/framework/e2e/cluster.go", 300),
+		},
+		Groups: []groupindex.Group{{ID: "g1", Title: "Auth API types", MemberSubjectIDs: []string{"user", "role", "r1", "r2"}},
+			{ID: "g2", Title: "E2E test framework", MemberSubjectIDs: []string{"w1", "w2", "new"}}},
+	}
+	groupindex.Derive(&index)
+	entry := func(id, symbol, path string, line int) facts.Fact {
+		return facts.Fact{ID: "f-" + id, Kind: facts.KindEntrypoint, TargetID: "t1", Symbol: symbol, ObjectID: id, Key: "export", Anchor: &facts.Anchor{Path: path, Line: line}}
+	}
+	builder := pageBuilder{data: &ReportData{Facts: &facts.Result{Facts: []facts.Fact{
+		entry("r1", "Reset", "api/authpb/auth.pb.go", 81), entry("r2", "Reset", "api/authpb/auth.pb.go", 129),
+		entry("w1", "WithSnapshotCount", "tests/framework/config/cluster.go", 84), entry("w2", "WithSnapshotCount", "tests/framework/e2e/cluster.go", 223),
+		entry("new", "NewCluster", "tests/framework/e2e/cluster.go", 300),
+	}}}, indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{}}
+	for _, subject := range index.Subjects {
+		builder.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject, programTargetID: "t1"}
+	}
+	section := &pageSection{ID: "t1", programTargetID: "t1", factsTargetID: "t1", FactsAvailable: true}
+	builder.fillSectionFacts(section)
+	want := []string{"User.Reset", "Role.Reset", "config.WithSnapshotCount", "e2e.WithSnapshotCount", "NewCluster"}
+	var named []string
+	for _, entry := range section.Entrypoints {
+		named = append(named, entry.Symbol)
+	}
+	if !slices.Equal(named, want) {
+		t.Fatalf("entries named %q, want %q", named, want)
+	}
+	starts, _ := builder.startSteps(section, index)
+	var started []string
+	for _, start := range starts {
+		started = append(started, start.Symbol)
+	}
+	if !slices.Equal(started, want) {
+		t.Fatalf("the start list names %q, want %q", started, want)
+	}
+	var entries []pageEntry
+	if err := json.Unmarshal([]byte(componentEntries(section)), &entries); err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, entry := range entries {
+		listed = append(listed, entry.Name)
+	}
+	if !slices.Equal(listed, want) {
+		t.Fatalf("the Entry list names %q, want %q", listed, want)
 	}
 }
