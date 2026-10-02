@@ -21,7 +21,10 @@
 //                                = end|start|both|none on the g; it is dark
 //                                when the g has `.flow-edge-active` or
 //                                `data-edge-dark`
-//   [data-edge-hit=ID]           its hit path, which the pointer rests on
+//   [data-edge-hit=ID]           its hit path, along which the pointer rests
+//                                on it; `[data-map].sceneHitAt(x,y)` says what
+//                                the canvas's own hit test reaches there
+//                                (its arrows take no pointer event)
 //   .flow-floating-card          the card an arrow opens
 //   [data-port-end=ID]           a program port item standing for end ID
 //   [data-marker]                a marker (new path): `data-marker-box`,
@@ -49,6 +52,7 @@ export const invariants=[
   ['off-canvas','no arrow end out of the canvas while the level frame fits it',{...arrows,none:'no arrow in sight, or the level frame larger than the canvas'}],
   ['crosses','no arrow runs through a box it does not join',{...arrows,none:'no arrow drawn in sight'}],
   ['step1-gap','parallel lanes stand at least 7.5 screen px apart, as in the approved Step 1 drawing',{...arrows,none:'fewer than two parallel runs in sight'}],
+  ['tip-whole','a marker\'s or a port\'s tip names each of what it stands for whole, never cut, and stands wholly in the canvas',{phase:'arrows',none:'no port or marker in sight to point at'}],
   ['marker-size','ports and markers are 20-28 px at every camera, one size per level',{phase:'sizes',none:'no port or marker in sight'}],
   ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box',{phase:'markers',none:'no marker in sight'}],
   ['titles','titles at one level within ±10% of their median',{phase:'titles',none:'fewer than two titles in sight'}],
@@ -437,8 +441,9 @@ export function invariantKit(){
       for(const d of list.filter(e=>e.dark))for(const g of list.filter(e=>!e.dark&&meets(e.r,d.r,-1))){checked++;if(!above(d,g))bad.push(`${d.id} under ${g.id}`);}
       return {checked,bad};
     },
-    // A point on an arrow the pointer reaches it at: the hit path there is
-    // its own, inside the canvas.
+    // A point on an arrow the pointer reaches it at, inside the canvas: the
+    // canvas's hit test reaches that arrow there and nothing of the page
+    // (a card, the attribution) stands over it.
     hitPoint(id){
       const c=canvas(),path=root().querySelector(`[data-edge-hit="${CSS.escape(id)}"]`);
       if(!path)return {missing:true};
@@ -455,10 +460,12 @@ export function invariantKit(){
         // React Flow's attribution is no part of the map.
         if(el?.closest?.('.react-flow__attribution'))continue;
         seen++;
-        if(el?.closest?.('[data-edge-hit]')?.dataset.edgeHit===id)return {x,y};
-        over||=el;
+        const hit=map().sceneHitAt?.(x,y),onPage=el&&root().contains(el)&&!el.closest('.flow-floating-card');
+        if(map().sceneHitAt?onPage&&hit?.type==='edge'&&hit.id===id:el?.closest?.('[data-edge-hit]')?.dataset.edgeHit===id)return {x,y};
+        over||=onPage&&hit?{hit}:el;
       }
       if(!seen)return {outOfSight:true};
+      if(over?.hit)return {covered:true,by:`${over.hit.type} ${over.hit.id}`};
       const named=el=>{const at=el.closest?.('[data-edge-hit],.react-flow__node,[data-port],.flow-floating-card,[data-frame-title],[data-summary-area],[data-component-overview]')||el;
         return `${at.tagName.toLowerCase()}${at.classList.length?'.'+[...at.classList].slice(0,2).join('.'):''}${at.dataset?.edgeHit?` (arrow ${at.dataset.edgeHit})`:at.dataset?.id?` (${at.dataset.id})`:''}`;};
       return {covered:true,by:over?named(over):'nothing'};
@@ -494,6 +501,16 @@ export function invariantKit(){
           opacity:name?parseFloat(style.opacity):0,px,aria:el.getAttribute('aria-label')||'',focusable:el.tabIndex>=0,
           x:r.left+r.width/2,y:r.top+r.height/2,inSight:r.left+r.width/2>c.l+4&&r.left+r.width/2<c.r-4&&r.top+r.height/2>c.t+4&&r.top+r.height/2<c.b-4};
       }).filter(chip=>chip.inSight);
+    },
+    // The tips a marker or a port pointed at shows: each of its names whole
+    // (no line cut or ellipsized) and the tip wholly in the canvas.
+    markTips(){
+      const c=canvas();
+      return [...document.querySelectorAll('.scene-tip:not(.scene-box-tip)')].filter(shown).map(tip=>{
+        const r=box(tip.getBoundingClientRect()),cut=[...tip.children].filter(el=>el.scrollWidth>el.clientWidth+1).map(el=>el.textContent.trim());
+        const past=Math.max(c.l-r.l,r.r-c.r,c.t-r.t,r.b-c.b);
+        return {ok:!cut.length&&past<=.5,why:[cut.length&&`"${cut[0].slice(0,90)}" cut${cut.length>1?`, and ${cut.length-1} more`:''}`,past>.5&&`the tip stands ${Math.round(past)}px past the canvas`].filter(Boolean).join('; ')};
+      });
     },
     // The name a tip gives to what is pointed at or focused.
     tipNames(){return [...document.querySelectorAll('.scene-tip b')].filter(shown).map(b=>b.textContent.replace(/\s+/g,' ').trim());},

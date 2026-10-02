@@ -175,9 +175,13 @@ its card and a click on it reads its connection; "−" leaves one level per
 press down to the whole map; one pinch crosses at most one level boundary
 and a pause lets the next cross one more; "Show whole map" keeps what is
 read and fits every box; a click on an input kind on the whole map reads
-that kind; an arrow keeps its screen width while the camera zooms; and a
+that kind; an arrow keeps its screen width while the camera zooms; a
 layout worker failing before the first drawing leaves the static map and no
-pending canvas. `visual/stable-labels.spec.mjs` checks that a pan keeps the
+pending canvas; a drag leaving the canvas keeps every arrow drawn as the
+pointing drew it; and a drag from an arrow, a chip or a marker pans the map
+as one from empty canvas does, selecting no text, scrolling no page and
+opening no card (the arrows take no pointer event: the harness asks the
+canvas's own hit test, `[data-map].sceneHitAt(x,y)`, what a point reaches). `visual/stable-labels.spec.mjs` checks that a pan keeps the
 whole map's summaries' line boxes. `visual/geometry.spec.mjs`
 (`visual/geometry.mjs`) checks the drawn fixture: no two texts overlap, no
 text is cut without an ellipsis and a title, every box stands in its frame,
@@ -201,7 +205,8 @@ with their saved scene, for node scene tests too), it visits the whole map
 (its rest view, then "Show whole map"), every program and every area of the
 two largest programs. At each level it checks the arrows at rest, makes 24
 random pans and 50 random pointer moves, points at every arrow, marker,
-port and faded chip, and measures markers and ports at every camera; it
+port and faded chip (a marker's or port's tip naming each of its names
+whole, within the canvas), and measures markers and ports at every camera; it
 writes `<repo>.canvas.json` to `REPOMAP_INVARIANT_OUT`, and
 `node visual/invariant-table.mjs DIR` writes `table.md` and `table.json`
 (repo × level × invariant, each cell marked with the commit it ran on).

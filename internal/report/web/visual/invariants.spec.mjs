@@ -185,6 +185,7 @@ for(const target of targets)for(const path of paths){
           const pointed=await page.evaluate(([frame,skip])=>window.__inv.arrows(frame,skip),[level.kind==='home'?'':level.id,restPaths]);
           for(const name of ['one-path','own-ends','head-in','shared-run','in-frame','off-canvas','crosses','step1-gap'])
             merge(name,pointed[name]&&{...pointed[name],examples:pointed[name].examples.map(e=>`pointing at ${handle.id}: ${e}`)});
+          for(const tip of await page.evaluate(()=>window.__inv.markTips()))add('tip-whole',tip.ok,`pointing at ${handle.id}: ${tip.why}`);
         }
         if(handles.length){await page.keyboard.press('Escape');await park(page);}
         finish('arrows');

@@ -63,7 +63,14 @@
 .scene-program-card>strong{font-size:17px;line-height:21.25px}
 .scene-kind-mark{position:absolute;display:flex;align-items:center;justify-content:center;color:#204a7b;border-radius:4px}
 .scene-kind-mark.flow-lit{outline:2px solid #243044}
-.scene-root .flow-edge .flow-edge-hit{pointer-events:none!important}
+/* An arrow takes no pointer event: the canvas hit-tests the pointer itself
+   (scene.mjs hitTest), so a drag from an arrow pans the map as one from
+   empty canvas does. React Flow marks its edges as no pan: a press on an
+   arrow on etcd's home had selected the page's text and scrolled the
+   window (final journeys, 2026-10-02). canvas.css gives the hit path its
+   stroke; this rule outweighs it. The cursor says an arrow is pointed at. */
+.scene-root .flow-edge path.flow-edge-hit{pointer-events:none!important}
+.scene-root.scene-pointing-arrow .react-flow__pane{cursor:pointer}
 /* Names on zoom: each word stands once it reads and fades out below, by
    its own drawn size: its font size (--word, in pixels, which its rule
    also draws it at) times the camera's zoom (--flow-zoom) times its
@@ -103,6 +110,12 @@
 /* A long list in a tip stands in two columns, its heading over both. */
 .scene-tip.scene-tip-columns{display:grid;grid-template-columns:auto auto;column-gap:14px;max-width:520px}
 .scene-tip.scene-tip-columns>b{grid-column:1/-1}
+/* A marker's or a port's tip names each of what it stands for whole: a name
+   longer than its side's room wraps, never cut (scene-canvas.jsx MarkTip
+   gives the tip its width). */
+.scene-tip.scene-mark-tip{box-sizing:border-box;max-width:none;white-space:normal}
+.scene-tip.scene-mark-tip>span{overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.scene-tip.scene-mark-tip.scene-tip-columns{grid-template-columns:1fr 1fr;max-width:none}
 /* Overlay buttons take the keyboard's focus; the pointer reaches them
    through the canvas's hit test. */
 .scene-overlay button{padding:0;font:inherit;pointer-events:none}

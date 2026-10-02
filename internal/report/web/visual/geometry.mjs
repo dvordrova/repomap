@@ -245,12 +245,14 @@ export async function lintReport(page,{repo='',areas=2,cards=3,programs=4}={}){
     // opens no card is a finding (owner, 2026-09-30: arrows into an area's
     // border and from an entered program's ports had opened none).
     const hits=await page.evaluate(()=>{
-      const canvas=document.querySelector('.flow-root').getBoundingClientRect();
+      const canvas=document.querySelector('.flow-root').getBoundingClientRect(),map=document.querySelector('[data-map]');
       return [...document.querySelectorAll('[data-edge-hit]')].flatMap(path=>{
         const length=path.getTotalLength(),ctm=path.getScreenCTM();
         return [.5,.9].map(f=>{const p=path.getPointAtLength(length*f);return {id:path.dataset.edgeHit,x:p.x*ctm.a+p.y*ctm.c+ctm.e,y:p.x*ctm.b+p.y*ctm.d+ctm.f};});
       }).filter(p=>p.x>canvas.left+20&&p.x<canvas.right-20&&p.y>canvas.top+20&&p.y<canvas.bottom-20&&
-        document.elementFromPoint(p.x,p.y)?.closest?.('[data-edge-hit]'));
+        // The arrow the pointer reaches there, by the canvas's own hit test
+        // (its arrows take no pointer event).
+        (map.sceneHitAt?map.sceneHitAt(p.x,p.y)?.type==='edge':document.elementFromPoint(p.x,p.y)?.closest?.('[data-edge-hit]')));
     });
     for(const point of hits.slice(0,withCards?2*cards:4)){
       await page.mouse.move(point.x-12,point.y-12);await page.mouse.move(point.x,point.y,{steps:4});

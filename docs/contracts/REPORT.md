@@ -99,8 +99,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   in sight and uncovered, and on the whole map so does a closed program or
   Inputs box (`title-sight`, below); a closed card, program or part-group
   whose part in sight can hold its words shows them wholly in sight
-  (`name-sight`); no digit and no label (a badge, an
-  arrow's caption) is printed on the canvas.
+  (`name-sight`); a marker's or a port's tip names each of what it stands
+  for whole and stands wholly in the canvas (`tip-whole`); no digit and no
+  label (a badge, an arrow's caption) is printed on the canvas.
 
 - The home page has one common System map built from the translated
   component maps; components and saved areas are frames holding their
@@ -200,7 +201,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its calls' facts give (database, request, queue, SDK, runs a program; a
   plain dot for none), a port the program mark. A marker or a port pointed
   at names what it stands for, one name to a line (owner: hover answers
-  what is this), and lights every marker reaching one of its systems or
+  what is this), each whole, wrapped where it is longer than its side's
+  room and never cut: names told apart at their ends had all read
+  "POST · /v3electionpb.…", etcd's Server and Client registrations alike
+  (final journeys, 2026-10-02). The tip stands on its marker's side (an
+  input's left), or on the other where that has more room and its own too
+  little, within the canvas. It lights every marker reaching one of its systems or
   taking one of its inputs. A click reads that kind in its collection, that
   system (the Outside frame when the marker stands for several) or the
   program its port names first, the camera staying; reached by the
@@ -510,6 +516,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   static.
 
 - On the canvas the wheel moves the map and never scrolls the page. A drag
+  pans the map wherever on the canvas it starts, from an arrow, a chip or
+  a marker as from empty canvas, selecting no text and scrolling no page:
+  the canvas hit-tests the pointer itself and its arrows take no pointer
+  event (final journeys, 2026-10-02: a drag from an arrow on etcd's home
+  had selected the page's text and scrolled the window, the camera
+  unmoved); a card not yet open when the press comes stays closed. A drag
   carries what is pointed at with it, the map moving under the pointer:
   what pointing drew (a box's arrows, their dark) stays while the press
   lasts, past the canvas's edge too, and a pan changes nothing drawn
@@ -1184,7 +1196,10 @@ post-layout edits are deleted.
   "hello", casdoor's Outside lost its title above the canvas). A closed
   card, program or part-group cut at the left or top edge moves its words
   in, under those names, never out of its own inside (etcd's "gRPC proxy",
-  casdoor's "Email providers" beside an opened part-group).
+  casdoor's "Email providers" beside an opened part-group); cut at the
+  right or bottom edge, it moves them left or up into its padding, never
+  past its border (synthetic-no-inputs' "Invoice audit" beside Report
+  queue, its words cut at the canvas's foot; harness table, 60e7ea98).
   The camera framing a box (entering a level, a reading's declaration or
   arrow end, "Show input") stops where that level's words read at 1.35
   times their size, and no word on the canvas, nor a chip's or a bucket's

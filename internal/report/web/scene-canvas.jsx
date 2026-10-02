@@ -105,37 +105,55 @@ function useStuck(node,titleWidth){
 // hold them (owner via the coordinator, 2026-10-02: etcd's "gRPC proxy"
 // and casdoor's "Email providers" had lost their names past the canvas's
 // edge): where its left or top edge is out of the canvas, its words move
-// in, never out of the box (an offset in the box's own pixels).
+// in, never out of the box (an offset in the box's own pixels); where its
+// right or bottom edge is, they move left or up into its padding, never
+// past its border (synthetic-no-inputs' Report queue: its neighbour
+// "Invoice audit", cut at the canvas's foot, had its words cut 10 pixels
+// though the card's top in sight held them; harness table, 60e7ea98).
 // The words are measured once, at their own size; drawn larger than 1.6
 // times it they are drawn at that (scene.css), a block centred in its box
 // (`centred`, a part-group's) staying centred.
 function useWordsInSight(node,ref,centred=false){
   const scene=useContext(SceneCamera);
   const [at,setAt]=useState(null);
+  // A card's border keeps its screen width (scene.css): its border and
+  // padding stand 14 of its pixels deep while the border is the thinner,
+  // and the words are measured again when that begins (measured on a far
+  // camera, they had stood at the card's very edge).
+  const thin=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>!!scene&&scene.camera.get().zoom*node.text>=.1);
   useLayoutEffect(()=>{
     const el=ref.current;if(!el)return;
     // At their own size, whatever the camera (scene.css .scene-words-natural).
     el.classList.add('scene-words-natural');
     let x=0,y=0;for(let a=el;a&&!a.classList.contains('scene-scaled');a=a.offsetParent){x+=a.offsetLeft;y+=a.offsetTop;}
     const width=el.offsetWidth,height=el.offsetHeight;
+    // The gaps between the words' lines keep their size when the words are
+    // drawn smaller (scene.css .scene-words).
+    const gaps=Math.max(0,height-[...el.children].reduce((sum,child)=>sum+child.offsetHeight,0));
     el.classList.remove('scene-words-natural');
+    // From the box's outer edge, its border counted.
+    const scaled=el.closest('.scene-scaled'),edges=scaled?getComputedStyle(scaled):null;
+    const bl=edges?parseFloat(edges.borderLeftWidth)||0:0,bt=edges?parseFloat(edges.borderTopWidth)||0:0;
+    x+=bl;y+=bt;
     // How far they may go: the inside of the box that holds them (a card's
     // padding, a part-group's front card).
     const holder=el.offsetParent||el.parentElement,style=getComputedStyle(holder);
-    const from=holder.classList.contains('scene-scaled')?{x:0,y:0}:{x:holder.offsetLeft,y:holder.offsetTop};
+    const from=holder.classList.contains('scene-scaled')?{x:bl,y:bt}:{x:holder.offsetLeft+bl,y:holder.offsetTop+bt};
     const right=from.x+holder.clientWidth-parseFloat(style.paddingRight||'0'),bottom=from.y+holder.clientHeight-parseFloat(style.paddingBottom||'0');
-    setAt({x,y:centred?y+height/2:y,width,height,right,bottom});
-  },[node.rect.width,node.rect.height,node.text,node.title]);
+    setAt({x,y:centred?y+height/2:y,width,height,gaps,right,bottom});
+  },[node.rect.width,node.rect.height,node.text,node.title,thin]);
   const key=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>{
     if(!scene||!at)return '';
-    const v=scene.camera.get(),z=v.zoom*node.text,r=node.rect,pad=6,capped=Math.min(1,1.6/z);
-    const width=at.width*capped,height=at.height*capped,y=centred?at.y-height/2:at.y;
+    const v=scene.camera.get(),{width:W,height:H}=scene.size(),z=v.zoom*node.text,r=node.rect,pad=6,border=4,capped=Math.min(1,1.6/z);
+    const width=at.width*capped,height=(at.height-at.gaps)*capped+at.gaps,y=centred?at.y-height/2:at.y;
     const left=r.x*v.zoom+v.x+at.x*z,top=r.y*v.zoom+v.y+y*z;
-    const dx=Math.max(0,Math.min((pad-left)/z,at.right-at.x-width));
+    let dx=Math.max(0,Math.min((pad-left)/z,at.right-at.x-width));
     // Under the frames' names at the canvas's top, never behind them.
     const shifted=left+dx*z,below=scene.under?.(shifted,shifted+width*z)||0;
-    const dy=Math.max(0,Math.min((Math.max(pad,below+pad)-top)/z,at.bottom-y-height));
-    return dx>=.5||dy>=.5?`${Math.round(dx)}px,${Math.round(dy)}px`:'';
+    let dy=Math.max(0,Math.min((Math.max(pad,below+pad)-top)/z,at.bottom-y-height));
+    if(!dx)dx=-Math.max(0,Math.min((left+width*z-(W-pad))/z,at.x-border));
+    if(!dy)dy=-Math.max(0,Math.min((top+height*z-(H-pad))/z,y-border));
+    return Math.abs(dx)>=.5||Math.abs(dy)>=.5?`${Math.round(dx)}px,${Math.round(dy)}px`:'';
   });
   return key?{transform:`translate(${key})`}:undefined;
 }
@@ -479,12 +497,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   const onCard=event=>!!event.target.closest?.('.flow-floating-card');
   // A press that moves the pointer or the camera is a drag: the click
   // ending it acts on nothing.
-  host.addEventListener('pointerdown',event=>{const v=camera.get();down={x:event.clientX,y:event.clientY,camera:{x:v.x,y:v.y,zoom:v.zoom},moved:false};},true);
+  // A press ends a look not yet opened: an arrow's card does not open under
+  // the pointer while it drags the map, at the place it was pressed.
+  host.addEventListener('pointerdown',event=>{const v=camera.get();down={x:event.clientX,y:event.clientY,camera:{x:v.x,y:v.y,zoom:v.zoom},moved:false};if(look.pending&&!onCard(event))look.abandon(look.pending);},true);
   host.addEventListener('pointermove',event=>{if(down&&event.buttons&&Math.hypot(event.clientX-down.x,event.clientY-down.y)>4)down.moved=true;},true);
   host.addEventListener('pointermove',event=>{
     if(initializing||event.buttons)return;
     if(onCard(event))return;
     const scene=sceneOf(store.getState()),target=hitTest(scene,worldAt(event),camera.get().zoom,shownEdge);
+    host.classList.toggle('scene-pointing-arrow',target?.type==='edge');
     // While a card is open or kept, what is being read stays: the way to
     // the card crosses boxes and empty canvas without changing the emphasis.
     const reading=!!look.key||store.getState().pinned.length>0;
@@ -509,7 +530,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointerdown',()=>{pressed=true;},true);
   window.addEventListener('pointerup',()=>{pressed=false;},true);
   window.addEventListener('pointercancel',()=>{pressed=false;},true);
-  host.addEventListener('pointerleave',event=>{if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
+  host.addEventListener('pointerleave',event=>{if(pressed||event.buttons)return;host.classList.remove('scene-pointing-arrow');store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
     const v=camera.get(),press=down;down=null;
@@ -621,7 +642,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         data-marker-end={item.type==='marker'?(item.side==='out'?item.systems:item.members).join(' '):undefined} data-port={item.type==='port'?item.id:undefined} data-port-end={item.type==='port'?item.id:undefined}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}>
         <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></button>)}
-      {tip&&<MarkTip item={tip}/>}
+      {tip&&<MarkTip key={tip.id} item={tip}/>}
       {box&&<BoxTip node={box} camera={v}/>}
     </div></>;
   }
@@ -679,9 +700,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     return <div className={`scene-tip scene-box-tip ${names.length>12?'scene-tip-columns':''}`} style={{left,top:Math.max(4,top)}}>
       <b>{head}</b>{about&&<span>{about}</span>}{names.map((name,i)=><span key={i}>{name}</span>)}</div>;
   }
-  // What a marker or a port stands for, one name to a line.
+  // What a marker or a port stands for, one name to a line, each whole,
+  // wrapped where its side has no room for it: names told apart at their
+  // ends had all read "POST · /v3electionpb.…" (etcd's Server and Client
+  // registrations, final journeys 2026-10-02). It stands on its marker's
+  // side (an input's left, else right), or on the side with more room
+  // where that one has too little, and within the canvas.
   function MarkTip({item}){
-    const most=30;
+    const most=30,ref=useRef(null),[shift,setShift]=useState(0);
     let head='',names=[];
     if(item.type==='port'){head=item.way==='out'?'→':'←';names=item.programs.map(nameOf);}
     else if(item.side==='in'){
@@ -691,9 +717,24 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       head=item.kind==='database'?t('Database'):item.kind==='request'?t('Request'):item.kind==='sdk'?t('SDK'):item.kind==='queue'?t('Queue'):item.kind==='started'?t('Runs a program'):t('Outside');
       names=item.systems.map(id=>model.nodes.get(id)?.name||'');
     }
-    const right=item.side!=='in';
-    return <div className={`scene-tip ${right?'scene-tip-right':''} ${names.length>12?'scene-tip-columns':''}`} style={{left:right?item.left+item.px/2+6:undefined,right:right?undefined:`calc(100% - ${item.left-item.px/2-6}px)`,top:item.top-item.px/2}}>
-      <b>{head}</b>{names.slice(0,most).map((name,i)=><span key={i}>{name}</span>)}{names.length>most&&<span>…</span>}</div>;
+    const shown=names.slice(0,most),{width,height}=size(),gap=6,edge=4,pad=20,between=14;
+    const widest=Math.max(measure(head,'650 13px system-ui'),...shown.map(name=>measure(name,'13px system-ui')));
+    const room={left:item.left-item.px/2-gap-edge,right:width-(item.left+item.px/2+gap)-edge};
+    const needs=columns=>columns*Math.ceil(widest+1)+(columns-1)*between+pad;
+    const own=item.side==='in'?'left':'right',other=own==='left'?'right':'left';
+    const side=room[own]>=needs(1)||room[own]>=room[other]?own:other;
+    // A long list stands in two columns where each has room for half the
+    // widest name.
+    const columns=shown.length>12&&room[side]>=2*Math.min(widest,200)+between+pad?2:1;
+    const tipWidth=Math.max(120,Math.min(room[side],needs(columns)));
+    const top=item.top-item.px/2;
+    useLayoutEffect(()=>{
+      const h=ref.current?.offsetHeight||0,want=Math.max(edge,Math.min(top,height-h-edge))-top;
+      if(Math.abs(want-shift)>.5)setShift(want);
+    });
+    return <div ref={ref} className={`scene-tip scene-mark-tip ${columns>1?'scene-tip-columns':''}`}
+      style={{width:tipWidth,top:top+shift,...(side==='right'?{left:item.left+item.px/2+gap}:{right:`calc(100% - ${item.left-item.px/2-gap}px)`})}}>
+      <b>{head}</b>{shown.map((name,i)=><span key={i}>{name}</span>)}{names.length>most&&<span>…</span>}</div>;
   }
   function ArrowCard({edgeKey,scene}){
     const [,id,way]=/^edge:(.*):(on|back)$/.exec(edgeKey)||[];
@@ -813,6 +854,12 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   };
   // The scene and the level, for the invariant checks.
   map.sceneState=()=>({level:store.getState().level,scene:sceneOf(store.getState()),camera:camera.get()});
+  // What the pointer reaches at a point of the page, by the one hit test a
+  // hover and a click use (checks: the arrows take no pointer event).
+  map.sceneHitAt=(clientX,clientY)=>{
+    const target=hitTest(sceneOf(store.getState()),worldAt({clientX,clientY}),camera.get().zoom,shownEdge);
+    return target?{type:target.type,id:target.id}:null;
+  };
   // Enter the level showing `id`, as its magnifier does (probes and checks).
   map.sceneEnter=id=>enter(chainOf(model,id));
   // The whole map at rest, as the page opens on it (checks).

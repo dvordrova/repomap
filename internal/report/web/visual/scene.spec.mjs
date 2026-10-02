@@ -157,3 +157,45 @@ test('a drag that leaves the canvas keeps every arrow drawn, and dark, as the po
   expect(await drawn(),'the arrows as drawn before the drag').toEqual(lit);
   expect(errors).toEqual([]);
 });
+
+// A drag pans the map wherever on the canvas it starts: from an arrow, a
+// chip or a marker as from empty canvas, selecting no text and scrolling
+// no page (final journeys, 2026-10-02: a drag from an arrow on etcd's home
+// had selected the page's text, 144k characters, and scrolled the window
+// 188 px, the camera unmoved). A card not yet open when the press comes
+// does not open while the map is dragged.
+test('a drag from an arrow, a chip or a marker pans the map, selecting no text and scrolling no page',async({page})=>{
+  const errors=await open(page);
+  const inSight=`(el=>{const c=document.querySelector('.flow-root').getBoundingClientRect(),r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
+    return r.width>0&&x>c.left+40&&x<c.right-140&&y>c.top+40&&y<c.bottom-100?{x,y}:null;})`;
+  const starts={
+    arrow:async()=>{for(const id of await page.evaluate(()=>window.__inv.hitIds())){const at=await page.evaluate(id=>window.__inv.hitPoint(id),id);if(at.x)return at;}return null;},
+    chip:()=>page.evaluate(`[...document.querySelectorAll('.flow-root .flow-chip:not(.scene-bucket)')].map(${inSight}).find(Boolean)||null`),
+    // Markers stand on a program's boxes, entered.
+    marker:async()=>{await page.evaluate(()=>document.querySelector('[data-map]').sceneEnter('backend'));await settle(page);
+      return page.evaluate(`[...document.querySelectorAll('.flow-root [data-marker]')].map(${inSight}).find(Boolean)||null`);},
+  };
+  for(const [kind,find] of Object.entries(starts)){
+    const what=kind==='arrow'?'an arrow':`a ${kind}`;
+    await page.keyboard.press('Escape');await page.mouse.move(2,2);await settle(page);
+    const at=await find();
+    expect(at,`${kind}: one in sight to drag from`).not.toBeNull();
+    const before=await page.evaluate(()=>{
+      window.__cardAtPress=null;
+      document.addEventListener('pointerdown',()=>{window.__cardAtPress=window.__inv.cardOpen();},{capture:true,once:true});
+      return {cam:window.__inv.camera(),scroll:scrollY};
+    });
+    await page.mouse.move(at.x,at.y,{steps:2});await page.mouse.down();
+    await page.mouse.move(at.x+90,at.y+60,{steps:8});await page.mouse.up();await settle(page);
+    const after=await page.evaluate(()=>({cam:window.__inv.camera(),scroll:scrollY,selected:String(getSelection()).length,card:window.__cardAtPress===false&&window.__inv.cardOpen()}));
+    expect({moved:[Math.round(after.cam.x-before.cam.x),Math.round(after.cam.y-before.cam.y)],selected:after.selected,scrolled:after.scroll-before.scroll,cardOpened:after.card},
+      `a drag from ${what}`).toEqual({moved:[90,60],selected:0,scrolled:0,cardOpened:false});
+    // Back where it was, dragged from the same thing, now moved with the
+    // map (a card open before the press stays where it opened).
+    await page.keyboard.press('Escape');await page.mouse.move(at.x+90,at.y+60);
+    await page.mouse.down();await page.mouse.move(at.x,at.y,{steps:8});await page.mouse.up();await settle(page);
+    const back=await page.evaluate(()=>window.__inv.camera());
+    expect([Math.round(back.x-before.cam.x),Math.round(back.y-before.cam.y)],`dragged back from ${what}`).toEqual([0,0]);
+  }
+  expect(errors).toEqual([]);
+});
