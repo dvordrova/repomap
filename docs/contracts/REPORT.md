@@ -1784,7 +1784,10 @@ render failed, is rendered by the server through the same `RenderServedPage`.
   report. `claims.json` holds quotes with their source path, date and age.
   `orientation.json` holds the model's repository summary, roles, run recipe
   and the main flow code walks from the target it names (READING §
-  Orientation); every row cites fact, claim or subject ids. When the overview
+  Orientation); every row cites fact, claim or subject ids. A recipe row
+  says what it stands on: "Inferred from manifest settings" when it cites a
+  manifest row (redis's `make`, its Makefile's default goal beside
+  redis-server's main), else "Inferred from an entrypoint". When the overview
   is refused by size or context, the report is published with an empty
   orientation, the refusal in `rejected.jsonl` and an `unavailable` state in
   the console. A flow ending at a split the categorizer left undecided is

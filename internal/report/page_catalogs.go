@@ -141,11 +141,21 @@ func shortEntrypointName(name string) string {
 	return name
 }
 
+// recipeBasis says what a model's recipe row stands on: the manifest when
+// it cites one (redis's make, from its Makefile's default goal, with
+// redis-server's main beside it), else the entrypoint it cites.
 func recipeBasis(refs []string, byID map[string]facts.Fact) string {
+	entrypoint := false
 	for _, ref := range refs {
-		if byID[ref].Kind == facts.KindEntrypoint {
-			return "Inferred from an entrypoint"
+		switch byID[ref].Kind {
+		case facts.KindManifest:
+			return "Inferred from manifest settings"
+		case facts.KindEntrypoint:
+			entrypoint = true
 		}
+	}
+	if entrypoint {
+		return "Inferred from an entrypoint"
 	}
 	return "Inferred from manifest settings"
 }

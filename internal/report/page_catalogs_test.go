@@ -70,6 +70,12 @@ func TestRecipeNeverPromotesAnEntrypointToDocumentedCommand(t *testing.T) {
 	if got := recipeBasis([]string{"entry"}, map[string]facts.Fact{"entry": {Kind: facts.KindEntrypoint}}); got != "Inferred from an entrypoint" {
 		t.Fatalf("recipe basis = %q", got)
 	}
+	// redis's make cites main and its Makefile's default goal: it stands on
+	// the manifest, which writes the command.
+	byID := map[string]facts.Fact{"entry": {Kind: facts.KindEntrypoint}, "goal": {Kind: facts.KindManifest, Key: "default_goal"}}
+	if got := recipeBasis([]string{"entry", "goal"}, byID); got != "Inferred from manifest settings" {
+		t.Fatalf("make's recipe basis = %q", got)
+	}
 }
 
 // Without a model recipe the page lists the proved entrypoints as ways to
