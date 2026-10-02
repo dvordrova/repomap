@@ -87,53 +87,44 @@ func WithPrograms(catalog, programs []Destination) []Destination {
 }
 
 // DestinationTarget is the program a chosen cell names, with the program's
-// name: its ref, or its name written after the free prefix (name, case
-// aside), which chooses the offered program as its ref does: freqtrade's
-// run drew "other: Freqtrade" where "freqtrade" was offered. A program
-// offered by its import path is named so by the path's last element too
-// (pathName), when that names one offered program alone: casdoor's web
-// drew "other: Casdoor" for 91 calls where github.com/casdoor/casdoor was
-// offered, and its Outside showed the repository's own program as an
-// outside system. Empty for a system, an unknown ref or any other name.
+// name. A ref the cell chose stands as chosen: a program's ref is that
+// program, a system's ref that system, never a program sharing its name.
+// A free name (a cell naming no known ref) chooses the offered program it
+// writes as offered, case aside (freqtrade's run drew "other: Freqtrade"
+// where "freqtrade" was offered: a form difference, not a second choice),
+// unless a system of the catalogue has that name too. A free name is never
+// read through a program's import path: a path's last element proves no
+// runtime endpoint (review 2026-10-02: casdoor's "other: Casdoor" stays a
+// name, not github.com/casdoor/casdoor). Empty for a system, an unknown
+// ref or any other name.
 func DestinationTarget(catalog []Destination, ref, name string) (string, string) {
-	name = strings.TrimSpace(name)
 	for _, entry := range catalog {
-		if entry.Program && (entry.Ref == ref || name != "" && strings.EqualFold(entry.Value, name)) {
-			return entry.Target, entry.Value
+		if entry.Ref == ref {
+			if entry.Program {
+				return entry.Target, entry.Value
+			}
+			return "", ""
 		}
 	}
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", ""
 	}
 	var named *Destination
 	for i := range catalog {
-		if entry := &catalog[i]; entry.Program && strings.EqualFold(pathName(entry.Value), name) {
-			if named != nil {
-				return "", ""
-			}
-			named = entry
+		entry := &catalog[i]
+		if !strings.EqualFold(entry.Value, name) {
+			continue
 		}
+		if !entry.Program || named != nil {
+			return "", ""
+		}
+		named = entry
 	}
 	if named == nil {
 		return "", ""
 	}
 	return named.Target, named.Value
-}
-
-// pathName is the last element of a program's name written as an import
-// path, a major version element aside (github.com/casdoor/casdoor is
-// casdoor, go.etcd.io/etcd/server/v3 is server); empty for a name that is
-// no path.
-func pathName(value string) string {
-	elements := strings.Split(strings.Trim(value, "/"), "/")
-	if len(elements) < 2 {
-		return ""
-	}
-	last := elements[len(elements)-1]
-	if len(elements) > 2 && len(last) > 1 && last[0] == 'v' && strings.Trim(last[1:], "0123456789") == "" {
-		last = elements[len(elements)-2]
-	}
-	return last
 }
 
 // Destinations is the closed catalogue of the named packages: one entry per

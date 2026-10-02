@@ -222,4 +222,3 @@ func (r *reader) keywordArgumentSites() map[sourceSite]*atlas.SymbolCall {
 	}
 	return sites
 }
-

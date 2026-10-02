@@ -583,7 +583,11 @@ function in main for doctor"); when no field tells them all apart each
 is said as one of how many they are, in words, never a number or an
 ordinal of one's own (owner's reviewer, 2026-10-02: casdoor's two
 goroutines of proxy `Start` are "Start (inline, 2)", read "one of two
-anonymous functions in Start"; ten or more read "one of many"). No name is composed from a fact's
+anonymous functions in Start"; ten or more read "one of many"). They are
+counted by the function whose lines hold them, never by its name: one
+closure in each of two packages' `main` is "main (inline)" twice, not one
+of two (review 2026-10-02;
+`TestCallablesOfSameNamedFunctionsAreNotCountedTogether`). No name is composed from a fact's
 method and values, and no code tells a verb, path, command or topic apart.
 Nothing is asked when the registration wrote no word. A declaration whose
 native route already is its operation is no operation of its own: the entry
@@ -1265,13 +1269,16 @@ programs whatever its kind (2026-10-01: etcd's tools called client/v3's
 question had named "etcd" and "Etcd Server" beside the server program they
 reach; Python, JS/TS, C and Clojure name no program by its import path,
 recorded missing; `TestACallIntoTheRepositorysOwnPackageIsOfferedItsPrograms`). A program chosen, by its ref
-or by its name after `other: ` (case aside: freqtrade's run drew "other:
-Freqtrade" once), or, for a program named by its import path, by that
-path's last element, a major version aside, when no other offered program
-ends in it (casdoor's web drew "other: Casdoor" for 91 calls where
-`github.com/casdoor/casdoor` was offered, and the home's Outside had
-shown the repository's own program as a system), is the boundary's
-`destination_target`, and the report
+or by its name as offered written after `other: ` (case aside: freqtrade's
+run drew "other: Freqtrade" once) when no system of the catalogue has that
+name too, is the boundary's `destination_target`. A ref the model chose
+stands: a system's ref is that system even when a program shares its name,
+and a free name is never read through a program's import path (review
+2026-10-02: a path's last element proves no runtime endpoint; casdoor's web
+answered "other: Casdoor" for 91 calls where `github.com/casdoor/casdoor`
+was offered, and those stay named "Casdoor";
+`TestAChosenDestinationRefStandsAndOnlyAFreeNameMayNameAProgram`,
+`TestAnOutgoingCallAnsweredWithASystemsRefKeepsTheSystem`). The report
 draws the destination into
 that program: freqtrade-client's one request, whose path the code computes,
 matched none of freqtrade's inputs and had stood as "Freqtrade Server"
