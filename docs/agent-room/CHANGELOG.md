@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Review items 1, 3 and 5: destination refs, closure counts, CURRENT (data 1)
+
+- **604bc0ca:** the model's choice of a destination ref is final. Before,
+  an explicit system ref `d1` "Casdoor" became the program
+  `github.com/casdoor/casdoor` through 33f66a12's path-tail rule. Even the
+  earlier exact-name rule turned a chosen system "Server" into the program
+  "server". Both now stay systems.
+- The path-tail rule is removed. The model layer allows no code promotion
+  of a free answer to a program identity, so 33f66a12's casdoor join is
+  undone: web's "other: Casdoor" calls stay named "Casdoor" until a request
+  change offers the program under a name the model uses.
+- Tests: `TestAChosenDestinationRefStandsAndOnlyAFreeNameMayNameAProgram`
+  covers 5 negatives and 2 positives, all failing before except the
+  two-tails case. `TestAnOutgoingCallAnsweredWithASystemsRefKeepsTheSystem`
+  checks the same through the destination question: before, "server"
+  (map[client:server]); after, "Server" with no program.
+- **e5e2e3e5:** closures are counted by their holder's ID. Before: two
+  packages' `main` gave `main (inline, 2)` twice, and three `Start$N` in two
+  types gave `Server.Start (inline, 3)`. After: `main (inline)` ×2,
+  `Server.Start (inline)`, and `Server.Start (inline, 2)` ×2.
+- **326d82e7:** CURRENT's docstring item now names the real remainder:
+  orientation's request rows send `author_doc`. DEVELOPMENT is unchanged.
+  `visual/stable-labels.spec.mjs` is tracked at 7d301df4 and HEAD and passes
+  on a clean export (1 passed).
+- Checks: focused tests and vet on a clean export pass (atlas, groupindex,
+  report, orientation, run). contracttest timed out twice at 5 min under
+  load 40–60, then passed in four chunks (41 s, 179 s, 130 s, 215 s). No
+  online run was made.
+
 ## 2026-10-02 — The invariant table calls no unchecked cell a pass
 
 - **Defect** (external review 2026-10-02, item 2): an exception in a level
