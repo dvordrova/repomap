@@ -400,6 +400,10 @@ type pageFlowStep struct {
 	// the candidates it could go on through, read folded under one line.
 	Via     string
 	ViaFrom *pageStepName
+	// Through are the helpers the step before's work passes through on its
+	// way to this step (orientation FlowStep.Through), each a name read as
+	// a step's is: Lua's lua_pcallk, called through docall.
+	Through []pageStepName
 	// OneOf is, for a step reached as one of the callables a call through a
 	// value may run, that reach in words ("one of the calls serverCron may
 	// make"), never a count; Via is then empty.

@@ -970,6 +970,9 @@ var russianUI = map[string]string{
 	"not from these entries:":        "не из этих точек входа:",
 	"uses the headers or types of":   "использует заголовки или типы:",
 
+	// A Main flow step reached through a helper (partials.html "through").
+	"through": "через",
+
 	// A target whose entrypoints reach all of its code (target.html).
 	"Reachability: its entrypoints reach all of its code.": "Достижимость: его точки входа достигают всего его кода.",
 

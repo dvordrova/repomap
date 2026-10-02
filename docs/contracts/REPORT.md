@@ -1861,7 +1861,12 @@ render failed, is rendered by the server through the same `RenderServedPage`.
   «передаётся», "один из вызовов, которые может сделать предыдущий шаг")
   under its name, always through the vocabulary (owner: no digits in the
   column; the saved `Via` keeps the code's "called" and "one of 94";
-  `TestAFlowsViaReadsInThePagesLanguage`). A dispatch site is said by the function holding it, a name read as a
+  `TestAFlowsViaReadsInThePagesLanguage`). A step or a split's candidate
+  reached through a helper (orientation `FlowStep.Through`,
+  `FlowBranch.Through`) says so after that, each helper a name read as a
+  step's is: Lua's lua_pcallk, "called through docall" (ru «вызывается через
+  docall»; the column had read "lua_pcallk (called)" without the docall its
+  work passes through). A dispatch site is said by the function holding it, a name read as a
   step's is, never by a file and line. Fork candidates sharing a name are
   told apart as the categorizer read them (s3.ReplicaClient,
   gs.ReplicaClient; READING § Orientation). Unknown or incompatible set refs are recorded and removed; repeated

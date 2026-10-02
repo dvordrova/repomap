@@ -25,6 +25,9 @@ type pageStepName struct {
 	Open     string
 	Possible bool
 	Handed   bool
+	// Through are, for a split's candidate, the helpers the work passes
+	// through on its way to it (orientation FlowBranch.Through).
+	Through []pageStepName
 }
 
 // pageStepRegistration is one place a step's callable is registered: the

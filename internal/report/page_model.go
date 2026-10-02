@@ -1035,6 +1035,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 			row.ViaFrom = &name
 		}
 	}
+	row.Through = builder.flowThrough(step.TargetID, step.Through)
 	row.Fork = builder.flowFork(step)
 	row.Passed = builder.flowPassed(step)
 	builder.flowStepOwn(&row, step, section)
@@ -1213,6 +1214,18 @@ func flowViaMessage(via string) (string, string) {
 	return "", ""
 }
 
+// flowThrough are the helpers a step or a split's candidate is reached
+// through, by name, each read as a step's name is (saved data only).
+func (builder *pageBuilder) flowThrough(targetID string, through []string) []pageStepName {
+	var names []pageStepName
+	for _, id := range through {
+		if name, ok := builder.flowName(targetID, id); ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // flowFork is a walked flow's fork, when its last step ends at one: one
 // line in words, "one of the calls {site} may make" with the function
 // holding their dispatch site when the candidates share one, else "one of
@@ -1270,6 +1283,7 @@ func (builder *pageBuilder) flowBranchNames(targetID string, branches []orientat
 				}
 			}
 		}
+		name.Through = builder.flowThrough(targetID, branch.Through)
 		result = append(result, name)
 		names, spellings = append(names, name.Name), append(spellings, groupindex.Where(name.Name, file, part))
 	}

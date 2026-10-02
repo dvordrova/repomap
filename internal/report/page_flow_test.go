@@ -753,3 +753,37 @@ func TestAFlowNamesACallNoImplementationIsEstablishedFor(t *testing.T) {
 		t.Fatalf("the unresolved call: %+v", calls)
 	}
 }
+
+// Lua's Main flow reaches lua_pcallk from handle_script through docall, a
+// helper never a step of its own (orientation FlowStep.Through). The column
+// had read "lua_pcallk (called)" without saying so. The step says the
+// helper it is reached through, by name, read as a step's name is; a split's
+// candidate the same way.
+func TestAMainFlowStepSaysTheHelperItIsReachedThrough(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called", Through: []string{"h1"},
+		Passed: []orientation.FlowBranch{{SubjectID: "h2", Via: "called", Through: []string{"h1"}}}}, section, map[string]bool{})
+	if len(step.Through) != 1 || step.Through[0].Name != "getCommand" || step.Passed == nil || len(step.Passed.Names[0].Through) != 1 {
+		t.Fatalf("through: step %+v, passed %+v", step.Through, step.Passed)
+	}
+	for language, word := range map[DisplayLanguage]string{English: "through", Russian: "через"} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		via := html[strings.Index(html, `<span class="flow-via">`):]
+		via = via[:strings.Index(via, "</span>")+7]
+		if !strings.Contains(via, " "+word+" ") || !strings.Contains(via, `class="flow-chain-name"`) || !strings.Contains(via, "getCommand") {
+			t.Fatalf("%v: the step does not say it is reached through getCommand: %s", language, via)
+		}
+		if strings.Count(html, " "+word+" ") != 2 {
+			t.Fatalf("%v: the passed candidate does not say it either: %s", language, html)
+		}
+	}
+}
