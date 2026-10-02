@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The invariant table calls no unchecked cell a pass
+
+- **Defect** (external review 2026-10-02, item 2): an exception in a level
+  pass was caught into `info.error` and failed nothing; strict acceptance
+  read only `failed`; `invariant-table.mjs` wrote `pass: !failed` with zero
+  checks, so a failure forced before any check gave 25 of 25 cells
+  `pass: true` while the Markdown printed `–`.
+- **Now:** each cell is PASS, FAIL, NOT_APPLICABLE or INCOMPLETE
+  (`visual/invariant-status.mjs`, read by the spec and the table alike).
+  Every invariant declares its phase and when it does not apply
+  (`invariants.mjs`); a phase marks its zero-check cells not applicable only
+  once it finished. An exception leaves its level INCOMPLETE with its
+  partial counts, the step and the stack; the run's JSON is written in a
+  `finally`. Strict refuses FAIL, INCOMPLETE, a stopped level and a stopped
+  run. The Markdown prints `n/a`, `**INCOMPLETE** N` and an "Incomplete"
+  list; the JSON's `pass` equals `status === 'PASS'`.
+- **Held by:** `visual/invariants-fault.spec.mjs` (the real spec on the
+  fixture's no-inputs graph with a harness failure forced before the first
+  check and after a few: exit non-zero under strict, the run's JSON, the
+  table's JSON and Markdown INCOMPLETE; 2 passed) and
+  `invariant-status.test.mjs` (4 passed). A clean strict run on the cycles
+  and no-inputs graphs: complete, 126 PASS, 24 NOT_APPLICABLE, no
+  INCOMPLETE. The full 8-repository table is not re-run until the final
+  commit.
+- **Saved tables' limits:** the tables of 21bb81f2 and c5f6163b were written
+  before statuses. No level in them has `info.error`, so no level pass was
+  stopped; their `ok N` cells are checks that ran and passed. Their `–`
+  cells (zero checks) were never declared not applicable: they are not
+  evidence that an invariant held there, only that nothing was checked.
+
 ## 2026-10-02 — Same-named things told apart where they are named (data 2)
 
 - **37269079:** the reading lints' repeated names on the format-96 renders

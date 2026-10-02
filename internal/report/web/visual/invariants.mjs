@@ -30,33 +30,37 @@
 //   [data-box-title=ID] or the old title elements ([data-frame-title],
 //   [data-summary-area], [data-component-overview], a part's strong)
 
-// The invariants, in table order, with what each one says.
+// The invariants, in table order: what each one says, and its declaration
+// for the table (invariant-status.mjs): the phase of a level pass that
+// checks it, what makes it not applicable when that phase finds nothing of
+// its kind (`none`), and `home` for one checked on the whole map only.
+const arrows={phase:'arrows'};
 export const invariants=[
-  ['pan-level','a pan never changes the level'],
-  ['pan-keeps','no element in sight disappears on a pan'],
-  ['pan-fixed','a pan keeps every box at its map coordinates'],
-  ['point-keeps','no element disappears on a pointer move'],
-  ['point-style','pointing changes only classes and order: no box, path or camera moves'],
-  ['one-path','each arrow is one continuous polyline'],
-  ['own-ends','each arrow starts on its own source and ends on its own target (border, port or marker)'],
-  ['head-in','each arrow has its head at its target, its last segment pointing in'],
-  ['shared-run','no two arrows share over 6 px unless they are the two directions of one pair'],
-  ['in-frame','every arrow end lies in the level frame or on a port or marker'],
-  ['off-canvas','no arrow end out of the canvas while the level frame fits it'],
-  ['crosses','no arrow runs through a box it does not join'],
-  ['step1-gap','parallel lanes stand at least 7.5 screen px apart, as in the approved Step 1 drawing'],
-  ['marker-size','ports and markers are 20-28 px at every camera, one size per level'],
-  ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box'],
-  ['titles','titles at one level within ±10% of their median'],
-  ['dark-top','dark arrows are drawn after grey ones'],
-  ['cards','every arrow opens its card when pointed at'],
-  ['no-labels','no digit, plaque or kind label on the canvas'],
-  ['text','no clipped or too small text on the canvas (chip names apart)'],
-  ['chip-text','an outside chip\'s name stands whole from 9.5 px; below, pointing and focus name it'],
-  ['home-names','at the home\'s rest view every program\'s name reads (whole, unfaded, 11 px or more), every chip\'s and bucket\'s name too (9.5 px or more)'],
-  ['whole-fit','"Show whole map" shows all of it: every box of the whole map wholly in the canvas'],
-  ['outside','B′ on the whole map: in each Outside frame shared systems first and named, then one bucket per part calling two or more systems of its own, then the rest, no system twice; casdoor at most 44 top-level items'],
-  ['page-errors','the page raises no error'],
+  ['pan-level','a pan never changes the level',{phase:'pans',none:'no pan asked'}],
+  ['pan-keeps','no element in sight disappears on a pan',{phase:'pans',none:'no pan asked'}],
+  ['pan-fixed','a pan keeps every box at its map coordinates',{phase:'pans',none:'no pan asked'}],
+  ['point-keeps','no element disappears on a pointer move',{phase:'pointer',none:'no pointer move asked'}],
+  ['point-style','pointing changes only classes and order: no box, path or camera moves',{phase:'pointer',none:'no pointer move asked'}],
+  ['one-path','each arrow is one continuous polyline',{...arrows,none:'no arrow drawn in sight'}],
+  ['own-ends','each arrow starts on its own source and ends on its own target (border, port or marker)',{...arrows,none:'no arrow drawn in sight'}],
+  ['head-in','each arrow has its head at its target, its last segment pointing in',{...arrows,none:'no arrow drawn in sight'}],
+  ['shared-run','no two arrows share over 6 px unless they are the two directions of one pair',{...arrows,none:'fewer than two arrows in sight'}],
+  ['in-frame','every arrow end lies in the level frame or on a port or marker',{...arrows,none:'no arrow drawn in sight'}],
+  ['off-canvas','no arrow end out of the canvas while the level frame fits it',{...arrows,none:'no arrow in sight, or the level frame larger than the canvas'}],
+  ['crosses','no arrow runs through a box it does not join',{...arrows,none:'no arrow drawn in sight'}],
+  ['step1-gap','parallel lanes stand at least 7.5 screen px apart, as in the approved Step 1 drawing',{...arrows,none:'fewer than two parallel runs in sight'}],
+  ['marker-size','ports and markers are 20-28 px at every camera, one size per level',{phase:'sizes',none:'no port or marker in sight'}],
+  ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box',{phase:'markers',none:'no marker in sight'}],
+  ['titles','titles at one level within ±10% of their median',{phase:'titles',none:'fewer than two titles in sight'}],
+  ['dark-top','dark arrows are drawn after grey ones',{phase:'cards',none:'no arrow turned dark while pointed at'}],
+  ['cards','every arrow opens its card when pointed at',{phase:'cards',none:'no arrow in sight to point at'}],
+  ['no-labels','no digit, plaque or kind label on the canvas',{phase:'texts',none:'no text in sight'}],
+  ['text','no clipped or too small text on the canvas (chip names apart)',{phase:'texts',none:'no text in sight'}],
+  ['chip-text','an outside chip\'s name stands whole from 9.5 px; below, pointing and focus name it',{phase:'chips',none:'no outside chip in sight'}],
+  ['home-names','at the home\'s rest view every program\'s name reads (whole, unfaded, 11 px or more), every chip\'s and bucket\'s name too (9.5 px or more)',{phase:'home',home:true,none:'no program or outside system in sight'}],
+  ['whole-fit','"Show whole map" shows all of it: every box of the whole map wholly in the canvas',{phase:'home',home:true,none:'no box on the whole map'}],
+  ['outside','B′ on the whole map: in each Outside frame shared systems first and named, then one bucket per part calling two or more systems of its own, then the rest, no system twice; casdoor at most 44 top-level items',{phase:'home',home:true,none:'no Outside frame on the whole map'}],
+  ['page-errors','the page raises no error',{phase:'errors',none:'—'}],
 ];
 
 // Runs in the page: a kit of read-only probes, installed as window.__inv.

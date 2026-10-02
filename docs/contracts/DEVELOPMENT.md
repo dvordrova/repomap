@@ -204,9 +204,21 @@ random pans and 50 random pointer moves, points at every arrow, marker,
 port and faded chip, and measures markers and ports at every camera; it
 writes `<repo>.canvas.json` to `REPOMAP_INVARIANT_OUT`, and
 `node visual/invariant-table.mjs DIR` writes `table.md` and `table.json`
-(repo × level × invariant, pass or fail with counts, each cell marked with
-the commit it ran on). It fails a run only with `REPOMAP_INVARIANT_STRICT`.
-Run it with one browser:
+(repo × level × invariant, each cell marked with the commit it ran on).
+A cell is PASS (its checks ran, none failed), FAIL (one failed), NOT_APPLICABLE
+(its phase finished and found nothing of its kind, as the invariant declares
+in `visual/invariants.mjs`) or INCOMPLETE (its phase did not finish, or no
+check ran and nothing was declared); zero checks are never a pass, and JSON
+and Markdown read the status from one place (`visual/invariant-status.mjs`).
+An exception anywhere in a level pass (the harness, Playwright or the page,
+a browser error or not) leaves that level INCOMPLETE with what it checked
+before and where it stopped; the run's JSON is written whatever stops it.
+With `REPOMAP_INVARIANT_STRICT` a run fails on every FAIL or INCOMPLETE cell
+and every stopped level. `visual/invariants-fault.spec.mjs` forces a harness
+failure (`REPOMAP_INVARIANT_FAULT`) before the first check and after a few,
+and holds that strict fails and every output says INCOMPLETE;
+`invariant-status.test.mjs` holds the same for the table alone. Run it with
+one browser:
 
     REPOMAP_INVARIANT_REPORTS=a.html,b.html REPOMAP_INVARIANT_OUT=dir \
       npx playwright test invariants --workers=1
