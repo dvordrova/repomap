@@ -1318,6 +1318,28 @@ func (builder *pageBuilder) groupConnections(
 ) []pageConnection {
 	here := groupindex.Endpoint{TargetID: index.Target.ID, GroupID: group.ID}
 	incident := builder.incidentConnections()
+	// Each other target's inputs by where they are written, the first of a
+	// place in the index's order, and this target's integrations by the
+	// group they leave, each read once a call: read again for every
+	// connection, they took headscale's render 300 s once its library's
+	// 1,788 exports were entrypoints, each asking its group's connections.
+	inputsAt := make(map[string]map[string]groupindex.Operation)
+	inputAt := func(other *groupindex.Index, location programindex.Location) (groupindex.Operation, bool) {
+		at, built := inputsAt[other.Target.ID]
+		if !built {
+			at = make(map[string]groupindex.Operation, len(other.Operations))
+			for _, operation := range other.Operations {
+				key := operationLocationKey(operation.Location)
+				if _, first := at[key]; !first {
+					at[key] = operation
+				}
+			}
+			inputsAt[other.Target.ID] = at
+		}
+		operation, found := at[operationLocationKey(location)]
+		return operation, found
+	}
+	var leaving map[groupindex.Endpoint][]groupindex.Connection
 	var rows []pageConnection
 	for _, position := range incident.byEndpoint[here] {
 		connection := incident.all[position]
@@ -1360,13 +1382,10 @@ func (builder *pageBuilder) groupConnections(
 			}
 			if location != nil {
 				if otherIndex := builder.graphIndex(other.TargetID); otherIndex != nil {
-					for _, operation := range otherIndex.Operations {
-						if operationLocationKey(operation.Location) == operationLocationKey(*location) {
-							row.Href = "#" + operationNodeID(section.ID, operation.ID)
-							row.input = true
-							row.Title = builder.operationDisplayName(otherIndex.Target.ID, operation)
-							break
-						}
+					if operation, found := inputAt(otherIndex, *location); found {
+						row.Href = "#" + operationNodeID(section.ID, operation.ID)
+						row.input = true
+						row.Title = builder.operationDisplayName(otherIndex.Target.ID, operation)
 					}
 				}
 			}
@@ -1382,9 +1401,17 @@ func (builder *pageBuilder) groupConnections(
 		// This names the neighbouring group's own integrations; it does not
 		// turn a group-level connection into a trace of the selected function.
 		if arrow == "→" && other.TargetID == index.Target.ID {
+			if leaving == nil {
+				leaving = make(map[groupindex.Endpoint][]groupindex.Connection)
+				for _, next := range index.Connections {
+					if next.To.TargetID != index.Target.ID && next.SourceKind == "integration" {
+						leaving[next.From] = append(leaving[next.From], next)
+					}
+				}
+			}
 			seen := map[string]bool{}
-			for _, next := range index.Connections {
-				if next.From != other || next.To.TargetID == index.Target.ID || next.SourceKind != "integration" || seen[next.To.TargetID] {
+			for _, next := range leaving[other] {
+				if seen[next.To.TargetID] {
 					continue
 				}
 				if peer := builder.byProgram[next.To.TargetID]; peer != nil {
@@ -1550,6 +1577,9 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 			groupOf[member] = group
 		}
 	}
+	// A group's connections are read once however many entrypoints it
+	// holds: a library's every export is one (headscale's 1,788).
+	connectionsOf := make(map[string][]pageConnection)
 	var steps []pageStart
 	for _, entry := range section.Entrypoints {
 		step := pageStart{Symbol: entry.Symbol, Anchor: entry.Anchor}
@@ -1568,7 +1598,12 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 							step.Code = cmp.Or(anchor.Code, anchor.Href)
 						}
 					}
-					step.Reaches = startReaches(builder.groupConnections(index, group), subjectID, maxStartReaches)
+					rows, read := connectionsOf[group.ID]
+					if !read {
+						rows = builder.groupConnections(index, group)
+						connectionsOf[group.ID] = rows
+					}
+					step.Reaches = startReaches(rows, subjectID, maxStartReaches)
 				}
 			}
 		}
