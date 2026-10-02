@@ -93,6 +93,17 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 			return "continuous", true
 		}
 		return "", false
+	}, named: func(words []map[string]any) any {
+		// A reader naming a key handler by its event, as the real one
+		// does once the sketch's title is labelled as its title: five
+		// draws of othello's window chose key-pressed every time, against
+		// "Othello" or "key-pressed Othello" in one of five unlabelled.
+		for _, word := range words {
+			if word["value"] == "key-pressed" {
+				return word["ref"]
+			}
+		}
+		return nil
 	}}
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "package", Name: index.Target.Name, Root: "."}, root, preset)
 	if got, want := startedItems(preset), []string{"(future (greet-many names)) | example.core/greet-many | example.core/warm-greetings"}; !reflect.DeepEqual(got, want) {
@@ -109,7 +120,10 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 		t.Fatalf("keyword entries asked what their callable becomes: %q, want %q", bound, want)
 	}
 	// Each keyword entry is named from its words, the keyword first:
-	// on-key's entry offers key-pressed, not only the call's word.
+	// on-key's entry offers key-pressed, not only the call's word, and the
+	// sketch's title with the keyword it is given under, never as a bare
+	// word of the entry (othello's twelve sketch entries were each named
+	// "Othello", its title).
 	var named []string
 	for column, items := range preset.asked {
 		if !strings.HasSuffix(column, ".name") {
@@ -119,18 +133,21 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 			if external, _ := item["external"].(string); external == "quil.core.sketch.key-pressed" {
 				for _, word := range item["words"].([]any) {
 					value, _ := word.(map[string]any)["value"].(string)
+					if given, _ := word.(map[string]any)["given"].(string); given != "" {
+						value += " (" + given + ")"
+					}
 					named = append(named, value)
 				}
 			}
 		}
 	}
-	if want := []string{"quil.core/sketch", "key-pressed", "Greeter"}; !slices.Equal(named, want) {
+	if want := []string{"quil.core/sketch", "key-pressed", "Greeter (title)"}; !slices.Equal(named, want) {
 		t.Fatalf("key-pressed's entry is named from %q, want %q", named, want)
 	}
 	// Each keyword entry is written as its keyword and value, not as the
 	// whole sketch or websocket call around its siblings (othello's
 	// q/sketch of ten keywords had been each entry's registration).
-	if written := writtenRows(projected, core); written["quil.core/sketch"] != ":key-pressed on-key" || written["hato.websocket/websocket"] != ":on-message receive-greeting" {
+	if written := writtenRows(projected, core); written["key-pressed"] != ":key-pressed on-key" || written["hato.websocket/websocket"] != ":on-message receive-greeting" {
 		t.Fatalf("keyword entries as written: %q", written)
 	}
 	var inputs []string
@@ -151,6 +168,15 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	names, keyNames := map[string]string{}, map[string][]string{}
 	for _, operation := range projected.Operations {
 		names[operation.ID], keyNames[operation.ID] = operation.Name, operation.Names
+	}
+	var keyPressed []string
+	for _, row := range inputRows(projected, core) {
+		if row.name == "key-pressed" {
+			keyPressed = append(keyPressed, row.kind+" "+row.handler)
+		}
+	}
+	if !slices.Equal(keyPressed, []string{"interaction example.core/on-key"}) {
+		t.Fatalf("key-pressed inputs: %q, want the one interaction on-key handles", keyPressed)
 	}
 	for position, operation := range projected.Operations {
 		if operation.Location.Path != core || operation.Name != "key-pressed" {

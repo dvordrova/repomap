@@ -856,8 +856,11 @@ word is tested to start with (litestream's `strings.HasPrefix(u, "-")`); the
 call's arguments show each literal with the parameter it is given as
 (`description: "Number of months to fetch data for"`), and the name column
 offers each word with it (`given`, `atlas.BoundaryFacts.WordsGiven`, from
-the call's keyword arguments) and never takes a description, help or usage
-text. Only Python and Clojure write keyword arguments; Go, C and JS/TS words
+the call's keyword arguments, also for an entry handed over under one of
+several keywords, which stands where its keyword's value is written:
+othello's sketch title is offered as `Othello` given `title`, and twelve
+unlabelled sketch entries had all been named "Othello") and never takes a
+description, help or usage text. Only Python and Clojure write keyword arguments; Go, C and JS/TS words
 are positional, so their words carry none. GroupsIndex keeps one input per
 kind, words as written and declaring caller: an option written twice in one
 function is one input at its first site; the same word in another caller is
@@ -1249,7 +1252,12 @@ question had named "etcd" and "Etcd Server" beside the server program they
 reach; Python, JS/TS, C and Clojure name no program by its import path,
 recorded missing; `TestACallIntoTheRepositorysOwnPackageIsOfferedItsPrograms`). A program chosen, by its ref
 or by its name after `other: ` (case aside: freqtrade's run drew "other:
-Freqtrade" once), is the boundary's `destination_target`, and the report
+Freqtrade" once), or, for a program named by its import path, by that
+path's last element, a major version aside, when no other offered program
+ends in it (casdoor's web drew "other: Casdoor" for 91 calls where
+`github.com/casdoor/casdoor` was offered, and the home's Outside had
+shown the repository's own program as a system), is the boundary's
+`destination_target`, and the report
 draws the destination into
 that program: freqtrade-client's one request, whose path the code computes,
 matched none of freqtrade's inputs and had stood as "Freqtrade Server"

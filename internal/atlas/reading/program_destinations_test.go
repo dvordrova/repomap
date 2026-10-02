@@ -112,6 +112,21 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 			t.Fatalf("%q named %q %q, want the server program", cell[0], target, name)
 		}
 	}
+	// A program offered by its import path is named by its last element
+	// too (casdoor's web: "other: Casdoor" where github.com/casdoor/casdoor
+	// was offered), a major version aside, unless two offered programs end
+	// in it.
+	paths := []lines.Destination{{Ref: "d1", Value: "github.com/casdoor/casdoor", Program: true, Target: "t1"},
+		{Ref: "d2", Value: "go.etcd.io/etcd/server/v3", Program: true, Target: "t2"}}
+	for _, cell := range [][3]string{{"other: Casdoor", "Casdoor", "t1"}, {"other: server", "server", "t2"}, {"other: v3", "v3", ""}, {"other: etcd", "etcd", ""}} {
+		if target, _ := lines.DestinationTarget(paths, cell[0], cell[1]); target != cell[2] {
+			t.Fatalf("%q named the program %q, want %q", cell[0], target, cell[2])
+		}
+	}
+	twins := append(paths, lines.Destination{Ref: "d3", Value: "example.com/tools/server", Program: true, Target: "t3"})
+	if target, _ := lines.DestinationTarget(twins, "other: server", "server"); target != "" {
+		t.Fatalf("a name two offered programs end in chose %q", target)
+	}
 }
 
 // A call into a package this repository builds is no outside system: the

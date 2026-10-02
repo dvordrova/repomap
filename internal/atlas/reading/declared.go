@@ -147,15 +147,25 @@ func (r *reader) declaredOnSite(files map[string]*lines.CallFile, path string, l
 // parameter its call gives each under when it names one (a keyword
 // argument: Query(4, description="Number of weeks to fetch data for")),
 // so the reading of the words shows it. A boundary whose words are all
-// given by position keeps none.
+// given by position keeps none. An entry a call hands over under one of
+// several keywords stands where its keyword's value is written, and its
+// call's words are labelled the same: othello's (q/sketch :title "Othello"
+// … :key-pressed host/on-key) had offered key-pressed beside a bare
+// "Othello", and a window of the sketch's twelve entries named every one
+// "Othello", the sketch's title.
 func (r *reader) labelWordsGiven() {
 	sites := r.callSites()
+	keywords := r.keywordArgumentSites()
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
 		if facts == nil || facts.Direction != atlas.DirectionIn || len(facts.Words) == 0 || len(facts.WordsGiven) > 0 {
 			continue
 		}
-		call := sites[sourceSite{state.place.Path, state.place.LineNo, state.place.Column}]
+		site := sourceSite{state.place.Path, state.place.LineNo, state.place.Column}
+		call := sites[site]
+		if call == nil {
+			call = keywords[site]
+		}
 		if call == nil {
 			continue
 		}
@@ -185,5 +195,31 @@ func (r *reader) labelWordsGiven() {
 		labelled.WordsGiven = given
 		state.place.Boundary = &labelled
 	}
+}
+
+// keywordArgumentSites are the calls of the graph's declarations by where
+// each of their keyword arguments' values is written: the place a keyword
+// entry stands.
+func (r *reader) keywordArgumentSites() map[sourceSite]*atlas.SymbolCall {
+	sites := make(map[sourceSite]*atlas.SymbolCall)
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil {
+			continue
+		}
+		for i := range place.Symbol.Calls {
+			call := &place.Symbol.Calls[i]
+			for _, argument := range call.SourceArguments {
+				if argument.Keyword == "" || argument.Origin == nil || argument.Origin.Anchor == nil {
+					continue
+				}
+				at := argument.Origin.Anchor
+				site := sourceSite{at.Path, at.Line, at.Column}
+				if _, seen := sites[site]; !seen {
+					sites[site] = call
+				}
+			}
+		}
+	}
+	return sites
 }
 

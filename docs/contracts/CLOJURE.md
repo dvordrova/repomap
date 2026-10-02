@@ -121,7 +121,9 @@ reads an outside call handed several repository functions under keywords as
 one registration per keyword (PROGRAM_INDEX, the facts pass), the keyword
 its first word: othello's `quil.core.sketch.key-pressed` hands `host/on-key`
 over at `src/othello/ui/sketch.clj:45` with the words `quil.core/sketch`,
-`key-pressed`, `Othello`. `TestKeywordArguments`,
+`key-pressed`, `Othello`, the title offered with the keyword it is given
+under (`title`, READING's `WordsGiven`), so the entry is named key-pressed
+and its key table (n, u, h, 1, 2) stays under it. `TestKeywordArguments`,
 `assertKeywordArguments` and `TestCumulativeClojureKeywordHandoffsAndFutures`
 check both forms. A Python call's keyword arguments and a Go struct's fields
 are keyword arguments natively; a synthetic facts case
