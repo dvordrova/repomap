@@ -1,5 +1,50 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Orientation from code structure only, each role from its own target (data 1, 80c1fb4c, 46ec53d4, dfc832c8)
+
+- **Found:**
+  - In Lua 5.1.5, the `etc` library (etc/noparser.c alone) had been described as "public-domain extras such as a single-file interpreter, a minimal interpreter, and a no-parser stub…".
+  - That text came from claims h105/h107/h112/h113 (etc/README lines). The overview request carried 114 claims (README lines, docstrings, comments, commit subjects): CURRENT's known violation.
+- **80c1fb4c:**
+  - The overview sends no claims and its seed rows no `author_doc`.
+  - A role keeps only its own target's refs. Another target's refs are ignored and recorded; a role citing only another target's evidence is refused; a target with nothing of its own keeps a role without refs.
+  - Two skeptic rounds approved the change.
+  - Measured: Lua lost 3 of 8 roles (liblua.a, lib11.so, lib21.so), all three citing their own makefile rules. The facts layer had filed those rules under the makefile's first target.
+- **46ec53d4 (interim, reverted):** a target's manifest file counted as its own evidence.
+  - Lua went back to 8 of 8, but 5.1.5's liblua.a then said it "links the lua and luac executables", citing src/Makefile's all, lua and luac rules.
+  - In another draw, 5.1.5's etc lost its role: it cited t3's dead_module facts and wrote "not reached by any entrypoint".
+- **dfc832c8 (control review; third skeptic round):**
+  - A makefile several C programs share files each `rule.<target>` under the program whose output it builds, and the default goal, `all`, platform goals and variables under none ([C](../contracts/C.md)).
+  - A library's exports are listed again, on the wire as `export`: its role's evidence, never a run step's support (a step citing only exports is refused). The prompt says a library runs nothing.
+  - Ownership is again only "`targets` lists it".
+- **Live warm runs (own binary) — model roles per analysed target, and orientation role refusals in `rejected.jsonl`:**
+
+  | repo | before (claims) | 80c1fb4c | 46ec53d4 | dfc832c8 |
+  |---|---|---|---|---|
+  | lua-5.1.5 | 5/5 (t2 from README) | 5/5 (1 ref ignored) | 4/5 (t2 refused) | **5/5**, 0 refused (20261002-185845) |
+  | lua | 8/8 | 5/8 (3 refused) | 8/8 | **8/8**, 0 refused (20261002-185925) |
+  | freqtrade | 7/7 | 7/7 | 7/7 (1 ref ignored) | **7/7**, 0 (20261002-190018) |
+  | casdoor | 2/2 | 2/2 | 2/2 | **2/2**, 0 (20261002-190514) |
+  | headscale | — | — | — | **9/9**, 0 (20261002-190758) |
+
+  - No claim text (≥16 characters) of any run's claims.json appears in its overview body, and no `claims` or `author_doc` key. Before, 5.1.5's body held all 114 claims.
+- **Cache-off draws on the saved inputs:** each run's own artifacts went through the real buildOverview, Run and normalizeOverview (scratch harness).
+  - Control at 60e7ea98 on the third-round runs (20 draws): every role in every draw; 5.1.5's etc described from its README in 5 of 5; liblua.a "produces liblua.a, lua and luac" in 1 of 5.
+  - dfc832c8 on the new runs (40 draws): 5.1.5 15 draws at 5/5 roles; lua 15 at 8/8; freqtrade 5 at 7/7; casdoor 5 at 2/2.
+  - etc is "Parser stub library … stub lexer and parser entry points" citing its exports, in 15 of 15.
+  - liblua.a never claims lua or luac (15 of 15).
+  - Main flow target is the same program in every draw (5.1.5: src/lua; others: t1); no library was picked.
+  - One draw ignored one of casdoor's t2 refs and kept its role.
+- **What changed besides roles:**
+  - 5.1.5's recipe lost README's `make min`.
+  - One 46ec53d4 draw invented `gcc … min.c ../src/liblua.a` on an entrypoint ref; the dfc832c8 runs had `make linux`, `./lua`, `./luac`.
+  - Repository summaries now cite facts and seeds only.
+  - Glossary terms were re-asked from the new prose (casdoor 41, headscale 21 live calls).
+- **Still open:**
+  - The atlas sends README first lines in directory, boundary and target rows (CURRENT).
+  - `claims/extract.go` files a claim under the first target sharing its root (etc/min.c's docstring under etc).
+  - Clojure libraries have no exports.
+
 ## 2026-10-02 — Inputs found by their told-apart names; a function's reading headed by its name (lead, ca27982e, 13935747)
 
 - **Search (ca27982e):** on etcd, Find "Campaign" as Operations said "No matches". An input was indexed by its title alone ("POST"); the words telling it apart (page data `apart`) and its registration as written (`data-written`) went unread.
