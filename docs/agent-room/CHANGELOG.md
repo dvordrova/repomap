@@ -1,5 +1,32 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Report publication back to seconds, and timed as its own stage (data 1, 0505e941, 1159634c)
+
+- **Found:**
+  - In the second final round, report publication took 596 s on headscale, 337 s on etcd and 142 s on casdoor.
+  - `repomap render` of headscale's run reproduced it with no provider: 309 s.
+  - A CPU profile put 74% in `groupConnections`, called from `startSteps`. 80% of that was `operationLocationKey`'s Sprintf. For every connection it read every operation's place again, and for every inner connection every connection of the index.
+  - `startSteps` asks each entrypoint's part for its connections. Since b44c0856, every export of a library is an entrypoint: headscale's library has 1,788 in one part.
+  - A render at 763bb8f2, before the display batch, took as long (365 s). So the cost came from the exports reaching this old quadratic path, not from 5297a765 or fa1f4d22.
+- **Fix (0505e941):**
+  - `startSteps` reads a part's connections once however many entrypoints it holds.
+  - `groupConnections` reads each other target's inputs by place, and this target's integrations by the group they leave, once a call: the first operation at a place, as before.
+  - Guard: `TestStartStepsReadAPartsConnectionsOnceForAllItsEntrypoints` (400 exports, 40 connections, 400 operations) checks the reaches and bounds the allocations at 24,800. The old code made 34,271,851; the new one makes 9,953.
+- **A/B, renders at f61a0809 without and with the fix, byte-identical HTML:**
+
+  | run | without | with |
+  |---|---|---|
+  | headscale 20261002-152459 | 237 s | 17 s |
+  | casdoor 20261002-152058 | 74 s | 21 s |
+  | lua 20261002-155001 | 26 s | 11 s |
+
+- **Timing (1159634c):**
+  - The Time block now says "report publication: …, no model".
+  - `metadata.json` `timing` keeps `wall_ms`, the run until publication as the page shows it, and adds `publication_ms` and `command_ms`.
+  - Headscale's `wall_ms` 185,602 of a 781 s command had hidden this.
+  - report.json and its format are unchanged, and metadata readers decode leniently, so no bump.
+- **gofmt:** `page_entity_writes.go` (961ec146) and five more files (7f927098).
+
 ## 2026-10-02 — A C program's makefile is its build's manifest (data 2)
 
 - **Problem (external control, 15:18 UTC):** Lua's "How to run" gave `make`,
