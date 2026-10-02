@@ -43,13 +43,13 @@ type analyzer struct {
 	functionIDs map[*ssa.Function]string
 	// ordered and staticCalls are computed once from allFunctions, which
 	// is complete when the analyzer is constructed.
-	ordered         []*ssa.Function
-	staticCalls     map[*ssa.Function][]ssa.CallInstruction
+	ordered     []*ssa.Function
+	staticCalls map[*ssa.Function][]ssa.CallInstruction
 	// valueUsed and invokedMethods are computed once too
 	// (reachedOtherwise): the functions a repository function uses as a
 	// value, and the method names an interface call invokes.
-	valueUsed      map[*ssa.Function]bool
-	invokedMethods map[string]bool
+	valueUsed       map[*ssa.Function]bool
+	invokedMethods  map[string]bool
 	callControls    map[Location][]ControlContext
 	methodArguments map[Location][]*sourcevalue.Value
 	// sameValues is, by call site, the earlier call each call reads the

@@ -14,7 +14,9 @@ import (
 // still sees it) and the use is marked unread; a template with an unread
 // part is still read.
 func TestAWalkEndingAtAnUnreadValueEstablishesNoAddress(t *testing.T) {
-	at := func(column int) *sourcevalue.Anchor { return &sourcevalue.Anchor{Path: "anet.c", Line: 158, Column: column} }
+	at := func(column int) *sourcevalue.Anchor {
+		return &sourcevalue.Anchor{Path: "anet.c", Line: 158, Column: column}
+	}
 	call := func(column int, origin *sourcevalue.Value) atlas.SymbolCall {
 		return atlas.SymbolCall{Name: "connect", Line: 158, Column: column, API: &atlas.CallAPI{Package: "socket.h", Name: "connect"},
 			SourceArguments: []atlas.SourceArgument{{Position: 2, Origin: origin}}}

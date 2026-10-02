@@ -13,9 +13,9 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gitfiles"
+	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/snapshot"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
 

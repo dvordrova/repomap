@@ -293,7 +293,7 @@ func TestADispatchSiteNamesTheOuterInputsReachingIt(t *testing.T) {
 		t.Fatalf("no dispatch site at call: %+v", g.index.Dispatch)
 	}
 	type outer struct {
-		input, registered string
+		input, registered  string
 		registering, edges []string
 	}
 	var got []outer
