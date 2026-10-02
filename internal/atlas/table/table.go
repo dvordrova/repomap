@@ -151,6 +151,11 @@ type Definition struct {
 	// keeps the probability of yes (ProbabilityCell) and none is refused as
 	// uncertain, because the owner orders rows instead of thresholding them.
 	Ranked bool
+	// Pack is the lossless compact form of a row whose categorizer question
+	// is over the envelope (FitClassifierWindows): the same row with every
+	// observation, written shorter. A row that fits is never packed, so its
+	// request keeps its bytes. Nil leaves such a row as built, refused.
+	Pack func(Row) Row
 }
 
 // ProbabilityCell names the cell holding a ranked column's probability of yes.
@@ -181,6 +186,10 @@ type Window struct {
 	Context []Field
 	Rows    []Row
 	Request []byte
+	// Refused is why preparation refused this window: its one row is over
+	// the categorizer's envelope even packed (FitClassifierWindows). It is
+	// never sent; its row stays unanswered with this reason recorded.
+	Refused string
 }
 
 // Windows packs rows into windows of the definition's budgets, keeping the

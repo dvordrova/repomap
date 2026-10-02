@@ -103,8 +103,8 @@ func TermDefinition() table.Definition {
 
 // termFields is the item of one name's question: the name and every prose
 // text that writes it, as written, each once and in row order. Nothing is
-// left out: FitClassifierWindows packs whole items, and an item larger than
-// one request goes alone for the provider to accept or refuse.
+// left out: FitClassifierWindows packs whole items, and an item over the
+// categorizer's envelope is refused before any request, never cut.
 func termFields(items []proseSource, name glossaryName) []table.Field {
 	written := []string{}
 	seen := make(map[string]bool)
@@ -155,7 +155,7 @@ func termBasis(c llm.Categorizer, def table.Definition, context, fields []table.
 // when no accepted answer reached it. Every decided or undecided answer is
 // remembered per name: a warm run asks nothing, and a name whose decision was
 // a near-tie is not asked again for a clearer draw.
-func decideNames(ctx context.Context, executor llm.Executor, c llm.Categorizer, items []proseSource, names []glossaryName, program string) ([]string, error) {
+func decideNames(ctx context.Context, executor llm.Executor, c llm.Categorizer, items []proseSource, names []glossaryName, program string, progress func(state, detail string)) ([]string, error) {
 	decisions := make([]string, len(names))
 	if len(names) == 0 {
 		return decisions, nil
@@ -220,18 +220,26 @@ func decideNames(ctx context.Context, executor llm.Executor, c llm.Categorizer, 
 	if windows, err = table.FitClassifierWindows(c, def, windows); err != nil {
 		return nil, err
 	}
-	calls := make([]llm.Call[termAnswers], len(windows))
-	for i, window := range windows {
+	calls := make([]llm.Call[termAnswers], 0, len(windows))
+	for _, window := range windows {
+		if window.Refused != "" {
+			// A name over the categorizer's envelope is never sent: it
+			// stays unanswered, and the run says why.
+			if progress != nil {
+				progress("refused", window.Refused)
+			}
+			continue
+		}
 		call, err := table.ClassifierCall(c, def, window)
 		if err != nil {
 			return nil, err
 		}
 		decode := call.DecodeValidate
-		calls[i] = llm.Call[termAnswers]{State: call.State, Prompt: call.Prompt, Limits: call.Limits,
+		calls = append(calls, llm.Call[termAnswers]{State: call.State, Prompt: call.Prompt, Limits: call.Limits,
 			DecodeValidate: func(raw []byte) (termAnswers, error) {
 				result, err := decode(raw)
 				return termAnswers{Result: result, window: window}, err
-			}}
+			}})
 	}
 	// The categorizer has its own rate limits and its own gate.
 	executor.BatchConcurrency, executor.BatchController = table.ClassifierConcurrency, &llm.BatchController{}
@@ -239,12 +247,12 @@ func decideNames(ctx context.Context, executor llm.Executor, c llm.Categorizer, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	for w, outcome := range outcomes {
+	for _, outcome := range outcomes {
 		if outcome.Err != nil {
 			// The window stays unanswered; the executor journaled the refusal.
 			continue
 		}
-		for j, row := range windows[w].Rows {
+		for j, row := range outcome.Outcome.Value.window.Rows {
 			i := byRow[row.ID]
 			switch {
 			case outcome.Outcome.Value.Answers[j] != nil:

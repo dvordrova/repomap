@@ -851,8 +851,15 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 		}
 		return answers, nil
 	}
-	calls := make([]llm.Call[table.Result], len(windows))
+	// A window preparation refused is never sent: asked holds each other
+	// window's call.
+	calls := make([]llm.Call[table.Result], 0, len(windows))
+	asked := make([]int, len(windows))
 	for i, window := range windows {
+		asked[i] = len(calls)
+		if window.Refused != "" {
+			continue
+		}
 		if classifier {
 			call, err := table.ClassifierCall(r.opts.Categorizer, def, window)
 			if err != nil {
@@ -868,14 +875,14 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 				}
 				return value, err
 			}
-			calls[i] = call
+			calls = append(calls, call)
 			continue
 		}
 		call, err := table.Call(def, window)
 		if err != nil {
 			return nil, err
 		}
-		calls[i] = llm.Call[table.Result]{
+		calls = append(calls, llm.Call[table.Result]{
 			State: call.State, Prompt: call.Prompt, Limits: call.Limits,
 			DecodeValidate: func(raw []byte) (table.Result, error) {
 				value, err := table.DecodeResult(def, window, raw)
@@ -889,7 +896,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 				}
 				return value, nil
 			},
-		}
+		})
 	}
 	executor := debugdump.BindStage(r.opts.Executor, def.Stage)
 	if classifier {
@@ -898,7 +905,30 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	}
 	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
 	for i, window := range windows {
-		result := results[i]
+		if window.Refused != "" {
+			// Its row would exceed the categorizer's envelope even packed
+			// and at the sparsest density: unanswered, journaled with what
+			// was measured and the envelope.
+			use.Rejected++
+			use.Given += len(window.Rows)
+			for j := range window.Rows {
+				answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
+			}
+			samples := make([]string, len(window.Rows))
+			for j, row := range window.Rows {
+				samples[j] = row.ID
+			}
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "over_envelope", Count: len(window.Rows), Reason: window.Refused, Samples: samples})
+			if err := r.writeWindowExchange(window, []byte(def.System), window.Request, nil, nil, true); err != nil {
+				return nil, err
+			}
+			if err := r.writeWindowResult(window, nil, atlas.SourceGiven, window.Refused); err != nil {
+				return nil, err
+			}
+			r.printWindow(def, window, nil, "refused: "+window.Refused, 0)
+			continue
+		}
+		result := results[asked[i]]
 		// The prompt and input follow the exchange: a window refused whole or
 		// in a row or cell keeps all its payloads in the run.
 		if err := r.writeWindowExchange(window, []byte(def.System), window.Request, result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0); err != nil {

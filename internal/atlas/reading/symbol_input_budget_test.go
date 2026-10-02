@@ -30,41 +30,72 @@ func (c *symbolQuestions) Complete(ctx context.Context, prepared llm.Prepared) (
 	return c.Categorizer.Complete(ctx, prepared)
 }
 
-func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T) {
+// Two of eight declarations are over the categorizer's envelope. Op3
+// registers 400 routes through one outside API, as casdoor's InitAPI does:
+// it is asked once, alone, in its packed form, and answered. Op4 holds 200
+// distinct observations that no packing shortens and cannot fit even at
+// the sparsest density: preparation refuses it with its measured size and
+// the envelope, and it is never sent. Every other row is asked byte for
+// byte as built, and a warm reading asks nothing.
+func TestSymbolsPackARowOverTheEnvelopeAndRefuseOneThatCannotFit(t *testing.T) {
 	graph := withSymbols(t, twoTargetGraph(t))
+	routerID := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 13, "Op"+itoa(3))
 	largeName := "Op" + itoa(4)
 	largeID := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 14, largeName)
-	var large atlas.Place
+	api := &atlas.CallAPI{Package: "github.com/beego/beego/v2/server/web", Name: "Router", Signature: "func(rootpath string, c web.ControllerInterface, mappingMethods ...string) *web.HttpServer"}
+	var router, large atlas.Place
 	for i := range graph.Places {
 		place := &graph.Places[i]
-		if place.ID != largeID {
-			continue
+		switch place.ID {
+		case routerID:
+			for j := range 400 {
+				place.Symbol.Calls = append(place.Symbol.Calls, atlas.SymbolCall{Kind: "invokes_external", Name: "web.Router", Line: 100 + j, API: api,
+					Values: []string{fmt.Sprintf("/api/get-thing-%d", j), fmt.Sprintf("GET:GetThing%d", j)}})
+				place.Symbol.Bindings = append(place.Symbol.Bindings, atlas.SymbolBinding{From: "Op3", To: "ApiController.Finish", Kind: "binds_implementation",
+					Detail: "parameter 2 -> github.com/beego/beego/v2/server/web.Router; interface github.com/beego/beego/v2/server/web.ControllerInterface method Finish func()",
+					Path:   place.Path, Line: 100 + j, Resolution: "exact"})
+			}
+			router = *place
+		case largeID:
+			// Distinct observations, not repeated text which the evidence
+			// catalogue or the packing could factor down.
+			for j := range 200 {
+				evidence := []atlas.EdgeEvidence{{Extractor: "interface_field_assignment", Path: "svc/core/c.go", LineNo: 100 + j,
+					Label: fmt.Sprintf("candidate %d: %s", j, strings.Repeat("source-distinct interface witness ", 16))}}
+				place.Symbol.Calls = append(place.Symbol.Calls, atlas.SymbolCall{
+					Name: fmt.Sprintf("Candidate%d.Compare", j), Line: 300 + j, Resolution: "alternatives", Evidence: evidence,
+				})
+				place.Symbol.Bindings = append(place.Symbol.Bindings, atlas.SymbolBinding{
+					From: largeName, To: fmt.Sprintf("Candidate%d.Compare", j), Path: place.Path, Line: 300 + j,
+					Resolution: "alternatives", Evidence: evidence,
+				})
+			}
+			large = *place
 		}
-		// These are distinct observations, not repeated text which the existing
-		// evidence catalogue could factor down below the packing target.
-		for j := 0; j < 160; j++ {
-			evidence := []atlas.EdgeEvidence{{Extractor: "interface_field_assignment", Path: "svc/core/c.go", LineNo: 100 + j,
-				Label: fmt.Sprintf("candidate %d: %s", j, strings.Repeat("source-distinct interface witness ", 16))}}
-			place.Symbol.Calls = append(place.Symbol.Calls, atlas.SymbolCall{
-				Name: fmt.Sprintf("Candidate%d.Compare", j), Line: 300 + j, Resolution: "alternatives", Evidence: evidence,
-			})
-			place.Symbol.Bindings = append(place.Symbol.Bindings, atlas.SymbolBinding{
-				From: largeName, To: fmt.Sprintf("Candidate%d.Compare", j), Path: place.Path, Line: 300 + j,
-				Resolution: "alternatives", Evidence: evidence,
-			})
-		}
-		large = *place
 	}
-	if large.ID == "" {
-		t.Fatal("missing large symbol fixture")
+	if router.ID == "" || large.ID == "" {
+		t.Fatal("missing large symbol fixtures")
 	}
 	def := table.ForClassifier(lines.SymbolSelection(false))
-	alone, err := table.ClassifierCall(closedDecisions(), def, table.Window{Rows: []table.Row{lines.SymbolRow(large, "File svc/core/c.go does things.")}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if size := len(alone.Prompt.User); size <= table.ClassifierBodyBytes || size >= llm.SemanticRecordByteLimit {
-		t.Fatalf("fixture must exceed the categorizer's body budget and fit the real request envelope: %d", size)
+	for _, fixture := range []struct {
+		place atlas.Place
+		over  int
+	}{{router, table.ClassifierQuestionBytes}, {large, table.ClassifierQuestionCeiling}} {
+		row := lines.SymbolRow(fixture.place, "File svc/core/c.go does things.")
+		alone, err := table.ClassifierCall(closedDecisions(), def, table.Window{Rows: []table.Row{row}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size := len(alone.Prompt.User); size <= fixture.over {
+			t.Fatalf("fixture %s must be over %d bytes: %d", fixture.place.ID, fixture.over, size)
+		}
+		packed, err := table.ClassifierCall(closedDecisions(), def, table.Window{Rows: []table.Row{lines.PackSymbolRow(row)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fits := len(packed.Prompt.User) <= table.ClassifierQuestionBytes; fits != (fixture.place.ID == routerID) {
+			t.Fatalf("fixture %s packed is %d bytes", fixture.place.ID, len(packed.Prompt.User))
+		}
 	}
 	before, err := json.Marshal(graph)
 	if err != nil {
@@ -75,10 +106,11 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 	questions := &symbolQuestions{Categorizer: closedDecisions()}
 	opts := twoTargetOptions(t, graph, provider)
 	opts.Categorizer, opts.Executor, opts.Through = questions, readOptions(t, graph, provider, cache).Executor, lines.StageSymbols
-	cold := readKnowledge(t, opts)
-	if len(questions.requests) < 2 {
-		t.Fatalf("the oversized symbol did not get a request of its own: %d requests", len(questions.requests))
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
 	}
+	cold := knowledgeIn(t, opts.OwnerRunDir)
 	byID := make(map[string]atlas.Place)
 	for _, place := range graph.Places {
 		byID[place.ID] = place
@@ -88,7 +120,7 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 		var request struct {
 			Questions map[string]struct {
 				Instructions struct {
-					Row map[string]any `json:"row"`
+					Row json.RawMessage `json:"row"`
 				} `json:"instructions"`
 			} `json:"questions"`
 		}
@@ -105,29 +137,56 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 			if !known || original.Symbol == nil {
 				t.Fatalf("question %s has no original declaration", key)
 			}
+			if id == largeID {
+				t.Fatal("a row that cannot fit was sent for the model to refuse")
+			}
+			row := lines.SymbolRow(original, cold[original.Parent].Cells["line"])
+			if id == routerID {
+				row = lines.PackSymbolRow(row)
+				if len(request.Questions) != 1 {
+					t.Fatal("the packed row shares its request with a neighbour")
+				}
+			}
 			fields := map[string]any{}
-			for _, field := range lines.SymbolRow(original, cold[original.Parent].Cells["line"]).Fields {
+			for _, field := range row.Fields {
 				fields[field.Name] = field.Value
 			}
-			encoded, _ := json.Marshal(fields)
-			var want map[string]any
-			if err := json.Unmarshal(encoded, &want); err != nil {
+			want, err := json.Marshal(fields)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(question.Instructions.Row, want) {
-				t.Fatal("categorizer execution trimmed or changed a source observation, association, or field")
+			if string(question.Instructions.Row) != string(want) {
+				t.Fatalf("categorizer request for %s is not the row as built (packed only over the envelope)", id)
 			}
-			if id == largeID && len(request.Questions) != 1 {
-				t.Fatal("oversized atomic symbol shares its request with a neighbour")
+			if id != routerID && strings.Contains(string(want), `"lines":[`) && strings.Contains(string(want), `"shared":{"api"`) {
+				t.Fatalf("a row that fits was packed: %s", id)
 			}
 		}
 		if len(request.Questions) > 1 && len(raw) > table.ClassifierBodyBytes {
 			t.Fatal("ordinary neighbours stopped respecting the body budget")
 		}
 	}
-	if len(seen) != 8 || cold["selection:"+largeID].Cells["key_symbol"] == "" || cold["selection:"+largeID].Source != atlas.SourceModel {
-		t.Fatalf("not every declaration received an accepted interpretation: %d symbols, large source %q", len(seen), cold["selection:"+largeID].Source)
+	if len(seen) != 7 || cold["selection:"+routerID].Cells["key_symbol"] == "" || cold["selection:"+routerID].Source != atlas.SourceModel {
+		t.Fatalf("every declaration that fits, packed or not, must be answered: %d asked, packed row source %q", len(seen), cold["selection:"+routerID].Source)
 	}
+	if _, answered := cold["selection:"+largeID]; answered {
+		t.Fatal("a refused row has an answer")
+	}
+	refused := 0
+	for _, row := range result.Rejected {
+		if row.Kind != "over_envelope" {
+			continue
+		}
+		refused++
+		if row.Stage != lines.StageSymbols || len(row.Samples) != 1 || row.Samples[0] != largeID ||
+			!strings.Contains(row.Reason, "was not sent: even packed") || !strings.Contains(row.Reason, fmt.Sprintf("over Jev's envelope of %d and %d", table.ClassifierQuestionTokens, table.ClassifierRequestTokens)) {
+			t.Fatalf("refusal does not record the row, its measured size and the envelope: %+v", row)
+		}
+	}
+	if refused != 1 {
+		t.Fatalf("refusals at preparation: %d, want 1: %+v", refused, result.Rejected)
+	}
+
 	warmProvider := &tableProvider{}
 	warmOpts := readOptions(t, graph, warmProvider, cache)
 	warmOpts.Targets, warmOpts.Through = opts.Targets, lines.StageSymbols

@@ -211,6 +211,77 @@ func TestFitClassifierWindowsHalvesOversizedBodiesAndKeepsRows(t *testing.T) {
 	}
 }
 
+// The envelope decides per row. A row whose question may exceed it is
+// packed in its place, and its neighbours keep their bytes and window; a
+// row still over the bound packed goes alone in its place, so a refusal by
+// the model cannot take its neighbours' answers; a row that would exceed
+// the envelope even at the sparsest density is refused unsent with what
+// was measured. Without a packed form a row over the bound is asked alone
+// as built, for the model to decide as before.
+func TestFitClassifierWindowsPacksInPlaceAndRefusesOnlyWhatCannotFit(t *testing.T) {
+	jev := &typesafe.Client{}
+	field := func(id string, bytes int) Row {
+		return Row{ID: id, Fields: []Field{{Name: "name", Value: id}, {Name: "uses", Value: strings.Repeat("u", bytes)}}}
+	}
+	def := closedDefinition()
+	def.Pack = func(row Row) Row {
+		// A lossless form a quarter the size, recognisable in the request;
+		// "mid" has nothing to pack.
+		if row.ID == "mid" {
+			return row
+		}
+		return Row{ID: row.ID, Fields: []Field{{Name: "name", Value: row.ID}, {Name: "packed", Value: strings.Repeat("p", len(row.Fields[1].Value.(string))/4)}}}
+	}
+	window := Window{Context: closedWindow().Context, Rows: []Row{
+		field("s1", 100), field("big", ClassifierQuestionBytes+1000), field("s2", 100),
+		field("mid", ClassifierQuestionBytes*3/2), field("huge", ClassifierQuestionCeiling*5), field("s3", 100),
+	}}
+	shape := func(fitted []Window) ([]string, []string, []string) {
+		var windows, order, refused []string
+		for _, piece := range fitted {
+			var ids []string
+			for _, row := range piece.Rows {
+				ids = append(ids, row.ID)
+			}
+			order = append(order, ids...)
+			windows = append(windows, strings.Join(ids, ","))
+			if piece.Refused != "" {
+				refused = append(refused, piece.Refused)
+			}
+		}
+		return windows, order, refused
+	}
+	fitted, err := FitClassifierWindows(jev, def, []Window{window})
+	if err != nil {
+		t.Fatal(err)
+	}
+	windows, order, refused := shape(fitted)
+	if !slices.Equal(order, []string{"s1", "big", "s2", "mid", "huge", "s3"}) || !slices.Equal(windows, []string{"s1,big,s2", "mid", "huge", "s3"}) {
+		t.Fatalf("windows %v: rows keep their order, and only a row still over the bound leaves its window", windows)
+	}
+	if len(refused) != 1 || fitted[2].Refused == "" || !strings.Contains(refused[0], "row huge was not sent: even packed") ||
+		!strings.Contains(refused[0], fmt.Sprintf("over Jev's envelope of %d and %d", ClassifierQuestionTokens, ClassifierRequestTokens)) {
+		t.Fatalf("refusals %q", refused)
+	}
+	first := fitted[0]
+	if first.Rows[1].Fields[1].Name != "packed" || first.Rows[0].Fields[1].Name != "uses" || first.Rows[2].Fields[1].Name != "uses" {
+		t.Fatal("only the row over the bound is packed, in its place")
+	}
+	if !strings.Contains(string(first.Request), `"packed"`) {
+		t.Fatal("the packed window's request was not rebuilt")
+	}
+
+	def.Pack = nil
+	fitted, err = FitClassifierWindows(jev, def, []Window{window})
+	if err != nil {
+		t.Fatal(err)
+	}
+	windows, _, refused = shape(fitted)
+	if !slices.Equal(windows, []string{"s1", "big", "s2", "mid", "huge", "s3"}) || len(refused) != 1 || !strings.Contains(refused[0], "row huge was not sent: as built") {
+		t.Fatalf("without a packed form: windows %v, refusals %q", windows, refused)
+	}
+}
+
 // A column that reads its options and their criteria from a catalogue of
 // objects sends each option under its title with that entry's text as its
 // criteria, and the catalogue itself only that way: the shared context

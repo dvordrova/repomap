@@ -9,12 +9,15 @@ archive](../archive/2026-09-10/README.md).
 ## Selection and captions
 
 Symbol selection asks each candidate one `key_symbol` yes/no, independently of
-directory/file closure; no column selects a call. Symbols and Types describe
-only the selected keys the per-file/per-box overview displays. Selection and
-caption keep separate exact-input memos and knowledge records; refused prose
-cannot erase accepted roles or Learn evidence. GroupsIndex projects those
-fields even without a caption; operations never need a symbol description or
-key selection to reach the report.
+directory/file closure; no column selects a call. A candidate whose row may
+exceed Jev's envelope is asked in its lossless packed form, and one that
+cannot fit even packed is refused unsent ([Execution](EXECUTION.md)).
+Symbols and Types describe only the selected keys the per-file/per-box
+overview displays. Selection and caption keep separate exact-input memos and
+knowledge records; refused prose cannot erase accepted roles or Learn
+evidence. GroupsIndex projects those fields even without a caption;
+operations never need a symbol description or key selection to reach the
+report.
 
 - The atlas (`internal/atlas`) is the model path. `places` builds
   `places.json` from the program indexes, claims, facts and corpus: every

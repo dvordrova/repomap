@@ -29,6 +29,8 @@ func SymbolSelection(types bool) table.Definition {
 		return def
 	}
 	// Symbol rows carry calls; their prompt defines every rendered value.
+	// A row over the categorizer's envelope is asked packed.
 	def.System = withVocabulary(symbolSelectionPrompt)
+	def.Pack = PackSymbolRow
 	return def
 }

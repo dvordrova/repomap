@@ -286,6 +286,31 @@ The display-translation cube behind `--lang`
   and `row`), request packing, concurrency and the one-token output limit
   stay with the table code and are sized for Jev. Another implementation
   would take over those Jev-specific limits when it exists.
+- Jev's envelope is 64k tokens a request and 32k for the state with any one
+  question; over either it refuses the request (HTTP 400
+  `max_tokens_exceeded`). Its tokenizer is not ours, so preparation measures
+  each row's question with the state in request bytes at the densities Jev
+  counted in the requests it answered: the densest 0.471 tokens a byte
+  (15,521 saved requests, median 0.270) and the sparsest of 20 KB or more
+  0.233 (a fit on character classes still erred by a quarter). A row over
+  67,940 bytes, the 32k at the densest, or whose questions alone exceed the
+  120,000-byte body, is asked in its table's lossless packed form
+  (`Definition.Pack`), in its place; every other row and window keeps its
+  bytes and cache key. Only key-declaration rows have one: bindings that
+  differ only in their line are one row listing every line, ascending,
+  repeated for each binding on it; the calls of one callee (kind, name and
+  `api`) are one table in place of its first call, with what they share
+  once and a row per call (null where a call has no such field). Each packed
+  field carries its own note, so no prompt changes. A row still over the
+  bound goes alone in its place, so a refusal by Jev cannot take its
+  neighbours' answers. Alone, a row that would exceed the envelope even at
+  the sparsest density (137,339 bytes of state and question, 274,678 of
+  request) is refused at preparation (`Window.Refused`): never cut, never
+  sent, journaled as `over_envelope` with its measured bytes, the density
+  and the envelope. Between the two bounds Jev decides, as it answered
+  single 110 KB questions at 0.263 tokens a byte, and its own refusal leaves
+  the row unanswered as before. Casdoor's InitAPI, 322 route registrations
+  in 150,741 bytes that Jev refused, packs to about 26,000.
 - A Jev request follows the owner's shape (2026-09-26: a flaky decision
   means it was explained poorly): `state.task` says what we want, each
   question holds its item under the name the question uses (`row` unless a

@@ -342,7 +342,13 @@ func readKnowledge(t *testing.T, opts Options) map[string]Knowledge {
 	if _, err := Read(t.Context(), opts); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, KnowledgeFilename))
+	return knowledgeIn(t, opts.OwnerRunDir)
+}
+
+// knowledgeIn is the knowledge a reading saved in its run directory.
+func knowledgeIn(t *testing.T, runDir string) map[string]Knowledge {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(runDir, KnowledgeFilename))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,47 +59,189 @@ func Closed(def Definition) bool {
 	return true
 }
 
-// ClassifierBodyBytes bounds one decision-model request body: at about 0.38
-// tokens a byte it stays well inside the model's 64k-token request. Byte
-// packing measures the text-model request, which lacks each question's
-// options; 150 questions naming 18 part titles each exceeded the budget.
+// ClassifierBodyBytes bounds one decision-model request body: at the
+// densest tokens a byte Jev has counted (ClassifierDensestTokensPerByte) it
+// stays inside the model's 64k-token request. Byte packing measures the
+// text-model request, which lacks each question's options; 150 questions
+// naming 18 part titles each exceeded the budget.
 const ClassifierBodyBytes = 120_000
 
-// FitClassifierWindows halves any window whose categorizer body exceeds
-// ClassifierBodyBytes until it fits or holds one row; nothing is dropped.
+// ClassifierRequestTokens and ClassifierQuestionTokens are Jev's envelope:
+// 64k tokens a request, and 32k for the shared state with any one question,
+// which it reads with the state. Over either it refuses the request (HTTP
+// 400 max_tokens_exceeded): casdoor's InitAPI, one question of 150,741 bytes
+// beside a 5,502-byte state, was refused so.
+const (
+	ClassifierRequestTokens  = 64_000
+	ClassifierQuestionTokens = 32_000
+)
+
+// Jev's tokenizer is not ours, so a request is measured in bytes at the
+// densities Jev counted in the requests it answered: the densest of 15,521
+// saved requests held 0.471 tokens a byte (median 0.270), and the sparsest
+// of those of 20 KB or more 0.233, glossary prose. It answered single
+// questions of 110 KB at 0.263. A fit on character classes still erred by
+// a quarter either way, so no estimate is closer than these two.
+const (
+	ClassifierDensestTokensPerByte  = 0.471
+	ClassifierSparsestTokensPerByte = 0.233
+)
+
+// ClassifierQuestionBytes is where a question with the state may exceed
+// ClassifierQuestionTokens, at the densest: a row over it is asked in its
+// lossless packed form (Definition.Pack), and alone. ClassifierQuestionCeiling
+// and ClassifierBodyCeiling are where a request would exceed the envelope
+// even at the sparsest: a row over either, packed, is refused unsent.
+// Between them Jev decides, as it did for those 110 KB questions, and a
+// refusal of its own leaves the row unanswered as before.
+const (
+	ClassifierQuestionBytes   = 67_940  // 32,000 / 0.471
+	ClassifierQuestionCeiling = 137_339 // 32,000 / 0.233
+	ClassifierBodyCeiling     = 274_678 // 64,000 / 0.233
+)
+
+// FitClassifierWindows fits every window to the categorizer's envelope.
+// Each row whose question with the state exceeds ClassifierQuestionBytes,
+// or whose questions alone exceed ClassifierBodyBytes, first takes the
+// definition's lossless packed form in its place; every other row keeps its
+// bytes. A row still over ClassifierQuestionBytes goes alone, in its place
+// in row order: Jev may refuse its request, and that must not take its
+// neighbours' answers. Alone, a row that would exceed the envelope even at
+// the sparsest density (ClassifierQuestionCeiling, ClassifierBodyCeiling)
+// is refused here (Window.Refused) with what was measured: never cut and
+// never sent. A window whose body exceeds ClassifierBodyBytes is then
+// halved until it fits or holds one row; nothing is dropped.
 func FitClassifierWindows(c llm.Categorizer, def Definition, windows []Window) ([]Window, error) {
 	var fitted []Window
+	packed := make(map[string]bool)
+	piece := func(window Window, rows []Row) (Window, error) {
+		window.Rows = rows
+		request, err := Request(def, window)
+		window.Request = request
+		return window, err
+	}
 	var fit func(Window) error
 	fit = func(window Window) error {
-		call, err := ClassifierCall(c, def, window)
+		size, err := measureClassifier(c, def, window)
 		if err != nil {
 			return err
 		}
-		if len(call.Prompt.User) <= ClassifierBodyBytes || len(window.Rows) < 2 {
+		var parts [][]Row
+		switch {
+		case len(window.Rows) == 1 && (size.question > ClassifierQuestionCeiling || size.body > ClassifierBodyCeiling):
+			window.Refused = refusal(window.Rows[0], packed[window.Rows[0].ID], size)
+		case len(window.Rows) > 1 && size.question > ClassifierQuestionBytes:
+			// Each row that may exceed the envelope goes alone; the rows
+			// between keep their order in windows of their own.
+			start := 0
+			for i, row := range window.Rows {
+				if size.rows[i] <= ClassifierQuestionBytes {
+					continue
+				}
+				if start < i {
+					parts = append(parts, window.Rows[start:i])
+				}
+				parts = append(parts, []Row{row})
+				start = i + 1
+			}
+			if start < len(window.Rows) {
+				parts = append(parts, window.Rows[start:])
+			}
+		case size.body > ClassifierBodyBytes && len(window.Rows) > 1:
+			half := len(window.Rows) / 2
+			parts = [][]Row{window.Rows[:half], window.Rows[half:]}
+		}
+		if parts == nil {
 			fitted = append(fitted, window)
 			return nil
 		}
-		half := len(window.Rows) / 2
-		for _, rows := range [][]Row{window.Rows[:half], window.Rows[half:]} {
-			piece := window
-			piece.Rows = append([]Row(nil), rows...)
-			request, err := Request(def, piece)
+		for _, rows := range parts {
+			next, err := piece(window, slices.Clone(rows))
 			if err != nil {
 				return err
 			}
-			piece.Request = request
-			if err := fit(piece); err != nil {
+			if err := fit(next); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	for _, window := range windows {
+		if def.Pack != nil {
+			size, err := measureClassifier(c, def, window)
+			if err != nil {
+				return nil, err
+			}
+			var rows []Row
+			for i, row := range window.Rows {
+				if size.rows[i] <= ClassifierQuestionBytes && size.bodies[i] <= ClassifierBodyBytes {
+					continue
+				}
+				if rows == nil {
+					rows = slices.Clone(window.Rows)
+				}
+				rows[i], packed[row.ID] = def.Pack(row), true
+			}
+			if rows != nil {
+				if window, err = piece(window, rows); err != nil {
+					return nil, err
+				}
+			}
+		}
 		if err := fit(window); err != nil {
 			return nil, err
 		}
 	}
 	return fitted, nil
+}
+
+// classifierSize is a categorizer request as Jev bounds it: the whole body,
+// the state with the longest question, and each row's state with its own
+// longest question and with all its questions.
+type classifierSize struct {
+	body, question int
+	rows, bodies   []int
+}
+
+// measureClassifier measures a window's categorizer request in the bytes
+// the categorizer writes: every question with its item, ask and options,
+// beside the state.
+func measureClassifier(c llm.Categorizer, def Definition, window Window) (classifierSize, error) {
+	call, err := ClassifierCall(c, def, window)
+	if err != nil {
+		return classifierSize{}, err
+	}
+	var body struct {
+		State     json.RawMessage            `json:"state"`
+		Questions map[string]json.RawMessage `json:"questions"`
+	}
+	if err := json.Unmarshal([]byte(call.Prompt.User), &body); err != nil {
+		return classifierSize{}, fmt.Errorf("table %s: categorizer body: %w", def.Stage, err)
+	}
+	size := classifierSize{body: len(call.Prompt.User), rows: make([]int, len(window.Rows)), bodies: make([]int, len(window.Rows))}
+	for i, row := range window.Rows {
+		longest, all := 0, 0
+		for _, column := range def.Columns {
+			question := len(body.Questions[questionKey(row, column)])
+			longest, all = max(longest, question), all+question
+		}
+		size.rows[i], size.bodies[i] = len(body.State)+longest, len(body.State)+all
+		size.question = max(size.question, size.rows[i])
+	}
+	return size, nil
+}
+
+// refusal says why a row was not sent: what it measured, and what that
+// would count even at the sparsest density Jev has counted.
+func refusal(row Row, packed bool, size classifierSize) string {
+	form := "as built"
+	if packed {
+		form = "even packed"
+	}
+	return fmt.Sprintf("row %s was not sent: %s, its state with its longest question is %d bytes and its request %d bytes, which even at the sparsest density Jev has counted (%.3f tokens a byte) would be %d and %d tokens, over Jev's envelope of %d and %d",
+		row.ID, form, size.question, size.body, ClassifierSparsestTokensPerByte,
+		int(float64(size.question)*ClassifierSparsestTokensPerByte), int(float64(size.body)*ClassifierSparsestTokensPerByte),
+		ClassifierQuestionTokens, ClassifierRequestTokens)
 }
 
 // ForClassifier packs a closed table for a decision model.

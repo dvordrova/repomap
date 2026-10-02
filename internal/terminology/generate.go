@@ -127,7 +127,7 @@ func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provide
 		return err
 	}
 	names := gatherNames(items, found)
-	decisions, err := decideNames(ctx, executor, categorizer, items, names, program)
+	decisions, err := decideNames(ctx, executor, categorizer, items, names, program, c.progress)
 	if err != nil {
 		return err
 	}
