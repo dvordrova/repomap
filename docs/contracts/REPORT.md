@@ -1251,6 +1251,12 @@ post-layout edits are deleted.
     an outside system served by another program's input (connects_to)
     counting as its caller's runtime pair to the served program;
     `relations` the relation indexes it stands for.
+  - `reaching[nodeID]`: `[inputID]` in the page's order, for every part
+    and outside system some input reaches: a relation listing the input
+    among its `operations` starts or ends at the part, or at the system or
+    one of its call records. No entry when no input reaches it. It is the
+    column's "Inputs reaching" of a part or a system (format 96), which had
+    run the projection's selection over every input on each card open.
   An input the scene does not name is of a kind not established and takes
   effect nowhere; an edge between two programs no saved pair names is not
   drawn on the whole map. From these `buildModel` keeps the grouping it draws: inputs by kind
@@ -1778,7 +1784,7 @@ manifest and the files the JSON names in the run's own target directories:
 the owner run directory and the target run directories beside it named by its
 `program-page-portfolio.json`.
 The common JSON contains the exact selected ProgramIndexes, not a copied
-presentation graph. It is compact JSON (format 95) and writes each
+presentation graph. It is compact JSON (format 96) and writes each
 ProgramIndex in its `program-index.json` encoding. A section byte for byte
 equal to a file of those directories (the owner's `program-index.json`,
 `facts.json`, `claims.json`, `orientation.json`, `glossary.json`; another

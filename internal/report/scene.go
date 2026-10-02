@@ -25,6 +25,11 @@ type SceneFacts struct {
 	// ProgramPairs is one record per directed pair of programs a relation
 	// joins.
 	ProgramPairs []SceneProgramPair `json:"program_pairs"`
+	// Reaching is, by part and outside system, the inputs whose saved path
+	// reaches it, in the page's order: a relation listing the input among
+	// its operations starts or ends at the part, or at the system or one of
+	// its call records. No entry when no input reaches it.
+	Reaching map[string][]string `json:"reaching"`
 }
 
 // SceneInput is where an input takes effect: its handler's part (Handled),
@@ -142,7 +147,7 @@ func sceneSourceOf(key string) *SceneSource {
 // what each record is, the relations folded per pair of drawn things, a call
 // tile standing for its system.
 func sceneOf(view *pageMap, source func(key string) *SceneSource) *SceneFacts {
-	scene := &SceneFacts{Inputs: map[string]SceneInput{}, Systems: map[string]SceneSystem{}, Calls: map[string][]SceneCall{}, ProgramPairs: []SceneProgramPair{}}
+	scene := &SceneFacts{Inputs: map[string]SceneInput{}, Systems: map[string]SceneSystem{}, Calls: map[string][]SceneCall{}, ProgramPairs: []SceneProgramPair{}, Reaching: map[string][]string{}}
 	if view == nil {
 		return scene
 	}
@@ -455,6 +460,43 @@ func sceneOf(view *pageMap, source func(key string) *SceneSource) *SceneFacts {
 			add(from, target, edge, runtime)
 		}
 	}
+
+	// The inputs reaching each part and outside system along their saved
+	// paths: the relations listing an input among their operations.
+	standsFor := map[string][]string{}
+	for _, record := range records {
+		switch kind[record.ID] {
+		case "part":
+			standsFor[record.ID] = append(standsFor[record.ID], record.ID)
+		case "system":
+			standsFor[record.ID] = append(standsFor[record.ID], record.ID)
+			for _, id := range strings.Fields(record.Children) {
+				if byID[id] != nil && !slices.Contains(standsFor[id], record.ID) {
+					standsFor[id] = append(standsFor[id], record.ID)
+				}
+			}
+		}
+	}
+	paths := map[string][]int{}
+	for i, relation := range view.Edges {
+		for _, input := range strings.Fields(relation.Operations) {
+			paths[input] = append(paths[input], i)
+		}
+	}
+	for _, record := range records {
+		if record.Activation == "" {
+			continue
+		}
+		for _, i := range paths[record.ID] {
+			for _, end := range []string{view.Edges[i].From, view.Edges[i].To} {
+				for _, reached := range standsFor[end] {
+					if inputs := scene.Reaching[reached]; len(inputs) == 0 || inputs[len(inputs)-1] != record.ID {
+						scene.Reaching[reached] = append(inputs, record.ID)
+					}
+				}
+			}
+		}
+	}
 	return scene
 }
 
@@ -494,6 +536,7 @@ type scenePage struct {
 	Systems      map[string]SceneSystem `json:"systems"`
 	Calls        map[string][]SceneCall `json:"calls"`
 	ProgramPairs []SceneProgramPair     `json:"programPairs"`
+	Reaching     map[string][]string    `json:"reaching"`
 }
 
 // sceneJSON writes the saved scene for the page as it was saved; empty when

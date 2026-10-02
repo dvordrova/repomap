@@ -20,7 +20,8 @@ import (
 // takes it in, else in its program; a call tile stands for its system; a
 // part reaching another program's input, and a call through an outside
 // system another program's input serves, are runtime pairs of programs; a
-// code use alone is not.
+// code use alone is not. An input reaches the parts and systems its saved
+// path's relations start or end at.
 func TestTheSceneSaysWhereEachInputTakesEffectAndWhoCallsEachSystem(t *testing.T) {
 	handler := pageAnchor{Path: "api/routes.go", Line: 10, Open: sceneKey("api/routes.go", 10, 6)}
 	view := &pageMap{Nodes: []pageMapNode{
@@ -43,12 +44,12 @@ func TestTheSceneSaysWhereEachInputTakesEffectAndWhoCallsEachSystem(t *testing.T
 		{ID: "system-t1-out-b2-destination", Owner: "t1", Branch: "communication", ItemKind: "External communication", Children: "system-t1-out-b2", DestinationKind: "queue_producer"},
 		{ID: "system-outside-t1", Owner: "t1", Branch: "outside", ItemKind: "External communication", Children: "system-t1-out-b1-destination system-t1-out-b2-destination"},
 	}, Edges: []pageMapEdge{
-		/* 0 */ {From: "t1-o2", To: "n-t1-g2", Scope: "operation", Label: "declared in"},
-		/* 1 */ {From: "t1-o3", To: "n-t1-g2", Scope: "operation", Label: "loop calls tick", FromSource: pageAnchor{Href: "x"}},
-		/* 2 */ {From: "n-t1-g1", To: "system-t1-out-b1", Scope: "structure", Label: "Database",
+		/* 0 */ {From: "t1-o2", To: "n-t1-g2", Scope: "operation", Label: "declared in", Operations: "t1-o2"},
+		/* 1 */ {From: "t1-o3", To: "n-t1-g2", Scope: "operation", Label: "loop calls tick", FromSource: pageAnchor{Href: "x"}, Operations: "t1-o3 t1-o1"},
+		/* 2 */ {From: "n-t1-g1", To: "system-t1-out-b1", Scope: "structure", Label: "Database", Operations: "t1-o1",
 			Calls: []pageEdgeCall{{Label: "save calls Exec", Caller: sceneKey("store/db.go", 3, 1)}, {Label: "load calls Query", Caller: sceneKey("store/db.go", 9, 1)}}},
 		/* 3 */ {From: "n-t1-g2", To: "system-t1-out-b2", Scope: "structure", Label: "Queue"},
-		/* 4 */ {From: "system-t1-out-b2-destination", To: "t2-o1", Scope: "structure", Label: "connects_to"},
+		/* 4 */ {From: "system-t1-out-b2-destination", To: "t2-o1", Scope: "structure", Label: "connects_to", Operations: "t2-o1"},
 		/* 5 */ {From: "n-t2-g1", To: "n-t1-g1", Scope: "structure", Label: "imports"},
 		/* 6 */ {From: "t2-o1", To: "n-t2-g1", Scope: "operation", Label: "implemented in"},
 		/* 7 */ {From: "n-t1-g1", To: "system-t1-out-b1", Scope: "structure", Label: "Database", Possible: true},
@@ -76,6 +77,15 @@ func TestTheSceneSaysWhereEachInputTakesEffectAndWhoCallsEachSystem(t *testing.T
 		ProgramPairs: []SceneProgramPair{
 			{From: program1, To: program2, Runtime: true, Relations: []int{4}},
 			{From: program2, To: program1, Runtime: false, Relations: []int{5}},
+		},
+		// In the page's order, whatever order a relation lists them in; a
+		// system by its call record or itself; an input's own end is no
+		// part.
+		Reaching: map[string][]string{
+			"n-t1-g1":                      {"t1-o1"},
+			"n-t1-g2":                      {"t1-o1", "t1-o2", "t1-o3"},
+			"system-t1-out-b1-destination": {"t1-o1"},
+			"system-t1-out-b2-destination": {"t2-o1"},
 		},
 	}
 	if !reflect.DeepEqual(got, want) {

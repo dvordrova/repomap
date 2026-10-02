@@ -1,5 +1,18 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The inputs reaching each part and system are saved (data 2)
+
+- report.json 96 saves `scene.reaching` (`#rm-scene` `reaching`): by part
+  and outside system, the inputs, in the page's order, a relation listing
+  them among its `operations` starts or ends at (a system by itself or
+  its call records). It replaces 29-operation-view.js's `reaching`, which
+  ran the projection's selection over every input on each card open.
+  Against that derivation (c5f6163b's `rmSystemProjection`, on the
+  rendered page) it is identical on every part and system: redis
+  20261002-000954 (34; 22 reached, 1,111 input–node pairs), litestream
+  20261002-001004 (33; 28, 427), casdoor 20261002-001022 (143; 55,
+  1,437). Page cost 11 / 5 / 16 KB.
+
 ## 2026-10-01 — Canvas invariant harness and the S0 tables (old path, ?scene=1)
 
 - **Harness** (`visual/invariants.mjs`, `invariants.spec.mjs`,
