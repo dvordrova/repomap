@@ -112,12 +112,17 @@ func TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere(t *testin
 		168: "callAfterCompound ->  unresolved  | acceptClient stored in handler@166",
 		// A factory's result is no plain function: the call of the constant stays.
 		173: "callFactory -> callFactory.handler exact ",
-		// A callback is such a closure, an array's too, though map runs it
-		// before the later store: the limit JSTS.md records.
+		// A closure handed to a call takes the stores that reach that call;
+		// a later store is a witness, and with none before, it stays open.
 		182: "callInMapOfConstant -> acceptClient exact ",
-		187: "callInMapBeforeStore -> acceptClient exact ",
+		187: "callInMapBeforeStore ->  unresolved  | acceptClient stored in handler@188",
+		193: "callInTimerBeforeStore ->  unresolved  | acceptClient stored in handler@194",
+		// A constant declared after the call a callback is handed to (a
+		// React effect's handler) is no store before it either.
+		198: "callInTimerBeforeConstant ->  unresolved  | acceptClient stored in handler@199",
+		204: "callInMapBetweenStores -> flushReplies exact  | acceptClient stored in handler@205",
 		// A store of no plain function leaves a closure's call open.
-		194: "callFromClosureOverFactory.returned_handler ->  unresolved  | acceptClient stored in handler@192",
+		211: "callFromClosureOverFactory.returned_handler ->  unresolved  | acceptClient stored in handler@209",
 	}
 	for _, relation := range index.Relations {
 		line := lineOrZero(relation.Location)

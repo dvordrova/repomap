@@ -391,10 +391,19 @@ function value (PYTHON, GO).
   - It is also a loop's body, a `try` or `catch` block, a `switch`'s cases,
     a labeled block a `break` may leave, what follows `?.`, or a default
     value.
-- **A call in another function or file.** This covers a closure, a callback
-  and an importer. Such a call runs at a time the index does not know, so
-  any store may be what it finds, as in Python. `callFromClosure`'s returned
-  arrow calls `acceptClient` or `flushReplies`.
+- **A call in another function or file.**
+  - A closure that is stored, returned or registered, and an importer, run
+    later, so any store may be what they find, as in Python.
+    `callFromClosure`'s returned arrow calls `acceptClient` or
+    `flushReplies`.
+  - A closure handed to a call as its argument runs at a time the index does
+    not know: an array's `map` runs it at once, a timer later. Only the
+    stores that reach the call it is handed to are its targets, as the
+    reviewer's rule for Python's comprehensions has it. A store after that
+    call is a witness only, and with no store before it the call stays open,
+    never exact. `callInMapBetweenStores` calls `flushReplies`, with
+    `acceptClient` as its witness; `callInMapBeforeStore` and
+    `callInTimerBeforeStore` stay open.
 - **Values.** A store's value is followed when it is:
   - a function declaration or a method with a body;
   - for `new`, a class's declared constructor;
@@ -423,8 +432,9 @@ function value (PYTHON, GO).
 
 The fixture's `callConstant`, `callChosenLet`, `callTypedLet`,
 `callOverwritten`, `callInLoop`, `callFromClosure`, `callAfterCompound`,
-`callFactory`, `callInMapOfConstant`, `callInMapBeforeStore` and
-`callFromClosureOverFactory` hold each case
+`callFactory`, `callInMapOfConstant`, `callInMapBeforeStore`,
+`callInTimerBeforeStore`, `callInTimerBeforeConstant`,
+`callInMapBetweenStores` and `callFromClosureOverFactory` hold each case
 (`TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere`).
 
 Missing equivalents, recorded rather than fabricated:
@@ -465,13 +475,18 @@ Missing equivalents, recorded rather than fabricated:
   (`this.onRead = getCommand`) is only a value read of that function. A call
   through a property is never resolved from its stores. The C adapter makes
   one store exact and several stores alternatives.
-- A callback an array's method runs at once (`items.map(() => handler())`)
-  is a closure of unknown timing like any other. Telling `map` from
-  `setTimeout` would take a list of method names, which the index does not
-  keep, so the callback may find any store of the variable, even one written
-  after the `map` call: `callInMapBeforeStore`'s callback calls
-  `acceptClient`, though it is stored only after `map` has run the callback.
-  Python knows its comprehensions by syntax (PYTHON, Handler tables).
+- A callback's timing is not known: telling `map` from `setTimeout` would
+  take a list of method names, which the index does not keep. A callback
+  therefore never takes a store written after the call it is handed to,
+  though a timer may well find it there: `callInTimerBeforeStore`'s callback
+  stays open with `acceptClient` as its witness, and so does
+  `callInTimerBeforeConstant`'s, whose constant is declared after the timer
+  call. React's `useEffect(() => load())` written before `const load = ...`
+  is that case: the effect runs after render, but the index cannot know it,
+  so the call stays open with `load` its witness (casdoor's web has nine:
+  `CaptchaModal`'s `loadCaptcha`, `handleCancel` and `handleOk`, and six
+  more). Python tells its eager comprehensions by syntax (PYTHON, Handler
+  tables).
 - No unresolved call through a property names the functions its stores could
   put there, so no such call draws the possible arrows the C, Go and Python
   witnesses draw; an open call through a variable names its stores.

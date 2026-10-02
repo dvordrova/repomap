@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A JS/TS callback takes only the stores that reach the call it is handed to (lead)
+
+- **Ruling (coordinator, reversing part of 715c385c):** `callInMapBeforeStore` had become an exact call of `acceptClient`, the false exact of the Python eager bug. A store that may come after the call never becomes its target, and unknown stays unknown.
+- **Change:** a closure handed to a call as its argument takes only the stores that reach that receiving call, ordered as in Python.
+  - A later store is a witness only.
+  - With no store before, the call stays open with its witnesses, never exact.
+  - A closure that is stored, returned or registered, and an importer, still find any store (`callFromClosure`).
+- **Fixture** (`stored-callbacks.ts`):
+  - `callInMapBeforeStore`, the new `callInTimerBeforeStore` (setTimeout) and the new `callInTimerBeforeConstant` stay open, with `acceptClient` as witness.
+  - New: `callInMapBetweenStores` is exact `flushReplies`, with `acceptClient` as witness.
+  - `callInMapOfConstant` stays exact.
+- **casdoor web** (`--no-model --target jsts:web/package.json`, against the binary from before e2b5a25b):
+  - 9 of 27,458 relations change, each exact → unresolved, the function kept as a `function_value_store` witness.
+  - All nine are React effects calling a `const` handler declared after the `useEffect` call:
+    - `CaptchaModal` → loadCaptcha, handleCancel, handleOk;
+    - `FaceRecognitionCommonModal` and `FaceRecognitionModal` → handleCameraError;
+    - `EnableMfaNotification` → openRequiredEnableNotification, openPromptEnableNotification;
+    - `CountryCodeSelect` → handleOnChange;
+    - `OrganizationSelect` → getOrganizations.
+  - The effect runs after render, so these calls were right. But the index cannot tell `useEffect` from `map` without method names, which is the honest limit recorded in JSTS.md.
+- **Checks:** jstsproject (246 s under load) and the JS contract tests are green.
+
 ## 2026-10-03 — A JS/TS closure sees every store of its variable (lead)
 
 - **Ruling (coordinator):** align JS/TS closures with Python. A call in a nested function, a callback or an importer runs at a time the index does not know, so every plain-function store of the variable is an alternative, and one store is exact. e2b5a25b had resolved such a call only for a variable whose one store is its initializer.

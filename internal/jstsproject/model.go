@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"path"
 	"reflect"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -192,8 +191,9 @@ type Call struct {
 	// alternatives (C.md's conditional callee; owner, 2026-09-30).
 	Dispatch string `json:"dispatch,omitempty"`
 	// Stores are, for a call through the variable StoredIn, the function
-	// each store puts there: the reaching ones of a call they resolve, every
-	// one of an open call.
+	// each store puts there: the reaching ones of a call they resolve to
+	// alternatives and those a callback may find only later, every one of an
+	// open call.
 	Stores   []CallStore `json:"stores,omitempty"`
 	StoredIn string      `json:"stored_in,omitempty"`
 }
@@ -764,14 +764,12 @@ func (result Result) Validate() error {
 			value.Resolution != "alternatives" || len(value.CalleeRefs) < 2 || value.ExternalPackage != "") {
 			return fmt.Errorf("jsts project: call dispatch without alternatives a condition chooses")
 		}
-		if (len(value.Stores) > 0) != (value.StoredIn != "") ||
-			(len(value.Stores) > 0 && value.Resolution != "unresolved" && value.Dispatch != "function_value") {
-			return fmt.Errorf("jsts project: call stores without the variable or alternatives they put there")
+		if (len(value.Stores) > 0) != (value.StoredIn != "") {
+			return fmt.Errorf("jsts project: call stores without the variable they put functions in")
 		}
 		for _, store := range value.Stores {
-			if _, ok := declarations[store.Ref]; !ok || !validLocation(store.Location, fileRefs) ||
-				(value.Resolution != "unresolved" && !slices.Contains(value.CalleeRefs, store.Ref)) {
-				return fmt.Errorf("jsts project: call store names no function the call reaches")
+			if _, ok := declarations[store.Ref]; !ok || !validLocation(store.Location, fileRefs) {
+				return fmt.Errorf("jsts project: call store names no function")
 			}
 		}
 		if value.ExternalPackage != "" && len(value.CalleeRefs) != 0 {

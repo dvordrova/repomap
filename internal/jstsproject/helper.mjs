@@ -1345,15 +1345,34 @@ function conditionalWithin(node, scope) {
 // The stores that may reach a site reading the variable (a call, an alias's
 // read): from those ending before it, the last no branch skips and all after
 // it, and a later one only inside the outermost loop of the variable's scope
-// around the site. A site in another function or file (a closure, a callback,
-// an importer) runs at a time the index does not know, so any store may be
-// what it finds, as in Python. A callback an array's `map` runs at once is
-// such a closure too: telling it from a timer's would take a list of method
-// names, which the index does not keep.
+// around the site. A site in a closure that is stored, returned or
+// registered, or in an importer, runs later: any store may be what it finds,
+// as in Python. A closure handed to a call as its argument runs at a time
+// the index does not know (an array's `map` at once, a timer later): only the
+// stores that reach that call are its targets, each later store a witness
+// (`later`), and with none the call stays open.
 function reachingStores(declaration, site) {
   const { open, stores } = variableStores(declaration)
   if (open) return undefined
-  if (ownFunction(site) !== ownFunction(declaration) || site.getSourceFile() !== declaration.getSourceFile()) return stores
+  const own = ownFunction(declaration)
+  if (site.getSourceFile() !== declaration.getSourceFile()) return stores
+  if (ownFunction(site) !== own) {
+    let outer
+    for (let current = site.parent; current && current !== own && !ts.isSourceFile(current); current = current.parent) {
+      if (ts.isFunctionLike(current) || ts.isPropertyDeclaration(current) || ts.isClassStaticBlockDeclaration?.(current)) outer = current
+    }
+    let handed = outer
+    while (handed?.parent && (ts.isParenthesizedExpression(handed.parent) || ts.isAsExpression(handed.parent) || ts.isSatisfiesExpression?.(handed.parent))) {
+      handed = handed.parent
+    }
+    const receiving = handed?.parent
+    if (!receiving || !(ts.isCallExpression(receiving) || ts.isNewExpression(receiving)) || !receiving.arguments?.includes(handed)) return stores
+    const before = reachingStores(declaration, receiving)
+    if (!before) return undefined
+    const reaching = [...before]
+    reaching.later = stores.filter((store) => !before.includes(store))
+    return reaching
+  }
   const scope = variableScope(declaration), start = site.getStart()
   const before = stores.filter((store) => store.end <= start).sort((a, b) => a.end - b.end)
   let last = 0
@@ -1442,7 +1461,7 @@ function storedCallee(call) {
       refs.push(...found)
     }
     const unique = [...new Set(refs)].sort()
-    return { refs: unique, stores: unique.length > 1 ? witnesses(reaching) : [] }
+    return { refs: unique, stores: [...(unique.length > 1 ? witnesses(reaching) : []), ...witnesses(reaching.later || [])] }
   }
   return { refs: [], stores: witnesses(stores) }
 }
