@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A Main flow step's Via in the page's language (data 1)
+
+- **c538372f:** the saved Via reads through the vocabulary:
+  - "called" → «вызывается»;
+  - "handed to {0}" → «передаётся в {0}», the existing message;
+  - "handed over" → «передаётся»;
+  - "its member" → «член его типа».
+- A Main flow step's "called" is keyed apart from the reading column's
+  plural "called" (`uiEnglishForms`).
+- **Russian render** of today's redis 123430 and othello 123811, through
+  `RenderHTMLWithOptions` with Russian and no translations (no provider
+  request): «вызывается», «один из вызовов, которые может сделать
+  aeProcessEvents», «передаётся в quil.core.sketch.setup». No saved run
+  carries Russian translations, and `repomap render` has no `--lang`.
+
 ## 2026-10-02 — The Main flow reads in words, never a count (data 1)
 
 - **3e028c23:** a step reached through a value reads "one of the calls call
