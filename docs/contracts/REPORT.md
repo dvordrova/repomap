@@ -1099,6 +1099,14 @@ post-layout edits are deleted.
   description stands whole, else as tall as its title, a tile's room under
   it when it holds declarations. A chip's and a bucket's box is as tall as
   its name's lines; a name is never ellipsized (owner, 2026-10-02).
+  A closed part-group of the Outside frame (B′'s bucket: one of our parts
+  and the outside systems only it calls) is drawn as that part's card, the
+  parts' grey line and dark words, in front of a stack of outside chips,
+  their brown line, the kinds of its systems marked under its name; opened,
+  its frame holds those systems' chips under the part's name in the same
+  dark words, never an outside system's brown (external review, item 4,
+  2026-10-02, on a skeptic's choice among three looks). The reading
+  column's Outside lists its destinations alone.
   A declaration the reading names out of sight (`scene.mjs` `memberView`,
   owner, 2026-09-29) is shown with its part entered across the canvas at
   the zoom its tiles read at, framed whole when it fits, else with the

@@ -254,11 +254,12 @@ export function chipBox(node,measure){
   const c=units.chip,lines=chipLines(node.name,c.width-2*c.pad-c.mark,measure);
   return {id:node.id,width:c.width,height:Math.max(c.height,12+lines*c.line)};
 }
-// A closed bucket's box: its part's name over its systems' marks, as tall
-// as the name's lines.
+// A closed bucket's box: its part's card in front of a stack of chips
+// (scene.css .scene-bucket-stack, 8 pixels of stack, the card's 10 of
+// padding a side), its name's lines over its systems' marks.
 export function bucketBox(node,measure){
-  const c=units.chip,lines=chipLines(node.name,c.width-2*c.pad,measure);
-  return {id:node.id,width:c.width,height:Math.max(c.bucket,32+lines*c.line)};
+  const c=units.chip,lines=chipLines(node.name??node.title,c.width-30,measure);
+  return {id:node.id,width:c.width,height:Math.max(c.bucket,40+lines*c.line)};
 }
 export const chipLines=(name,width,measure)=>measure?wrapText(name||'',width,units.chip.font,measure).length:2;
 // An input's tile: its kind's mark and its name on one line, or two when long.

@@ -78,7 +78,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
           if(item.kind==='system')box(child,'chip',rectOf(child),named,{systemKind:item.systemKind});
           else if(item.kind==='bucket'&&open.has(child)){
             const t=geometry.text.get(child);
-            box(child,'frame',rectOf(child),t,{bucket:true});
+            box(child,'frame',frameOf(child),t,{bucket:true});
             for(const system of item.children)box(system,'chip',rectOf(system),t,{systemKind:model.nodes.get(system).systemKind});
           }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),named,{systemKinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
         }

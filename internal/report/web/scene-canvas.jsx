@@ -84,7 +84,7 @@ function FrameNode({data}){
   const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection'
     :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
-  return <>{handles}<div className={`flow-area ${tone}`} style={{width:node.rect.width,height:node.rect.height}}>
+  return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}>
     <Scaled node={{...node,text:node.titleText||node.text,rect:{...node.rect,height:units.band(1)*(node.titleText||node.text)}}} className="scene-frame-title" style={{'--scene-text':node.titleText||node.text}}>
       <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled>
   </div></>;
@@ -119,11 +119,15 @@ function ChipNode({data}){
     <Mark icon={systemIcons[node.systemKind]}/><span className="flow-chip-name" title={node.title}>{node.title}</span></Scaled></>;
 }
 // A closed bucket: its part's name over its systems' marks, never blank.
+// A closed part-group: one of our parts (its name on a part's card) in
+// front of a stack of the outside systems only it calls, their kinds'
+// marks under its name (owner via the coordinator, 2026-10-02, on the
+// skeptic's verdict: a group had read as one more outside system).
 function BucketNode({data}){
   const {node}=data;
-  return <>{handles}<Scaled node={node} className="flow-chip scene-bucket" data={focusable(data)}>
-    <span className="flow-chip-name" title={node.title}>{node.title}</span>
-    <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></Scaled></>;
+  return <>{handles}<Scaled node={node} className="flow-chip scene-bucket scene-bucket-stack" data={focusable(data)}>
+    <span className="scene-bucket-face"><span className="flow-chip-name" title={node.title}>{node.title}</span>
+    <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></span></Scaled></>;
 }
 function NoteNode({data}){
   const {node}=data,item=data.item;

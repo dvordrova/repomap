@@ -9,7 +9,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
-import {layoutLevels,cardWords,programWords,units,chipLines} from './levels.mjs';
+import {layoutLevels,cardWords,programWords,units,chipBox,bucketBox} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable,memberView} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
@@ -77,8 +77,8 @@ function checkScene(name,model,geometry,scene,problems){
   // A chip's and a bucket's name stands whole in its box, never cut short
   // (owner, 2026-10-02).
   for(const node of scene.nodes.filter(node=>['chip','bucket'].includes(node.display)&&finite(node.rect))){
-    const c=units.chip,bucket=node.display==='bucket',lines=chipLines(node.title,c.width-2*c.pad-(bucket?0:c.mark),measure);
-    if((bucket?32:12)+lines*c.line>node.rect.height/node.text+.5)problems.push(['words',`${where}: ${node.id}'s name takes ${lines} lines in ${(node.rect.height/node.text).toFixed(0)}px`]);
+    const need=(node.display==='bucket'?bucketBox:chipBox)({id:node.id,name:node.title},measure).height;
+    if(need>node.rect.height/node.text+.5)problems.push(['words',`${where}: ${node.id}'s name needs ${need}px in ${(node.rect.height/node.text).toFixed(0)}px`]);
   }
   for(const node of scene.nodes){
     if(!['card','area','program'].includes(node.display)||!finite(node.rect))continue;
