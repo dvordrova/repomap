@@ -56,6 +56,9 @@ for(const [index,file] of reports.entries()){
     const repo=await repoOf(page),findings=[];
     await page.evaluate(`window.__fileLine=${fileLine.toString()};window.__lintLevel=${lintLevel.toString()};window.__lintPath=${lintPath.toString()};window.__collapsedLists=${collapsedLists.toString()}`);
     const lint=async(level,cards=2)=>{
+      // The camera an offender is seen at, to find it again.
+      const at=await page.evaluate(()=>{const map=document.querySelector('[data-map]'),v=map.captureViewport?.()||{};return `${map.dataset.sceneLevel||'whole map'} @ zoom ${Number(v.zoom||0).toPrecision(4)}, x ${Math.round(v.x||0)}, y ${Math.round(v.y||0)}`;});
+      level=`${level} {${at}}`;
       findings.push(...await page.evaluate(level=>window.__lintLevel(level),`${repo} ${level}`));
       findings.push(...await page.evaluate(level=>window.__lintPath(level),`${repo} ${level}`));
       findings.push(...(await page.evaluate(()=>window.__collapsedLists())).filter(list=>list.rows>longestFold)

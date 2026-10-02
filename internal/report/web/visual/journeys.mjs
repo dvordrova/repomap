@@ -149,7 +149,10 @@ export function lintLevel(level){
     // A frame holds other drawn boxes (an entered program, area or Inputs
     // frame, a kind's group): its content is them, not its words.
     const within=(a,b)=>a.left>=b.left-1&&a.right<=b.right+1&&a.top>=b.top-1&&a.bottom<=b.bottom+1&&a.width*a.height<b.width*b.height;
-    for(const box of boxes)box.frame=box.el.classList.contains('react-flow__node-area')||boxes.some(other=>other!==box&&within(other.rect,box.rect));
+    // The scene canvas draws an entered frame (a program, an area, an Inputs
+    // or Outside frame) and a kind's group as containers whose content is
+    // other nodes; a closed group is a card and shows what it holds.
+    for(const box of boxes)box.frame=box.el.matches('.react-flow__node-area,.react-flow__node-frame,.react-flow__node-kindgroup')||boxes.some(other=>other!==box&&within(other.rect,box.rect));
     for(const box of boxes){
       const {width,height}=box.rect;if(width<40||height<30)continue;
       if(!box.frame){
