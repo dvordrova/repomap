@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Entries joined to their parts by subject; an entry read forward by its own way; unresolved calls named (lead, afd0a098, ed827af7)
+
+- **Entry join (afd0a098):**
+  - Cause, found by data 1: `componentEntries` and `fillSectionOffMap` joined an entry to its part through `declarationKey`. Lua 5.1.5 has no remote, so rendered offline every key was "". Served, the fact's place had no column (`etc/noparser.c:21:0`) where the part's key had one (`:21:16`). Its 159 exports stood flat.
+  - Fix: join by the subject (the fact's `object_id`, GroupsIndex's entries), where the fact stands at that declaration's line, and read the entry by the key its part lists it under.
+  - A Python module run as a script keeps its `__main__` place: freqtrade.main at main.py:82 is not moved to :1.
+  - Tests: linked, offline and served cases, plus the script.
+  - Byte-identity: the 9 published GitHub pages render byte-identical (redis, litestream, freqtrade, othello, casdoor, headscale, beets, etcd, lua).
+  - Lua 5.1.5 (20261002-165212): src's 159 entries fold into 17 parts on the home and in the component's reading.
+  - A real served run of 5.1.5 with my binary (20261002-185500, all calls cached, no remote): clicking Core API · 68 → lua_checkstack() reads "Function · Core API" with its callers and signature. The server was stopped after.
+- **Start list (ed827af7):** the start list had read Lua 5.1.5's empty luaX_init and luaY_parser as "uses Parser", "uses Lexer": their part's header uses and other members' calls.
+  - An entry now reads only the connections it makes itself.
+  - With none to another part, it names its own calls, linked where written, or says "calls nothing".
+  - Its subject is the declaration its fact names. By line alone, beets' main had resolved to its `args` variable.
+  - The parts' other connections follow the list, "Elsewhere in {part}, not from these entries:", each sentence with its owner and source. Header and type uses stand on their own.
+- **Unresolved calls (ed827af7):** a call saved unresolved with no callee is named as written: its selector, else the method its dispatch witness names. It is linked where written and marked "(implementation not established)", in the start list and in a declaration's flow ("also calls").
+  - etcd's local_request_Election_Campaign_0 → `v3electionpb.ElectionServer.Campaign` at gw/v3election.pb.gw.go:62.
+  - luaY_parser → lua_pushliteral, lua_error.
+  - No implementation is invented. The served 5.1.5 page shows all three lines.
+- **Pages that change with ed827af7:** all 9, by design; counts in `scratchpad/canvas-rewrite/lead/ab-final/CHANGES.txt`.
+  - etcd changes 3,327 of 3,396 start entries: 1,617 "calls nothing", 1,460 name their own calls. headscale changes 1,741 of 1,795.
+  - Every page gains "Elsewhere" overviews and unresolved calls in its flows.
+  - `ab-final/head` is HEAD (afd0a098), byte-identical to the published pages; `ab-final/fix` adds ed827af7. Hashes are in `ab-final/SHA256SUMS`.
+- **Checks:** `go vet` and `go test ./internal/report/` pass on HEAD plus these files.
+
 ## 2026-10-02 — A split says the inputs its options handle for every option or for none (data 2)
 
 - **Lua's Main flow** walked main → pmain → runargs → dolibrary: the `-l` option, where `./lua script.lua` goes pmain → handle_script.
