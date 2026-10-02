@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — An outside call says where it is made beside where it is called from (lead)
+
+- **a7530fa9:** a call's, a destination's and an Outside frame's reading say
+  "Made in" (the call's function in its part, `OutboundCall.SubjectID` and
+  `GroupID`) before "Called from". Display only.
+- **casdoor 20261002-102920, rendered:** Custom Logout Endpoint now reads
+  "Made in [Core data models] callProviderLogoutUrl() · Called from [API
+  controllers] ApiController.Logout(), ApiController.SsoLogout()". It had read
+  only the "Called from" line, though the canvas stands it under Core data
+  models.
+- **redis 20261002-102031:** Primary reads "Made in [Event loop and
+  networking] anetTcpGenericConnect() · Called from [Replication]
+  syncWithMaster()".
+- No page errors. Screenshots: scratchpad
+  `canvas-rewrite/lead/flow/shots/{casdoor-destination,before/casdoor-destination,redis-destination}.png`.
+
 ## 2026-10-02 — The Main flow says what its steps are (review item 2, lead)
 
 - **eade699f (phase 2):** a decided split keeps the calls the path did not
