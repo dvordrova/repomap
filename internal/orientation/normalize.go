@@ -449,7 +449,7 @@ func (cat catalog) resolve(refs []string, targetRef string, allowed ...byte) ([]
 
 // ownRefs resolves a role's refs to its own target's evidence: a fact row
 // that target holds (not a row another target holds, which idFor would
-// name), a seed of that target. Another target's refs are returned apart;
+// name) or one quoted from its own manifest file, a seed of that target. Another target's refs are returned apart;
 // unknown refs and repository-wide facts are ignored.
 func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, others, ignored []string) {
 	seen := make(map[string]bool, len(refs))
@@ -462,10 +462,10 @@ func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, 
 		switch {
 		case err != nil:
 			ignored = append(ignored, ref)
-		case entry.class == classFact && entry.fact.byTarget[targetRef] != "",
+		case entry.class == classFact && cat.ownFact(entry.fact, targetRef),
 			entry.class == classSubject && entry.subject.targetRef == targetRef:
 			own = append(own, entry)
-		case entry.class == classFact && len(entry.fact.byTarget) == 0:
+		case entry.class == classFact && len(entry.fact.byTarget) == 0 && entry.fact.manifest == "":
 			ignored = append(ignored, ref) // a repository-wide fact is no target's own
 		default:
 			others = append(others, ref)
@@ -474,11 +474,21 @@ func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, 
 	return own, others, ignored
 }
 
+// ownFact reports a fact row of the target: one it holds, or a manifest
+// fact quoted from its own manifest file, which several targets may share.
+func (cat catalog) ownFact(entry factEntry, targetRef string) bool {
+	if entry.byTarget[targetRef] != "" {
+		return true
+	}
+	manifest := cat.manifests[targetRef]
+	return manifest != "" && entry.manifest == manifest
+}
+
 // holdsEvidence reports whether the request lists a fact or seed of the
 // target: a role must then cite one.
 func (cat catalog) holdsEvidence(targetRef string) bool {
 	for _, entry := range cat.facts {
-		if entry.byTarget[targetRef] != "" {
+		if cat.ownFact(entry, targetRef) {
 			return true
 		}
 	}

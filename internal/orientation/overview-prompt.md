@@ -77,8 +77,9 @@ Rules for each part:
   "Backend API service" or "Browser front end"; `purpose` is one sentence. A
   role describes only its own target: what its own groups, facts and seeds
   show it doing. A fact is a target's own when its `targets` lists that
-  target; a seed is its own when its ref starts with that target's ref and a
-  dot (`t2.` for `t2`). Never describe a target by another target's
+  target, or when it is a `manifest` fact quoted from that target's
+  `manifest` file; a seed is its own when its ref starts with that target's
+  ref and a dot (`t2.` for `t2`). Never describe a target by another target's
   evidence, by the directory it sits in, or by the repository as a whole;
   name another target only as a connection shows it. `refs` cite only the
   target's own facts and seeds, at least one when it has any; leave `refs`

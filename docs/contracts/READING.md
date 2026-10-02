@@ -1959,8 +1959,11 @@ and no replacement is invented.
 
 A role describes its own target from its own groups, facts and seeds,
 never another target's, its directory's or the repository's. A fact is a
-target's own when the target holds its row, a seed when its ref is the
-target's; a repository-wide fact is no target's own. Another target's refs
+target's own when the target holds its row or when it is a manifest fact
+quoted from the target's own manifest file (the facts layer files a shared
+makefile's rows under its first target: Lua's liblua.a cites the root
+makefile's rule), a seed when its ref is the target's; a repository-wide
+fact is no target's own. Another target's refs
 in a role are ignored and recorded; a role citing only another target's
 evidence is refused; a role must cite its target's own facts or seeds when
 the request lists any, and otherwise (a library, whose exports are only

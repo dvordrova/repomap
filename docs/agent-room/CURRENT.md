@@ -260,7 +260,12 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   quotes them as the authors' words only. A role is read from its own
   target's groups, facts and seeds: another target's refs are ignored, a
   role citing only another target's evidence is refused, and a target with
-  no fact or seed of its own (a library) keeps a role without refs. Lua
+  no fact or seed of its own (a library) keeps a role without refs. A
+  manifest fact counts for every target whose manifest file quotes it: the
+  facts layer still files a shared makefile's rows under its first target
+  only (`facts/manifest.go` `manifestOwner`), which also leaves those
+  targets' report pages without their manifest facts; fixing that there
+  would change the facts digest and the places for every shared manifest. Lua
   5.1.5's etc library (one file) had been described from etc/README as the
   whole directory's extras. `TestProviderBodiesCarryNoAuthorDocs` now covers
   the overview. Since 1300d794 no atlas table, key or symbol row and no Jev

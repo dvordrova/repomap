@@ -117,6 +117,11 @@ type factEntry struct {
 	id       string
 	kind     facts.Kind
 	byTarget map[string]string // target ref -> that target's fact id
+	// manifest is the file a manifest fact is quoted from: it is the own
+	// evidence of every target whose manifest that file is, not only of
+	// the target the facts layer filed it under (Lua's root makefile
+	// quotes liblua.a's rule under the lua program).
+	manifest string
 }
 
 // idFor is the exact fact id this row stands for in the named target.
@@ -135,16 +140,18 @@ type subjectEntry struct {
 // catalog closes the request vocabulary. Canonical compact graph identities
 // pass through directly; facts retain their own artifact identities.
 type catalog struct {
-	targets  map[string]string
-	facts    map[string]factEntry
-	subjects map[string]subjectEntry
+	targets   map[string]string
+	manifests map[string]string // target ref -> its manifest file
+	facts     map[string]factEntry
+	subjects  map[string]subjectEntry
 }
 
 func newCatalog() catalog {
 	return catalog{
-		targets:  make(map[string]string),
-		facts:    make(map[string]factEntry),
-		subjects: make(map[string]subjectEntry),
+		targets:   make(map[string]string),
+		manifests: make(map[string]string),
+		facts:     make(map[string]factEntry),
+		subjects:  make(map[string]subjectEntry),
 	}
 }
 
@@ -306,6 +313,9 @@ func (builder *requestBuilder) targets() []targetWire {
 	for _, target := range builder.input.Facts.Targets {
 		ref := target.ID
 		builder.catalog.targets[ref] = target.ID
+		if target.Manifest != "" {
+			builder.catalog.manifests[ref] = target.Manifest
+		}
 		builder.targetRefs[target.ID] = ref
 		builder.programRefs[target.ID] = ref
 		rows = append(rows, targetWire{
@@ -375,6 +385,9 @@ func (builder *requestBuilder) facts(omitted map[string]int) []factWire {
 			}
 		})
 		entry := factEntry{id: advertised[first].ID, kind: advertised[first].Kind}
+		if entry.kind == facts.KindManifest && advertised[first].Anchor != nil {
+			entry.manifest = advertised[first].Anchor.Path
+		}
 		var targets []string
 		for _, holder := range holders {
 			builder.factRefs[advertised[holder].ID] = entry.id
