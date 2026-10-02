@@ -1049,8 +1049,9 @@ func inputCollection(children []string, node func(string) pageMapNode) string {
 }
 
 // pageEntry is one entrypoint as a component's reading names it: its name,
-// a call when it is callable, the link into its code and, for the
-// program's seed, the part it is read in ("#…") by its key.
+// a call when it is callable, the link into its code and the part it is
+// read in ("#…") by its key, a seed's or a library's export's
+// (GroupsIndex's Entries).
 type pageEntry struct {
 	Name     string `json:"name"`
 	Callable bool   `json:"callable,omitempty"`
@@ -1076,6 +1077,8 @@ func componentEntries(section *pageSection) string {
 		}
 		if section.EntryPart != "" && item.Key != "" && item.Key == section.EntrySource {
 			item.Part = "#" + section.EntryPart
+		} else if part := section.EntryParts[item.Key]; item.Key != "" && part != "" {
+			item.Part = "#" + part
 		}
 		entries = append(entries, item)
 	}

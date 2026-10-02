@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"encoding/json"
 	"html/template"
 	"strings"
 	"testing"
@@ -124,5 +125,41 @@ func TestTheEntrypointsLinkLandsOnTheProgramsEntry(t *testing.T) {
 	section, link = build([]groupindex.Group{loop}, "n1")
 	if section.EntryPart != "" || section.EntrySource != "" || link != `<a href="#t1-entrypoints" data-entry-landing>` {
 		t.Fatalf("an entry off the map lands at %q %q: %s", section.EntryPart, section.EntrySource, link)
+	}
+}
+
+// liblua.a's Entry list named 156 exports in one flat list, each a link to
+// its source: GroupsIndex stands each in its part, and the page says which,
+// so the list folds by part and an entry reads its function there.
+func TestALibrarysExportsNameTheirParts(t *testing.T) {
+	object := func(id, name string, line int) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction,
+			Location: &programindex.Location{Path: "lapi.c", Line: line, Column: 1}}}
+	}
+	index := groupindex.Index{
+		Target:   programindex.Target{ID: "t1", Exports: []programindex.TargetExport{{ObjectID: "n1"}, {ObjectID: "n2"}, {ObjectID: "n3"}}},
+		Subjects: []groupindex.Subject{object("n1", "lua_pushnil", 10), object("n2", "luaL_checkint", 20), object("n3", "lua_settop", 30)},
+		Groups:   []groupindex.Group{{ID: "g1", Title: "Core API", MemberSubjectIDs: []string{"n1", "n3"}}, {ID: "g2", Title: "Auxiliary library", MemberSubjectIDs: []string{"n2"}}},
+	}
+	groupindex.Derive(&index)
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{},
+		links: pageLinks{repositoryURL: "https://example.test/lua", blobPrefix: "/blob/", revision: "r"}}
+	for _, subject := range index.Subjects {
+		builder.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject}
+	}
+	anchor := func(line int) *pageAnchor { return builder.links.anchorPointer("lapi.c", line, 1) }
+	section := &pageSection{ID: "t1", programTargetID: "t1", FactsAvailable: true, Entrypoints: []pageEntrypoint{
+		{Symbol: "lua_pushnil", Kind: "export", Anchor: anchor(10)}, {Symbol: "luaL_checkint", Kind: "export", Anchor: anchor(20)}, {Symbol: "lua_settop", Kind: "export", Anchor: anchor(30)}}}
+	builder.fillSectionOffMap(section)
+	var entries []pageEntry
+	if err := json.Unmarshal([]byte(componentEntries(section)), &entries); err != nil {
+		t.Fatal(err)
+	}
+	parts := map[string]string{}
+	for _, entry := range entries {
+		parts[entry.Name] = entry.Part
+	}
+	if parts["lua_pushnil"] != "#t1-g1" || parts["lua_settop"] != "#t1-g1" || parts["luaL_checkint"] != "#t1-g2" {
+		t.Fatalf("the exports' parts: %v", parts)
 	}
 }

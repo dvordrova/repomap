@@ -735,8 +735,11 @@ function rmCollectionView(ctx,node,collection){
         // A name that is a sentence (a query parameter's description) is
         // prose, not code.
         if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
+        // The words telling it apart are part of its name and its link
+        // (owner via the coordinator, 2026-10-02: etcd's link had covered
+        // "POST" alone).
+        var of=ofWhich(input,id);if(of)button.append(' ',of);
         button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);
-        var of=ofWhich(input,id);if(of)item.append(' ',of);
         list.appendChild(item);
       });
       return list;
@@ -1074,15 +1077,31 @@ function rmProgramsTable(ctx,holder,components,connections){
     table.appendChild(about);
     var entries=rmPage.data(n,'entries')||[];
     if(entries.length){
-      var starts=rmEl('ul','system-program-files');
-      entries.forEach(function(entry){
+      var entryItem=function(entry){
         var text=entry.name+(entry.callable?'()':''),item=rmEl('li'),part=entry.part&&ctx.nodeByHref(entry.part);
         if(part&&entry.key)item.appendChild(button(text,function(){ctx.readDeclIn(part,entry.key);}));
         else if(entry.href||entry.open){var link=repomapMembers.sourceLink({Href:entry.href,Open:entry.open,Text:text,NoSource:entry.no_source});item.appendChild(rmDotBreaks(link));}
         else item.appendChild(button(text,function(){ctx.readNode(n);}));
-        starts.appendChild(item);
-      });
-      var at=rmEl('dd');at.appendChild(starts);line('Entry',at);
+        return item;
+      };
+      var at=rmEl('dd');
+      // A long list of entries (a library's exports) folds by the part
+      // holding them, as an input kind's list does, each part closed under
+      // its box and its count; entries no part holds stand after them
+      // (owner via the coordinator, 2026-10-02: liblua.a's 156 lua_*,
+      // luaL_* and luaopen_* had stood in one flat list).
+      var byPart=new Map(),loose=[];
+      entries.forEach(function(entry){var part=entry.part&&ctx.nodeByHref(entry.part);if(!part){loose.push(entry);return;}if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(entry);});
+      if(entries.length>12&&byPart.size){
+        byPart.forEach(function(held,part){
+          var fold=rmEl('details','map-reading-peer system-program-entries'),head=rmEl('summary','map-reading-peer-head');
+          head.append(rmPartBox(ctx,part.getAttribute('href')||'#'+part.id,part.dataset.title,true),' · '+held.length);
+          var list=rmEl('ul','system-program-files');held.forEach(function(entry){list.appendChild(entryItem(entry));});
+          fold.append(head,list);at.appendChild(fold);
+        });
+      }else loose=entries;
+      if(loose.length){var starts=rmEl('ul','system-program-files');loose.forEach(function(entry){starts.appendChild(entryItem(entry));});at.appendChild(starts);}
+      line('Entry',at);
     }
     var collection=ctx.nodeById('system-inputs-'+n.dataset.owner),kinds=(collection&&rmPage.data(collection,'collection')||{}).kinds||[];
     if(kinds.length){

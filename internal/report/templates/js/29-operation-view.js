@@ -515,11 +515,20 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
 // tiles. `sep` is what stands before a segment, as the one label read.
 function rmExplorationPath(operation,frames,member){
   var segments=[];
-  if(operation)segments.push({id:operation.id,title:operation.dataset.title,kind:'input'});
+  if(operation)segments.push({id:operation.id,title:rmToldApart(operation),kind:'input'});
   frames.forEach(function(n,i){segments.push({id:n.id,title:n.dataset.title,kind:'frame',sep:i?' / ':' · '});});
   if(member&&member.name&&frames.length)segments.push({id:frames[frames.length-1].id,title:member.name,kind:'member',sep:' · ',source:{key:member.key,href:member.href,open:member.open}});
   return segments;
 }
+// An input as its list names it, with the words saved beside a name its
+// program gives another input of its kind (page_apart.go): etcd's
+// "POST /v3electionpb.Election/Campaign · RegisterElectionHandlerServer",
+// never "POST" alone in a breadcrumb or a heading.
+function rmToldApart(node){
+  var title=node&&node.dataset?node.dataset.title||'':'',words=node&&typeof rmPage!=='undefined'&&rmPage.data?rmPage.data(node,'apart')||[]:[];
+  return words.length?title+' '+words.map(function(word){return word.word;}).join(' · '):title;
+}
+
 // Where a component's "Entrypoints" link lands (page_sections.go): the part
 // holding the program's seed, the seed read there, or, when no part holds
 // it, the component, read at its entry line. It had landed on the inputs.
@@ -565,6 +574,14 @@ function rmSavedScene(doc){
   // Whether the camera may stand away from the pinned input's own tile: on its
   // path's start, or on a part read since.
   var inputAway=false;
+  // The part's group of an Outside frame being read (readGroup).
+  var pendingGroup=null;
+  // Whether the click being handled is in the pinned input's own reading
+  // (its path, before any part is read from it).
+  map.addEventListener('click',function(event){
+    if(!operation||scope||!event.target.closest?.('.map-inspector')||event.target.closest('.map-main-flow-link,.map-input-context'))return;
+    map.readingFromInput=true;setTimeout(function(){map.readingFromInput=false;},0);
+  },true);
   // What was read, and where the camera stood, before an input's path was
   // entered: "Leave input path" returns there (owner, 2026-09-28), as Back
   // would. It had gone to the repository's summary, and a reader needed
@@ -610,7 +627,7 @@ function rmSavedScene(doc){
     if(inspector&&!controls){controls=rmEl('div','map-input-context');inspector.prepend(controls);}
     if(controls){controls.replaceChildren();controls.hidden=!operation;}
     if(operation){
-      var context=rmEl('span','system-reading-context',rmT('Input')+': '+operation.dataset.title);
+      var context=rmEl('span','system-reading-context',rmT('Input')+': '+rmToldApart(operation));
       // From its path, or from a part read since, to the input's own tile
       // among the inputs its handler's part takes; once the tile is framed
       // there is nowhere to go. Choosing the tile again returns to the path.
@@ -636,7 +653,12 @@ function rmSavedScene(doc){
     // One input's path after another keeps what was read before the first:
     // a search clears the pinned input first, and the second path had been
     // taken for where the reader was (reviewer, 2026-09-30).
+    // What the input's own reading names (its flow's declarations, its
+    // parts, its handler) is read inside its path, the input staying
+    // pinned (owner via the coordinator, 2026-10-02: choosing FreqtradeBot
+    // in trade's "Its flow" had dropped "Input: trade").
     if(n.dataset.activation){if(!operation&&!beforeInput)beforeInput=map.readingState();operation=n;scope='';inputAway=path;}
+    else if(operation&&map.readingFromInput){scope=n.id;inputAway=true;}
     else{scope=n.id;operation=null;inputAway=false;beforeInput=null;}
     emphasize();if(navigate)address(n,!!(focus||path)&&!!map.captureViewport?.()?.overview);
     await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
@@ -962,8 +984,19 @@ function rmSavedScene(doc){
       card.querySelector('.map-card-actions')?.remove();
       card.querySelector('.map-related-operations')?.remove();
       var kids=function(frame){return (frame.dataset.children||'').split(/\s+/).map(function(id){return byID[id];}).filter(Boolean);};
-      var ends=kids(n),records=n.dataset.branch==='outside'?ends.flatMap(function(end){return end.dataset.branch==='communication'?kids(end):[end];}):ends;
+      // A part's group of the frame (its card in front of a stack of the
+      // systems only it calls) is read as those systems, the part named
+      // first (owner via the coordinator, 2026-10-02: casdoor's Core data
+      // models had read as the part itself, its systems on hover only).
+      var group=pendingGroup&&pendingGroup.frame===n.id?pendingGroup:null;pendingGroup=null;
+      var ends=kids(n);if(group)ends=ends.filter(function(end){return group.ids.indexOf(end.id)>=0;});
+      var records=n.dataset.branch==='outside'?ends.flatMap(function(end){return end.dataset.branch==='communication'?kids(end):[end];}):ends;
       var told=rmEl('div','system-communication-reading');
+      if(group&&byID[group.part]){
+        var whose=rmEl('section','map-reading-side system-group-part');whose.appendChild(rmEl('h6','',rmT('The outside systems only this part calls')));
+        var partHead=rmEl('div','map-reading-peer-head');partHead.appendChild(rmPartBox(map.readingContext(),byID[group.part].getAttribute('href')||'#'+group.part,byID[group.part].dataset.title));
+        whose.appendChild(partHead);told.appendChild(whose);
+      }
       var from=rmReachedFrom(map.readingContext(),rmMergeReached(records.map(function(record){return rmPage.data(record,'reached');})));
       // One line per name: a destination's calls made alike from several
       // places read as one, reading the first.
@@ -1138,6 +1171,9 @@ function rmSavedScene(doc){
         // magnifier reads the part it enters.
         follow:function(id,explicit){var n=byID[id];if(!n||scope===id||!explicit&&operation&&!scope)return;select(n,true,null,false);},
         openConnection:function(id,key){openConnection(id,key);},
+        // A part's group of an Outside frame clicked reads that frame as
+        // the systems only the part calls.
+        readGroup:function(frame,part,ids){var n=byID[frame];if(!n)return;pendingGroup={frame:frame,part:part,ids:ids.slice()};select(n,true,null,false);},
         // A kind chosen in an Inputs collection reads it at that kind's
         // section (31-reading-column.js), the camera staying.
         readKind:function(id,kinds){var n=byID[id];if(!n)return;rmPendingKind=kinds;select(n,true,null,false);},

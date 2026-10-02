@@ -52,6 +52,7 @@ export const invariants=[
   ['marker-size','ports and markers are 20-28 px at every camera, one size per level',{phase:'sizes',none:'no port or marker in sight'}],
   ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box',{phase:'markers',none:'no marker in sight'}],
   ['titles','titles at one level within ±10% of their median',{phase:'titles',none:'fewer than two titles in sight'}],
+  ['title-sight','a frame whose body is in sight has its title wholly in sight, and on the whole map so does a closed program or Inputs box',{phase:'titles',none:'no frame or closed box in sight'}],
   ['dark-top','dark arrows are drawn after grey ones',{phase:'cards',none:'no arrow turned dark while pointed at'}],
   ['cards','every arrow opens its card when pointed at',{phase:'cards',none:'no arrow in sight to point at'}],
   ['no-labels','no digit, plaque or kind label on the canvas',{phase:'texts',none:'no text in sight'}],
@@ -114,7 +115,11 @@ export function invariantKit(){
       const els={},paths={},seen=new Map();
       for(const [kind,selector,id,anchor] of keyed)for(const el of root().querySelectorAll(selector)){
         const base=`${kind}:${id(el)}`,n=seen.get(base)||0;seen.set(base,n+1);
-        const target=kind==='edge'?line(el)||el:el,r=target.getBoundingClientRect(),on=shown(target)&&(kind!=='edge'||shown(el));
+        const target=kind==='edge'?line(el)||el:el,r=target.getBoundingClientRect();
+        // A frame's title named at the canvas's top (scene-canvas.jsx
+        // StuckTitles) is still in sight, its own hidden under that name.
+        const named=kind==='title'&&[...root().querySelectorAll('[data-stuck-title]')].some(s=>s.dataset.stuckTitle===id(el)&&shown(s));
+        const on=named||shown(target)&&(kind!=='edge'||shown(el));
         els[n?`${base}#${n}`:base]=[on?1:0,r.left,r.top,r.right,r.bottom,anchor];
         if(kind==='edge')paths[base]=line(el)?.getAttribute('d')||'';
       }
@@ -279,6 +284,26 @@ export function invariantKit(){
         const r=el.getBoundingClientRect();if(!meets(box(r),c,2))continue;
         const scale=el.offsetHeight?r.height/el.offsetHeight:1,px=parseFloat(getComputedStyle(el).fontSize)*scale;
         out.push({id,px,text:el.textContent.trim().slice(0,30)});
+      }
+      return out;
+    },
+    // Frames (and, on the whole map, closed program and Inputs boxes) whose
+    // body is in sight, each with whether its title is wholly in sight: its
+    // own, or the one the overlay names at the canvas's top, and no other
+    // name the overlay places there covers it.
+    titleSight(home){
+      const c=canvas(),out=[];
+      const stuck=[...root().querySelectorAll('[data-stuck-title]')].filter(shown).map(el=>[el,el.getBoundingClientRect()]);
+      const covered=(el,r)=>stuck.some(([s,q])=>s!==el&&Math.min(r.right,q.right)-Math.max(r.left,q.left)>2&&Math.min(r.bottom,q.bottom)-Math.max(r.top,q.top)>2);
+      const inside=(el,r)=>r.left>=c.l-1&&r.right<=c.r+1&&r.top>=c.t-1&&r.bottom<=c.b+1&&!covered(el,r);
+      const nodes=[...root().querySelectorAll('.react-flow__node-frame'+(home?',.react-flow__node-program,.react-flow__node-inputs':''))].filter(shown);
+      for(const n of nodes){
+        const r=n.getBoundingClientRect();
+        if(Math.min(r.right,c.r)-Math.max(r.left,c.l)<80||Math.min(r.bottom,c.b)-Math.max(r.top,c.t)<40)continue;
+        const id=n.dataset.id,q=CSS.escape(id);
+        const own=n.querySelector(`[data-box-title="${q}"]`),named=root().querySelector(`[data-stuck-title="${q}"]`);
+        const ok=[own,named].some(el=>shown(el)&&inside(el,el.getBoundingClientRect()));
+        out.push({id,ok,title:(own?.textContent||'').trim().slice(0,30)});
       }
       return out;
     },

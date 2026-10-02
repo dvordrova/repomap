@@ -27,7 +27,12 @@ function rmScrollToReading(node) {
   requestAnimationFrame(function(){requestAnimationFrame(function(){
     if(!node.isConnected||node.closest('[hidden]'))return;
     var toolbar=document.querySelector('.report-toolbar'),inset=toolbar&&getComputedStyle(toolbar).position==='sticky'?toolbar.getBoundingClientRect().height:0;
-    window.scrollTo({top:Math.max(0,window.scrollY+node.getBoundingClientRect().top-inset-16),behavior:'instant'});
+    // A surface already wholly in sight under the toolbar stays where it
+    // is (freqtrade, 2026-10-02: a declaration chosen from an input's flow
+    // moved the page 16 pixels under the reader's pointer).
+    var at=node.getBoundingClientRect();
+    if(at.top>=inset&&at.bottom<=window.innerHeight)return;
+    window.scrollTo({top:Math.max(0,window.scrollY+at.top-inset-16),behavior:'instant'});
   });});
 }
 

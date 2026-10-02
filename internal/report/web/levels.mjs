@@ -525,8 +525,10 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // Every name the whole map shows at rest: its programs' and its outside
   // systems' (a chip, a closed bucket).
   const names=[...programs,...model.roots.filter(id=>nodes.get(id)?.kind==='outside').flatMap(id=>nodes.get(id).children).map(id=>boxes.get(id)).filter(Boolean)];
+  // The whole map's closed boxes, their titles at their top left corners.
+  const closed=model.roots.filter(id=>['program','inputs'].includes(nodes.get(id)?.kind)&&boxes.has(id)).map(id=>boxes.get(id));
   return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programText:programText*unit,
-    home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length),whole:homeCamera(bounds,canvas,16,1/unit)};
+    home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length,16,closed),whole:homeCamera(bounds,canvas,16,1/unit)};
 }
 
 // The camera at rest on the whole map: all of it, unless its names would
@@ -536,7 +538,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
 // busiest first) with the most other programs, then the most other names,
 // a canvas holds, centred on them. "Show whole map" shows all of it
 // (geometry.whole).
-export function homeView(bounds,canvas,unit,word,names,programs=names.length,pad=16){
+export function homeView(bounds,canvas,unit,word,names,programs=names.length,pad=16,closed=[]){
   const whole=homeCamera(bounds,canvas,pad,1/unit);
   if(word.program*whole.zoom>=reading.least&&word.system*whole.zoom>=reading.systemLeast||!names.length)return whole;
   const zoom=Math.max(reading.title/word.program,reading.system/word.system),width=(canvas.width-2*pad)/zoom,height=(canvas.height-2*pad)/zoom;
@@ -551,7 +553,32 @@ export function homeView(bounds,canvas,unit,word,names,programs=names.length,pad
   }
   best||=[names[0]];
   const l=Math.min(...best.map(r=>r.x)),t=Math.min(...best.map(r=>r.y)),r=Math.max(...best.map(r=>r.x+r.width)),b=Math.max(...best.map(r=>r.y+r.height));
-  return {zoom,x:canvas.width/2-(l+r)/2*zoom,y:canvas.height/2-(t+b)/2*zoom};
+  return keepTitles({zoom,x:canvas.width/2-(l+r)/2*zoom,y:canvas.height/2-(t+b)/2*zoom},closed,best,canvas,pad);
+}
+
+// A closed box partly in sight shows its title, at its top left corner
+// (owner via the coordinator, 2026-10-02: casdoor's home had cut its
+// Inputs box to "ts"). Along each axis where one is cut, the camera moves
+// to bring a box's corner in or to take the box wholly out of sight,
+// keeping `keep` wholly in sight: the move that leaves the fewest cut,
+// then shows the most such boxes, then moves least. Where no move helps,
+// it stays.
+export function keepTitles(view,closed,keep,canvas,pad=16){
+  const out={...view};
+  for(const [axis,size,other,across] of [['x','width','y','height'],['y','height','x','width']]){
+    const at=(r,d)=>r[axis]*out.zoom+out[axis]+d,end=(r,d)=>at(r,d)+r[size]*out.zoom;
+    const level=closed.filter(r=>{const a=r[other]*out.zoom+out[other];return a+r[across]*out.zoom>.5&&a<canvas[across]-.5;});
+    const seen=d=>level.filter(r=>end(r,d)>.5&&at(r,d)<canvas[size]-.5);
+    const cut=d=>seen(d).filter(r=>at(r,d)< -.5).length;
+    if(!cut(0))continue;
+    let lo=-Infinity,hi=Infinity;
+    for(const r of keep){lo=Math.max(lo,pad-at(r,0));hi=Math.min(hi,canvas[size]-pad-end(r,0));}
+    if(lo>hi)continue;
+    const moves=[0,...level.flatMap(r=>[pad-at(r,0),-end(r,0)])].filter(d=>d>=lo&&d<=hi);
+    const better=(d,a)=>cut(d)-cut(a)||seen(a).length-seen(d).length||Math.abs(d)-Math.abs(a);
+    out[axis]+=moves.reduce((a,d)=>better(d,a)<0?d:a,0);
+  }
+  return out;
 }
 
 // The camera that shows the whole map, centred, no closer than one unit to

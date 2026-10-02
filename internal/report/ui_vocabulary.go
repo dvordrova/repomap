@@ -830,6 +830,10 @@ var russianUI = map[string]string{
 	"No cross-target request link was found.":                                                                  "Связи запросов между компонентами не найдены.",
 	"Nothing is missing among README, tests, Dockerfile and CI.":                                               "README, тесты, Dockerfile и CI присутствуют.",
 	"No manifest rows or entrypoints were found.":                                                              "Записи манифеста и точки входа не найдены.",
+
+	// The run recipe of a library alone (page_model.go recipe).
+	"No manifest rows or launch entrypoints were found; a library's exports are the API it offers, not ways to run it.": "Записи манифеста и точки запуска не найдены; экспортируемые функции библиотеки — её API, а не способ её запустить.",
+
 	"Source unavailable":  "Источник недоступен",
 	"Declared members":    "Объявленные члены",
 	"Observed entrypoint": "Наблюдаемая точка входа",
@@ -957,6 +961,9 @@ var russianUI = map[string]string{
 	"called (a Main flow step)": "вызывается",
 	"handed over":               "передаётся",
 	"its member":                "член его типа",
+
+	// A part's group of an Outside frame read as its systems (29-operation-view.js).
+	"The outside systems only this part calls": "Внешние системы, которые вызывает только эта часть",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

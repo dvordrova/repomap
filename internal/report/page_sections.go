@@ -119,6 +119,11 @@ type pageSection struct {
 	// EntryGroup is that part's group (entryGroup): where a launch of the
 	// program by its own code goes on the map.
 	EntryGroup string
+	// EntryParts are the parts holding the program's entries by their
+	// declaration keys (GroupsIndex's Entries): each seed's and each
+	// export of a library, which the component's Entry list reads in its
+	// part and folds by it.
+	EntryParts map[string]string
 }
 
 // pageOffMapEntry is a launch point the map of parts does not draw.
@@ -167,6 +172,12 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 	offEntries := map[string]bool{}
 	for _, entry := range index.Entries {
 		if entry.GroupID != "" {
+			if key := declarationKeyOf(builder, index.Target.ID, entry.SubjectID); key != "" {
+				if section.EntryParts == nil {
+					section.EntryParts = map[string]string{}
+				}
+				section.EntryParts[key] = groupAnchorID(section.ID, entry.GroupID)
+			}
 			continue
 		}
 		offEntries[entry.SubjectID] = true

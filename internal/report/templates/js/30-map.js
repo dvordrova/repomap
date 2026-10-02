@@ -466,6 +466,21 @@ function rmDeclarationRelations(map,node,key,nodes){
   // These fragments contain both text and quoted attributes. Text-node HTML
   // serialization alone leaves quotes intact and cannot protect data-open.
   function escapeText(text) {return String(text||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  // A registration written with its handler inline (etcd's gateway:
+  // mux.Handle(…, func(w, req, pathParams) {…}), 1,144 characters) reads as
+  // the registration, its handler's body folded to "{…}"; its link opens
+  // all of it. A table's row stands whole.
+  function rmWrittenShort(text) {
+    if (text.length <= 160) return text;
+    for (var i = 1; i < text.length; i++) {
+      if (text[i] !== '{') continue;
+      var depth = 0, j = i;
+      for (; j < text.length; j++) { if (text[j] === '{') depth++; else if (text[j] === '}' && --depth === 0) break; }
+      if (j < text.length && j - i > 80) return text.slice(0, i + 1) + '…' + text.slice(j);
+      i = j;
+    }
+    return text;
+  }
   function titleOf(node) {
     if (node.dataset.title) return node.dataset.title;
     var lines = node.querySelectorAll('.map-node-title');
@@ -561,12 +576,11 @@ function rmDeclarationRelations(map,node,key,nodes){
         var current=node.dataset.activation?map.explorerOperation===node&&map.dataset.operationPinned==='true':map.explorerScope===id;
         html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.itemKind?rmT(node.dataset.itemKind):node.dataset.activation?rmKindHeading(node.dataset.activation):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT('Part'))+'</span>';
       }
-      html += '<b>' + escapeText(titleOf(node)) + '</b>';
       // A name its program gives another input of its kind reads with the
-      // words saved beside it (page_apart.go): etcd's POST with the word
-      // its handler declares, /v3electionpb.Election/Campaign.
+      // words saved beside it (page_apart.go), in its heading too: etcd's
+      // POST with the word its handler declares, /v3electionpb.Election/Campaign.
       var apart = rmPage.data(node,'apart');
-      if (apart && apart.length) html += ' <span class="map-reading-where map-input-apart" title="' + escapeText(rmApartTitle(apart)) + '">' + escapeText(apart.map(function(word){return word.word;}).join(' · ')) + '</span>';
+      html += '<b>' + escapeText(titleOf(node)) + (apart && apart.length ? ' <span class="map-reading-where map-input-apart" title="' + escapeText(rmApartTitle(apart)) + '">' + escapeText(apart.map(function(word){return word.word;}).join(' · ')) + '</span>' : '') + '</b>';
       // An input its code reads under several spellings of one value is
       // named by the first; the others say so in one muted line (litestream's
       // storageClass, also written storage-class).
@@ -592,7 +606,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // Its registration as the code wrote it: a command table's row says
       // its arity and flags ({"rpush",rpushCommand,3,REDIS_CMD_BULK|…}).
       // A setting's comparison as written links its line (owner, 2026-09-29).
-      if (node.dataset.written) html += '<p class="map-card-written">' + (node.dataset.source ? '<a target="_blank" href="'+escapeText(node.dataset.source)+'"><code>' + escapeText(node.dataset.written) + '</code></a>' : '<code>' + escapeText(node.dataset.written) + '</code>') + '</p>';
+      if (node.dataset.written) html += '<p class="map-card-written">' + (node.dataset.source ? '<a target="_blank" href="'+escapeText(node.dataset.source)+'"><code>' + escapeText(rmWrittenShort(node.dataset.written)) + '</code></a>' : '<code>' + escapeText(rmWrittenShort(node.dataset.written)) + '</code>') + '</p>';
       if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       // An input with no handler established says where it is parsed.

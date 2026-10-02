@@ -434,8 +434,10 @@ branch for a split file:
   declaration, with the helpers and open units only it uses (places
   `SymbolFacts.Seeds`, per holding target). The atlas keeps no main path;
   orientation's main flow and the report's start list read the entry forward.
-  GroupsIndex marks as entry only the part holding a seed declaration, and an
-  area only when one of its parts is; every other part stands in the middle,
+  GroupsIndex marks as entry only the part holding a seed declaration or a
+  library's export (PROGRAM_INDEX `target.exports`: liblua.a's Core API and
+  Auxiliary library parts, never a part of its internals), and an area only
+  when one of its parts is; every other part stands in the middle,
   or with the dependencies when it only calls out. The atlas keeps the
   reading's column fact: a box that takes requests or listens stands "in"
   without being the program's entry. A seed no part holds makes no entry part;
@@ -1575,9 +1577,9 @@ This optional cascade — `atlas_learn`, `atlas_question` and `atlas_answer` —
 runs only with `--learn`, a `--question` or a question configured in
 `.repomap.conf`. Without it the ordinary atlas completes through joints and
 publishes its full map, orientation and source reading without question
-results; the report then says under "About this run" that questions were not
-generated in this run, and its search offers no question category. Explicit
-read-stage development budgets remain available throughout; otherwise there is
+results; the report then says first under "About this run" that questions
+were not generated in this run, and its search offers no question category.
+Explicit read-stage development budgets remain available throughout; otherwise there is
 no question quota, row-count cap or 64 KiB planning cap, and actual provider
 preparation/resource refusals partition complete input losslessly.
 

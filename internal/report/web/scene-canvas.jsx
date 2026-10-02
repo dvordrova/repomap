@@ -5,7 +5,7 @@
 // dumb renderer; one store holds the level, the pointer and the choice; one
 // hitTest answers hover and click; the overlay keeps markers and ports at
 // one screen size (overlay.mjs).
-import React,{useEffect,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
+import React,{createContext,useContext,useEffect,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow,Handle,Position,useStore} from '@xyflow/react';
@@ -79,14 +79,39 @@ function ProgramNode({data}){
     {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}</div>
   </Scaled></>;
 }
+// The camera and the canvas, for what a box keeps in sight (useStuck).
+const SceneCamera=createContext(null);
+const noSubscribe=()=>()=>{};
+// A frame's title stays in sight while its body is (owner via the
+// coordinator, 2026-10-02: an entered input's Inputs frame had read
+// "puts", othello's program "hello"): where the frame's left edge is out of
+// the canvas, its title moves in along its own band, never out of the
+// frame (an offset in world units); where its top is, the overlay names it
+// at the canvas's top (StuckTitles).
+function useStuck(node,titleWidth){
+  const scene=useContext(SceneCamera);
+  const key=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>{
+    if(!scene)return 0;
+    const v=scene.camera.get(),{width}=scene.size(),z=v.zoom,r=node.rect,pad=6;
+    const left=r.x*z+v.x,right=left+r.width*z;
+    if(right<titleWidth*z||left>width)return 0;
+    return Math.round(Math.max(0,Math.min(pad-left,(r.width-titleWidth)*z))/z);
+  });
+  return key;
+}
 function FrameNode({data}){
   const {node}=data,kind=node.kind;
   const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection'
     :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
+  const titleText=node.titleText||node.text,band=units.band(1)*titleText;
+  const dx=useStuck(node,Math.min(node.rect.width,(measure(title,'700 17px system-ui')+40)*titleText));
+  const scene=useContext(SceneCamera);
+  const named=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>!!scene?.stuck(node.id));
   return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}>
-    <Scaled node={{...node,text:node.titleText||node.text,rect:{...node.rect,height:units.band(1)*(node.titleText||node.text)}}} className="scene-frame-title" style={{'--scene-text':node.titleText||node.text}}>
-      <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled>
+    <div className="scene-frame-title-place" style={dx?{transform:`translate(${dx}px,0)`}:undefined}>
+    <Scaled node={{...node,text:titleText,rect:{...node.rect,height:band}}} className="scene-frame-title" style={{'--scene-text':titleText}}>
+      <strong data-box-title={node.id} data-frame-title={node.id} data-title-stuck={dx?'':undefined} style={named?{visibility:'hidden'}:undefined}>{title}</strong></Scaled></div>
   </div></>;
 }
 // An Inputs frame closed: its title over its kinds' marks, each named on
@@ -198,6 +223,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   };
   const store=createStore(sceneReducer({model,geometry:()=>geometry,scene:()=>sceneOf(store.getState())}),initialState);
   const camera=createCamera(geometry.home);
+  // The frames named at the canvas's top (stuckNames), for a frame to hide
+  // what is left of its own title under its name there.
+  let stuckMemo={list:[]};
+  const sceneCamera={camera,size,stuck:id=>stuckNames(sceneOf(store.getState()),camera.get()).some(name=>name.id===id)};
   let instance=null,initializing=true,overviewFit='rest';
   const look=createLook();
   let lookTimer,handleRect=null;
@@ -223,9 +252,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   }
   // The camera: a level's frame whole at its reading size, or its first
   // corner when it is larger than the canvas.
-  function frameCamera(rect,minZoom=0,pad=28){
+  function frameCamera(rect,minZoom=0,pad=28,maxZoom=Infinity){
     const {width,height}=size(),fit=Math.min((width-2*pad)/rect.width,(height-2*pad)/rect.height);
-    const zoom=Math.max(fit,minZoom);
+    const zoom=Math.max(Math.min(fit,maxZoom),minZoom);
     const x=rect.width*zoom<=width-2*pad?(width-rect.width*zoom)/2-rect.x*zoom:pad-rect.x*zoom;
     const y=rect.height*zoom<=height-2*pad?(height-rect.height*zoom)/2-rect.y*zoom:pad-rect.y*zoom;
     return {x,y,zoom};
@@ -244,10 +273,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(model.nodes.get(inner)?.kind!=='part'||!drawn||!rect)return entry;
     return Math.max(entry,11/13*drawn.grid.divisor*drawn.box.width/rect.width);
   };
+  // No closer than its boxes' words read at a third over their reading
+  // size: one box framed alone keeps its words at reading size and its
+  // neighbours in sight (owner via the coordinator, 2026-10-02: casdoor's
+  // Custom Logout Endpoint had filled the canvas in 90-pixel letters).
+  const readCap=level=>1.35/(geometry.text.get(level.at(-1))||geometry.unit||1);
   function enter(level,{rect=null,smooth=true}={}){
     store.dispatch({type:'enter',level});
     const scene=sceneOf(store.getState());
-    return moveCamera(frameCamera(rect||scene.focus,levelZoom(level)),smooth);
+    return moveCamera(frameCamera(rect||scene.focus,levelZoom(level),28,readCap(level)),smooth);
   }
   // The whole map's two cameras (levels.mjs homeView): at rest, as close as
   // its names read; "Show whole map", all of it. They are one where the
@@ -285,7 +319,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const current=store.getState().level;
     if(!center&&(current.includes(id)||sceneOf(store.getState()).nodes.some(node=>node.id===id)&&rect&&inSight(rect)))return;
     store.dispatch({type:'enter',level});
-    if(rect)moveCamera(frameCamera(rect,levelZoom(level)),smooth);
+    if(rect)moveCamera(frameCamera(rect,levelZoom(level),28,readCap(level)),smooth);
   }
   // A frame is shown entered; a chip or a closed collection at its level.
   function enterLevelOf(id){
@@ -297,7 +331,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const collection=model.rootOf(id);
     store.dispatch({type:'enter',level:chainOf(model,collection)});
     const rect=geometry.boxes.get(model.parent(id))||geometry.boxes.get(id);
-    if(rect)moveCamera(frameCamera(rect,levelZoom([collection])),smooth);
+    if(rect)moveCamera(frameCamera(rect,levelZoom([collection]),28,readCap(chainOf(model,collection))),smooth);
   }
   const bounds=rects=>{
     const left=Math.min(...rects.map(r=>r.x)),top=Math.min(...rects.map(r=>r.y));
@@ -380,7 +414,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       return;
     }
     if(node.kind==='kind'){read(model.parent(node.id),event);return;}
-    if(node.kind==='bucket'){read(node.id.split('~').pop(),event);return;}
+    // A part's group reads as the systems only that part calls, the part
+    // named (29-operation-view.js readGroup).
+    if(node.kind==='bucket'){const bucket=model.nodes.get(node.id);if(bucket&&callbacks.readGroup){callbacks.readGroup(bucket.parent,bucket.part,bucket.children);return;}read(node.id.split('~').pop(),event);return;}
     read(node.id,event);
   }
   // Whether a point on an arrow is nearer its start than its end.
@@ -518,7 +554,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // The pointer reaches these through the one hit test; the keyboard
     // reaches them as buttons, Enter doing what a click does.
     const press=target=>event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();clickAt(target,event);};
-    return <div className="scene-overlay">
+    // Frames named at the canvas's top stand under the marks and the tips,
+    // in a layer of their own that holds them whole (StuckTitles).
+    return <><div className="scene-stuck-titles"><StuckTitles scene={scene} v={v}/></div><div className="scene-overlay">
       {items.filter(item=>item.type==='zoom').map(item=><button type="button" key={item.id} className="scene-zoom" data-zoom-into={item.box}
         aria-label={t('Zoom into {0}',nameOf(item.box))} onKeyDown={press({type:'zoom',id:item.box})}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></button>)}
@@ -531,7 +569,45 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></button>)}
       {tip&&<MarkTip item={tip}/>}
       {box&&<BoxTip node={box} camera={v}/>}
-    </div>;
+    </div></>;
+  }
+  // A frame whose top is out of the canvas while its body fills it is named
+  // at the canvas's top, at its title's size, along its own left edge. The
+  // frames it sits inside are named first, a row above it where their
+  // names would overlap (etcd's "server (executable)" over "Client APIs"),
+  // and a frame whose own title such a name would cover is named below it.
+  function stuckNames(scene,v){
+    const {width,height}=size(),pad=6,z=v.zoom,placed=[],list=[];
+    if(stuckMemo.scene===scene&&stuckMemo.v===v&&stuckMemo.width===width&&stuckMemo.height===height)return stuckMemo.list;
+    const frames=scene.nodes.filter(node=>node.display==='frame').sort((a,b)=>b.rect.width*b.rect.height-a.rect.width*a.rect.height);
+    const across=(p,left,right)=>Math.min(p.right,right)-Math.max(p.left,left)>0;
+    // The first place from the canvas's top (hanging from it, over what is
+    // left of the frame's own title) where a name of height h stands clear
+    // of the names already placed across it.
+    const clear=(left,right,h)=>{let y=0;for(let moved=true;moved;){moved=false;for(const p of placed)if(across(p,left,right)&&p.top<y+h&&p.bottom>y){y=p.bottom+2;moved=true;}}return y;};
+    for(const node of frames){
+      const r=node.rect,titleText=node.titleText||node.text,px=17*titleText*z;
+      const left=r.x*z+v.x,top=r.y*z+v.y,right=left+r.width*z,bottom=top+r.height*z,band=units.band(1)*titleText*z;
+      if(right<80||left>width-80||top>height||px<9)continue;
+      const kind=node.kind,title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
+      const font=Math.min(px,22),x=Math.max(left,0)+pad,room=Math.max(80,Math.min(right,width)-Math.max(left,0)-2*pad);
+      const w=Math.min(room,measure(title,`700 ${font}px system-ui`)+22),h=font*1.3+4;
+      // Its own title stands 10 of its pixels under its top (scene.css
+      // .scene-frame-title): named here once any of it is above the canvas.
+      const covered=placed.some(p=>across(p,x,x+w)&&p.top<top+band&&p.bottom>top);
+      if(!covered&&top+10*titleText*z>=-.5)continue;
+      const y=clear(x,x+w,h);
+      if(bottom<y+h+2*band)continue;
+      placed.push({left:x,right:x+w,top:y,bottom:y+h});
+      const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection':'';
+      list.push({id:node.id,title,tone,x,y,font,room});
+    }
+    stuckMemo={scene,v,width,height,list};
+    return list;
+  }
+  function StuckTitles({scene,v}){
+    return stuckNames(scene,v).map(name=><div key={name.id} className={`scene-stuck-title ${name.tone}`} data-stuck-title={name.id} title={name.title}
+      style={{left:name.x,top:name.y,fontSize:name.font,maxWidth:name.room}}>{name.title}</div>);
   }
   // What a box pointed at is: a chip's callers, a bucket's systems, else,
   // while its words are too small to read, its name and what it does.
@@ -632,7 +708,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       return {id,source:ends[0],target:ends[1],type:'scene',zIndex:flags.on?1:0,selectable:false,focusable:false,data:{...edge,...flags}};
     });},[scene,emphasis]);
     const cards=[...new Set([state.look,...state.pinned].filter(key=>key.startsWith('edge:')))];
-    return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
+    return <SceneCamera.Provider value={sceneCamera}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
       nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} nodesFocusable={false} edgesFocusable={false} disableKeyboardA11y
       deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null} panActivationKeyCode={null} zoomActivationKeyCode={null}
       zoomOnDoubleClick={false} minZoom={minZoom()} maxZoom={maxZoom()} panOnScroll preventScrolling
@@ -652,7 +728,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       <ZoomVar/>
       <Overlay scene={scene} emphasis={emphasis}/>
       {cards.map(key=><ArrowCard key={key} edgeKey={key} scene={scene}/>)}
-    </ReactFlow>;
+    </ReactFlow></SceneCamera.Provider>;
   }
   // Far enough into a part to read its declarations, and a little more.
   const minZoom=()=>Math.min(.05/(geometry.unit||1),geometry.home.zoom*.5);

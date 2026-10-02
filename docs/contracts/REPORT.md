@@ -95,8 +95,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   removes an element; pointing changes only emphasis and drawing order;
   dark arrows are drawn after grey ones; every arrow opens its card; ports
   keep 20–28 screen pixels at every camera; titles at one level read within
-  ±10% of each other; no digit and no label (a badge, an arrow's caption)
-  is printed on the canvas.
+  ±10% of each other; a frame whose body is in sight has its title wholly
+  in sight and uncovered, and on the whole map so does a closed program or
+  Inputs box (`title-sight`, below); no digit and no label (a badge, an
+  arrow's caption) is printed on the canvas.
 
 - The home page has one common System map built from the translated
   component maps; components and saved areas are frames holding their
@@ -653,8 +655,9 @@ still names alike apart the same way, quiet after the name (litestream's
 ReplicaClient, one per package). Inputs of one kind a program names
 alike keep their names as registered and read apart by the words saved
 beside each (`page_apart.go`, chosen when the page is assembled, never by
-the browser), in the Inputs list, on the input's canvas tile and in its
-reading's heading, each word saying on its hover what it is and where it
+the browser), in the Inputs list (the whole told-apart name its link), on
+the input's canvas tile, in its reading's heading, in "Input: …" and in the
+page's path line, each word saying on its hover what it is and where it
 is written. Each input takes the first word that tells the group apart and
 that it has: the subcommands it is an option of (freqtrade's two
 "--erase"), its catalogue's declaration (dataformat_ohlcv in
@@ -935,7 +938,11 @@ A part read while an input is pinned says "Outside this input path" in its
 heading when neither it nor a part inside it ends one of the path's arrows,
 decided from the reading's own state, never from the pointer. An up-chevron
 in the reading card's own header closes details, keeping the camera and any
-pinned input path; leaving the path is a separate action.
+pinned input path; leaving the path is a separate action. A declaration or
+part chosen from the input's own reading (its flow, its path, its main flow)
+is read inside the path: "Input: …" and "Leave input path" stay (owner via
+the coordinator, 2026-10-02: freqtrade's trade dropped its path when its flow's
+FreqtradeBot was chosen).
 
 An area's reading starts under its description with its parts (below); a
 key is read in its part without moving the camera. An area's or component's
@@ -1119,7 +1126,26 @@ post-layout edits are deleted.
   are those that brought them nearest, and the camera at rest frames the
   busiest program with the most other programs, then the most other
   names, a canvas holds, as close as they read; "Show whole map" shows all
-  of it, the names that do not read faded and named on pointing. The
+  of it, the names that do not read faded and named on pointing. A closed
+  program or Inputs box the camera at rest would cut at the canvas's edge
+  is brought in whole at its corner, or taken wholly out of sight where
+  that would push a framed name out (`levels.mjs` `keepTitles`; owner via
+  the coordinator, 2026-10-02: casdoor's second Inputs box had read
+  "ts"). A frame whose body is in sight keeps its title in sight: its left
+  edge out of the canvas, the title moves in along its own band, never out
+  of the frame; its top out, the overlay names it at the canvas's top at
+  its title's size, the frames holding it a row above where their names
+  would overlap, and a frame whose own title such a name would cover is
+  named below it (etcd's "Inputs" had read "puts", othello's program
+  "hello", casdoor's Outside lost its title above the canvas).
+  The camera framing a box (entering a level, a reading's declaration or
+  arrow end, "Show input") stops where that level's words read at 1.35
+  times their size, and no word on the canvas, nor a chip's or a bucket's
+  mark, is drawn larger than 1.6 times its own size: the neighbours of a
+  small box read inside a large level keep their names at that size (owner
+  via the coordinator, 2026-10-02: casdoor's Custom Logout Endpoint had
+  filled the canvas in 90-pixel letters, the part-groups beside it in
+  50). The
   world is drawn a power of two larger, keeping every level's entry camera
   at most four screen pixels to a world pixel: the browser sizes a box in
   steps of 1/64 of a pixel, and at etcd's deepest levels arrows' ends had
@@ -1140,7 +1166,11 @@ post-layout edits are deleted.
   its frame holds those systems' chips under the part's name in the same
   dark words, never an outside system's brown (external review, item 4,
   2026-10-02, on a skeptic's choice among three looks). The reading
-  column's Outside lists its destinations alone.
+  column's Outside lists its destinations alone. A click on a closed
+  part-group reads "The outside systems only this part calls": the part
+  as its card, then those systems as the Outside reading lists them, each
+  with where it is made and called from (owner via the coordinator,
+  2026-10-02: the click had read the part's own files).
   A declaration the reading names out of sight (`scene.mjs` `memberView`,
   owner, 2026-09-29) is shown with its part entered across the canvas at
   the zoom its tiles read at, framed whole when it fits, else with the
@@ -1242,7 +1272,11 @@ as a zoom mark steps in one, also moving only the camera: from a part's tiles
 to the frame holding it, from an open area to its component, from an open
 component to the whole map. The camera takes the frame as entering it would,
 no closer than the zoom at which the level it leaves closes; at the whole map
-it zooms out one step. "+" zooms in one step.
+it zooms out one step. "+" zooms in one step. A reading revealed on the map
+(a search result, a declaration named in the column, a component chosen)
+scrolls the page only to bring a map not wholly in sight under the toolbar;
+one already in sight stays put (freqtrade, 2026-10-02: a declaration chosen
+from an input's flow moved the page 16 pixels under the pointer).
 
 The toolbar keeps the current question and the exact component/area/part
 path, the pinned input before it and the declaration read after it
@@ -1394,13 +1428,27 @@ established). A kind chosen on the canvas or the home reads the collection
 headed "Inputs · {kind}", its section brought into sight and marked, as a
 connection opened from the home is: a one-second pale pulse, then a steady
 link-coloured bar at its left (only the bar under reduced motion). Each
-input's record, with its registration line as written, is its own reading.
+input's record, with its registration line as written, is its own reading;
+a registration line over 160 characters folds the first braced body longer
+than 80 into "{…}", the whole line behind its source link (etcd's Campaign
+registration, 1,144 characters with its inline handler's body, had shown
+that body's tail at the reading's top).
 
 The component's "Entrypoints" link lands on the program's entry, from
 GroupsIndex's entries in the page data: the part holding every seed, the seed
 read there when it is one; when a seed stands in no part, or the seeds in two
-parts, the component's reading, opened at its entry line when it has one. Its
-full-reference section keeps the main flow, configuration, its parts (each
+parts, the component's reading, opened at its entry line when it has one. A
+library's entries are its exports (PROGRAM_INDEX `target.exports`, the
+`entrypoint` facts keyed `export`): its Entry list names them as callables
+(`lua_absindex()`), and they are no way to run it, so the run recipe a run
+without a model shows lists none of them; with nothing else to run, it says
+that no manifest row or launch entrypoint was found and that a library's
+exports are its API, not ways to run it. Each entry names the part holding
+it (GroupsIndex's Entries) and reads its function there; a list over twelve
+folds by those parts, each closed under its box and its count (liblua.a's
+156: Core API · 83, Auxiliary library · 34, Standard libraries · 24,
+Debugging · 8, Runtime and calls · 7), the entries no part holds after them.
+Its full-reference section keeps the main flow, configuration, its parts (each
 reading the part on the canvas), dependencies, coverage and TODO lists.
 
 Its traversal coverage, on the "What is missing" page under the heading "Not

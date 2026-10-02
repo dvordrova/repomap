@@ -9,7 +9,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
-import {layoutLevels,cardWords,programWords,units,chipBox,bucketBox} from './levels.mjs';
+import {layoutLevels,cardWords,programWords,units,chipBox,bucketBox,keepTitles} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable,memberView} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
@@ -242,6 +242,13 @@ function checkHome(name,model,geometry,problems){
     const whole=!program||programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure).title.join('').replace(/\s+/g,'')===node.title.replace(/\s+/g,'');
     if(px<(program?11:9.5)||!whole)problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px${whole?'':', cut'}`]);
   }
+  // A closed program or Inputs box partly in sight at rest shows its title
+  // at its top left corner (levels.mjs keepTitles).
+  const partly=r=>{const l=r.x*rest.zoom+rest.x,t=r.y*rest.zoom+rest.y;return l+r.width*rest.zoom>.5&&t+r.height*rest.zoom>.5&&l<canvas.width-.5&&t<canvas.height-.5;};
+  for(const id of model.roots.filter(id=>['program','inputs'].includes(model.nodes.get(id)?.kind))){
+    const r=geometry.boxes.get(id);if(!r||!partly(r))continue;
+    if(r.x*rest.zoom+rest.x<-.5||r.y*rest.zoom+rest.y<-.5)problems.push(['names',`${name}: ${id}'s title cut at the canvas edge at rest`]);
+  }
   if(rest.zoom!==geometry.whole.zoom&&named.filter(node=>inSight(node.rect)).length<1)problems.push(['names',`${name}: the camera at rest frames no name`]);
   const all=geometry.whole,b=geometry.bounds;
   if(b.x*all.zoom+all.x<-.5||b.y*all.zoom+all.y<-.5||(b.x+b.width)*all.zoom+all.x>canvas.width+.5||(b.y+b.height)*all.zoom+all.y>canvas.height+.5)problems.push(['names',`${name}: "Show whole map" does not show the whole map`]);
@@ -265,9 +272,23 @@ function checkHome(name,model,geometry,problems){
   }
 }
 
+// casdoor's home (2026-10-02): its second program's Inputs box stood 58px
+// past the left edge, its title cut to "ts". The camera at rest brings the
+// box in when the names it frames stay in sight, and otherwise takes it
+// wholly out of sight rather than leave a sliver.
+test('the camera at rest shows a closed box with its title, or not at all',()=>{
+  const canvas={width:1054,height:660},view={zoom:1,x:0,y:0};
+  const inputs={x:-58,y:153,width:82,height:63},program={x:82,y:158,width:175,height:53};
+  const room=keepTitles(view,[inputs,program],[program,{x:549,y:100,width:397,height:400}],canvas);
+  assert.equal(inputs.x+room.x,16,'brought in where the names stay in sight');
+  const tight=keepTitles(view,[inputs,program],[program,{x:549,y:100,width:480,height:400}],canvas);
+  assert.ok(inputs.x+inputs.width+tight.x<=0,'taken wholly out of sight where they would not');
+  assert.deepEqual(keepTitles(view,[program],[program],canvas),view,'nothing cut, nothing moves');
+});
+
 // Each rule's problems on every level of a page, with a box chosen too: a
 // chosen box draws its quiet arrows, and the rules hold for them.
-const rules={names:'every program (11px) and outside system (9.5px) in sight is named at rest on the whole map; Show whole map fits it all',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
+const rules={names:'every program (11px) and outside system (9.5px) in sight is named at rest on the whole map, a closed program or Inputs box partly in sight with its title; Show whole map fits it all',words:'a card\'s title, role and description stand whole in it, or are left out',rects:'every box, tile and mark has a place, and pointing at a box throws nothing',ends:'each arrow runs from its own source\'s border to its own target\'s',heads:'a head points into its box',
   frame:'every end stands in the level\'s frame or on a port',shared:'no two arrows share more than 6px of one line',
   gaps:'lanes stand at least as far apart as in the approved Step 1 drawing',
   crosses:'no arrow runs through a box it does not join',

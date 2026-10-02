@@ -848,9 +848,11 @@ func (builder *pageBuilder) recipe(view *pageView) {
 			Command: factLabel(fact), Anchors: anchorList(builder.links.factAnchor(fact)),
 		})
 	}
+	exports := false
 	for _, fact := range builder.data.Facts.OfKind(facts.KindEntrypoint) {
 		if fact.Key == facts.EntrypointExport {
 			// A library's API is no way to run it.
+			exports = true
 			continue
 		}
 		row := pageRecipe{Command: factLabel(fact), Anchors: anchorList(builder.links.factAnchor(fact))}
@@ -861,6 +863,11 @@ func (builder *pageBuilder) recipe(view *pageView) {
 	}
 	if len(view.Recipe) == 0 {
 		view.RecipeMissing = "No manifest rows or entrypoints were found."
+		if exports {
+			// liblua.a alone has 156 entries and nothing to run: saying no
+			// entrypoint was found would deny the Entry list beside it.
+			view.RecipeMissing = "No manifest rows or launch entrypoints were found; a library's exports are the API it offers, not ways to run it."
+		}
 	}
 }
 

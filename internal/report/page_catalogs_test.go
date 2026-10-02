@@ -86,6 +86,14 @@ func TestRecipeListsNoLibraryExport(t *testing.T) {
 	if len(view.Recipe) != 1 || view.Recipe[0].Command != "main" {
 		t.Fatalf("recipe: %+v", view.Recipe)
 	}
+	// A library alone: its entries are no launch, and the page says so
+	// rather than that no entrypoint was found.
+	layer.Facts = layer.Facts[1:]
+	view = pageView{}
+	builder.recipe(&view)
+	if len(view.Recipe) != 0 || !strings.Contains(view.RecipeMissing, "a library's exports are the API it offers") {
+		t.Fatalf("library recipe: %+v %q", view.Recipe, view.RecipeMissing)
+	}
 }
 
 // A word checked only inside another input's handler is that input's

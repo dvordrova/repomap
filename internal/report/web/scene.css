@@ -11,6 +11,12 @@
 .scene-program-card>strong{font-size:18px;line-height:23px;white-space:pre-line}
 .scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line;margin:0}
 .scene-frame-title{padding:10px 16px;pointer-events:none}
+.scene-frame-title-place{pointer-events:none}
+/* A frame named at the canvas's top while its own top is out of sight. */
+.scene-stuck-titles{position:absolute;inset:0;pointer-events:none;z-index:4}
+.scene-stuck-title{position:absolute;z-index:5;pointer-events:none;padding:2px 10px;border-radius:0 0 8px 8px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:rgba(255,255,255,.92);color:#243044;box-shadow:0 1px 3px rgba(15,23,42,.12)}
+.scene-stuck-title.flow-communication{background:#fffaf0;color:#77531c}
+.scene-stuck-title.flow-input-collection{background:#eef5ff;color:#204a7b}
 .scene-frame-title>strong{font-size:17px;line-height:22px;white-space:nowrap}
 .flow-communication .scene-frame-title>strong{color:#77531c}
 .flow-input-collection .scene-frame-title>strong,.scene-inputs-card>strong{color:#204a7b}
@@ -75,8 +81,18 @@
 .scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{--word:13;--gone:9}
 .scene-root .react-flow__node .scene-tile>span{--word:13;--gone:9}
 .scene-root .react-flow__node .scene-group-title>strong{--word:13.6;--gone:9}
+/* No word reads larger than 1.6 times its own size, nor a chip's or a
+   bucket's mark: a level's neighbours, far larger than the canvas while a
+   small box inside them is read, keep their names at that size, their
+   lines as spaced (owner via the coordinator, 2026-10-02: casdoor's
+   buckets beside an opened one read in 50-pixel letters). The camera
+   framing a box stops under it (scene-canvas.jsx readCap). */
 .scene-root .react-flow__node :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role,.scene-tile>span,.scene-group-title>strong){
-  font-size:calc(var(--word) * 1px);opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
+  font-size:min(calc(var(--word) * 1px),calc(var(--word) * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))));opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
+.scene-root .react-flow__node [data-box-title]{line-height:1.25em}
+.scene-root .react-flow__node .flow-chip-name{line-height:calc(17em / 12)}
+.scene-root .react-flow__node :is(.flow-description,.flow-component-role){line-height:calc(18em / 13)}
+.scene-root .react-flow__node :is(.scene-chip,.scene-bucket-marks)>.flow-kind-mark{width:min(14px,calc(14 * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))));height:min(14px,calc(14 * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))))}
 .scene-root .scene-chip:focus-visible,.scene-root .scene-bucket:focus-visible{outline:2px solid #243044;outline-offset:2px}
 .scene-tip.scene-tip-name{white-space:nowrap;max-width:none}
 .scene-root .react-flow__node .scene-deep [data-box-title]{opacity:1}
