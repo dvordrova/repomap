@@ -113,7 +113,8 @@ func TestAComponentsMainFlowStandsStepsUnderTheirPartsAndNamesTheirInputs(t *tes
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading") +
 		systemJSPiece(t, "31-reading-column.js", "// Pointing at inputs in the column lights", "// Where a catalogue's inputs are declared") +
 		systemJSPiece(t, "31-reading-column.js", "var rmPendingKind=", "// The home's table of programs") +
-		systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
+		systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>") +
+		systemJSPiece(t, "29-operation-view.js", "// A type's line, the model's, reads its first sentence", "// Where a component's \"Entrypoints\" link lands")
 	runSystemJS(t, shapeElements+code+`
 const part={id:'t1-g1',dataset:{title:'Trading bot core',summary:'Runs the trading loop.'},getAttribute:()=>'#t1-g1'};
 const input={id:'t1-o9',dataset:{title:'trade'}};

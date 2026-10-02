@@ -116,6 +116,7 @@ for(const target of targets)for(const path of paths){
           info.titles={min:sorted[0],median,max:sorted.at(-1),count:titles.length};
         }
         for(const t of await page.evaluate(home=>window.__inv.titleSight(home),level.kind==='home'))add('title-sight',t.ok,`"${t.title||t.id}" cut at the canvas edge`);
+        for(const t of await page.evaluate(()=>window.__inv.nameSight()))add('name-sight',t.ok,`"${t.title||t.id}" cut at the canvas edge`);
         finish('titles');
         merge('markers',await page.evaluate(()=>window.__inv.markers()));finish('markers');
         const lints=await page.evaluate(([level,whole])=>window.__lintCanvas(level,3,!whole),[level.name,level.kind==='home']);

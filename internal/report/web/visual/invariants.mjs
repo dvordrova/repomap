@@ -53,6 +53,7 @@ export const invariants=[
   ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box',{phase:'markers',none:'no marker in sight'}],
   ['titles','titles at one level within ±10% of their median',{phase:'titles',none:'fewer than two titles in sight'}],
   ['title-sight','a frame whose body is in sight has its title wholly in sight, and on the whole map so does a closed program or Inputs box',{phase:'titles',none:'no frame or closed box in sight'}],
+  ['name-sight','a closed card, program or part-group whose part in sight can hold its words shows them wholly in sight',{phase:'titles',none:'no closed box partly in sight'}],
   ['dark-top','dark arrows are drawn after grey ones',{phase:'cards',none:'no arrow turned dark while pointed at'}],
   ['cards','every arrow opens its card when pointed at',{phase:'cards',none:'no arrow in sight to point at'}],
   ['no-labels','no digit, plaque or kind label on the canvas',{phase:'texts',none:'no text in sight'}],
@@ -304,6 +305,22 @@ export function invariantKit(){
         const own=n.querySelector(`[data-box-title="${q}"]`),named=root().querySelector(`[data-stuck-title="${q}"]`);
         const ok=[own,named].some(el=>shown(el)&&inside(el,el.getBoundingClientRect()));
         out.push({id,ok,title:(own?.textContent||'').trim().slice(0,30)});
+      }
+      return out;
+    },
+    // Closed cards, programs' cards and part-groups cut by the canvas's
+    // edge whose part in sight can hold their words, each with whether its
+    // words stand wholly in sight (scene-canvas.jsx useWordsInSight).
+    nameSight(){
+      const c=canvas(),inside=r=>r.left>=c.l-1&&r.right<=c.r+1&&r.top>=c.t-1&&r.bottom<=c.b+1,out=[];
+      for(const n of [...root().querySelectorAll('.react-flow__node-card,.react-flow__node-area,.react-flow__node-program,.react-flow__node-bucket')].filter(shown)){
+        const words=n.querySelector('.scene-words,.scene-bucket-words'),name=n.querySelector('[data-box-title],.flow-chip-name');
+        if(!words||!name||!shown(name))continue;
+        const r=n.getBoundingClientRect(),w=words.getBoundingClientRect();
+        if(inside(r))continue;
+        const across=Math.min(r.right,c.r)-Math.max(r.left,c.l),down=Math.min(r.bottom,c.b)-Math.max(r.top,c.t);
+        if(across<w.width+20||down<w.height+20)continue;
+        out.push({id:n.dataset.id,ok:inside(w),title:name.textContent.trim().slice(0,30)});
       }
       return out;
     },

@@ -9,7 +9,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
-import {layoutLevels,cardWords,programWords,units,chipBox,bucketBox,keepTitles} from './levels.mjs';
+import {layoutLevels,cardWords,programWords,units,chipBox,bucketBox,keepTitles,narrowestLane} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable,memberView} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
@@ -242,12 +242,12 @@ function checkHome(name,model,geometry,problems){
     const whole=!program||programWords({...node,item:model.nodes.get(node.id)?.item},node.rect.width/node.text,measure).title.join('').replace(/\s+/g,'')===node.title.replace(/\s+/g,'');
     if(px<(program?11:9.5)||!whole)problems.push(['names',`${name}: ${node.id} named at ${px.toFixed(1)}px${whole?'':', cut'}`]);
   }
-  // A closed program or Inputs box partly in sight at rest shows its title
-  // at its top left corner (levels.mjs keepTitles).
+  // A closed program or Inputs box in sight at rest stands wholly in sight,
+  // its title across it (levels.mjs keepTitles).
   const partly=r=>{const l=r.x*rest.zoom+rest.x,t=r.y*rest.zoom+rest.y;return l+r.width*rest.zoom>.5&&t+r.height*rest.zoom>.5&&l<canvas.width-.5&&t<canvas.height-.5;};
   for(const id of model.roots.filter(id=>['program','inputs'].includes(model.nodes.get(id)?.kind))){
     const r=geometry.boxes.get(id);if(!r||!partly(r))continue;
-    if(r.x*rest.zoom+rest.x<-.5||r.y*rest.zoom+rest.y<-.5)problems.push(['names',`${name}: ${id}'s title cut at the canvas edge at rest`]);
+    if(!inSight(r))problems.push(['names',`${name}: ${id} cut at the canvas edge at rest`]);
   }
   if(rest.zoom!==geometry.whole.zoom&&named.filter(node=>inSight(node.rect)).length<1)problems.push(['names',`${name}: the camera at rest frames no name`]);
   const all=geometry.whole,b=geometry.bounds;
@@ -284,6 +284,18 @@ test('the camera at rest shows a closed box with its title, or not at all',()=>{
   const tight=keepTitles(view,[inputs,program],[program,{x:549,y:100,width:480,height:400}],canvas);
   assert.ok(inputs.x+inputs.width+tight.x<=0,'taken wholly out of sight where they would not');
   assert.deepEqual(keepTitles(view,[program],[program],canvas),view,'nothing cut, nothing moves');
+});
+
+// etcd's whole map (harness table, 829626d6): laid out across, its
+// server's arrows left its right side 5 pixels apart; the arrangement
+// whose lanes stand widest is taken where none keeps them. Two runs side by
+// side are a lane; a box between them parts them; one route is no pair.
+test('the narrowest lane of a laid out level is two arrows side by side with nothing between them',()=>{
+  const route=(...points)=>points.map(([x,y])=>({x,y}));
+  const laid=(routes,boxes=[])=>({children:new Map(boxes.map((box,i)=>[`b${i}`,box])),routes:new Map(routes.map((points,i)=>[`r${i}`,points]))});
+  assert.equal(narrowestLane(laid([route([0,0],[100,0]),route([0,5],[100,5]),route([0,40],[100,40])])),5);
+  assert.equal(narrowestLane(laid([route([0,0],[100,0]),route([0,30],[100,30])],[{x:10,y:10,width:50,height:10}])),Infinity,'a box between parts them');
+  assert.equal(narrowestLane(laid([route([0,0],[100,0],[100,5],[0,5])])),Infinity,'one arrow is no lane pair');
 });
 
 // Each rule's problems on every level of a page, with a box chosen too: a

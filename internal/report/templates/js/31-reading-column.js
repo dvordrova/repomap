@@ -959,8 +959,9 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
       if(!node){head.remove();return;}
       var box=rmPartBox(ctx,head.dataset.flowPart,'');if(node.dataset.summary)box.title=node.dataset.summary;head.appendChild(box);
     });
-    // A type's line stands at two lines; a click on it says the rest.
+    // A type's line reads its first sentence; a click on it says the rest.
     steps.querySelectorAll('.flow-type').forEach(function(line){
+      rmTypeLineFold(line);
       line.addEventListener('click',function(event){event.stopPropagation();line.classList.toggle('flow-type-open');});
     });
     // An input a step handles reads that input, its tile lit while pointed

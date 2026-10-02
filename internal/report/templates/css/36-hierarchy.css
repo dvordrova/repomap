@@ -59,8 +59,10 @@ ol.flow.flow-way{margin:.25rem 0 0;padding-left:.6rem;border-left:2px solid var(
    type's line stands at two lines until clicked; the closing line is quiet. */
 .flow-part-head{margin:.45rem 0 .3rem;padding:0}
 ol.flow>.flow-part-head:first-child{margin-top:0}
-.flow-type{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin-top:.1rem;cursor:pointer}
-.flow-type.flow-type-open{display:block;-webkit-line-clamp:unset}
+.flow-type{display:block;margin-top:.1rem}
+.flow-type.flow-type-more{cursor:pointer}
+.flow-type:not(.flow-type-open) .flow-type-rest{display:none}
+.flow-type.flow-type-more:not(.flow-type-open)::after{content:" …"}
 .flow-type>code{font-style:normal}
 .flow-end{margin-top:.6rem}
 

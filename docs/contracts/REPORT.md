@@ -97,7 +97,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   keep 20–28 screen pixels at every camera; titles at one level read within
   ±10% of each other; a frame whose body is in sight has its title wholly
   in sight and uncovered, and on the whole map so does a closed program or
-  Inputs box (`title-sight`, below); no digit and no label (a badge, an
+  Inputs box (`title-sight`, below); a closed card, program or part-group
+  whose part in sight can hold its words shows them wholly in sight
+  (`name-sight`); no digit and no label (a badge, an
   arrow's caption) is printed on the canvas.
 
 - The home page has one common System map built from the translated
@@ -435,7 +437,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   call reaching a running copy of it (page_system_map.go) has its card and
   column line.
 - A closed area's card shows faint outlines where its parts stand, never a
-  blank box, as a program's card does once drawn large; only a box that can be
+  blank box, as a program's card does once drawn large and while its role
+  and description are too small to read (owner via the coordinator,
+  2026-10-02: etcd's contrib/lock/storage and tools/etcd-dump-db had stood
+  on the whole map as a name over a blank card); only a box that can be
   entered has a magnifier. An architectural area holds at least two parts
   (reading draws none smaller; GroupsIndex keeps no container of fewer than
   two groups), and the canvas draws every area it is given; Inputs and Outside
@@ -812,7 +817,10 @@ flow had named calls and never said what they were for): each run of steps
 read in one part stands under that part's box once, its title alone, its
 description on hover, a click reading it; a method says its type's own atlas
 line once for a run of the type's methods, "{Type} — {line}" in the model's
-style at two lines until clicked (the step's `Explanation` stays its own
+style, its first sentence whole and the rest on a click, " …" saying there
+is more (owner via the coordinator, 2026-10-02: two clamped lines had cut
+casdoor's KeycloakSyncerProvider and etcd's Etcd mid-sentence; such lines
+run some 200 characters) (the step's `Explanation` stays its own
 line only, READING); a step whose declaration handles saved inputs names
 each by its kind's words and its name as written ("handles the command
 trade"), the name reading that input and lighting its tile, several of one
@@ -920,7 +928,7 @@ splits, "then into:" names each branch with the members of it the step
 calls (`FreqtradeBot` with `process`, `startup`), the helpers among them on
 one line ("helpers: addReply, addReplyBulk"). A class step or branch reads
 its own atlas line under it, the line its part's explained declarations
-carry (page data `explained`), at two lines until clicked: what a `Worker`
+carry (page data `explained`), its first sentence until clicked: what a `Worker`
 or a `FreqtradeBot` is (external review, 2026-10-02). Then the parts the input
 enters fold under one line naming every one ("Parts on this path: String
 commands, Keyspace, …"), each part, nearest the handler first, with its
@@ -1112,7 +1120,13 @@ post-layout edits are deleted.
   the canvas larger, a link to another program ending on a port of the
   program's border (one port a way per box, naming its programs on hover);
   the whole map its programs (cards of their name and role), Inputs frames (their kinds' marks) and
-  Outside frames. Every program and every outside system in sight is
+  Outside frames, of the arrangements tried (across or down, the Outside
+  packed to four proportions) the one fitting the canvas best among those
+  whose lanes stand at least four fifths of ELK's spacing apart, the one
+  whose lanes stand widest where none does (`narrowestLane`; harness
+  table, 829626d6: etcd's server laid out across had its arrows out of
+  its right side 5 pixels apart; down they stand 9.5, beets' went from 7.1
+  to 11.7). Every program and every outside system in sight is
   named at rest on the whole map (owner, 2026-10-02): a program's name at
   eleven pixels or more, an outside system's (a chip's, a bucket's) at
   nine and a half, a secondary word as a description and an input's name.
@@ -1128,16 +1142,20 @@ post-layout edits are deleted.
   names, a canvas holds, as close as they read; "Show whole map" shows all
   of it, the names that do not read faded and named on pointing. A closed
   program or Inputs box the camera at rest would cut at the canvas's edge
-  is brought in whole at its corner, or taken wholly out of sight where
-  that would push a framed name out (`levels.mjs` `keepTitles`; owner via
-  the coordinator, 2026-10-02: casdoor's second Inputs box had read
-  "ts"). A frame whose body is in sight keeps its title in sight: its left
+  is brought in whole, or taken wholly out of sight where that would push
+  a framed name out, and an Outside frame likewise at its title's corner
+  (`levels.mjs` `keepTitles`; owner via the coordinator, 2026-10-02:
+  casdoor's second Inputs box had read "ts", etcd's tools/etcd-dump-db
+  stood past the right edge of the harness's canvas). A frame whose body is in sight keeps its title in sight: its left
   edge out of the canvas, the title moves in along its own band, never out
   of the frame; its top out, the overlay names it at the canvas's top at
   its title's size, the frames holding it a row above where their names
   would overlap, and a frame whose own title such a name would cover is
   named below it (etcd's "Inputs" had read "puts", othello's program
-  "hello", casdoor's Outside lost its title above the canvas).
+  "hello", casdoor's Outside lost its title above the canvas). A closed
+  card, program or part-group cut at the left or top edge moves its words
+  in, under those names, never out of its own inside (etcd's "gRPC proxy",
+  casdoor's "Email providers" beside an opened part-group).
   The camera framing a box (entering a level, a reading's declaration or
   arrow end, "Show input") stops where that level's words read at 1.35
   times their size, and no word on the canvas, nor a chip's or a bucket's
@@ -1452,7 +1470,11 @@ Its full-reference section keeps the main flow, configuration, its parts (each
 reading the part on the canvas), dependencies, coverage and TODO lists.
 
 Its traversal coverage, on the "What is missing" page under the heading "Not
-reachable from the entrypoints", lists the files no entrypoint reaches; then the parts its
+reachable from the entrypoints", lists the files no entrypoint reaches; a
+target whose entrypoints reach all of its code reads one plain line,
+"Reachability: its entrypoints reach all of its code.", with no such
+heading over it (owner via the coordinator, 2026-10-02: Lua's test
+libraries had read the heading over its denial); then the parts its
 program never runs, one row per file with the file, the part's name and its
 declarations there as source chips (GroupsIndex `unreachable`); then, under
 "{0} symbols" and by file in line order, the other declarations the

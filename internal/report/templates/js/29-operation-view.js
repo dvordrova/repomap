@@ -262,7 +262,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     if(!node||!key)return null;
     var said=(rmPage.data(node,'explained')||[]).find(function(item){var source=item.source||{};return item.kind==='type'&&item.explanation&&(source.Href||source.Open)===key;});
     if(!said)return null;
-    var line=rmModelText('span','flow-type',said.explanation,said.explanation_ref);
+    var line=rmTypeLineFold(rmModelText('span','flow-type',said.explanation,said.explanation_ref));
     line.addEventListener('click',function(event){event.stopPropagation();line.classList.toggle('flow-type-open');});
     return line;
   }
@@ -527,6 +527,34 @@ function rmExplorationPath(operation,frames,member){
 function rmToldApart(node){
   var title=node&&node.dataset?node.dataset.title||'':'',words=node&&typeof rmPage!=='undefined'&&rmPage.data?rmPage.data(node,'apart')||[]:[];
   return words.length?title+' '+words.map(function(word){return word.word;}).join(' · '):title;
+}
+// A type's line, the model's, reads its first sentence whole and the rest
+// on a click, " …" saying there is more (owner via the coordinator,
+// 2026-10-02: two clamped lines had cut KeycloakSyncerProvider's, Etcd's
+// and TCPProxy's mid-sentence; the median line is some 200 characters).
+// Its words stay as they were drawn, terms and translation included.
+function rmTypeLineFold(line){
+  if(!line||!line.ownerDocument||typeof NodeFilter==='undefined')return line;
+  var walker=line.ownerDocument.createTreeWalker(line,NodeFilter.SHOW_TEXT),seen=0,node,at=-1;
+  while((node=walker.nextNode())){
+    if(node.parentElement&&node.parentElement.closest('code')){seen+=node.data.length;continue;}
+    var end=/[.!?](?=\s+[\p{Lu}\d"“«(])/gu,match;
+    while((match=end.exec(node.data)))if(seen+match.index>=24){at=match.index+1;break;}
+    if(at>=0)break;
+    seen+=node.data.length;
+  }
+  if(at<0)return line;
+  // From the sentence's end up to the line, what follows at each level
+  // moves into a fold at the end of that level.
+  for(var level=node.splitText(at),first=true,parent;level&&level!==line;level=parent,first=false){
+    parent=level.parentNode;
+    var moving=[];for(var sibling=first?level:level.nextSibling;sibling;sibling=sibling.nextSibling)moving.push(sibling);
+    if(!moving.length)continue;
+    var rest=line.ownerDocument.createElement('span');rest.className='flow-type-rest';
+    moving.forEach(function(child){rest.appendChild(child);});parent.appendChild(rest);
+  }
+  line.classList.add('flow-type-more');
+  return line;
 }
 
 // Where a component's "Entrypoints" link lands (page_sections.go): the part

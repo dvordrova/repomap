@@ -89,6 +89,8 @@
    framing a box stops under it (scene-canvas.jsx readCap). */
 .scene-root .react-flow__node :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role,.scene-tile>span,.scene-group-title>strong){
   font-size:min(calc(var(--word) * 1px),calc(var(--word) * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))));opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
+.scene-root .react-flow__node .scene-words-natural :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role){font-size:calc(var(--word) * 1px)!important}
+.scene-root .react-flow__node .scene-words-natural .flow-kind-mark{width:14px!important;height:14px!important}
 .scene-root .react-flow__node [data-box-title]{line-height:1.25em}
 .scene-root .react-flow__node .flow-chip-name{line-height:calc(17em / 12)}
 .scene-root .react-flow__node :is(.flow-description,.flow-component-role){line-height:calc(18em / 13)}
@@ -118,10 +120,15 @@
 /* The border takes its room from a card's padding, never from its words
    (levels.mjs sizes a card by its words and a 14px padding). */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}
-/* A program's card shows its drawing's outline only once drawn large, its
-   words over it. */
-.scene-program-ghosts{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1)}
-.scene-program-card>.scene-words{background:#f8fafc}
+/* A program's card shows its drawing's outline once drawn large, its
+   words over it, and while its role and description are too small to
+   read, in their place (owner via the coordinator, 2026-10-02: etcd's
+   contrib/lock/storage and tools/etcd-dump-db had stood on the whole map
+   as a name over a blank card, its words filling 31% of it). Each word's
+   line keeps its own ground, and takes it along when it fades. */
+.scene-program-ghosts{opacity:max(clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1),calc(1 - clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 9) * 2),1)))}
+.scene-program-card>.scene-words{background:transparent}
+.scene-program-card>.scene-words>*{background:#f8fafc}
 /* A closed part's chosen declaration, alone as its tile under its title. */
 .scene-chosen-tile{display:block;box-sizing:border-box;min-height:20px;padding:0 8px;border:2px solid #243044;border-radius:6px;background:#fff;color:#243044;font:600 12.5px/16px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 /* A closed part-group: our part's card (the parts' grey line, dark words)
@@ -132,6 +139,7 @@
 .scene-bucket-stack::before{left:8px;top:8px;right:0;bottom:0}
 .scene-bucket-stack::after{left:4px;top:4px;right:4px;bottom:4px}
 .scene-bucket-face{position:relative;z-index:1;box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;width:100%;height:100%;padding:4px 10px;border:1.25px solid #718096;border-radius:7px;background:#fff;color:#243044;font:600 12px/17px system-ui}
+.scene-bucket-words{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .scene-bucket-face .scene-bucket-marks{display:flex;gap:4px;color:#896019}
 .scene-root .scene-scaled.scene-bucket-stack .scene-bucket-face,.scene-root .scene-scaled.scene-bucket-stack::before,.scene-root .scene-scaled.scene-bucket-stack::after{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
 .scene-bucket-open .scene-frame-title>strong{color:#243044}

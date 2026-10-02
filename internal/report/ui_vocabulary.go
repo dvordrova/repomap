@@ -560,7 +560,6 @@ var russianUI = map[string]string{
 	"No matching question, explanation, part, operation or code. Try a shorter name or another word.": "Подходящих вопросов, объяснений, частей, операций или кода не найдено. Попробуйте более короткое название или другое слово.",
 	"Read forward from where it starts:":                             "Читайте вперёд от места, где он начинается:",
 	"No terms match. Try another word from its name or description.": "Термины не найдены. Попробуйте другое слово из названия или описания.",
-	"Its entrypoints reach all of its code.":                         "Его точки входа достигают всего его кода.",
 	"Node description and sources":                                   "Описание блока и источники",
 	"Not assessed: this target has no detected entrypoints.":         "Не оценивалось: у этого компонента не обнаружены точки входа.",
 	"Not available.":                                                   "Недоступно.",
@@ -961,6 +960,9 @@ var russianUI = map[string]string{
 	"called (a Main flow step)": "вызывается",
 	"handed over":               "передаётся",
 	"its member":                "член его типа",
+
+	// A target whose entrypoints reach all of its code (target.html).
+	"Reachability: its entrypoints reach all of its code.": "Достижимость: его точки входа достигают всего его кода.",
 
 	// A part's group of an Outside frame read as its systems (29-operation-view.js).
 	"The outside systems only this part calls": "Внешние системы, которые вызывает только эта часть",

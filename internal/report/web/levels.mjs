@@ -412,13 +412,23 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     return readNode(await native({id:'map',layoutOptions:{...outer,...lanes,'elk.direction':direction},children:roots.map(box=>({id:box.id,width:box.width,height:box.height})),
       edges:rootPairs.map(pair=>({id:pair.key,sources:[pair.from],targets:[pair.to]}))}));
   };
-  // Every arrangement tried, or the one chosen again.
+  // Every arrangement tried, or the one chosen again: of those that keep
+  // their lanes (no two closer than four fifths of ELK's spacing, as the
+  // Step 1 drawing's 7.5 of 9.5 screen pixels), the one that fits the
+  // canvas best; where none does, the one whose lanes stand widest. ELK
+  // sets the arrows leaving one side of a card closer than its spacing
+  // where the side is too short for them: etcd's server laid out across
+  // had its arrows out of its right side 5 pixels apart (harness table,
+  // 829626d6), where down they stand apart along its bottom.
   const layAll=async(again=false)=>{
     if(again){map=await layMap(chosen.aspect,chosen.direction);return;}
-    map=null;
+    map=null;let lane=0;
+    const least=.8*Number(outer['elk.spacing.edgeEdge'])*programText;
     for(const aspect of hasOutside?[1,.6,1.6,2.4]:[1])for(const direction of ['RIGHT','DOWN']){
-      const laid=await layMap(aspect,direction);
-      if(!map||fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05){map=laid;chosen={aspect,direction};}
+      const laid=await layMap(aspect,direction),narrowest=narrowestLane(laid);
+      const keeps=narrowest>=least,kept=lane>=least,fits=map&&fitZoom(laid.width,laid.height)>fitZoom(map.width,map.height)*1.05;
+      const better=!map||(keeps?!kept||fits:!kept&&(narrowest>lane*1.05||narrowest>=lane/1.05&&fits));
+      if(better){map=laid;lane=narrowest;chosen={aspect,direction};}
     }
   };
   await layAll();
@@ -526,9 +536,35 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // systems' (a chip, a closed bucket).
   const names=[...programs,...model.roots.filter(id=>nodes.get(id)?.kind==='outside').flatMap(id=>nodes.get(id).children).map(id=>boxes.get(id)).filter(Boolean)];
   // The whole map's closed boxes, their titles at their top left corners.
-  const closed=model.roots.filter(id=>['program','inputs'].includes(nodes.get(id)?.kind)&&boxes.has(id)).map(id=>boxes.get(id));
+  // A closed program or Inputs card is cut wherever part of it is out of
+  // sight (its title wraps across it); an Outside frame only at its title's
+  // corner.
+  const closed=model.roots.filter(id=>['program','inputs','outside'].includes(nodes.get(id)?.kind)&&boxes.has(id)).map(id=>({...boxes.get(id),whole:nodes.get(id).kind!=='outside'}));
   return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programText:programText*unit,
     home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length,16,closed),whole:homeCamera(bounds,canvas,16,1/unit)};
+}
+
+// The narrowest two lanes of a laid out level, in its units: parallel
+// runs of different arrows side by side, with no box between them (as the
+// harness's step1-gap measures them on the screen). Runs on one line are
+// shared runs, another rule.
+export function narrowestLane(laid){
+  const boxes=[...laid.children.values()],runs=[];
+  for(const [key,points] of laid.routes)for(let i=1;i<points.length;i++){
+    const p=points[i-1],q=points[i];
+    if(Math.abs(p.x-q.x)<1e-6)runs.push({key,upright:true,at:p.x,lo:Math.min(p.y,q.y),hi:Math.max(p.y,q.y)});
+    else if(Math.abs(p.y-q.y)<1e-6)runs.push({key,upright:false,at:p.y,lo:Math.min(p.x,q.x),hi:Math.max(p.x,q.x)});
+  }
+  let least=Infinity;
+  for(let i=0;i<runs.length;i++)for(let j=i+1;j<runs.length;j++){
+    const s=runs[i],t=runs[j];if(s.key===t.key||s.upright!==t.upright)continue;
+    const lo=Math.max(s.lo,t.lo),hi=Math.min(s.hi,t.hi),d=Math.abs(s.at-t.at);
+    if(hi-lo<=1||d<1e-3||d>=least)continue;
+    const a=Math.min(s.at,t.at),b=Math.max(s.at,t.at),mid=(lo+hi)/2;
+    const between=r=>s.upright?r.x>a&&r.x+r.width<b&&mid>=r.y&&mid<=r.y+r.height:r.y>a&&r.y+r.height<b&&mid>=r.x&&mid<=r.x+r.width;
+    if(!boxes.some(between))least=d;
+  }
+  return least;
 }
 
 // The camera at rest on the whole map: all of it, unless its names would
@@ -556,25 +592,27 @@ export function homeView(bounds,canvas,unit,word,names,programs=names.length,pad
   return keepTitles({zoom,x:canvas.width/2-(l+r)/2*zoom,y:canvas.height/2-(t+b)/2*zoom},closed,best,canvas,pad);
 }
 
-// A closed box partly in sight shows its title, at its top left corner
-// (owner via the coordinator, 2026-10-02: casdoor's home had cut its
-// Inputs box to "ts"). Along each axis where one is cut, the camera moves
-// to bring a box's corner in or to take the box wholly out of sight,
-// keeping `keep` wholly in sight: the move that leaves the fewest cut,
-// then shows the most such boxes, then moves least. Where no move helps,
-// it stays.
+// A closed box partly in sight shows its title (owner via the coordinator,
+// 2026-10-02: casdoor's home had cut its Inputs box to "ts", etcd's at the
+// harness's canvas its tools/etcd-dump-db card past the right edge): a
+// `whole` box, its title across it, is cut wherever part of it is out of
+// sight, another (an Outside frame) where its top left corner is. Along
+// each axis where one is cut, the camera moves to bring a box in (its
+// corner, or its far side) or to take it wholly out of sight, keeping
+// `keep` wholly in sight: the move that leaves the fewest cut, then shows
+// the most such boxes, then moves least. Where no move helps, it stays.
 export function keepTitles(view,closed,keep,canvas,pad=16){
   const out={...view};
   for(const [axis,size,other,across] of [['x','width','y','height'],['y','height','x','width']]){
     const at=(r,d)=>r[axis]*out.zoom+out[axis]+d,end=(r,d)=>at(r,d)+r[size]*out.zoom;
     const level=closed.filter(r=>{const a=r[other]*out.zoom+out[other];return a+r[across]*out.zoom>.5&&a<canvas[across]-.5;});
     const seen=d=>level.filter(r=>end(r,d)>.5&&at(r,d)<canvas[size]-.5);
-    const cut=d=>seen(d).filter(r=>at(r,d)< -.5).length;
+    const cut=d=>seen(d).filter(r=>at(r,d)< -.5||r.whole&&end(r,d)>canvas[size]+.5).length;
     if(!cut(0))continue;
     let lo=-Infinity,hi=Infinity;
     for(const r of keep){lo=Math.max(lo,pad-at(r,0));hi=Math.min(hi,canvas[size]-pad-end(r,0));}
     if(lo>hi)continue;
-    const moves=[0,...level.flatMap(r=>[pad-at(r,0),-end(r,0)])].filter(d=>d>=lo&&d<=hi);
+    const moves=[0,...level.flatMap(r=>[pad-at(r,0),-end(r,0),canvas[size]-pad-end(r,0),canvas[size]-at(r,0)])].filter(d=>d>=lo&&d<=hi);
     const better=(d,a)=>cut(d)-cut(a)||seen(a).length-seen(d).length||Math.abs(d)-Math.abs(a);
     out[axis]+=moves.reduce((a,d)=>better(d,a)<0?d:a,0);
   }

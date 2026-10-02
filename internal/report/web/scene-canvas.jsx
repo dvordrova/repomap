@@ -57,24 +57,26 @@ function Ghosts({node,className=''}){
 function CardNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title]);
+  const held=useRef(null),inSight=useWordsInSight(node,held);
   // A closed part holding the declaration chosen shows it alone as its
   // tile under its title (owner, 2026-09-29), in place of its description.
   if(data.tile&&words.title.length)return <>{handles}<Scaled node={node} className={`flow-part ${laneClass(node.lane)}`}>
-    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
+    <div className="scene-words" ref={held} style={inSight}><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
       <span className="scene-chosen-tile" title={data.tile.full||data.tile.name}>{data.tile.name}</span></div></Scaled></>;
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     <Ghosts node={node}/>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
-    <div className="scene-words">{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
+    <div className="scene-words" ref={held} style={inSight}>{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
     {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>
   </Scaled></>;
 }
 function ProgramNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.title]);
+  const held=useRef(null),inSight=useWordsInSight(node,held);
   return <>{handles}<Scaled node={node} className="scene-program-card" data={{'data-component-overview':node.id}}>
     <Ghosts node={node} className="scene-program-ghosts"/>
-    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
+    <div className="scene-words" ref={held} style={inSight}><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
     {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}{' '}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}</div>
   </Scaled></>;
@@ -98,6 +100,44 @@ function useStuck(node,titleWidth){
     return Math.round(Math.max(0,Math.min(pad-left,(r.width-titleWidth)*z))/z);
   });
   return key;
+}
+// A closed box's words stay in sight while the part of it in sight can
+// hold them (owner via the coordinator, 2026-10-02: etcd's "gRPC proxy"
+// and casdoor's "Email providers" had lost their names past the canvas's
+// edge): where its left or top edge is out of the canvas, its words move
+// in, never out of the box (an offset in the box's own pixels).
+// The words are measured once, at their own size; drawn larger than 1.6
+// times it they are drawn at that (scene.css), a block centred in its box
+// (`centred`, a part-group's) staying centred.
+function useWordsInSight(node,ref,centred=false){
+  const scene=useContext(SceneCamera);
+  const [at,setAt]=useState(null);
+  useLayoutEffect(()=>{
+    const el=ref.current;if(!el)return;
+    // At their own size, whatever the camera (scene.css .scene-words-natural).
+    el.classList.add('scene-words-natural');
+    let x=0,y=0;for(let a=el;a&&!a.classList.contains('scene-scaled');a=a.offsetParent){x+=a.offsetLeft;y+=a.offsetTop;}
+    const width=el.offsetWidth,height=el.offsetHeight;
+    el.classList.remove('scene-words-natural');
+    // How far they may go: the inside of the box that holds them (a card's
+    // padding, a part-group's front card).
+    const holder=el.offsetParent||el.parentElement,style=getComputedStyle(holder);
+    const from=holder.classList.contains('scene-scaled')?{x:0,y:0}:{x:holder.offsetLeft,y:holder.offsetTop};
+    const right=from.x+holder.clientWidth-parseFloat(style.paddingRight||'0'),bottom=from.y+holder.clientHeight-parseFloat(style.paddingBottom||'0');
+    setAt({x,y:centred?y+height/2:y,width,height,right,bottom});
+  },[node.rect.width,node.rect.height,node.text,node.title]);
+  const key=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>{
+    if(!scene||!at)return '';
+    const v=scene.camera.get(),z=v.zoom*node.text,r=node.rect,pad=6,capped=Math.min(1,1.6/z);
+    const width=at.width*capped,height=at.height*capped,y=centred?at.y-height/2:at.y;
+    const left=r.x*v.zoom+v.x+at.x*z,top=r.y*v.zoom+v.y+y*z;
+    const dx=Math.max(0,Math.min((pad-left)/z,at.right-at.x-width));
+    // Under the frames' names at the canvas's top, never behind them.
+    const shifted=left+dx*z,below=scene.under?.(shifted,shifted+width*z)||0;
+    const dy=Math.max(0,Math.min((Math.max(pad,below+pad)-top)/z,at.bottom-y-height));
+    return dx>=.5||dy>=.5?`${Math.round(dx)}px,${Math.round(dy)}px`:'';
+  });
+  return key?{transform:`translate(${key})`}:undefined;
 }
 function FrameNode({data}){
   const {node}=data,kind=node.kind;
@@ -150,9 +190,10 @@ function ChipNode({data}){
 // skeptic's verdict: a group had read as one more outside system).
 function BucketNode({data}){
   const {node}=data;
+  const held=useRef(null),inSight=useWordsInSight(node,held,true);
   return <>{handles}<Scaled node={node} className="flow-chip scene-bucket scene-bucket-stack" data={focusable(data)}>
-    <span className="scene-bucket-face"><span className="flow-chip-name" title={node.title}>{node.title}</span>
-    <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></span></Scaled></>;
+    <span className="scene-bucket-face"><span className="scene-bucket-words" ref={held} style={inSight}><span className="flow-chip-name" title={node.title}>{node.title}</span>
+    <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></span></span></Scaled></>;
 }
 function NoteNode({data}){
   const {node}=data,item=data.item;
@@ -226,7 +267,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // The frames named at the canvas's top (stuckNames), for a frame to hide
   // what is left of its own title under its name there.
   let stuckMemo={list:[]};
-  const sceneCamera={camera,size,stuck:id=>stuckNames(sceneOf(store.getState()),camera.get()).some(name=>name.id===id)};
+  const sceneCamera={camera,size,stuck:id=>stuckNames(sceneOf(store.getState()),camera.get()).some(name=>name.id===id),
+    // How far down the frames' names at the canvas's top reach across a
+    // stretch of it.
+    under:(left,right)=>Math.max(0,...stuckNames(sceneOf(store.getState()),camera.get()).filter(name=>name.x<right&&name.right>left).map(name=>name.bottom))};
   let instance=null,initializing=true,overviewFit='rest';
   const look=createLook();
   let lookTimer,handleRect=null;
@@ -600,7 +644,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       if(bottom<y+h+2*band)continue;
       placed.push({left:x,right:x+w,top:y,bottom:y+h});
       const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection':'';
-      list.push({id:node.id,title,tone,x,y,font,room});
+      list.push({id:node.id,title,tone,x,y,font,room,right:x+w,bottom:y+h});
     }
     stuckMemo={scene,v,width,height,list};
     return list;
