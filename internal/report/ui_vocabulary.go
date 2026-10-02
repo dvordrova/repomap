@@ -590,7 +590,7 @@ var russianUI = map[string]string{
 	"model match":                                                      "сопоставлено моделью",
 	"In {0}":                                                           "В {0}",
 	"looked up in {0}":                                                 "ищется в {0}",
-	"Words its handler checks":                                         "Слова, которые проверяет его обработчик",
+	"Words its handler declares":                                       "Слова, которые объявляет его обработчик",
 	"How these were found":                                             "Как они найдены",
 	"{0}: {1} of {2} word calls declare inputs ({3}), in":              "{0}: {1} из {2} вызовов со словами объявляют входы ({3}), в",
 	"Unsure":                                 "Не решено",
@@ -893,6 +893,13 @@ var russianUI = map[string]string{
 	"Sends to":                                        "Отправляет в",
 	"handed to {0}":                                   "передаётся в {0}",
 	"by {0}":                                          "меняет: {0}",
+
+	// Words beside a same-named input's name (page_apart.go).
+	"the commands it is an option of":     "команды, у которых это опция",
+	"the declaration declaring it":        "объявление, которое его объявляет",
+	"its registration's own word":         "собственное слово его регистрации",
+	"a word its handler declares, at {0}": "слово, которое объявляет его обработчик, в {0}",
+	"the function registering it, at {0}": "функция, которая его регистрирует, в {0}",
 
 	// Callables one function writes alike (31-reading-column.js rmInlineText).
 	"anonymous function in {0} for {1}":       "анонимная функция в {0} для {1}",

@@ -411,21 +411,68 @@ func TestAPartsMembersKeepTheirFilesPathAndTheirOwnNames(t *testing.T) {
 	}
 }
 
-// Inputs of one kind sharing a name carry their own key words in the
-// collection, which tell them apart (freqtrade's version and version_main,
-// both -V --version); an input no other shares its name with carries none.
-func TestAnInputCollectionKeysOnlyItsSameNamedInputs(t *testing.T) {
-	nodes := map[string]pageMapNode{
-		"o1": {FullTitle: "-V --version", Activation: "command", Key: "version"},
-		"o2": {FullTitle: "-V --version", Activation: "command", Key: "version_main"},
-		"o3": {FullTitle: "--erase", Activation: "command", Key: "erase"},
+// Inputs of one kind a program names alike read apart by the words saved
+// beside each name (page_apart.go), the name kept: each takes the first
+// kind of word that tells them apart and that it has (the subcommands it is
+// an option of, its catalogue's declaration, its key, a word its handler
+// declares, the function registering it); those still alike add the next
+// word that differs. An input no other shares its name with carries none,
+// and the collection carries what each list item shows.
+func TestSameNamedInputsReadApartByTheirSavedWords(t *testing.T) {
+	handler := func(word, at string) []pageApartWord { return []pageApartWord{{Word: word, Of: apartHandler, At: at}} }
+	registered := func(name string) pageApartWord { return pageApartWord{Word: name, Of: apartRegistered, At: "gw.go:1"} }
+	nodes := []*pageMapNode{
+		// etcd's Election and lock APIs: a route registered by the server's
+		// and the client's functions, one registration whose handler declares
+		// no word.
+		{ID: "campaign", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: handler("/v3electionpb.Election/Campaign", "gw.go:182"), registered: registered("RegisterElectionHandlerServer")}},
+		{ID: "campaign-client", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: handler("/v3electionpb.Election/Campaign", "gw.go:307"), registered: registered("RegisterElectionHandlerClient")}},
+		{ID: "observe", FullTitle: "POST", Activation: "request", apart: pageApartFacts{registered: registered("RegisterElectionHandlerServer")}},
+		{ID: "lock", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: handler("/v3lockpb.Lock/Lock", "lock.go:90"), registered: registered("RegisterLockHandlerServer")}},
+		// freqtrade: two options of one name, of two subcommands; two table
+		// rows of one name, by their keys; a name no other shares.
+		{ID: "download-data", FullTitle: "download-data", Activation: "command", apart: pageApartFacts{options: []string{"erase-1"}}},
+		{ID: "install-ui", FullTitle: "install-ui", Activation: "command", apart: pageApartFacts{options: []string{"erase-2"}}},
+		{ID: "erase-1", FullTitle: "--erase", Activation: "command", HandlerUnknown: true},
+		{ID: "erase-2", FullTitle: "--erase", Activation: "command", HandlerUnknown: true},
+		{ID: "version", FullTitle: "-V --version", Activation: "command", Key: "version"},
+		{ID: "version-main", FullTitle: "-V --version", Activation: "command", Key: "version_main"},
+		{ID: "trade", FullTitle: "trade", Activation: "command", Key: "start_trading"},
+	}
+	tellInputsApart(nodes)
+	said := map[string]string{}
+	byID := map[string]pageMapNode{}
+	var ids []string
+	for _, node := range nodes {
+		var words []string
+		for _, word := range node.apartWords {
+			words = append(words, word.Word)
+		}
+		said[node.ID] = strings.Join(words, " · ")
+		byID[node.ID], ids = *node, append(ids, node.ID)
+	}
+	want := map[string]string{
+		"campaign":        "/v3electionpb.Election/Campaign · RegisterElectionHandlerServer",
+		"campaign-client": "/v3electionpb.Election/Campaign · RegisterElectionHandlerClient",
+		"observe":         "RegisterElectionHandlerServer",
+		"lock":            "/v3lockpb.Lock/Lock",
+		"download-data":   "", "install-ui": "",
+		"erase-1": "download-data", "erase-2": "install-ui",
+		"version": "version", "version-main": "version_main",
+		"trade": "",
+	}
+	if !maps.Equal(said, want) {
+		t.Fatalf("words beside the names %v, want %v", said, want)
+	}
+	if words := byID["campaign"].apartWords; words[0].Of != apartHandler || words[0].At != "gw.go:182" || words[1].Of != apartRegistered {
+		t.Fatalf("the words lose what they are and where they are written: %+v", words)
 	}
 	var collection pageInputCollection
-	if err := json.Unmarshal([]byte(inputCollection([]string{"o1", "o2", "o3"}, func(id string) pageMapNode { return nodes[id] })), &collection); err != nil {
+	if err := json.Unmarshal([]byte(inputCollection(ids, func(id string) pageMapNode { return byID[id] })), &collection); err != nil {
 		t.Fatal(err)
 	}
-	if want := map[string]string{"o1": "version", "o2": "version_main"}; !maps.Equal(collection.Keys, want) {
-		t.Fatalf("keys %v, want %v", collection.Keys, want)
+	if len(collection.Apart) != 8 || collection.Apart["lock"][0].Word != "/v3lockpb.Lock/Lock" || collection.Apart["trade"] != nil {
+		t.Fatalf("the collection carries %v", collection.Apart)
 	}
 }
 
@@ -452,5 +499,33 @@ func TestAReadingTellsItsSameNamedDeclarationsApart(t *testing.T) {
 	want := []string{"policy.PolicyManager", "v2.PolicyManager", "library.Item.path", "plugins.Item.path", "BeatportClient.search", "BeatportClient.search", "NewState"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("names = %q, want %q", got, want)
+	}
+}
+
+// In an Inputs collection a kind's inputs running a handler come before
+// those only declaring a value, catalogued or not (reviewer, 2026-10-02:
+// freqtrade's trade, backtesting and webserver had stood after every option
+// of AVAILABLE_CLI_OPTIONS); a catalogue of handled inputs keeps its place
+// before the inputs no catalogue holds, and the full catalogue stays.
+func TestAnInputCollectionListsWhatRunsBeforeWhatOnlyDeclaresAValue(t *testing.T) {
+	nodes := map[string]pageMapNode{
+		"o1": {FullTitle: "--allow-limit-orders", Activation: "command", Catalogue: "options", HandlerUnknown: true},
+		"o2": {FullTitle: "-V --version", Activation: "command", Catalogue: "options", HandlerUnknown: true},
+		"o3": {FullTitle: "trade", Activation: "command"},
+		"o4": {FullTitle: "backtesting", Activation: "command"},
+		"o5": {FullTitle: "--config", Activation: "command", HandlerUnknown: true},
+		"o6": {FullTitle: "get", Activation: "request", Catalogue: "cmdTable"},
+		"o7": {FullTitle: "ping", Activation: "request"},
+	}
+	var collection pageInputCollection
+	if err := json.Unmarshal([]byte(inputCollection([]string{"o1", "o2", "o3", "o4", "o5", "o6", "o7"}, func(id string) pageMapNode { return nodes[id] })), &collection); err != nil {
+		t.Fatal(err)
+	}
+	var groups []string
+	for _, group := range collection.Groups {
+		groups = append(groups, group.Kind+" "+group.Catalogue+" "+strings.Join(group.Inputs, ","))
+	}
+	if want := []string{"request o6 o6", "request  o7", "command  o4,o3", "command o1 o1,o2", "command  o5"}; !slices.Equal(groups, want) {
+		t.Fatalf("groups %q, want %q", groups, want)
 	}
 }

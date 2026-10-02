@@ -249,6 +249,13 @@ type pageMapNode struct {
 	// Key is an input's own key word beyond its name (GroupsIndex
 	// Operation.Key), which tells two same-named inputs apart.
 	Key string
+	// Apart is, for an input another of its kind in its program shares
+	// its name with, the words beside its name telling it apart
+	// (page_apart.go), one JSON list the page shows as saved; apart are
+	// the facts they are chosen from, apartWords the words chosen.
+	Apart      string
+	apart      pageApartFacts
+	apartWords []pageApartWord
 	// Spellings are an input's other spellings of one value, in source
 	// order (GroupsIndex Operation.Aliases: litestream's storageClass is
 	// also read as storage-class), joined for its reading.

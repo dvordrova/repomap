@@ -55,11 +55,14 @@ assert.deepEqual(buttons.filter(b=>b.has('map-collection-prose')).map(b=>b.textC
 `)
 }
 
-// Two inputs of one kind sharing a word are told apart by the declaration
-// declaring each, else by their own key words (freqtrade's version and
-// version_main, both -V --version), in words; inputs of two kinds are not taken for each
-// other, and no input reads its code as written beside its name (owner's
-// review, 2026-09-30: redis's "save strcasecmp(argv[0]").
+// Two inputs of one kind sharing a name read apart by the words saved
+// beside each (page_apart.go), shown as saved, never chosen by the page:
+// the declaration declaring each, their own key words (freqtrade's version
+// and version_main, both -V --version), a word each handler declares
+// (etcd's POST /v3electionpb.Election/Campaign), each saying on its hover
+// what it is and where it is written; inputs of two kinds are not taken for
+// each other, and no input reads its code as written beside its name
+// (owner's review, 2026-09-30: redis's "save strcasecmp(argv[0]").
 func TestSameNamedInputsAreToldApartInWordsOnly(t *testing.T) {
 	code := nameBreaksJS(t) + systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "// Where a catalogue's inputs are declared") + "\nvar rmPendingKind='';\n"
 	runSystemJS(t, readingViewElements+code+`
@@ -67,12 +70,16 @@ const input=(title,kind,by,written)=>({dataset:{title,activation:kind,declaredBy
 const inputs={a:input('save','request','cmdTable','{"save",saveCommand,1}'),b:input('save','setting','loadServerConfig','strcasecmp(argv[0],"save")'),
  c:input('dataformat_ohlcv','setting','SCHEMA_TRADE_REQUIRED','"dataformat_ohlcv"'),d:input('dataformat_ohlcv','setting','SCHEMA_BACKTEST_REQUIRED','"dataformat_ohlcv"'),
  e:input('-V --version','command','AVAILABLE_CLI_OPTIONS','"version": Arg("-V", "--version")'),f:input('-V --version','command','AVAILABLE_CLI_OPTIONS','"version_main": Arg("-V", "--version")')};
-const node={dataset:{owner:'t1',collection:JSON.stringify({groups:[{kind:'request',inputs:['a']},{kind:'setting',inputs:['b','c','d']},{kind:'command',inputs:['e','f']}],keys:{e:'version',f:'version_main'}})}};
+inputs.g=input('POST','request','','mux.Handle(http.MethodPost, pattern_Election_Campaign_0, func(…) {…})');inputs.h=input('POST','request','','mux.Handle(http.MethodPost, pattern_Lock_Lock_0, func(…) {…})');
+const apart={c:[{word:'SCHEMA_TRADE_REQUIRED',of:'declared'}],d:[{word:'SCHEMA_BACKTEST_REQUIRED',of:'declared'}],e:[{word:'version',of:'key'}],f:[{word:'version_main',of:'key'}],
+ g:[{word:'/v3electionpb.Election/Campaign',of:'handler',at:'gw.go:182'},{word:'RegisterElectionHandlerServer',of:'registered',at:'gw.go:173'}],h:[{word:'/v3lockpb.Lock/Lock',of:'handler',at:'lock.gw.go:90'}]};
+const node={dataset:{owner:'t1',collection:JSON.stringify({groups:[{kind:'request',inputs:['a','g','h']},{kind:'setting',inputs:['b','c','d']},{kind:'command',inputs:['e','f']}],apart})}};
 const context={nodeById:id=>inputs[id]||null,nodeByHref:()=>null,light(){},readNode(){}};
 const view=rmCollectionView(context,node,rmPage.data(node,'collection'));
-const where=view.all(c=>c.has&&c.has('map-reading-where')).map(c=>c.textContent);
-assert.deepEqual(where,['SCHEMA_TRADE_REQUIRED','SCHEMA_BACKTEST_REQUIRED','version','version_main'],'told apart by their declarations, else by their own key words: '+JSON.stringify(where));
-assert.ok(!view.textContent.includes('strcasecmp')&&!view.textContent.includes('Arg('),'no code as written beside a name');
+const where=view.all(c=>c.has&&c.has('map-reading-where'));
+assert.deepEqual(where.map(c=>c.textContent),['/v3electionpb.Election/Campaign · RegisterElectionHandlerServer','/v3lockpb.Lock/Lock','SCHEMA_TRADE_REQUIRED','SCHEMA_BACKTEST_REQUIRED','version','version_main'],'the saved words beside each name: '+JSON.stringify(where.map(c=>c.textContent)));
+assert.ok(where[0].title.includes('a word its handler declares, at gw.go:182')&&where[0].title.includes('the function registering it, at gw.go:173'),'each word says what it is and where: '+where[0].title);
+assert.ok(!view.textContent.includes('strcasecmp')&&!view.textContent.includes('Arg(')&&!view.textContent.includes('pattern_'),'no code as written beside a name');
 `)
 }
 

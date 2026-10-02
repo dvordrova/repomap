@@ -448,6 +448,12 @@ func (view *pageView) SystemMap() *pageMap {
 	}
 	for _, section := range view.Sections {
 		if children := inputsByOwner[section.ID]; len(children) > 0 {
+			// Same-named inputs of a program read apart (page_apart.go).
+			inputs := make([]*pageMapNode, 0, len(children))
+			for _, id := range children {
+				inputs = append(inputs, &result.Nodes[positions[id]])
+			}
+			tellInputsApart(inputs)
 			launch := ""
 			if section.Map != nil {
 				launch = section.Map.Launch

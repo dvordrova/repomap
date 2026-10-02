@@ -216,7 +216,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
       names.appendChild(item);});
     box.appendChild(names);return box;
   }
-  if((path.checks||[]).length)section.appendChild(words(path.checks,path.values?'Its values':'Words its handler checks','system-path-checks'));
+  if((path.checks||[]).length)section.appendChild(words(path.checks,path.values?'Its values':'Words its handler declares','system-path-checks'));
   if((path.options||[]).length)section.appendChild(words(path.options,'Its options','system-path-options'));
   // A model match between a table row of one program and an input of
   // another: named, never drawn.
@@ -1109,7 +1109,7 @@ function rmSavedScene(doc){
     var componentsByOwner=new Map();nodes.forEach(function(n){if(n.dataset.branch==='component'&&n.dataset.owner)componentsByOwner.set(n.dataset.owner,n);});
     var items=nodes.map(function(n){
       var component=n.dataset.activation||n.dataset.branch==='inputs'?componentsByOwner.get(n.dataset.owner):null;
-      return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
+      return {id:n.id,title:n.dataset.title,apart:(rmPage.data(n,'apart')||[]).map(function(word){return word.word;}).join(' · '),branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
         summary:n.dataset.summary,symbols:rmPage.data(n,'symbols')||[],symbolCalls:rmPage.data(n,'symbolCalls')||[],subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
         trace:n.dataset.activation?rmInputPath(n,byID):[],unestablished:n.dataset.unestablished==='true',

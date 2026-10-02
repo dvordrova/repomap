@@ -122,6 +122,18 @@ function rmEndTitle(ctx,decl){
 // (inline, 2)").
 var rmLongPiece=24;
 var rmInlineMany={2:'one of two anonymous functions in {0}',3:'one of three anonymous functions in {0}',4:'one of four anonymous functions in {0}',5:'one of five anonymous functions in {0}',6:'one of six anonymous functions in {0}',7:'one of seven anonymous functions in {0}',8:'one of eight anonymous functions in {0}',9:'one of nine anonymous functions in {0}'};
+// The words saved beside a same-named input's name (page_apart.go), quiet
+// after it, each saying on its hover what it is and where it is written.
+var rmApartSays={options:'the commands it is an option of',declared:'the declaration declaring it',key:'its registration\'s own word',handler:'a word its handler declares, at {0}',registered:'the function registering it, at {0}'};
+function rmApartTitle(words){
+  return words.map(function(word){var says=rmApartSays[word.of];return says?word.word+' — '+(says.indexOf('{0}')>=0?rmT(says,word.at||''):rmT(says)):word.word;}).join('\n');
+}
+function rmApartWords(words){
+  if(!words||!words.length)return null;
+  var span=rmEl('span','map-reading-where map-input-apart',words.map(function(word){return word.word;}).join(' · '));
+  span.title=rmApartTitle(words);
+  return span;
+}
 function rmInlineText(text){return String(text).replace(/([^\s→(]+) \(inline(?: for ([^)]+)|, (\d+))?\)/g,function(_,home,word,count){
   if(word)return rmT('anonymous function in {0} for {1}',home,word);
   if(count)return rmT(rmInlineMany[count]||'one of many anonymous functions in {0}',home);
@@ -653,37 +665,16 @@ function rmCollectionView(ctx,node,collection){
   // its box, the inputs taking effect in no one part after them; a kind of
   // more than twelve inputs in several parts folds each part to its box.
   var unsaid=new Set();
-  // Two inputs sharing a word are told apart by the subcommands they are
-  // options of (reviewer, 2026-09-30: freqtrade's two "--erase", of
-  // download-data and of install-ui): each subcommand's options name them
-  // at their source (page_input_path.go Options).
-  // Only inputs of one kind can be taken for each other: redis's setting
-  // save and its command save stand under two headings.
-  var every=[].concat.apply([],collection.groups.map(function(group){return group.inputs;})),titles={},declarers={},holders={};
-  function shared(input){return (input.dataset.activation||'')+'\u0000'+input.dataset.title;}
-  every.forEach(function(id){
-    var input=ctx.nodeById(id);if(!input)return;
-    titles[shared(input)]=(titles[shared(input)]||0)+1;
-    (declarers[shared(input)]=declarers[shared(input)]||new Set()).add(input.dataset.declaredBy||'');
-    var path=rmPage.data(input,'inputPath');
-    ((path&&path.options)||[]).forEach(function(option){if(!option.source)return;(holders[option.source]=holders[option.source]||[]).push(input.dataset.title);});
-  });
-  // One of no subcommand says the declaration declaring it, when theirs
-  // differ (dataformat_ohlcv in SCHEMA_TRADE_REQUIRED): words only, never
-  // its code as written, which stays behind its link (owner's review,
-  // 2026-09-30: "save strcasecmp(argv[0]" and "-V --version "version":
-  // Arg("-V"" had read as names).
-  // Declared by one declaration, it says its own key word (a table row's
-  // key: freqtrade's version and version_main, both -V --version).
-  function ofWhich(input,id){
-    if(titles[shared(input)]<2)return null;
-    var of=holders[input.dataset.sourceText||''];
-    if(of&&of.length)return rmEl('span','map-reading-where',of.join(', '));
-    var by=input.dataset.declaredBy||'';
-    if(by&&declarers[shared(input)].size>1)return rmEl('span','map-reading-where',by);
-    var key=(collection.keys||{})[id];
-    return key?rmEl('span','map-reading-where',key):null;
-  }
+  // Two inputs of one kind sharing a name read apart by the words saved
+  // beside each (page_apart.go), never chosen here: the subcommands it is
+  // an option of (freqtrade's two "--erase", of download-data and of
+  // install-ui), its catalogue's declaration (dataformat_ohlcv in
+  // SCHEMA_TRADE_REQUIRED), its key (version_main), a word its handler
+  // declares (etcd's POST /v3electionpb.Election/Campaign), the function
+  // registering it. Words only, never its code as written (owner's review,
+  // 2026-09-30). Inputs of two kinds are not taken for each other: redis's
+  // setting save and its command save stand under two headings.
+  function ofWhich(input,id){return rmApartWords((collection.apart||{})[id]);}
   kinds.forEach(function(kind){
     var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
     var byPart=new Map();

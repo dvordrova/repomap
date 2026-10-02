@@ -935,10 +935,10 @@ func componentTitle(section *pageSection, sections []*pageSection) string {
 type pageInputCollection struct {
 	Groups []pageCollectionGroup `json:"groups"`
 	Kinds  []pageCollectionGroup `json:"kinds"`
-	// Keys are, by input, its own key word (pageMapNode Key), for the
-	// inputs sharing their name and kind with another: what tells them
-	// apart when their subcommands and declarations do not.
-	Keys map[string]string `json:"keys,omitempty"`
+	// Apart are, by input sharing its name and kind with another, the
+	// words beside its name telling it apart (page_apart.go), as the list
+	// shows them.
+	Apart map[string][]pageApartWord `json:"apart,omitempty"`
 }
 
 // pageCollectionGroup is inputs of one kind, by name; Catalogue names one
@@ -987,16 +987,12 @@ func inputCollection(children []string, node func(string) pageMapNode) string {
 		return groups
 	}
 	collection := pageInputCollection{Kinds: byKind(children)}
-	shared := map[string]int{}
 	for _, id := range children {
-		shared[node(id).Activation+"\x00"+node(id).FullTitle]++
-	}
-	for _, id := range children {
-		if input := node(id); input.Key != "" && shared[input.Activation+"\x00"+input.FullTitle] > 1 {
-			if collection.Keys == nil {
-				collection.Keys = map[string]string{}
+		if words := node(id).apartWords; len(words) > 0 {
+			if collection.Apart == nil {
+				collection.Apart = map[string][]pageApartWord{}
 			}
-			collection.Keys[id] = input.Key
+			collection.Apart[id] = words
 		}
 	}
 	catalogues := map[string]int{}
@@ -1018,10 +1014,32 @@ func inputCollection(children []string, node func(string) pageMapNode) string {
 	for i := range collection.Groups {
 		collection.Groups[i].Inputs = byName(collection.Groups[i].Inputs)
 	}
-	collection.Groups = append(collection.Groups, byKind(loose)...)
-	// Requests first, as the kinds stand everywhere; a kind's catalogues
-	// before its inputs no catalogue holds.
-	slices.SortStableFunc(collection.Groups, func(a, b pageCollectionGroup) int { return cmp.Compare(kindRank(a.Kind), kindRank(b.Kind)) })
+	// The inputs no catalogue holds, those running a handler apart from
+	// those whose handler is not established.
+	var handled, values []string
+	for _, id := range loose {
+		if node(id).HandlerUnknown {
+			values = append(values, id)
+		} else {
+			handled = append(handled, id)
+		}
+	}
+	collection.Groups = append(append(collection.Groups, byKind(handled)...), byKind(values)...)
+	// Requests first, as the kinds stand everywhere. In a kind, what runs a
+	// handler before what only declares a value (reviewer, 2026-10-02:
+	// freqtrade's trade, backtesting and webserver had stood after the
+	// options of AVAILABLE_CLI_OPTIONS, a catalogue none of whose entries
+	// runs code); then a kind's catalogues before its inputs no catalogue
+	// holds.
+	declaresOnly := func(group pageCollectionGroup) int {
+		if slices.ContainsFunc(group.Inputs, func(id string) bool { return !node(id).HandlerUnknown }) {
+			return 0
+		}
+		return 1
+	}
+	slices.SortStableFunc(collection.Groups, func(a, b pageCollectionGroup) int {
+		return cmp.Or(cmp.Compare(kindRank(a.Kind), kindRank(b.Kind)), cmp.Compare(declaresOnly(a), declaresOnly(b)))
+	})
 	raw, err := json.Marshal(collection)
 	if err != nil {
 		return ""

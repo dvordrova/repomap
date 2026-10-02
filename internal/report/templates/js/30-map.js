@@ -562,6 +562,11 @@ function rmDeclarationRelations(map,node,key,nodes){
         html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.itemKind?rmT(node.dataset.itemKind):node.dataset.activation?rmKindHeading(node.dataset.activation):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT('Part'))+'</span>';
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
+      // A name its program gives another input of its kind reads with the
+      // words saved beside it (page_apart.go): etcd's POST with the word
+      // its handler declares, /v3electionpb.Election/Campaign.
+      var apart = rmPage.data(node,'apart');
+      if (apart && apart.length) html += ' <span class="map-reading-where map-input-apart" title="' + escapeText(rmApartTitle(apart)) + '">' + escapeText(apart.map(function(word){return word.word;}).join(' · ')) + '</span>';
       // An input its code reads under several spellings of one value is
       // named by the first; the others say so in one muted line (litestream's
       // storageClass, also written storage-class).

@@ -650,17 +650,30 @@ alike are named apart where the reading is made (`tellDeclsApart`,
 (headscale's policy.PolicyManager and v2.PolicyManager, beets's
 library.Item.path and plugins.Item.path), and the column tells two one list
 still names alike apart the same way, quiet after the name (litestream's
-ReplicaClient, one per package). Two inputs of one kind in an
-Inputs reading sharing a word are told apart by the subcommands they are
-options of, else by the declaration declaring each when those differ
-(freqtrade's dataformat_ohlcv in SCHEMA_TRADE_REQUIRED), else by their key
-(GroupsIndex `Operation.Key`: the first word their registration wrote
-beyond their name, else a handled input's handler, etcd's two cobra
-"start" startGateway and startGRPCProxy), in words only:
-never by their code as written, which stays behind their link (owner's
-review, 2026-09-30: redis's setting "save strcasecmp(argv[0]" and
-freqtrade's "-V --version "version": Arg("-V""); inputs of two kinds (redis's
-command save and setting save) are not taken for each other.
+ReplicaClient, one per package). Inputs of one kind a program names
+alike keep their names as registered and read apart by the words saved
+beside each (`page_apart.go`, chosen when the page is assembled, never by
+the browser), in the Inputs list, on the input's canvas tile and in its
+reading's heading, each word saying on its hover what it is and where it
+is written. Each input takes the first word that tells the group apart and
+that it has: the subcommands it is an option of (freqtrade's two
+"--erase"), its catalogue's declaration (dataformat_ohlcv in
+SCHEMA_TRADE_REQUIRED), its key (GroupsIndex `Operation.Key`: the first
+word its registration wrote beyond its name, else a handled input's
+handler, etcd's two cobra "start" startGateway and startGRPCProxy), a word
+its handler's own code declares, of its kind (`Reach.SubArguments` the
+handler declares, first in source order), the function registering it;
+inputs still alike add the next word that differs (reviewer, 2026-10-02:
+etcd's server listed fourteen "POST" under Election and lock APIs; now
+"POST /v3electionpb.Election/Campaign · RegisterElectionHandlerServer",
+the route argument being a package variable whose value no fact reads,
+and the Observe whose handler declares no word "POST
+RegisterElectionHandlerServer"). Words only, never code as written, which
+stays behind the link (owner's review, 2026-09-30: redis's setting "save
+strcasecmp(argv[0]"), never a URL composed, never two inputs merged;
+inputs of two kinds (redis's command save and setting save) are not taken
+for each other. An input's reading calls the words its handler declares
+"Words its handler declares".
 
 Who writes and reads a field (owner, 2026-09-29) comes from the program's
 exact reads and writes of record fields (`page_field_uses.go`): a C or Go
@@ -1330,7 +1343,12 @@ inputs are listed or declared, where they are looked up and what else the
 declaring code uses, the model's words that some are matched by name to
 another program's inputs, and its inputs one to a line, each reading its
 input, a name that is a sentence (a query parameter's description) in the
-reading's own type, not code; then the inputs no catalogue holds. The
+reading's own type, not code; then the inputs no catalogue holds. Within
+a kind, what runs a handler stands before what only declares a value,
+catalogued or not (reviewer, 2026-10-02: freqtrade's trade, backtesting
+and webserver had stood after every option of AVAILABLE_CLI_OPTIONS, a
+catalogue none of whose entries runs code); each option stays in its
+command's reading and in its catalogue. The
 kinds stand in the canvas's order with its marks (page_reading.go
 inputKindOrder, scene.go sceneInputKinds; owner, 2026-10-01). Within a
 kind, the inputs stand by the part where each takes effect, as saved

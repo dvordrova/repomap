@@ -346,7 +346,9 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       const controlHeight=28+(n.branch==='communication'?16:32);
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
-    return {...n,heading,note:unreadNote,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
+    // An input another of its kind shares its name with is drawn with the
+    // words saved beside its name (page_apart.go), its name kept.
+    return {...n,heading,note:unreadNote,category:input?'input':n.category,name:n.apart?`${n.title} · ${n.apart}`:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
       description,descriptionMost,subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,

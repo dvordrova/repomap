@@ -255,6 +255,14 @@ test('inline callables written alike are named apart, in words',()=>{
   assert.equal(card.name,'one of two anonymous functions in Start');
 });
 
+// An input another of its kind shares its name with is drawn with the
+// words saved beside its name (page_apart.go), its name kept first.
+test('an input drawn with the words saved beside its name',()=>{
+  const [post,alone]=prepareCards([{id:'o1',title:'POST',apart:'/v3electionpb.Election/Campaign',activation:'request'},{id:'o2',title:'GET',activation:'request'}],{},text=>String(text).length*7,text=>text);
+  assert.equal(post.name,'POST · /v3electionpb.Election/Campaign');
+  assert.equal(alone.name,'GET');
+});
+
 // "applies pluggabl…": a card's description ends after a whole word.
 test('a card description is cut after a whole word, never inside one',()=>{
   const measure=text=>Array.from(text).length*6;

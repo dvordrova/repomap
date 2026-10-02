@@ -289,6 +289,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown, Written: operation.Written, Key: operation.Key, Spellings: operationSpellings(operation),
 			Sets:      builder.settingSets(index, operation, decls),
 			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID], Declares: strings.Join(declaresOf[operation.ID], " "),
+			apart: builder.apartFacts(index, operation, reach, inputNode),
 		})
 	}
 	ordered := append([]groupindex.Group(nil), index.Groups...)
