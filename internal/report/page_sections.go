@@ -364,7 +364,12 @@ type pageFlowStep struct {
 	// value may run, that reach in words ("one of the calls serverCron may
 	// make"), never a count; Via is then empty.
 	OneOf bool
-	Fork  *pageFlowFork
+	// ViaKey and ViaArg are Via as a message of the page's language:
+	// called, handed to {0}, handed over or its member; any other Via
+	// reads as saved.
+	ViaKey string
+	ViaArg string
+	Fork   *pageFlowFork
 	// Passed, on a step where the walk decided a split, are the candidates
 	// the path did not follow, read folded under "also calls:".
 	Passed *pageFlowFork
@@ -397,8 +402,6 @@ type pageFlowWay struct {
 	Folded bool
 }
 
-// pageFlowFork is a Main flow's named fork: its line ("one of 94" from
-// call, "one of 5") and each candidate's name.
 // pageOneOf is what the "one-of-calls" template reads: the function whose
 // call through a value may run the callable, or the words said when no
 // function is known.
@@ -407,6 +410,9 @@ type pageOneOf struct {
 	Else string
 }
 
+// pageFlowFork is a Main flow's named fork, read in words ("one of the
+// calls call may make"), or a step's passed calls ("also calls:"), with each
+// candidate's name.
 type pageFlowFork struct {
 	Label string
 	From  *pageStepName

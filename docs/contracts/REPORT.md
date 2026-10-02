@@ -1741,11 +1741,13 @@ render failed, is rendered by the server through the same `RenderServedPage`.
   которые может сделать `call`", "один из вызовов, которые он может
   сделать"), its candidates' names inside, never a wall of names and never a
   count; each step shows how the step before reaches it ("called", "handed
-  to quil.core.sketch.setup", "one of the calls `call` may make", or "one of
-  the calls the step before may make" when no function holds the site; ru
-  "один из вызовов, которые может сделать предыдущий шаг") under its name
-  (owner: no digits in the column; the saved `Via` keeps the code's "one of
-  94"). A dispatch site is said by the function holding it, a name read as a
+  to quil.core.sketch.setup", "handed over", "one of the calls `call` may
+  make", or "one of the calls the step before may make" when no function
+  holds the site; ru «вызывается», «передаётся в quil.core.sketch.setup»,
+  «передаётся», "один из вызовов, которые может сделать предыдущий шаг")
+  under its name, always through the vocabulary (owner: no digits in the
+  column; the saved `Via` keeps the code's "called" and "one of 94";
+  `TestAFlowsViaReadsInThePagesLanguage`). A dispatch site is said by the function holding it, a name read as a
   step's is, never by a file and line. Fork candidates sharing a name are
   told apart as the categorizer read them (s3.ReplicaClient,
   gs.ReplicaClient; READING § Orientation). Unknown or incompatible set refs are recorded and removed; repeated

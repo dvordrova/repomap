@@ -700,3 +700,36 @@ func TestAPartedFlowReadsAsItsTrunkThenEachWay(t *testing.T) {
 		t.Fatalf("the parted flow's order is wrong:\n%s", html)
 	}
 }
+
+// How the step before reaches a Main flow step reads in the page's
+// language, through the vocabulary: on a Russian page "called" and "handed
+// to quil.core.sketch.setup" had stood in English, the walk's saved words.
+func TestAFlowsViaReadsInThePagesLanguage(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	var steps []pageFlowStep
+	for _, via := range []string{"called", "handed to quil.core.sketch.setup", "handed over"} {
+		steps = append(steps, builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "h1", Via: via}, section, map[string]bool{}))
+	}
+	want := map[DisplayLanguage][]string{
+		English: {"called", "handed to quil.core.sketch.setup", "handed over"},
+		Russian: {"вызывается", "передаётся в quil.core.sketch.setup", "передаётся"},
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: steps}}); err != nil {
+			t.Fatal(err)
+		}
+		var said []string
+		for _, match := range regexp.MustCompile(`<span class="flow-via">([^<]*)</span>`).FindAllStringSubmatch(out.String(), -1) {
+			said = append(said, match[1])
+		}
+		if !slices.Equal(said, want[language]) {
+			t.Fatalf("%v: the steps are reached %q, want %q", language, said, want[language])
+		}
+	}
+}

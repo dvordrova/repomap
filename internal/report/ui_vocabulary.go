@@ -1,6 +1,7 @@
 package report
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -950,6 +951,12 @@ var russianUI = map[string]string{
 	"one of the calls the step before may make": "один из вызовов, которые может сделать предыдущий шаг",
 	"one of the calls it may make":              "один из вызовов, которые он может сделать",
 	"the rest of this way":                      "остальные шаги этого пути",
+
+	// How the step before reaches a Main flow step, as the walk saved it
+	// (orientation Via), said in the page's language (page_model.go).
+	"called (a Main flow step)": "вызывается",
+	"handed over":               "передаётся",
+	"its member":                "член его типа",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.
@@ -967,6 +974,13 @@ var uiCountOne = map[string]string{
 	"{0} lines":   "{0} line",
 }
 
+// uiEnglishForms are messages whose English text is not their key: a word
+// another message already keys with another meaning in Russian ("called",
+// the callees a reading lists, «вызываются»; a Main flow step, «вызывается»).
+var uiEnglishForms = map[string]string{
+	"called (a Main flow step)": "called",
+}
+
 var uiParameter = regexp.MustCompile(`\{([0-9]+)\}`)
 
 func uiVocabulary(language DisplayLanguage) (map[string]string, error) {
@@ -979,7 +993,7 @@ func uiVocabulary(language DisplayLanguage) (map[string]string, error) {
 	result := make(map[string]string, len(russianUI))
 	for key, translated := range russianUI {
 		if language == English {
-			result[key] = key
+			result[key] = cmp.Or(uiEnglishForms[key], key)
 		} else {
 			result[key] = translated
 		}
@@ -1000,7 +1014,7 @@ func uiText(language DisplayLanguage, key string, params ...any) (string, error)
 		return "", fmt.Errorf("report: unknown UI message %q", key)
 	}
 	if language == English || language == "" {
-		translated = key
+		translated = cmp.Or(uiEnglishForms[key], key)
 	} else if language != Russian {
 		return "", fmt.Errorf("report: unsupported display language %q", language)
 	}

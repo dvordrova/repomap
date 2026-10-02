@@ -1010,6 +1010,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	if strings.HasPrefix(step.Via, "one of ") {
 		row.Via, row.OneOf = "", true
 	}
+	row.ViaKey, row.ViaArg = flowViaMessage(row.Via)
 	if step.Site != "" {
 		if name, ok := builder.flowName(step.TargetID, step.Site); ok {
 			row.ViaFrom = &name
@@ -1173,6 +1174,24 @@ func markFlowRuns(rows []*pageFlowStep, before *pageFlowStep) {
 		}
 		previous = row
 	}
+}
+
+// flowViaMessage is how the walk's saved Via reads in the page's language:
+// its message and the name it holds ("handed to {0}"); none for a Via the
+// vocabulary does not say, which reads as saved.
+func flowViaMessage(via string) (string, string) {
+	switch {
+	case via == "called":
+		return "called (a Main flow step)", ""
+	case via == "handed over":
+		return "handed over", ""
+	case strings.HasPrefix(via, "its member"):
+		return "its member", ""
+	}
+	if api, handed := strings.CutPrefix(via, "handed to "); handed && api != "" {
+		return "handed to {0}", api
+	}
+	return "", ""
 }
 
 // flowFork is a walked flow's fork, when its last step ends at one: one
