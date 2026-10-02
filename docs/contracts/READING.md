@@ -2026,7 +2026,10 @@ the fewest hops first and every run of that length kept, each hop saying
 whether it is reached through a value (`Possible`) or handed over
 (`Handed`); a registration no earlier step reaches is its registering
 function alone, and a runner is a function calling the callable through a
-value other than the site the step is reached from (redis's
+value other than the site the step is reached from, its run read from the
+flow's first step, from the last step of the flow on it ("main →
+loadAppendOnlyFile runs it" for redis's setCommand, never "call may call
+debugCommand → loadAppendOnlyFile") (redis's
 readQueryFromClient: aeProcessEvents may call acceptHandler, which calls
 createClient, where exact calls alone had found serverCron → syncWithMaster;
 `TestARegisteredStepIsRegisteredWhereThePathReaches`). The report only

@@ -46,7 +46,7 @@ type FlowRunner struct {
 // which calls createClient. A registration no earlier step reaches is its
 // registering function alone. A runner is a function calling the callable
 // through a value other than the site the step is reached from, which the
-// step already names.
+// step already names, read from the flow's first step (runnersOf).
 func readRegistrations(steps []FlowStep, before []string, graph *flowGraph, registrations []facts.Fact) {
 	sites := map[string][]facts.Fact{}
 	for _, fact := range registrations {
@@ -105,7 +105,11 @@ func (graph *flowGraph) registrationsOf(sites []facts.Fact, shown []string) []Fl
 }
 
 // runnersOf are the functions calling a callable through a value, the
-// step's own site aside, each with its shortest run from the path.
+// step's own site aside, each with its shortest run from the flow's first
+// step, from the last step of the flow on that run: redis's setCommand is
+// run by loadAppendOnlyFile, "main → loadAppendOnlyFile runs it", never
+// "call may call debugCommand → loadAppendOnlyFile", the shortest run from
+// the step before.
 func (graph *flowGraph) runnersOf(callable, site string, shown []string) []FlowRunner {
 	var runners []string
 	for from, edges := range graph.out {
@@ -119,10 +123,15 @@ func (graph *flowGraph) runnersOf(callable, site string, shown []string) []FlowR
 	var result []FlowRunner
 	for _, runner := range runners {
 		chain := []FlowHop{{SubjectID: runner}}
-		for at := len(shown) - 1; at >= 0; at-- {
-			if chains := graph.shortestChains(shown[at], map[string]bool{runner: true}); len(chains) > 0 {
+		if len(shown) > 0 {
+			if chains := graph.shortestChains(shown[0], map[string]bool{runner: true}); len(chains) > 0 {
 				chain = chains[0]
-				break
+				for at := len(chain) - 2; at > 0; at-- {
+					if slices.Contains(shown, chain[at].SubjectID) {
+						chain = append([]FlowHop{{SubjectID: chain[at].SubjectID}}, chain[at+1:]...)
+						break
+					}
+				}
 			}
 		}
 		result = append(result, FlowRunner{Chain: chain})

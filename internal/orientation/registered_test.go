@@ -29,7 +29,7 @@ func TestARegisteredStepIsRegisteredWhereThePathReaches(t *testing.T) {
 	calls := func(from, to string) groupindex.StructuralEdge {
 		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
 	}
-	ids := []string{"main", "aeMain", "aeProcessEvents", "processTimeEvents", "serverCron", "syncWithMaster", "acceptHandler", "acceptUnix", "createClient", "beforeSleep", "readQueryFromClient", "processCommand", "lonely", "sleeper"}
+	ids := []string{"main", "aeMain", "aeProcessEvents", "processTimeEvents", "serverCron", "syncWithMaster", "acceptHandler", "acceptUnix", "createClient", "beforeSleep", "readQueryFromClient", "processCommand", "lonely", "sleeper", "loadAppendOnlyFile"}
 	var subjects []groupindex.Subject
 	for _, id := range ids {
 		subjects = append(subjects, subject(id))
@@ -42,6 +42,9 @@ func TestARegisteredStepIsRegisteredWhereThePathReaches(t *testing.T) {
 			calls("main", "aeMain"), calls("aeMain", "aeProcessEvents"), calls("aeMain", "beforeSleep"),
 			calls("aeProcessEvents", "processTimeEvents"), calls("processTimeEvents", "serverCron"), calls("serverCron", "syncWithMaster"), calls("syncWithMaster", "createClient"),
 			calls("acceptHandler", "createClient"), calls("acceptUnix", "createClient"), calls("readQueryFromClient", "processCommand"),
+			calls("main", "loadAppendOnlyFile"),
+			{FromSubjectID: "loadAppendOnlyFile", ToSubjectID: "readQueryFromClient", Role: groupindex.EdgeRelationTarget, RelationID: "proc", RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives},
+			{FromSubjectID: "loadAppendOnlyFile", ToSubjectID: "processCommand", Role: groupindex.EdgeRelationTarget, RelationID: "proc", RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives},
 		},
 		Unresolved: []groupindex.UnresolvedCall{{FromSubjectID: "aeProcessEvents", Possible: []string{"acceptHandler", "acceptUnix", "readQueryFromClient"}, Location: &programindex.Location{Path: "ae.c", Line: 335}}},
 	}
@@ -53,7 +56,7 @@ func TestARegisteredStepIsRegisteredWhereThePathReaches(t *testing.T) {
 		registration("a3", "lonely", "sleeper"),
 	}}}
 	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
-		for _, choice := range []string{"aeProcessEvents", "readQueryFromClient"} {
+		for _, choice := range []string{"aeMain", "aeProcessEvents", "readQueryFromClient"} {
 			if slices.ContainsFunc(question.Options, func(option llm.Option) bool { return option.Name == choice }) {
 				return llm.Verdict{Choice: choice, Probabilities: map[string]float64{choice: 0.9}}, true
 			}
@@ -98,8 +101,11 @@ func TestARegisteredStepIsRegisteredWhereThePathReaches(t *testing.T) {
 	if want := []string{"aeProcessEvents may call acceptHandler → createClient @a2", "aeProcessEvents may call acceptUnix → createClient @a2"}; !slices.Equal(got, want) {
 		t.Fatalf("readQueryFromClient is registered by %q, want %q", got, want)
 	}
-	if len(read.RunBy) != 0 {
-		t.Fatalf("the site the step is reached from is said again: %+v", read.RunBy)
+	// The site the step is reached from is not said again; another
+	// function calling it through a value runs it, read from the flow's
+	// first step.
+	if len(read.RunBy) != 1 || said(read.RunBy[0].Chain) != "main → loadAppendOnlyFile" {
+		t.Fatalf("readQueryFromClient is run by %+v, want main → loadAppendOnlyFile alone", read.RunBy)
 	}
 	// Unreached, a registration is its registering function alone.
 	graph := newFlowGraph(&index, input.Facts.OfKind(facts.KindRegistration))
