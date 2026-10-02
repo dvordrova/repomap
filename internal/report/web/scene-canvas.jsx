@@ -499,7 +499,17 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     }else if(look.pending)look.abandon(look.pending);
     if(look.move(event.clientX,event.clientY,performance.now(),false))store.dispatch({type:'look',key:look.key});
   });
-  host.addEventListener('pointerleave',()=>{store.dispatch({type:'point',target:null});});
+  // A drag carries what it points at with it, the map moving under the
+  // pointer: what is pointed at stays pointed at while the press lasts,
+  // even past the canvas's edge, and a pan changes nothing drawn (harness
+  // table, 2026-10-02: a drag on etcd's whole map that left the canvas had
+  // dropped the quiet arrows of the program pointed at; the owner's first
+  // complaint had been inputs vanishing as the mouse moved).
+  let pressed=false;
+  host.addEventListener('pointerdown',()=>{pressed=true;},true);
+  window.addEventListener('pointerup',()=>{pressed=false;},true);
+  window.addEventListener('pointercancel',()=>{pressed=false;},true);
+  host.addEventListener('pointerleave',event=>{if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
     const v=camera.get(),press=down;down=null;

@@ -138,3 +138,22 @@ test('a layout worker failing before the first drawing leaves no pending map',as
   expect(await page.evaluate(()=>({workers:workerFailure.workers,terminations:workerFailure.terminations}))).toEqual({workers:1,terminations:1});
   expect(errors).toEqual([]);
 });
+
+// A drag carries what is pointed at with it (harness table, 2026-10-02: a
+// drag on etcd's whole map that left the canvas had dropped the arrows the
+// program pointed at drew; a pan changes nothing drawn).
+test('a drag that leaves the canvas keeps every arrow drawn, and dark, as the pointing drew it',async({page})=>{
+  const errors=await open(page);
+  const drawn=()=>page.evaluate(()=>[...document.querySelectorAll('g[data-edge-id]')].map(g=>`${g.dataset.edgeId}${g.hasAttribute('data-edge-dark')?' dark':''}`).sort());
+  let pointed=null,lit=[];
+  for(const id of await page.evaluate(()=>[...document.querySelectorAll('.react-flow__node[data-id]')].map(n=>n.dataset.id))){
+    const node=page.locator(`.react-flow__node[data-id="${id}"]`);
+    const at=await middle(node);await page.mouse.move(at.x,at.y,{steps:2});await page.waitForTimeout(200);
+    lit=await drawn();if(lit.some(edge=>edge.endsWith(' dark'))){pointed=at;break;}
+  }
+  expect(pointed,'a box whose pointing darkens its arrows').not.toBeNull();
+  const canvas=await page.locator('.flow-root').boundingBox();
+  await page.mouse.down();await page.mouse.move(pointed.x,canvas.y+canvas.height+80,{steps:8});await page.mouse.up();await settle(page);
+  expect(await drawn(),'the arrows as drawn before the drag').toEqual(lit);
+  expect(errors).toEqual([]);
+});

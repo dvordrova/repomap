@@ -904,10 +904,14 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var entries=rmPage.data(n,'entries')||[];
   if(entries.length){
     var start=rmEl('div','map-component-entry');
-    entries.forEach(function(entry){
-      var part=entry.part?ctx.nodeByHref(entry.part):null,line=rmEl('div');
-      line.appendChild(rmDeclName({name:entry.name,href:entry.href,open:entry.open,key:entry.key},entry.name+(entry.callable?'()':''),part?function(){ctx.readDeclIn(part,entry.key);}:null,''));
-      start.appendChild(line);
+    rmEntriesByPart(ctx,entries,start,function(held){
+      var lines=rmEl('div');
+      held.forEach(function(entry){
+        var part=entry.part?ctx.nodeByHref(entry.part):null,line=rmEl('div');
+        line.appendChild(rmDeclName({name:entry.name,href:entry.href,open:entry.open,key:entry.key},entry.name+(entry.callable?'()':''),part?function(){ctx.readDeclIn(part,entry.key);}:null,''));
+        lines.appendChild(line);
+      });
+      return lines;
     });
     if(anchorEntry)start.dataset.readingAnchor='';
     place(start);
@@ -1053,6 +1057,25 @@ function rmOwnWorkLine(ctx,from){
   if(item.dataset.input&&ctx.nodeById(item.dataset.input))rmLights(ctx,item,[item.dataset.input]);
   return item;
 }
+// A program's entries, folded by the part holding them when there are
+// more than twelve (a library's exports), as an input kind's list folds:
+// each part closed under its box and its count, the entries no part holds
+// after them (owner via the coordinator, 2026-10-02: liblua.a's 156 lua_*,
+// luaL_* and luaopen_* had stood in one flat list, Lua 5.1.5's 159 in the
+// home's list of programs). `list(entries)` draws some entries.
+function rmEntriesByPart(ctx,entries,into,list){
+  var byPart=new Map(),loose=[];
+  entries.forEach(function(entry){var part=entry.part&&ctx.nodeByHref(entry.part);if(!part){loose.push(entry);return;}if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(entry);});
+  if(entries.length>12&&byPart.size){
+    byPart.forEach(function(held,part){
+      var fold=rmEl('details','map-reading-peer system-program-entries'),head=rmEl('summary','map-reading-peer-head');
+      head.append(rmPartBox(ctx,part.getAttribute('href')||'#'+part.id,part.dataset.title,true),' · '+held.length);
+      fold.append(head,list(held));into.appendChild(fold);
+    });
+  }else loose=entries;
+  if(loose.length)into.appendChild(list(loose));
+  return into;
+}
 // The home's table of programs (owner, 2026-09-28), one block each in the
 // component's page order: its name, reading it; its role, the model's; its
 // entry; the kinds of its inputs, in words; its connections as its arrow
@@ -1085,23 +1108,7 @@ function rmProgramsTable(ctx,holder,components,connections){
         else item.appendChild(button(text,function(){ctx.readNode(n);}));
         return item;
       };
-      var at=rmEl('dd');
-      // A long list of entries (a library's exports) folds by the part
-      // holding them, as an input kind's list does, each part closed under
-      // its box and its count; entries no part holds stand after them
-      // (owner via the coordinator, 2026-10-02: liblua.a's 156 lua_*,
-      // luaL_* and luaopen_* had stood in one flat list).
-      var byPart=new Map(),loose=[];
-      entries.forEach(function(entry){var part=entry.part&&ctx.nodeByHref(entry.part);if(!part){loose.push(entry);return;}if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(entry);});
-      if(entries.length>12&&byPart.size){
-        byPart.forEach(function(held,part){
-          var fold=rmEl('details','map-reading-peer system-program-entries'),head=rmEl('summary','map-reading-peer-head');
-          head.append(rmPartBox(ctx,part.getAttribute('href')||'#'+part.id,part.dataset.title,true),' · '+held.length);
-          var list=rmEl('ul','system-program-files');held.forEach(function(entry){list.appendChild(entryItem(entry));});
-          fold.append(head,list);at.appendChild(fold);
-        });
-      }else loose=entries;
-      if(loose.length){var starts=rmEl('ul','system-program-files');loose.forEach(function(entry){starts.appendChild(entryItem(entry));});at.appendChild(starts);}
+      var at=rmEl('dd');rmEntriesByPart(ctx,entries,at,function(held){var list=rmEl('ul','system-program-files');held.forEach(function(entry){list.appendChild(entryItem(entry));});return list;});
       line('Entry',at);
     }
     var collection=ctx.nodeById('system-inputs-'+n.dataset.owner),kinds=(collection&&rmPage.data(collection,'collection')||{}).kinds||[];

@@ -509,7 +509,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   tile its file and the same source link its reading uses, served or
   static.
 
-- On the canvas the wheel moves the map and never scrolls the page. Where
+- On the canvas the wheel moves the map and never scrolls the page. A drag
+  carries what is pointed at with it, the map moving under the pointer:
+  what pointing drew (a box's arrows, their dark) stays while the press
+  lasts, past the canvas's edge too, and a pan changes nothing drawn
+  (harness table, 2026-10-02: a drag on etcd's whole map that left the
+  canvas had dropped the arrows of the program pointed at). Where
   the reader is is said once, by the page's breadcrumb, with the reading
   column's heading naming what is read and the frame holding it (owner,
   2026-09-29); the canvas keeps its location only for assistive
@@ -1462,8 +1467,9 @@ library's entries are its exports (PROGRAM_INDEX `target.exports`, the
 without a model shows lists none of them; with nothing else to run, it says
 that no manifest row or launch entrypoint was found and that a library's
 exports are its API, not ways to run it. Each entry names the part holding
-it (GroupsIndex's Entries) and reads its function there; a list over twelve
-folds by those parts, each closed under its box and its count (liblua.a's
+it (GroupsIndex's Entries) and reads its function there; a list over twelve,
+in the home's list of programs and in the component's reading alike, folds
+by those parts, each closed under its box and its count (liblua.a's
 156: Core API · 83, Auxiliary library · 34, Standard libraries · 24,
 Debugging · 8, Runtime and calls · 7), the entries no part holds after them.
 Its full-reference section keeps the main flow, configuration, its parts (each

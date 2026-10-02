@@ -102,6 +102,7 @@ func TestTheHomesProgramsFollowThePageData(t *testing.T) {
 		systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "function rmCollectionView(") +
 		systemJSPiece(t, "31-reading-column.js", "var rmPendingKind=", "// The files a component's program reaches") +
 		systemJSPiece(t, "31-reading-column.js", "function rmLights(", "// Where a catalogue's inputs are declared") +
+		systemJSPiece(t, "31-reading-column.js", "// A program's entries, folded by the part holding them", "// The home's table of programs") +
 		systemJSPiece(t, "31-reading-column.js", "// The home's table of programs", "// </reading-column>")
 	runSystemJS(t, readingViewElements+code+`
 const all={
@@ -129,6 +130,13 @@ click('main()');assert.equal(opened.at(-1),'Server core h#main','the entry reads
 click('Settings');assert.equal(rmPendingKind,'setting','a kind reads its inputs of that kind');
 click('redis-cli');assert.equal(opened.at(-1),'connection in:cli','a connection reads its program at it');
 click('TCP endpoint');assert.equal(opened.at(-1),'Outside','an Outside end reads that frame');
+// A library's entries over twelve fold by the part holding each (owner
+// via the coordinator, 2026-10-02: liblua.a's 156 had stood flat).
+all['aux']={id:'aux',dataset:{title:'Auxiliary library'},getAttribute:()=>'#aux'};
+const exports=[...Array(9)].map((_,i)=>({name:'lua_f'+i,callable:true,part:'#core',key:'h#f'+i})).concat([...Array(5)].map((_,i)=>({name:'luaL_g'+i,callable:true,part:'#aux',key:'h#g'+i})));
+const library=rmEl('div');
+rmProgramsTable(context,library,[{id:'system-component-t2',dataset:{title:'liblua.a',owner:'t2',entries:JSON.stringify(exports)}}],()=>[]);
+assert.deepEqual(library.all(c=>c.tagName==='DETAILS'&&c.has('system-program-entries')).map(f=>f.children[0].textContent),['Server core · 9','Auxiliary library · 5'],'fourteen entries fold by part');
 `)
 }
 
