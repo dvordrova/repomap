@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Lanes kept apart on the whole map, a closed box's words in sight at the edge, a type's first sentence, one reachability line (lead, 2debbc1c)
+
+From the harness's table and lints on 829626d6, verified on renders of data 1's second-round runs (format 97: etcd 20261002-154056, casdoor 152058, othello 152054, lua 155113) by my own binary (HEAD plus these files; every render exit 0, 0 provider requests). The 829 reports with this canvas swapped in served as before/after where data matched.
+
+- **etcd home `step1-gap` (5.0 px):**
+  - Not the title camera, the part-group cards or the Outside layout. With the 829 page data, both the c5f6163b canvas and the 829626d6 canvas measure 5.0 px; with c5f's data, both measure 9.5 px.
+  - The data changed: data 2's destinations regrouped etcd's Outside frames. The best fitting arrangement became across (RIGHT), and ELK set the server's four arrows out of its short right side about 5 px apart.
+  - Fix: the whole map takes, of the arrangements it tries, the best fitting one whose lanes stand at least four fifths of ELK's spacing apart, else the one whose lanes stand widest (`narrowestLane`).
+  - etcd's home measures 9.47 px again. beets' known 7.1 px exception went to 11.67 px and redis' 10.0 to 12.6. casdoor, freqtrade, headscale, litestream and othello are unchanged. All their homes pass.
+- **Column descriptions cut:**
+  - The cut lines were a type's line under a Main flow or input-flow step, clamped to two lines. The median such line runs 200 characters.
+  - It now reads its first sentence whole, with " …" saying there is more; a click opens the rest. Terms and translation are kept: the fold moves the DOM, it does not rewrite the text.
+  - casdoor's KeycloakSyncerProvider and DatabaseSyncerProvider, etcd's Etcd, and TCPProxy in `start`'s flow: no cut lints.
+- **Empty cards:**
+  - etcd's contrib/lock/storage and tools/etcd-dump-db stood on the whole map as a name over a blank card, words filling 31%. Their role and description fade at rest, at 8.4 px.
+  - A program's card now shows its parts' outlines while those words fade, each word line keeping its own ground. The home lints show no empty box.
+- **Names at the canvas edge:**
+  - A closed card, program card or part-group cut at the left or top edge moves its words in, under the frames' names at the top and inside its own box. The words are measured once at their own size, and the 1.6 times cap is taken into account.
+  - casdoor's Email providers, LDAP and directory sync, Captcha providers, Certificates and SMS providers now read beside the opened part-group. etcd's "gRPC proxy" stays in sight under its top edge.
+  - The camera at rest now keeps a closed program or Inputs card whole in sight or out, and an Outside frame's corner too. etcd's tools/etcd-dump-db had stood past the right edge at the harness's 900 px canvas.
+  - New harness invariant `name-sight`: a closed card, program or part-group whose part in sight can hold its words shows them wholly in sight.
+- **Reachability:** a target whose entrypoints reach all of its code reads one plain line, "Reachability: its entrypoints reach all of its code." (en, ru). There is no "Not reachable" heading over it: seven of Lua's eight targets now read so, and onelua.c keeps its heading.
+- **Checks:**
+  - Web unit tests: 170 pass, including `narrowestLane` and the whole-box home test.
+  - `go vet` and `go test ./internal/report/` pass on HEAD plus these files.
+  - Invariants on the new renders all pass at the levels run, except one pre-existing failure:
+    - etcd: home, program server (executable), Client APIs;
+    - casdoor: home, program, External service providers, Core domain data;
+    - othello: home, both programs, AI, AI players.
+  - Seven other repos' homes (829 data with this canvas) all pass.
+- **Found, not caused here:** on etcd's new data, one drag pan at home loses a hub program's arrows (`pan-keeps` 1/24). HEAD's canvas on the same data fails the same way, on another pan and program.
+
 ## 2026-10-02 — Report publication back to seconds, and timed as its own stage (data 1, 0505e941, 1159634c)
 
 - **Found:**
