@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — C archives are libraries, a nested makefile's `all` is read, and an undecided definition stays an alternative (lead, 9760fb58)
+
+- **Archives (skeptic's option A, owner):**
+  - Each archive the archiver writes with at least one corpus member is a library target `c:<archive>`. Its `c_archive` evidence sits on its rule and names the link lines that link it (`consumers`).
+  - A link line's `c_link` names the archives it links. The consumers keep their whole analysis, and covered units leave `c:<dir>/`.
+  - An archive with no corpus member is a `c_archive_without_units` observation and no target.
+  - A rule named through a variable anchors on its line: Lua `lua` → makefile:124, `liblua.a` → makefile:120 (was makefile:0).
+  - The portfolio prompt defines `c_archive`, so one target-selection request per C repository changes.
+- **Nested `all`:** a directory makefile whose default goal compiles none of its units is dry-run on `all` when it has one, and no other named goal is run. Lua 5.1.5's `src/` gives `c:src/liblua.a`, `c:src/lua` and `c:src/luac` instead of `c:src/`, `c:src/lua.c` and `c:src/luac.c`. Its platform goal (`make macosx`) stays unread, a known limit.
+- **Closure:**
+  - Proximity is dropped (it came in with 7de7a254).
+  - Of several definers, the one sharing a link line or archive with the unit needing it is taken. Otherwise every definer stays as an alternative (owner): the program is kept, the alternatives are recorded and printed, the units it holds only as alternatives are marked, and calls resolve to all definitions (`ResolutionAlternatives`).
+  - Lua 5.1.5's `c:etc/min.c` takes `src/llex.c` through `liblua.a`.
+- **Fixture:**
+  - `util/watch.c` and `util/fixedclock.c`: `loopNowMs` keeps `{loop.c, util/fixedclock.c}` as alternatives. The old rule would have taken `fixedclock.c`. `c:util/ping.c` is unchanged.
+  - `wire/`, shaped like Lua 5.1.5: `c:wire/libwire.a`, `c:wire/wirecat`, and `c:wire/selftest.c`, whose `wireEscape` is `escape.c`'s through the archive, never `escape_none.c`'s.
+  - Inventory: 29 files. `loop.c`'s new `loopNowMs` is unreachable in kvd and kvcli.
+- **Measured** (discovery probe plus every program's clang parse, no model; programs / failed, before → after):
+  - Lua 5.1.5: 6/1 → 6/1, with the src programs as above.
+  - Lua: 7/0 → 8/0 (`c:liblua.a`, 33 files).
+  - moby 12/4, deploy 2/2, go 11/3, ghidra 41/14, kubernetes 6/3: the same programs and failures. Kubernetes `build/pause` adds one `all` dry run, which compiles nothing.
+  - Discovery took 0.4–2.4 s everywhere.
+- **Known limits:**
+  - A link expands an archive whole, not member by member in link order: Lua 5.1.5's `luac` holds 31 files where its old closure took 22.
+  - A function value naming an alternative, and a read of a variable alternatives define, name none of them.
+
 ## 2026-10-02 — A Main flow step's Via in the page's language (data 1)
 
 - **c538372f:** the saved Via reads through the vocabulary:
