@@ -558,10 +558,13 @@ function rmPathsList(ctx,data,cls,label,paths){
   box.appendChild(list);
   return box;
 }
-// A declaration's reading: who calls it, by part; its name, the link into
-// its code, with its file and the comment its author wrote above it; the
-// model's line; what it writes and reads; a type's fields and the functions
-// returning or taking it; what it calls, by part.
+// A declaration's reading: its name, the link into its code, its signature
+// and its file, heading it as a type's title heads a type's (final
+// journeys, 2026-10-02: lua_gettop, opened from liblua.a's Entry list, had
+// read from "Called by" with no name above it); who calls it, by part; the
+// comment its author wrote above it; the model's line; what it writes and
+// reads; a type's fields and the functions returning or taking it; what it
+// calls, by part.
 function rmDeclView(ctx,node,data,concept){
   var key=repomapMembers.sourceKey(concept.source),view=rmEl('div','map-decl-reading'),position=data.decls.findIndex(function(decl){return decl.key===key;});
   // A declaration the part's reading does not list (neither a function, a
@@ -585,9 +588,6 @@ function rmDeclView(ctx,node,data,concept){
     });
     return section;
   }
-  var callers=side(own.callers,variable?'Used by':'Called by','in');if(callers)view.appendChild(callers);
-  // Its own program never runs it, while another program does.
-  if(own.not_called_in)view.appendChild(rmEl('p','map-reading-not-called meta',rmT('Not called in {0}',own.not_called_in)));
   var name=rmEl('div','map-decl-name');
   var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at,false,null);link.classList.add('map-decl-code');name.appendChild(link);
   symbols=rmPage.data(node,'symbols')||[];
@@ -596,6 +596,9 @@ function rmDeclView(ctx,node,data,concept){
   view.appendChild(name);
   var where=rmEl('p','map-decl-where');where.appendChild(rmEl('span','meta',decl.file||''));
   view.appendChild(where);
+  var callers=side(own.callers,variable?'Used by':'Called by','in');if(callers)view.appendChild(callers);
+  // Its own program never runs it, while another program does.
+  if(own.not_called_in)view.appendChild(rmEl('p','map-reading-not-called meta',rmT('Not called in {0}',own.not_called_in)));
   // The author's comment above it, quoted as written in its reading and
   // marked as theirs (owner, 2026-09-28: it had waited behind a "comment"
   // hover).

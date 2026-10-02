@@ -635,12 +635,14 @@ distinct saved summary once.
 A declaration chosen in the reading, on its tile, from Find or from another
 declaration's reading replaces its part's reading with its own, read from
 the relation rows its part already lists: a heading with its kind and its
-part as a link up ("Function · {part} ↑"); who calls it
-("Called by", "Used by" for a variable or a type), by the part at the other
-end, its own part first, one line per declaration; its name as its tile
+part as a link up ("Function · {part} ↑"); under it its name as its tile
 writes it (a function with what it takes and returns, a type with its
 fields), the one link into its code, underlined under the pointer (owner,
-2026-09-29); its file alone; the author's comment as written,
+2026-09-29), and its file alone, heading the reading for a function as for
+a type (final journeys, 2026-10-02: lua_gettop, opened from liblua.a's Entry
+list, had read from "Called by" with no name above it); who calls it
+("Called by", "Used by" for a variable or a type), by the part at the other
+end, its own part first, one line per declaration; the author's comment as written,
 when there is one, marked as the author's claim; the model's line only when
 there is one (without it, nothing is said about one); one closed "Reads and
 writes" holding "Writes:" and "Reads:" (below); for a type, every field with its type, linking that type when it is

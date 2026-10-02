@@ -83,9 +83,12 @@ part.all(c=>c.tagName==='BUTTON'&&c.textContent==='main')[0].listeners.click({st
 assert.deepEqual(read,['dictResize','main'],'a name reads its declaration and a part box its part');
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'},explanation:'Runs the cron.',explanation_ref:'e1'});
 const one=cls=>view.all(c=>c.has(cls))[0];
-assert.ok(view.children[0].has('map-reading-side'),'its callers first');
-assert.deepEqual(names(view.children[0]),['initServer()']);
-assert.equal(view.children[0].all(c=>c.has('map-reading-relation')).length,1,'a callback is said so');
+// Its name and signature head it, then its callers (final journeys,
+// 2026-10-02: lua_gettop had read from "Called by" with no name above it).
+const callersOf=view=>view.children.find(c=>c.has('map-reading-side'));
+assert.ok(view.children[0].has('map-decl-name')&&view.children.indexOf(callersOf(view))>0,'its name first, then its callers');
+assert.deepEqual(names(callersOf(view)),['initServer()']);
+assert.equal(callersOf(view).all(c=>c.has('map-reading-relation')).length,1,'a callback is said so');
 assert.equal(one('map-decl-code').href,'h#serverCron-L9','the name is the link to all of its code');
 assert.equal(one('map-decl-signature').textContent,'(id: long)');
 assert.ok(one('map-decl-where').textContent.includes('server.c')&&!/:\d/.test(one('map-decl-where').textContent),'the file alone, no line');
@@ -200,7 +203,8 @@ assert.deepEqual(outgoing.all(c=>c.has('map-reading-peer'))[0].children.filter(c
 const callers=decls.concat([d('serverCron','#own')]);
 const one={decls:callers,files:['redis.c'],members:[{kind:'function',decls:[7]}],own:[{decl:7,callers:[{part:'#core',title:'Server core state',decls:[{decl:1,kind:'calls'},{decl:2,kind:'calls',possible:true},{decl:0,kind:'calls',possible:true}]}]}]};
 const reading=rmDeclView(ctx,nodes['#own'],one,{name:'serverCron',source:{Href:'h#serverCron',Text:'redis.c:1'}});
-assert.deepEqual(reading.children[0].all(c=>c.has('map-reading-run')).map(c=>c.textContent),['may call it:'],'its callers are said alike: '+reading.children[0].textContent);
+const readingCallers=reading.children.find(c=>c.has('map-reading-side'));
+assert.deepEqual(readingCallers.all(c=>c.has('map-reading-run')).map(c=>c.textContent),['may call it:'],'its callers are said alike: '+readingCallers.textContent);
 assert.equal(reading.children[0].all(c=>c.has('possible')).length,0,'no caller repeats "possible"');
 `)
 }
@@ -216,7 +220,7 @@ data.own[0].callers.push({part:'#cli',title:'Command line client',program:'redis
 data.own[0].not_called_in='redis-benchmark';
 nodes['#cli']={dataset:{title:'Command line client',lane:'entry'},getAttribute:()=>'#cli'};
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
-const groups=view.children[0].all(c=>c.has('map-reading-peer'));
+const groups=view.children.find(c=>c.has('map-reading-side')).all(c=>c.has('map-reading-peer'));
 assert.deepEqual(groups.map(g=>[g.all(c=>c.has('map-reading-program')).map(c=>c.textContent).join(''),names(g)]),[['',['initServer()']],['redis-cli:',['cliConnect()']]],'its own program\'s callers, then each other program\'s, named');
 assert.ok(view.all(c=>c.has('map-reading-not-called'))[0].textContent.includes('redis-benchmark'),'the program never running it is named');
 `)
