@@ -168,7 +168,9 @@ export function lintLevel(level){
       }
       const named=document.querySelector(`[data-frame-title="${CSS.escape(box.id)}"],[data-summary-area="${CSS.escape(box.id)}"],[data-component-overview="${CSS.escape(box.id)}"]`);
       const holds=boxes.some(other=>other!==box&&other.rect.left>=box.rect.left-1&&other.rect.right<=box.rect.right+1&&other.rect.top>=box.rect.top-1&&other.rect.bottom<=box.rect.bottom+1);
-      if(!(named&&text(named))&&!holds)add('empty frame',box.id);
+      // A frame says what it is or holds something: its title, a box drawn
+      // in it, or its own words (a kind's group's title and tiles).
+      if(!(named&&text(named))&&!holds&&!text(box.el))add('empty frame',box.id);
     }
   }
   return out;
