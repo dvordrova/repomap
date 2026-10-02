@@ -300,6 +300,24 @@ seed.
   there: `once(first)` makes `once`'s `job()` exact, `either(first)` and
   `either(second)` make `either`'s its alternatives (cproject
   `TestIndexCallsWhatCallersPassAParameter`; the fixture has no such call).
+- A callee chosen by a condition whose every branch names a function, nested
+  conditions included and each name however parenthesised, cast, dereferenced
+  or taken the address of, calls one of them, the condition deciding which: a
+  `function_value` call with those functions as its targets
+  (`ResolutionAlternatives`) and a `c_conditional_callee` witness naming the
+  expression and each candidate, none as an `ObjectRef` (Lua 5.1.5's f_parser
+  calls `(c == LUA_SIGNATURE[0] ? luaU_undump : luaY_parser)(...)`; owner:
+  several known targets are alternatives). A name several units define, the
+  build silent on which is linked, is each of its definitions, as a call of
+  it is; one function in every branch is a plain call of it, as `(f)(x)` is;
+  a condition that is an integer literal (a macro's included) takes the
+  branch it selects alone; branches all outside the repository make an
+  `invokes_external` call. A branch that is anything else (a call's result, a
+  member, a pointer variable, a name declared and defined in no unit), and
+  GNU's `a ?: b`, leave the call open as a call through a value is. A
+  constant condition that is not a literal (an enum, a `const`) is not
+  evaluated: both branches stay. The fixture's `util/watch.c` holds each
+  case (`TestCFixtureACalleeChosenByAConditionCallsOneOfItsFunctions`).
 - A function cast to an integer is an address used as data, never a callable.
 - A function body that names a file-scope variable of the program reads it:
   one exact `reads` relation per place it names it (a `c_variable_read`

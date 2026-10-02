@@ -859,6 +859,18 @@ func (b *builder) emitCalls() {
 				r.Kind = p.RelationInvokesExternal
 			}
 			r.Witnesses = []p.Witness{{Kind: "c_call", Detail: "call of " + b.objects[c.direct.ref].Name, Location: at}}
+		case len(c.choices) > 0:
+			// A callee chosen by a condition between functions it names: the
+			// call runs one of them, the condition deciding which.
+			r.ToRefs, r.Resolution, r.Dispatch = slices.Clone(c.choices), resolution(c.choices), p.DispatchFunctionValue
+			var names []string
+			for _, ref := range c.choices {
+				names = append(names, b.objects[ref].Name)
+			}
+			r.Witnesses = []p.Witness{{Kind: "c_conditional_callee", Detail: clean(fmt.Sprintf("%s calls %s, as its condition decides", c.expression, strings.Join(names, " or "))), Location: at}}
+			if !slices.ContainsFunc(r.ToRefs, func(ref string) bool { return b.objects[ref].Kind != p.ObjectExternalSymbol }) {
+				r.Kind = p.RelationInvokesExternal
+			}
 		case c.slot == nil && c.direct.unresolved != "":
 			r.Resolution = p.ResolutionUnresolved
 			r.Witnesses = []p.Witness{{Kind: "c_call", Detail: c.direct.unresolved, Location: at}}

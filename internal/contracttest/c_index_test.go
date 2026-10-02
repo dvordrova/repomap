@@ -781,3 +781,57 @@ func TestCFixtureDocstrings(t *testing.T) {
 		}
 	}
 }
+
+// Lua 5.1.5's f_parser calls (c == LUA_SIGNATURE[0] ? luaU_undump :
+// luaY_parser)(...), and the index had left it open. A callee chosen by a
+// condition whose every branch names a function is a known set: the call
+// runs one of them, the condition deciding which, through a function value
+// (owner: several known targets are alternatives). Nested conditions,
+// parentheses, casts and an address taken still name the function; a
+// branch holding a pointer leaves the call open. util/watch.c's watchTick.
+func TestCFixtureACalleeChosenByAConditionCallsOneOfItsFunctions(t *testing.T) {
+	fixture := loadCFixture(t)
+	index := buildCIndex(t, fixture, "c:util/watch.c")
+	tick := cObject(t, index, programindex.ObjectFunction, "watchTick", "util/watch.c")
+	seconds := cObject(t, index, programindex.ObjectFunction, "tickSeconds", "util/watch.c").ID
+	millis := cObject(t, index, programindex.ObjectFunction, "tickMillis", "util/watch.c").ID
+	tenths := cObject(t, index, programindex.ObjectFunction, "tickTenths", "util/watch.c").ID
+	for _, want := range []struct {
+		line    string
+		targets []string
+	}{
+		{"long chosen = (seconds ? tickSeconds : tickMillis)(ms);", []string{seconds, millis}},
+		{"long nested = (tenths ? (tickTenths) : seconds ? (long (*)(long))tickSeconds : &tickMillis)(ms);", []string{tenths, seconds, millis}},
+	} {
+		line, _ := fixture.at(t, "util/watch.c", want.line, "")
+		calls := cRelationsAt(index, programindex.RelationCalls, tick.ID, "util/watch.c", line)
+		if len(calls) != 1 || calls[0].Dispatch != programindex.DispatchFunctionValue || calls[0].Resolution != programindex.ResolutionAlternatives ||
+			!slices.Equal(sortedIDs(calls[0].ToIDs), sortedIDs(want.targets)) || len(calls[0].Witnesses) != 1 || calls[0].Witnesses[0].Kind != "c_conditional_callee" {
+			t.Fatalf("%s: %+v", want.line, calls)
+		}
+	}
+	line, _ := fixture.at(t, "util/watch.c", "long open = (seconds ? held : tickTenths)(ms);", "")
+	if calls := cRelationsAt(index, programindex.RelationCalls, tick.ID, "util/watch.c", line); len(calls) != 1 ||
+		calls[0].Dispatch != programindex.DispatchFunctionValue || calls[0].Resolution != programindex.ResolutionUnresolved || len(calls[0].ToIDs) != 0 {
+		t.Fatalf("a branch holding a pointer left the call: %+v", calls)
+	}
+	// A constant condition takes its branch alone; one function either way is
+	// a plain call of it, as (f)(x) is; a dereferenced choice is still one.
+	again := cObject(t, index, programindex.ObjectFunction, "watchTickAgain", "util/watch.c")
+	for _, want := range []struct {
+		line       string
+		targets    []string
+		resolution programindex.Resolution
+		dispatch   string
+	}{
+		{"long fixed = (1 ? tickSeconds : tickMillis)(ms);", []string{seconds}, programindex.ResolutionExact, ""},
+		{"long same = (seconds ? tickMillis : (tickMillis))(ms);", []string{millis}, programindex.ResolutionExact, ""},
+		{"long star = (*(seconds ? tickSeconds : tickTenths))(ms);", []string{seconds, tenths}, programindex.ResolutionAlternatives, programindex.DispatchFunctionValue},
+	} {
+		line, _ := fixture.at(t, "util/watch.c", want.line, "")
+		calls := cRelationsAt(index, programindex.RelationCalls, again.ID, "util/watch.c", line)
+		if len(calls) != 1 || calls[0].Resolution != want.resolution || calls[0].Dispatch != want.dispatch || !slices.Equal(sortedIDs(calls[0].ToIDs), sortedIDs(want.targets)) {
+			t.Fatalf("%s: %+v", want.line, calls)
+		}
+	}
+}

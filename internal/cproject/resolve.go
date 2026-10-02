@@ -877,6 +877,73 @@ func (b *builder) resolveFunction(s *unitScope, ref *DeclRef) target {
 	return target{unresolved: fmt.Sprintf("%s is declared implicitly and defined in no unit of %s", name, b.parsed.Program.Name)}
 }
 
+// conditionalCallees are the function names a callee chosen by a condition
+// writes in its branches, nested conditions included, each a plain function
+// name however parenthesised, cast, dereferenced or taken the address of:
+// Lua 5.1.5's f_parser calls (c == LUA_SIGNATURE[0] ? luaU_undump :
+// luaY_parser)(...). A condition that is an integer literal (a macro's
+// included) takes the branch it selects alone: a call never has
+// alternatives the program cannot reach. A branch that is anything else (a
+// call's result, a member, a pointer variable) leaves it nil, and the call
+// stays open; so does GNU's `a ?: b`, a BinaryConditionalOperator.
+func conditionalCallees(n *Node) []*Node {
+	n = unwrapValue(n)
+	for n != nil && n.Kind == "UnaryOperator" && (n.Opcode == "*" || n.Opcode == "&") && len(n.Inner) == 1 {
+		n = unwrapValue(n.Inner[0])
+	}
+	if n == nil || n.Kind != "ConditionalOperator" || len(n.Inner) != 3 {
+		return nil
+	}
+	branches := n.Inner[1:]
+	if condition := unwrapValue(n.Inner[0]); condition != nil && condition.Kind == "IntegerLiteral" {
+		if condition.Value == "0" {
+			branches = n.Inner[2:]
+		} else {
+			branches = n.Inner[1:2]
+		}
+	}
+	var names []*Node
+	for _, branch := range branches {
+		if nested := conditionalCallees(branch); nested != nil {
+			names = append(names, nested...)
+			continue
+		}
+		named := designator(branch)
+		if named == nil {
+			return nil
+		}
+		names = append(names, named)
+	}
+	return names
+}
+
+// chosenFunctions are the functions a callee chosen by a condition may call,
+// each once in written order, resolved as a call of its name is (a name
+// several units define, the build silent on which is linked, is each of its
+// definitions): the known set a call through that value runs (owner:
+// several known targets are alternatives). Nil where a branch names no
+// function or a name resolves to nothing the program defines or the
+// platform declares.
+func (b *builder) chosenFunctions(s *unitScope, callee *Node) []string {
+	var choices []string
+	for _, named := range conditionalCallees(callee) {
+		resolved := b.resolveFunction(s, named.ReferencedDecl)
+		refs := resolved.alternatives
+		if resolved.ref != "" {
+			refs = []string{resolved.ref}
+		}
+		if len(refs) == 0 {
+			return nil
+		}
+		for _, ref := range refs {
+			if !slices.Contains(choices, ref) {
+				choices = append(choices, ref)
+			}
+		}
+	}
+	return choices
+}
+
 func builtinName(name string) bool {
 	for _, prefix := range []string{"__builtin_", "__sync_", "__atomic_", "__c11_atomic_"} {
 		if strings.HasPrefix(name, prefix) {
@@ -1256,6 +1323,9 @@ type call struct {
 	direct     target
 	slot       *slot
 	expression string // the callee as written, for a call through a pointer
+	// choices are, for a callee chosen by a condition whose every branch
+	// names a function, those functions in written order (chosenFunctions).
+	choices []string
 	// sameValueAs is the earlier call this call is another spelling of
 	// (spellings.go).
 	sameValueAs *call
@@ -1301,6 +1371,12 @@ func (b *builder) call(w walker, n *Node) {
 	} else {
 		c.slot = b.slotOf(w, callee)
 		c.expression = strings.Join(strings.Fields(b.text(callee)), " ")
+		c.choices = b.chosenFunctions(w.scope, callee)
+		// Every branch the same function: a plain call of it, as `(f)(x)` is.
+		if len(c.choices) == 1 {
+			c.direct = target{ref: c.choices[0], external: b.objects[c.choices[0]].Kind == programindex.ObjectExternalSymbol}
+			c.choices, c.slot = nil, nil
+		}
 		if c.selector == "" {
 			c.selector = writtenName(unwrapValue(callee))
 		}
