@@ -83,10 +83,11 @@ assert.ok(!view.textContent.includes('strcasecmp')&&!view.textContent.includes('
 `)
 }
 
-// The callers of a destination's calls read as one "Called from": each
-// record's reach joined by program and part, each caller once.
+// The callers of a destination's calls read as one "Called from", and where
+// they are written as one "Made in": each record's reach joined by program
+// and part, each declaration once.
 func TestADestinationsCallersAreJoinedByPart(t *testing.T) {
-	code := systemJSPiece(t, "31-reading-column.js", "// Where several outside calls are reached from", "// An outside call's record as the column reads it")
+	code := systemJSPiece(t, "31-reading-column.js", "// Where several outside calls are made and reached from", "// An outside call's record as the column reads it")
 	runSystemJS(t, readingViewElements+code+`
 const d=(name,part)=>({name,href:'h#'+name,part});
 const one={decls:[d('rdbSave','#p'),d('syncWithMaster','#r')],groups:[{part:'#p',title:'Persistence',decls:[{decl:0,kind:'calls'}]},{part:'#r',title:'Replication',decls:[{decl:1,kind:'calls'}]}]};
@@ -94,6 +95,11 @@ const two={decls:[d('rdbSave','#p'),d('rdbLoad','#p')],groups:[{part:'#p',title:
 const joined=rmMergeReached([one,null,two]);
 assert.deepEqual(joined.groups.map(g=>[g.title,g.decls.map(e=>joined.decls[e.decl].name)]),[['Persistence',['rdbSave','rdbLoad']],['Replication',['syncWithMaster']]]);
 assert.equal(rmMergeReached([null,{decls:[],groups:[]}]),null,'no callers, no list');
+assert.equal(joined.made,undefined,'no call said where it is made, no "Made in"');
+one.made=[{part:'#n',title:'Networking',decls:[{decl:0,kind:'calls'}]}];two.made=[{part:'#n',title:'Networking',decls:[{decl:1,kind:'calls'}]}];
+const made=rmMergeReached([one,two]);
+assert.deepEqual(made.made.map(g=>[g.title,g.decls.map(e=>made.decls[e.decl].name)]),[['Networking',['rdbSave','rdbLoad']]],'where the calls are made, joined by part');
+assert.deepEqual(rmMergeReached([{decls:[d('connect','#n')],groups:[],made:[{part:'#n',title:'Networking',decls:[{decl:0,kind:'calls'}]}]}]).groups,[],'made alone still reads');
 `)
 }
 
@@ -115,7 +121,9 @@ assert.equal(rmTestOnly(undefined,byID),false);
 // A part is test-only when every declaration with a place is written in
 // its program's test sources (ProgramTarget TestSources).
 func TestAPartOfTestSourcesIsTestOnly(t *testing.T) {
-	at := func(path string) *programindex.Location { return &programindex.Location{Path: path, Line: 1, Column: 1} }
+	at := func(path string) *programindex.Location {
+		return &programindex.Location{Path: path, Line: 1, Column: 1}
+	}
 	builder := &pageBuilder{subjects: map[string]subjectRef{}, data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{
 		{Target: programindex.Target{ID: "t1", TestSources: []string{"tests/conftest.py", "tests/test_bot.py"}}}}}}}
 	for id, path := range map[string]string{"n1": "tests/conftest.py", "n2": "tests/test_bot.py", "n3": "freqtrade/bot.py"} {

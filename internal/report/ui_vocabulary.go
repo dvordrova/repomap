@@ -937,6 +937,9 @@ var russianUI = map[string]string{
 	"handles the input":                "обрабатывает вход",
 	"handles the inputs:":              "обрабатывает входы:",
 	"The path stops here. At each step it follows one call the step before may make; open a step for all of its calls.": "Путь здесь заканчивается. На каждом шаге он идёт по одному вызову, который может сделать предыдущий шаг; откройте шаг, чтобы увидеть все его вызовы.",
+
+	// Where an outside call is written, beside "Called from" (rmReachedFrom).
+	"Made in": "Где сделан вызов",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

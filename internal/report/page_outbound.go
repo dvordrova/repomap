@@ -29,6 +29,12 @@ type pageOutbound struct {
 	// the component making it.
 	reached []pageReachedName
 	program string
+	// made is the declaration the call is written in, in its part
+	// (OutboundCall.SubjectID and GroupID): the part the canvas stands the
+	// call's destination by, said beside "Called from" (casdoor's Custom
+	// Logout Endpoint is made in Core data models' callProviderLogoutUrl,
+	// called from API controllers' ApiController.Logout).
+	made *pageReachedName
 	// Caller is the declaration the outside call is written in; Side the
 	// program's own code reaching it (page_shared_code.go), which says the
 	// program connects out.
@@ -207,6 +213,9 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			}
 		}
 		row.reached, row.program = builder.outboundReached(index, section, call), componentTitle(section, builder.sections)
+		if made, ok := builder.reachedName(index, section, call.SubjectID, call.GroupID, &call.Location, false); ok {
+			row.made = &made
+		}
 		if ref, known := builder.subject(index.Target.ID, call.SubjectID); known && call.SubjectID != "" {
 			name, anchor := builder.subjectDisplay(ref.subject)
 			row.Caller = name
@@ -373,35 +382,42 @@ type pageReachedName struct {
 // outboundReached names the callers a call is reached from, in the saved
 // order: each part's, then each path's start inside the call's own part.
 func (builder *pageBuilder) outboundReached(index *groupindex.Index, section *pageSection, call groupindex.OutboundCall) []pageReachedName {
-	program := componentTitle(section, builder.sections)
 	var names []pageReachedName
 	for _, caller := range call.ReachedFrom {
-		ref, known := builder.subject(index.Target.ID, caller.SubjectID)
-		if !known {
-			continue
+		if name, ok := builder.reachedName(index, section, caller.SubjectID, caller.GroupID, caller.Location, caller.Possible); ok {
+			names = append(names, name)
 		}
-		label, anchor := builder.subjectDisplay(ref.subject)
-		key := declarationKey(anchor)
-		if label == "" || key == "" {
-			continue
-		}
-		name := pageReachedName{program: program, possible: caller.Possible}
-		if caller.GroupID != "" {
-			name.part = "#" + groupAnchorID(section.ID, caller.GroupID)
-			name.title = builder.groupTitles[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: caller.GroupID}]
-		}
-		kind := ""
-		if object := ref.subject.Object; object != nil && (object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod) {
-			kind = "function"
-		}
-		name.decl = pageReadingDecl{Name: builder.withType(index.Target.ID, ref.subject, label), Key: key, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource,
-			Code: anchor.Code, At: anchor.Text, File: anchor.Path, Kind: kind, Part: name.part}
-		if caller.Location != nil {
-			name.site = builder.links.anchor(caller.Location.Path, caller.Location.Line, caller.Location.Column)
-		}
-		names = append(names, name)
 	}
 	return names
+}
+
+// reachedName is a declaration an outside call is made in or reached from,
+// read in its part, with the place it makes its call.
+func (builder *pageBuilder) reachedName(index *groupindex.Index, section *pageSection, subjectID, groupID string, location *programindex.Location, possible bool) (pageReachedName, bool) {
+	ref, known := builder.subject(index.Target.ID, subjectID)
+	if subjectID == "" || !known {
+		return pageReachedName{}, false
+	}
+	label, anchor := builder.subjectDisplay(ref.subject)
+	key := declarationKey(anchor)
+	if label == "" || key == "" {
+		return pageReachedName{}, false
+	}
+	name := pageReachedName{program: componentTitle(section, builder.sections), possible: possible}
+	if groupID != "" {
+		name.part = "#" + groupAnchorID(section.ID, groupID)
+		name.title = builder.groupTitles[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: groupID}]
+	}
+	kind := ""
+	if object := ref.subject.Object; object != nil && (object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod) {
+		kind = "function"
+	}
+	name.decl = pageReadingDecl{Name: builder.withType(index.Target.ID, ref.subject, label), Key: key, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource,
+		Code: anchor.Code, At: anchor.Text, File: anchor.Path, Kind: kind, Part: name.part}
+	if location != nil {
+		name.site = builder.links.anchor(location.Path, location.Line, location.Column)
+	}
+	return name, true
 }
 
 // pageReached is the reading of the callers an outside call's tile is
@@ -412,6 +428,9 @@ func (builder *pageBuilder) outboundReached(index *groupindex.Index, section *pa
 type pageReached struct {
 	Decls  []pageReadingDecl      `json:"decls"`
 	Groups []pageReadingPeerDecls `json:"groups"`
+	// Made are, the same way, the declarations the calls are written in,
+	// by the part each stands in: "Made in" beside "Called from".
+	Made []pageReadingPeerDecls `json:"made,omitempty"`
 }
 
 // reachedReading is the JSON of the callers every record a tile stands for
@@ -423,46 +442,55 @@ func reachedReading(rows []pageOutbound) string {
 	own := rows[0].program
 	reading := pageReached{Decls: []pageReadingDecl{}, Groups: []pageReadingPeerDecls{}}
 	at := map[string]int{}
+	add := func(groups []pageReadingPeerDecls, name pageReachedName) []pageReadingPeerDecls {
+		position, known := at[name.decl.Key]
+		if !known {
+			position = len(reading.Decls)
+			at[name.decl.Key] = position
+			reading.Decls = append(reading.Decls, name.decl)
+		}
+		program := ""
+		if name.program != own {
+			program = name.program
+		}
+		group := slices.IndexFunc(groups, func(group pageReadingPeerDecls) bool {
+			return group.Program == program && group.Part == name.part && group.Title == name.title
+		})
+		if group < 0 {
+			group = len(groups)
+			groups = append(groups, pageReadingPeerDecls{Part: name.part, Title: name.title, Program: program})
+		}
+		end := pageReadingEnd{Decl: position, Kind: string(programindex.RelationCalls), Possible: name.possible}
+		if name.site.Text != "" {
+			end.sites = []pageAnchor{name.site}
+		}
+		groups[group].Decls = mergeEnd(groups[group].Decls, end)
+		return groups
+	}
 	for _, row := range rows {
+		if row.made != nil {
+			reading.Made = add(reading.Made, *row.made)
+		}
 		for _, name := range row.reached {
-			position, known := at[name.decl.Key]
-			if !known {
-				position = len(reading.Decls)
-				at[name.decl.Key] = position
-				reading.Decls = append(reading.Decls, name.decl)
-			}
-			program := ""
-			if name.program != own {
-				program = name.program
-			}
-			group := slices.IndexFunc(reading.Groups, func(group pageReadingPeerDecls) bool {
-				return group.Program == program && group.Part == name.part && group.Title == name.title
-			})
-			if group < 0 {
-				group = len(reading.Groups)
-				reading.Groups = append(reading.Groups, pageReadingPeerDecls{Part: name.part, Title: name.title, Program: program})
-			}
-			end := pageReadingEnd{Decl: position, Kind: string(programindex.RelationCalls), Possible: name.possible}
-			if name.site.Text != "" {
-				end.sites = []pageAnchor{name.site}
-			}
-			reading.Groups[group].Decls = mergeEnd(reading.Groups[group].Decls, end)
+			reading.Groups = add(reading.Groups, name)
 		}
 	}
-	if len(reading.Groups) == 0 {
+	if len(reading.Groups) == 0 && len(reading.Made) == 0 {
 		return ""
 	}
-	// The tile's own program first, each part's callers by name.
-	slices.SortStableFunc(reading.Groups, func(a, b pageReadingPeerDecls) int { return boolFirst(a.Program == "", b.Program == "") })
-	for i := range reading.Groups {
-		ends := reading.Groups[i].Decls
-		for j := range ends {
-			ends[j].Site = callSite(ends[j].sites)
+	// The tile's own program first, each part's declarations by name.
+	for _, groups := range [][]pageReadingPeerDecls{reading.Made, reading.Groups} {
+		slices.SortStableFunc(groups, func(a, b pageReadingPeerDecls) int { return boolFirst(a.Program == "", b.Program == "") })
+		for i := range groups {
+			ends := groups[i].Decls
+			for j := range ends {
+				ends[j].Site = callSite(ends[j].sites)
+			}
+			slices.SortStableFunc(ends, func(a, b pageReadingEnd) int {
+				left, right := reading.Decls[a.Decl].Name, reading.Decls[b.Decl].Name
+				return cmp.Or(strings.Compare(strings.ToLower(left), strings.ToLower(right)), strings.Compare(left, right))
+			})
 		}
-		slices.SortStableFunc(ends, func(a, b pageReadingEnd) int {
-			left, right := reading.Decls[a.Decl].Name, reading.Decls[b.Decl].Name
-			return cmp.Or(strings.Compare(strings.ToLower(left), strings.ToLower(right)), strings.Compare(left, right))
-		})
 	}
 	raw, err := json.Marshal(reading)
 	if err != nil {

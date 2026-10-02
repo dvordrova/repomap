@@ -1537,7 +1537,15 @@ places being kept for the name's hover. A name reads its function in the
 column and on the canvas. More than twelve callers fold under their count
 (freqtrade's exchange calls are reached from 39 functions). The record's
 static row prints no callers. This is source reading; it adds no map edge
-and infers no runtime caller.
+and infers no runtime caller. Before it, "Made in" names, the same way, the
+function each call is written in, in its part (GroupsIndex
+`OutboundCall.SubjectID` and `GroupID`, the part the canvas stands its
+destination by), in a destination's and a frame's reading joined over their
+calls as "Called from" is (external review, 2026-10-02: casdoor's Custom
+Logout Endpoint stood under Core data models on the canvas and read only
+"Called from API controllers"; it is made in Core data models'
+callProviderLogoutUrl and called from API controllers'
+ApiController.Logout).
 
 In the column the tile's record (31-reading-column.js `rmOutboundRecord`)
 stands open and prints no place (owner, 2026-09-29): its kind and address,

@@ -39,6 +39,8 @@ func TestAnOutsideTileIsReadWithTheCallersEachProgramReachesItFrom(t *testing.T)
 	declare("t1", "n2", "main", "redis.c", 9000)
 	declare("t2", "n1", "createClient", "redis-benchmark.c", 330)
 	declare("t4", "n1", "cliConnect", "redis-cli.c", 170)
+	declare("t1", "n9", "anetTcpGenericConnect", "anet.c", 140)
+	builder.groupTitles[groupindex.Endpoint{TargetID: "t1", GroupID: "g1"}] = "Networking"
 	builder.groupTitles[groupindex.Endpoint{TargetID: "t1", GroupID: "g2"}] = "Replication"
 	builder.groupTitles[groupindex.Endpoint{TargetID: "t1", GroupID: "g3"}] = "Server startup"
 	builder.groupTitles[groupindex.Endpoint{TargetID: "t2", GroupID: "g2"}] = "Benchmark clients"
@@ -54,6 +56,11 @@ func TestAnOutsideTileIsReadWithTheCallersEachProgramReachesItFrom(t *testing.T)
 		row := pageOutbound{ID: section.ID + "-out-b121", Destination: call.Destination, External: call.External, MapGroup: "g1", Source: "model",
 			Anchor: pageAnchor{Path: "anet.c", Line: 158, Text: "anet.c:158"}}
 		row.reached, row.program = builder.outboundReached(&groupindex.Index{Target: programindex.Target{ID: section.ID}}, section, call), componentTitle(section, sections)
+		// Where the call is written: anet.c's anetTcpGenericConnect, in
+		// Networking (redis-server's record only, here).
+		if made, ok := builder.reachedName(&groupindex.Index{Target: programindex.Target{ID: section.ID}}, section, "n9", "g1", site("anet.c", 158), false); ok && section.ID == "t1" {
+			row.made = &made
+		}
 		section.Outbound = []pageOutbound{row}
 	}
 	view := pageView{Sections: sections}
@@ -82,6 +89,10 @@ func TestAnOutsideTileIsReadWithTheCallersEachProgramReachesItFrom(t *testing.T)
 	if !slices.Equal(got, want) {
 		t.Fatalf("the tile is reached from %q, want %q", got, want)
 	}
+	if len(reading.Made) != 1 || reading.Made[0].Title != "Networking" || reading.Made[0].Part != "#t1-g1" || len(reading.Made[0].Decls) != 1 ||
+		reading.Decls[reading.Made[0].Decls[0].Decl].Name != "anetTcpGenericConnect" {
+		t.Fatalf("the tile does not say where its call is made: %+v", reading.Made)
+	}
 	if sync := reading.Groups[0].Decls[0]; sync.Site == nil || sync.Site.At != "redis.c:7219 · 7250" || reading.Decls[sync.Decl].Part != "#t1-g2" {
 		t.Fatalf("a caller's places are for its hover, its part for its reading: %+v %+v", sync, reading.Decls[sync.Decl])
 	}
@@ -98,6 +109,7 @@ func TestAnOutsideTileIsReadWithTheCallersEachProgramReachesItFrom(t *testing.T)
 nodes['#t1-g2']={dataset:{title:'Replication',lane:'core'},getAttribute:()=>'#t1-g2'};
 nodes['#t4-g2']={dataset:{title:'Command line client',lane:'triggers'},getAttribute:()=>'#t4-g2'};
 const reached=`+string(raw)+`;
+const made=reached.made;delete reached.made;
 const section=rmReachedFrom(ctx,reached);
 const parts=section.all(c=>c.has('map-reading-peer'));
 assert.deepEqual(parts.map(p=>[p.all(c=>c.has('map-reading-program')).map(c=>c.textContent).join(''),p.all(c=>c.has('map-part-box')).map(c=>c.textContent).join(''),names(p)]),
@@ -114,6 +126,17 @@ const folded=rmReachedFrom(ctx,many);
 assert.equal(folded.tagName,'DETAILS','a long list folds');
 assert.ok(!/\d/.test(folded.children[0].textContent),'its heading counts nothing: '+folded.children[0].textContent);
 assert.equal(rmReachedFrom(ctx,{decls:[],groups:[]}),null,'no callers, no list');
+// Where the call is written stands first, "Made in", the same way; with no
+// callers it stands alone and says no "Called from" stands.
+reached.made=made;
+const both=rmReachedFrom(ctx,reached);
+assert.deepEqual(both.children.map(c=>c.className),['map-reading-side map-reading-in outbound-made','map-reading-side map-reading-in outbound-reached']);
+const madeIn=both.children[0];
+assert.equal(madeIn.children[0].textContent,'Made in');
+assert.deepEqual(madeIn.all(c=>c.has('map-reading-peer')).map(p=>[p.all(c=>c.has('map-part-box')).map(c=>c.textContent).join(''),names(p)]),[['Networking',['anetTcpGenericConnect()']]]);
+assert.equal(both.calledFrom,true);
+const alone=rmReachedFrom(ctx,{decls:reached.decls,groups:[],made});
+assert.deepEqual([alone.children.length,alone.calledFrom],[1,false],'made alone, no "Called from"');
 `)
 	if regexp.MustCompile(`"(line|column)"`).MatchString(tile.Reached) {
 		t.Fatalf("the page data writes a caller's line: %s", tile.Reached)
@@ -180,6 +203,12 @@ assert.equal(record.all(c=>c.tagName==='DETAILS'||c.tagName==='SUMMARY').length,
 assert.ok(!record.textContent.includes('Resolves the master'),'the card\'s intro says the model\'s note');
 assert.deepEqual(record.all(c=>c.has('outbound-chain'))[0].all(c=>c.tagName==='A').map(c=>[c.textContent,c.href]),
  [['anetTcpGenericConnect','https://src/anet.c#L146'],['anetTcpConnect','https://src/anet.c#L170']],'the names its address passes through are links');
+// A record whose call is only said where it is made keeps the run from the
+// program's code: no "Called from" says it by part.
+const made=parse(row);
+rmOutboundRecord(made,rmReachedFrom(ctx,{decls:reached.decls,groups:[],made:reached.groups}),'gethostbyname',true);
+assert.equal(made.all(c=>c.has('outbound-side')).length,1,'the run stands beside "Made in"');
+assert.equal(made.all(c=>c.has('outbound-made')).length,1);
 const alone=parse(row);
 rmOutboundRecord(alone,null,'gethostbyname',false);
 assert.ok(!place.test(alone.textContent),'no place with no callers either');

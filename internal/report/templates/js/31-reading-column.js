@@ -346,40 +346,57 @@ function rmFieldUses(ctx,data,use){
 // wrapper one hop away. A long list folds under its count (freqtrade's
 // exchange calls are reached from 39 functions). No line numbers: a name
 // reads its function in the column and on the canvas.
+// Where the call is written stands before it, "Made in", the same way
+// (`made`: the part the canvas stands its destination by; casdoor's Custom
+// Logout Endpoint is made in Core data models' callProviderLogoutUrl and
+// called from API controllers' ApiController.Logout). Its `calledFrom`
+// says whether a "Called from" stands.
 function rmReachedFrom(ctx,data){
-  if(!data||!(data.groups||[]).length)return null;
+  if(!data||!((data.groups||[]).length||(data.made||[]).length))return null;
   data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
-  var total=data.groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=total>12;
-  var section=rmEl(long?'details':'section','map-reading-side map-reading-in outbound-reached'),heading=rmEl(long?'summary':'h6','',rmT('Called from'));
-  section.appendChild(heading);
-  data.groups.forEach(function(group){
-    var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
-    if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
-    head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
-    rmEndRuns(ctx,data,group.decls,'in').parts.forEach(function(part){box.appendChild(part);});section.appendChild(box);
-  });
-  return section;
+  function side(groups,label,cls){
+    var total=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=total>12;
+    var section=rmEl(long?'details':'section','map-reading-side map-reading-in '+cls),heading=rmEl(long?'summary':'h6','',rmT(label));
+    section.appendChild(heading);
+    groups.forEach(function(group){
+      var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
+      if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
+      head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
+      rmEndRuns(ctx,data,group.decls,'in').parts.forEach(function(part){box.appendChild(part);});section.appendChild(box);
+    });
+    return section;
+  }
+  var called=(data.groups||[]).length?side(data.groups,'Called from','outbound-reached'):null;
+  if(!(data.made||[]).length){called.calledFrom=true;return called;}
+  var both=rmEl('div','outbound-where');both.appendChild(side(data.made,'Made in','outbound-made'));
+  if(called)both.appendChild(called);
+  both.calledFrom=!!called;
+  return both;
 }
-// Where several outside calls are reached from, as one "Called from": each
-// record's `reached` (page data) joined by program and part, each caller
-// once.
+// Where several outside calls are made and reached from, as one "Made in"
+// and one "Called from": each record's `reached` (page data) joined by
+// program and part, each declaration once.
 function rmMergeReached(list){
-  var decls=[],at=new Map(),groups=[],byPart=new Map();
+  var decls=[],at=new Map(),merged={groups:[],made:[]},byPart={groups:new Map(),made:new Map()};
   list.forEach(function(data){
-    if(!data||!(data.groups||[]).length)return;
-    data.groups.forEach(function(group){
-      var key=(group.program||'')+'\u0000'+(group.part||group.title||''),into=byPart.get(key);
-      if(!into){into={part:group.part,title:group.title,program:group.program,decls:[]};byPart.set(key,into);groups.push(into);}
-      group.decls.forEach(function(end){
-        var decl=data.decls[end.decl];if(!decl)return;
-        var id=decl.key||decl.href||decl.open||decl.name;
-        if(!at.has(id)){at.set(id,decls.length);decls.push(decl);}
-        var position=at.get(id);
-        if(!into.decls.some(function(other){return other.decl===position;}))into.decls.push(Object.assign({},end,{decl:position}));
+    if(!data)return;
+    ['made','groups'].forEach(function(field){
+      (data[field]||[]).forEach(function(group){
+        var key=(group.program||'')+'\u0000'+(group.part||group.title||''),into=byPart[field].get(key);
+        if(!into){into={part:group.part,title:group.title,program:group.program,decls:[]};byPart[field].set(key,into);merged[field].push(into);}
+        group.decls.forEach(function(end){
+          var decl=data.decls[end.decl];if(!decl)return;
+          var id=decl.key||decl.href||decl.open||decl.name;
+          if(!at.has(id)){at.set(id,decls.length);decls.push(decl);}
+          var position=at.get(id);
+          if(!into.decls.some(function(other){return other.decl===position;}))into.decls.push(Object.assign({},end,{decl:position}));
+        });
       });
     });
   });
-  return groups.length?{decls:decls,groups:groups}:null;
+  if(!merged.groups.length&&!merged.made.length)return null;
+  var result={decls:decls,groups:merged.groups};if(merged.made.length)result.made=merged.made;
+  return result;
 }
 // An outside call's record as the column reads it (owner, 2026-09-29), from
 // its row on the component's page (target.html "outbound-row"): what the
@@ -414,7 +431,7 @@ function rmOutboundRecord(record,reached,title,said){
   var note=!said&&line&&line.querySelector('.outbound-note'),parts=[],after=-1;
   if(note&&!body.querySelector('.outbound-purpose')){var purpose=rmEl('p','outbound-purpose');purpose.appendChild(note);parts.push(purpose);}
   Array.prototype.slice.call(body.children).forEach(function(part){
-    if(reached&&has(part,'outbound-side')||said&&has(part,'outbound-purpose'))return;
+    if(reached&&reached.calledFrom&&has(part,'outbound-side')||said&&has(part,'outbound-purpose'))return;
     parts.push(part);
     if(has(part,'outbound-source')||has(part,'outbound-runs')||has(part,'outbound-side'))after=parts.length;
   });
