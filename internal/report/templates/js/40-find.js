@@ -80,6 +80,10 @@
   function sourceChip(item){
     var chip=document.createElement(item.source.Href||item.source.Open?'a':'span');chip.className='chip';
     if(item.source.Href){chip.href=item.source.Href;chip.target='_blank';}else if(item.source.Open){chip.href='#';chip.dataset.open=item.source.Open;}
+    // Its key reads it in its part, linked or not: a place with no source
+    // link is its key (control review, 2026-10-02: Code results of a page
+    // with no remote had opened their part, never their declaration).
+    chip.dataset.sourceKey=repomapMembers.sourceKey(item.source);
     chip.appendChild(document.createTextNode(item.name));
     var line=document.createElement('span');line.className='ln';line.textContent=':'+item.source.Line;chip.appendChild(line);
     return chip;
@@ -113,11 +117,11 @@
   // with what it takes and returns, a type with its fields.
   var symbolLists=new WeakMap();
   function tileRows(entry){
-    var href=entry.source.getAttribute('href');
-    for(var i=0;href&&i<entry.memberships.length;i++){
+    var key=entry.source.dataset.sourceKey||entry.source.getAttribute('href');
+    for(var i=0;key&&i<entry.memberships.length;i++){
       var node=entry.memberships[i].node;if(!node)continue;
       if(!symbolLists.has(node))symbolLists.set(node,rmPage.data(node,'symbols')||[]);
-      var symbols=symbolLists.get(node),at=symbols.findIndex(function(symbol){return symbol.href===href&&symbol.kind!=='field';});
+      var symbols=symbolLists.get(node),at=symbols.findIndex(function(symbol){return repomapMembers.symbolKey(symbol)===key&&symbol.kind!=='field';});
       if(at<0)continue;
       return {head:symbols[at].name+(symbols[at].text||''),fields:symbols.filter(function(symbol){return symbol.owner===at+1&&(symbol.kind==='field'||symbol.kind==='more');}).map(function(symbol){return symbol.name+(symbol.text||'');})};
     }
@@ -165,7 +169,7 @@
     if(destination){for(var parent=destination.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;destination.scrollIntoView({block:'start'});}
   }
   function action(label,entry){var button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',function(){go(entry);});return button;}
-  function membership(entry,m){return m.node?Object.assign({},m,{codeSource:{href:entry.source.getAttribute('href'),open:entry.source.dataset.open}}):{destination:m.destination};}
+  function membership(entry,m){return m.node?Object.assign({},m,{codeSource:{key:entry.source.dataset.sourceKey,href:entry.source.getAttribute('href'),open:entry.source.dataset.open}}):{destination:m.destination};}
   function appendText(parent,tag,text,cls){var el=document.createElement(tag);el.textContent=text;if(cls)el.className=cls;parent.appendChild(el);return el;}
   function rank(e,q){var title=e.title.toLowerCase();if(e.kind==='code')title=title.replace(/:\d+$/,'');return (title===q?0:title.startsWith(q)?1:title.includes(q)?2:3)*10+(e.kind==='code'?1:0);}
   function description(entry,li,terms){

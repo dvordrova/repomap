@@ -298,7 +298,9 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 	// deeper while none of them is on the path.
 	add := func(change pageEntityWrite, maker string, at *programindex.Location) {
 		change.Deeper = !onPath[maker]
-		key := strings.Join([]string{change.Kind, change.Entity.Href + change.Entity.Open + change.EntityName, change.Field, change.Destination, strings.Join(change.Tables, ",")}, "\x00")
+		// The entity by its link, else by its place: a page with no source
+		// link keeps two records of one name apart.
+		key := strings.Join([]string{change.Kind, change.Entity.Href + change.Entity.Open + change.Entity.Text + change.EntityName, change.Field, change.Destination, strings.Join(change.Tables, ",")}, "\x00")
 		var step *pageCallStep
 		if ref, known := builder.subject(targetID, maker); known {
 			name, anchor := builder.subjectDisplay(ref.subject)
@@ -308,7 +310,11 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 			}
 		}
 		if listed, done := seen[key]; done {
-			if step != nil && !slices.ContainsFunc(result[listed].Callers, func(other pageCallStep) bool { return other.Name == step.Name && other.Href == step.Href }) {
+			// A maker once, by its name and its place, linked or not: two
+			// MemberList functions in two files are two makers.
+			if step != nil && !slices.ContainsFunc(result[listed].Callers, func(other pageCallStep) bool {
+				return other.Name == step.Name && other.Href == step.Href && other.Open == step.Open && other.Source == step.Source
+			}) {
 				result[listed].Callers = append(result[listed].Callers, *step)
 			}
 			for _, via := range change.Via {

@@ -33,7 +33,7 @@ const document={createElement:tag=>new El(tag),createTextNode:text};
 const names=el=>el.all(c=>c.has('map-reading-name')).map(c=>c.textContent);
 function rmEl(tag,cls,value){const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=value;return item;}
 function rmT(key,...values){let used=0;const out=values.reduce((s,v,i)=>{if(s.includes('{'+i+'}'))used++;return s.replace('{'+i+'}',v);},key);if(used!==values.length)throw new Error('Extra report UI parameter: '+key);return out;}
-const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||'';}};
+const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const nodes={'#own':{dataset:{title:'Server lifecycle and cron',summary:'Keeps the server running.',summaryRef:'s1',lane:'',symbols:'[{"name":"serverCron","kind":"function","text":"(id: long)","href":"h#serverCron"}]'},getAttribute:()=>'#own'},
  '#main':{dataset:{title:'main',lane:'triggers'},getAttribute:()=>'#main'},
  '#core':{dataset:{title:'Server core state',lane:'core'},getAttribute:()=>'#core'}};

@@ -1837,7 +1837,14 @@ still fails.
   path and line stay as plain text with a `No source` hover explanation,
   keeping the code cube, explanation, navigation and every unaffected
   permalink. A report without a remote source link likewise keeps the
-  original code, explanation and navigation. The outer run checks path
+  original code, explanation and navigation, and so does a served path with
+  no openable ID: every place with no link is plain text with `No source`,
+  and a declaration is keyed by its place (path and line), so Code search,
+  its reading, its calls, its part and Back work as on a linked page, two
+  declarations of one name in two files staying two (control review,
+  2026-10-02: a render with no remote had lost every function's reading and
+  Code search; its GitHub renders are byte-identical outside the report's
+  script). The outer run checks path
   availability once; its standalone manifest keeps that list for
   repository-free saved rendering. The only thing a served report adds is the
   manifest-authorized local editor opening of the analyzed working tree; add no

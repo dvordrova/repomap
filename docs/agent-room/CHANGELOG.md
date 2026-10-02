@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A page with no source link keeps every declaration's reading (control review P1, 20:42)
+
+- **What broke:** a render of a run with no remote (etcd 20261002-201509) or a served path with no openable ID left its anchors with a path and a line but neither a link nor `NoSource`. `declarationKey` returned "", so the readings dropped every declaration, Code search found nothing and function readings were never built.
+- **Fix:** `pageLinks.anchor` marks every place with no link `NoSource`: no remote, unavailable at the captured revision, or served without an ID. A declaration is then keyed by its place. The page's script keys tiles, listed declarations, handlers and Code results by the same key (`symbolKey`, `declKey`), and Find carries it into the part. A change's makers and records are told apart by place. A name with no link is a keyboard button; Enter and Space read it, and Space now also reads a linked name.
+- **Tests** (each fails at the previous HEAD):
+  - `TestDeclarationsWithoutASourceLinkKeepTheirReadings` covers no remote, unavailable and served without an ID, with two `Campaign` functions in two files, through the ordinary anchor path.
+  - `TestFindReadsADeclarationWithNoSourceLinkByItsPlace`.
+  - `TestTheKeyboardReadsADeclarationsNameAsAClickDoes`.
+  - The handler test has a new no-source case.
+- **A/B on one run:** etcd 164845 rendered by one binary, with and without its remote.
+  - Of 35 readings (20 inputs, 15 parts), 20 are alike. The other 15 differ only in the card's file, shown as plain text with `No source` where the code had linked.
+  - The mouse journey matches on both pages: Find `local_request_Election_Campaign_0`, then Code, the function reading (signature, Called by, Calls), its part, a declaration, Show whole map, and Back.
+  - Keyboard: Enter and Space on the Code result open the reading, and Back restores the search. Enter and Space on a declaration name read it.
+- **GitHub renders** of etcd, casdoor and freqtrade are byte-identical outside the report's script, which differs only by this change's code.
+
 ## 2026-10-03 — A JS/TS callback takes only the stores that reach the call it is handed to (lead)
 
 - **Ruling (coordinator, reversing part of 715c385c):** `callInMapBeforeStore` had become an exact call of `acceptClient`, the false exact of the Python eager bug. A store that may come after the call never becomes its target, and unknown stays unknown.

@@ -249,7 +249,7 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
   function readName(decl,hover){
     var part=rmFlowPart(ctx,decl.part),text=rmCallableName({name:decl.name,kind:'function'});
     if(!part){var plain=rmEl('span','map-reading-name map-flow-plain',text);if(hover)plain.title=hover;return plain;}
-    var key=decl.href||decl.open;
+    var key=repomapMembers.declKey(decl);
     return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,key:key},text,function(){ctx.readDeclIn(part,key);},[part.dataset.title,hover].filter(Boolean).join('\n'));
   }
   // A chain in call order, each run in one part under its box.
@@ -300,7 +300,7 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
   // What the handler does: its own flow; of an input a case declares, what
   // the case's lines call, never the rest of its handler.
   if(handler){
-    var target=rmFlowOwner(ctx,null,{key:handler.href||handler.open,part:(function(){var node=rmFlowPart(ctx,handler.part);return node?node.getAttribute('href')||'#'+node.id:'';})()});
+    var target=rmFlowOwner(ctx,null,{key:repomapMembers.declKey(handler),part:(function(){var node=rmFlowPart(ctx,handler.part);return node?node.getAttribute('href')||'#'+node.id:'';})()});
     // A case whose lines call nothing the reading holds is saved with no
     // flow (null): it says so, never a step made up (control review,
     // 2026-10-02: etcd's staleList, StaleList's case, had thrown here).

@@ -47,16 +47,27 @@ function rmModelText(tag,cls,text,ref){
 // opens, the declaration's code by default, a caller's call line on a
 // "Called by" row, null for none (the reading's own title).
 function rmDeclName(decl,text,go,title,bold,code){
-  var link=decl.href||decl.open?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:text}):rmEl('span','',text);
+  var link=decl.href||decl.open||decl.no_source?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:text,NoSource:decl.no_source}):rmEl('span','',text);
   link.classList.add('map-reading-name');rmDotBreaks(link);link.rmDecl=decl;
   if(decl.key)link.dataset.declKey=decl.key;
   if(bold&&decl.bold)link.classList.add('map-reading-key');
   // A clipped name keeps its whole spelling on its hover, above the rest.
   if(title)link.title=link.title&&link.title!==title?link.title+'\n'+title:title;
-  if(go)link.addEventListener('click',function(event){
-    if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
-    event.preventDefault();event.stopPropagation();go(decl);
-  });
+  if(go){
+    link.addEventListener('click',function(event){
+      if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+      event.preventDefault();event.stopPropagation();go(decl);
+    });
+    // The keyboard reads it as a click does: Enter, and Space, on a link as
+    // on a name with no source link, which is then a button (control
+    // review, 2026-10-02: a page with no remote had its names out of reach).
+    var native=link.tagName==='A'||link.tagName==='BUTTON';
+    if(!native){link.setAttribute('role','button');link.tabIndex=0;}
+    link.addEventListener('keydown',function(event){
+      if(event.metaKey||event.ctrlKey||event.altKey||!(event.key===' '||event.key==='Enter'&&!native))return;
+      event.preventDefault();event.stopPropagation();go(decl);
+    });
+  }
   return rmNameIcon(link,code===undefined?{href:decl.code||decl.href,open:decl.open}:code);
 }
 // Two declarations a list names alike are told apart by where they stand
@@ -591,7 +602,7 @@ function rmDeclView(ctx,node,data,concept){
   var name=rmEl('div','map-decl-name');
   var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at,false,null);link.classList.add('map-decl-code');name.appendChild(link);
   symbols=rmPage.data(node,'symbols')||[];
-  var symbol=symbols.find(function(s){return (s.href||s.open)===key&&s.kind!=='field';});
+  var symbol=symbols.find(function(s){return repomapMembers.symbolKey(s)===key&&s.kind!=='field';});
   if(symbol&&symbol.text)name.appendChild(rmEl('span','map-decl-signature',symbol.text));
   view.appendChild(name);
   var where=rmEl('p','map-decl-where');where.appendChild(rmEl('span','meta',decl.file||''));
@@ -794,7 +805,8 @@ function rmCatalogueLines(ctx,catalogue){
   var decls=catalogue.decls||[],lines=[];
   function name(index){
     var decl=decls[index]||{name:''},node=decl.part?ctx.nodeById(decl.part):null;
-    return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,part:node?node.getAttribute('href'):'',key:decl.href||decl.open},decl.name,node?function(){ctx.readDeclIn(node,decl.href||decl.open);}:null,decl.source);
+    var key=repomapMembers.declKey(decl);
+    return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,part:node?node.getAttribute('href'):'',key:key},decl.name,node?function(){ctx.readDeclIn(node,key);}:null,decl.source);
   }
   // Its callers one to a line under the line naming what they call.
   function callers(calls){var list=rmEl('ul','map-reading-ends map-collection-callers');calls.forEach(function(call){var item=rmEl('li');item.appendChild(name(call.caller));list.appendChild(item);});return list;}

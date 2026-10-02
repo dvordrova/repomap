@@ -51,7 +51,7 @@ const text=value=>({textContent:String(value)});
 const document={createElement:tag=>new N(tag),createTextNode:text,getElementById:()=>null};
 function rmEl(tag,cls,value){const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=value;return item;}
 function rmT(key,...values){return values.reduce((s,v,i)=>s.replace('{'+i+'}',v),key);}
-const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||'';}};
+const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const el=(tag,cls,kids,extra)=>{const e=rmEl(tag,cls);(kids||[]).forEach(k=>e.appendChild(typeof k==='string'?text(k):k));Object.assign(e.dataset,(extra||{}).dataset||{});if(extra&&extra.id)e.id=extra.id;return e;};
 `
 

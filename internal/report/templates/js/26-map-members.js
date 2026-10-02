@@ -3,6 +3,17 @@
 var repomapMembers = (function () {
   var inventories = new WeakMap();
   function sourceKey(source) { return source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
+  // A tile's declaration by the same key: its link, else its place (a page
+  // with no source link keys every declaration by its place, sourceKey).
+  function symbolKey(symbol) { return symbol ? symbol.href || symbol.open || (symbol.path ? JSON.stringify([symbol.path,symbol.line||0]) : '') : ''; }
+  // A declaration a reading lists by the same key: its link, else its own
+  // key, else, with no source link, its place as written ("path:line").
+  function declKey(decl) {
+    if (!decl) return '';
+    if (decl.href || decl.open || decl.key) return decl.href || decl.open || decl.key;
+    var place = decl.no_source ? /^(.*):(\d+)$/.exec(decl.source || decl.at || '') : null;
+    return place ? JSON.stringify([place[1], Number(place[2])]) : '';
+  }
   function items(node) {
     if (inventories.has(node)) return inventories.get(node);
     var result = [], known = new Map();
@@ -66,9 +77,9 @@ var repomapMembers = (function () {
   // holds (the kinds its tiles carry), and the files they are written in.
   function composition(node){
     var kinds={},counts={},files=[];
-    try{(rmPage.data(node,'symbols')||[]).forEach(function(symbol){if(symbol.href||symbol.open)kinds[symbol.href||symbol.open]=symbol.kind;});}catch(_){}
+    try{(rmPage.data(node,'symbols')||[]).forEach(function(symbol){var key=symbolKey(symbol);if(key)kinds[key]=symbol.kind;});}catch(_){}
     items(node).forEach(function(item){
-      var kind=kinds[item.source.Href||item.source.Open]||'';
+      var kind=kinds[sourceKey(item.source)]||'';
       var word=kind==='function'||kind==='method'?'{0} functions':kind==='type'?'{0} types':kind==='variable'?'{0} variables':'{0} declarations';
       counts[word]=(counts[word]||0)+1;
       var path=item.source.Path||'';if(path&&files.indexOf(path)<0)files.push(path);
@@ -113,5 +124,5 @@ var repomapMembers = (function () {
     }
     layer.appendChild(body); svg.appendChild(layer);
   }
-  return {sourceKey:sourceKey,items:items,sorted:sorted,composition:composition,size:size,draw:draw,grid:grid,label:label,displayName:displayName,sourceLink:sourceLink};
+  return {sourceKey:sourceKey,symbolKey:symbolKey,declKey:declKey,items:items,sorted:sorted,composition:composition,size:size,draw:draw,grid:grid,label:label,displayName:displayName,sourceLink:sourceLink};
 })();

@@ -122,7 +122,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   var section=rmEl('section','system-input-path'),decls=path.decls||[];
   section.appendChild(rmEl('h5','',rmT('Path')));
   function name(index){
-    var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
+    var decl=decls[index]||{name:''},key=repomapMembers.declKey(decl),at=key&&partNode(decl.part);
     var link=at?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
@@ -165,7 +165,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     // "one of 94 handlers" reads the dispatcher, whose reading lists them
     // by input with a filter.
     var at=rmEl('p','meta'),handlers=rmEl('button','system-path-handlers',rmSiteHandlers(site)),siteDecl=decls[site.site]||{},sitePart=partNode(siteDecl.part);handlers.type='button';
-    if(sitePart)handlers.addEventListener('click',function(){read(sitePart,siteDecl.href||siteDecl.open);});
+    if(sitePart)handlers.addEventListener('click',function(){read(sitePart,repomapMembers.declKey(siteDecl));});
     at.append(name(site.site),document.createTextNode(' → '),handlers);box.appendChild(at);
     // How many inputs are dispatched there and which handler serves
     // several of them, where a reader compares the counts.
@@ -258,9 +258,9 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   // Worker or a FreqtradeBot is), from its part's explained declarations,
   // at two lines until clicked.
   function typeLine(index){
-    var decl=decls[index]||{},node=partNode(decl.part),key=decl.href||decl.open;
+    var decl=decls[index]||{},node=partNode(decl.part),key=repomapMembers.declKey(decl);
     if(!node||!key)return null;
-    var said=(rmPage.data(node,'explained')||[]).find(function(item){var source=item.source||{};return item.kind==='type'&&item.explanation&&(source.Href||source.Open)===key;});
+    var said=(rmPage.data(node,'explained')||[]).find(function(item){var source=item.source||{};return item.kind==='type'&&item.explanation&&repomapMembers.sourceKey(source)===key;});
     if(!said)return null;
     var line=rmTypeLineFold(rmModelText('span','flow-type',said.explanation,said.explanation_ref));
     line.addEventListener('click',function(event){event.stopPropagation();line.classList.toggle('flow-type-open');});
@@ -316,7 +316,7 @@ function rmSettingWrites(sets,partNode,read){
   var box=rmEl('div','map-reading-writes system-setting-writes');box.appendChild(rmEl('p','map-reading-label',rmT('Writes:')));
   var line=rmEl('ul','map-reading-ends');box.appendChild(line);
   sets.forEach(function(set){
-    var key=set.href||set.open,at=key&&partNode(set.part);
+    var key=repomapMembers.declKey(set),at=key&&partNode(set.part);
     var link=key?repomapMembers.sourceLink({Href:set.code||set.href,Open:set.open,Text:set.name,NoSource:set.no_source}):rmEl('span','',set.name);rmDotBreaks(link);
     link.classList.add('map-reading-name');if(set.source)link.title=set.source;
     if(at)link.addEventListener('click',function(event){
@@ -335,7 +335,7 @@ function rmSettingWrites(sets,partNode,read){
 function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode,groupOf){
   var section=rmEl('section','system-catalogue'),decls=catalogue.decls||[];
   function name(index){
-    var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
+    var decl=decls[index]||{name:''},key=repomapMembers.declKey(decl),at=key&&partNode(decl.part);
     var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
@@ -458,7 +458,7 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   var box=rmEl('details','system-launch'),decls=launch.decls||[];
   box.appendChild(rmEl('summary','',rmT('How these were found')));
   function name(index){
-    var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
+    var decl=decls[index]||{name:''},key=repomapMembers.declKey(decl),at=key&&partNode(decl.part);
     var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
@@ -772,7 +772,7 @@ function rmSavedScene(doc){
     section.appendChild(head);
     // The functions making a change, each name its link into its code.
     function makers(item,writes){
-      var names=[];writes.forEach(function(write){(write.callers||[]).forEach(function(step){if(!names.some(function(other){return other.name===step.name&&other.href===step.href;}))names.push(step);});});
+      var names=[];writes.forEach(function(write){(write.callers||[]).forEach(function(step){if(!names.some(function(other){return other.name===step.name&&repomapMembers.declKey(other)===repomapMembers.declKey(step);}))names.push(step);});});
       if(!names.length)return;
       var by=rmEl('span','map-reading-relation map-data-by'),words=rmT('by {0}','\u0001').split('\u0001');
       by.append(words[0]);
@@ -940,16 +940,20 @@ function rmSavedScene(doc){
   }
   // The handler an input's reading names ("handled by getCommand") is read
   // in its part, as the path's steps are, when that part lists it; a
-  // modifier-click still opens its code.
+  // modifier-click still opens its code. A handler with no source link is
+  // read by its place (control review, 2026-10-02: a page with no remote).
   function readsHandler(n,card){
-    var name=card.querySelector('.map-card-handler>a'),part=byID[scene.handlerPart(n.id)],key=n.dataset.handlerSource||n.dataset.handlerOpen;
+    var d=n.dataset,name=card.querySelector('.map-card-handler>a,.map-card-handler>span'),part=byID[scene.handlerPart(n.id)];
+    var key=d.handlerSource||d.handlerOpen||(d.handlerNoSource==='true'&&d.handlerPath?JSON.stringify([d.handlerPath,Number(d.handlerLine)||0]):'');
     if(!name||!part||part.dataset.activation||!key)return;
     var symbols=rmPage.data(part,'symbols')||[];
-    if(!symbols.some(function(symbol){return symbol.href===key||symbol.open===key;}))return;
+    if(!symbols.some(function(symbol){return repomapMembers.symbolKey(symbol)===key;}))return;
+    function read(event){event.preventDefault();event.stopPropagation();readDeclaration(part,key);}
     name.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
-      event.preventDefault();event.stopPropagation();readDeclaration(part,key);
+      read(event);
     });
+    if(name.tagName==='SPAN'){name.setAttribute('role','button');name.tabIndex=0;name.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' ')read(event);});}
   }
   map.addEventListener('repomap:inspect',function(e){
     var n=e.detail.node,card=e.detail.card;

@@ -25,6 +25,9 @@ import './scene.css';
 const t=(...args)=>window.rmT?window.rmT(...args):args[0];
 const context2d=document.createElement('canvas').getContext('2d');
 const measure=(text,font)=>{context2d.font=font;return context2d.measureText(String(text??'')).width;};
+// A tile's declaration as the reading keys it: its link, else its place
+// (26-map-members.js symbolKey; a page with no source link).
+const symbolKey=symbol=>symbol?symbol.href||symbol.open||(symbol.path?JSON.stringify([symbol.path,symbol.line||0]):''):'';
 const sameSet=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
 
 // The words a box shows at its level's text size, each of its title, role
@@ -412,7 +415,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const symbols=model.nodes.get(member?.part)?.item?.symbols||[],symbol=symbols[member?.index];
     if(!symbol)return null;
     const owner=symbol.owner?symbols[symbol.owner-1]?.name:'';
-    return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open].filter(Boolean)};
+    return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open,symbolKey(symbol)].filter(Boolean)};
   }
   // A declaration clicked is read in its part, named; with a modifier its
   // code opens.
@@ -421,7 +424,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(event&&(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)){window.open(symbol.code||symbol.href,'_blank');return;}
     store.dispatch({type:'member',member:{chosen:{part,index}}});
     read(part,event);
-    setTimeout(()=>map.explainSource?.({key:symbol.href||symbol.open||'',href:symbol.href,open:symbol.open}),0);
+    setTimeout(()=>map.explainSource?.({key:symbolKey(symbol),href:symbol.href,open:symbol.open}),0);
   }
   // The column names a declaration (Find, a link, a restored visit): its
   // tile is the one chosen. A restored visit keeps its camera; one newly
@@ -432,7 +435,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const named=map.explorerMember;if(!named?.owner)return;
     const part=named.owner,symbols=model.nodes.get(part)?.item?.symbols||[];
     const same=value=>!!value&&[named.key,named.href,named.open].includes(value);
-    const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open));
+    const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open)||same(symbolKey(symbol)));
     const chosen=store.getState().member.chosen;
     if(index<0||chosen?.part===part&&chosen.index===index)return;
     store.dispatch({type:'member',member:{chosen:{part,index}}});
@@ -902,7 +905,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(!groups.length)return false;
     for(const [element,mountedRoot] of mounted)if(!element.isConnected){mountedRoot.unmount();mounted.delete(element);}
     const target=mounted.get(container)||createRoot(container);mounted.set(container,target);
-    const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbol.href===key||symbol.open===key),input:readInput};
+    const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbolKey(symbol)===key),input:readInput};
     flushSync(()=>target.render(<FrameConnections groups={groups} open={open} choose={chooser} single={model.nodes.get(id)?.kind==='part'}/>));
     return true;
   }

@@ -296,7 +296,7 @@ function rmFillKindMarks(root){
 }
 function rmDeclarationText(node,concept){
   var symbols=rmPage.data(node,'symbols')||[];
-  var href=concept.source&&concept.source.Href,symbol=href&&symbols.find(function(s){return s.href===href&&s.kind!=='field';});
+  var key=concept.source&&repomapMembers.sourceKey(concept.source),symbol=key&&symbols.find(function(s){return repomapMembers.symbolKey(s)===key&&s.kind!=='field';});
   return symbol?symbol.name+(symbol.text||''):concept.name;
 }
 // The declaration's code: the existing link, and where it stands.
@@ -348,7 +348,7 @@ function rmSiteHandlers(site){
 // plain click reads it in its part, its part named on hover, as every name
 // in the column is; a plain name when it has neither.
 function rmSiteDeclName(ctx,decl){
-  var part=ctx?rmFlowPart(ctx,decl.part):null,key=decl.href||decl.open||'';
+  var part=ctx?rmFlowPart(ctx,decl.part):null,key=repomapMembers.declKey(decl);
   if(!key)return rmEl('span','',decl.name||'');
   return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,key:key},decl.name||'',part?function(){ctx.readDeclIn(part,key);}:null,part?part.dataset.title:'');
 }
@@ -372,7 +372,7 @@ function rmSiteReading(map,node,key){
   var decls=readings.decls||[];
   function name(index){return rmSiteDeclName(ctx,decls[index]||{name:''});}
   (readings.sites||[]).forEach(function(site){
-    var decl=decls[site.site];if(!decl||(decl.href||decl.open)!==key)return;
+    var decl=decls[site.site];if(!decl||repomapMembers.declKey(decl)!==key)return;
     // Named, not counted (owner, 2026-09-29: no digits in the column); the
     // counts stay on its hover.
     var heading=rmEl('h6','',rmT('Dispatch site'));

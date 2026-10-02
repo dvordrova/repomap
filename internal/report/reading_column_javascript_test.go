@@ -34,6 +34,7 @@ func nameBreaksJS(t *testing.T) string {
 func TestDeclarationReadingListsCallersAndCalleesByPart(t *testing.T) {
 	code := systemJSPiece(t, "30-map.js", "function rmDeclarationText(", "// The reading layer over the map")
 	runSystemJS(t, fakeElements+`
+const repomapMembers={sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const K='h#processInputBuffer';
 function row(kind,from,to,fromName,toName,site,peer,sentence,possible){
   return {dataset:{kind,fromDecl:from,toDecl:to,fromName,toName},closest:s=>s==='.conn-group'?peer:null,
@@ -156,14 +157,18 @@ operation=null;markOutside({id:'debug'});assert.equal(heading.children.length,0)
 // "handled by getCommand" in GET's reading opened GitHub, two lines above
 // the same name in its path that reads the declaration. The handler is read
 // in its part when that part lists it; a modifier-click still opens code.
+// A handler with no source link is read by its place (control review,
+// 2026-10-02: a page with no remote).
 func TestAnInputsHandlerNameReadsItsDeclaration(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "  function readsHandler(n,card){", "  map.addEventListener('repomap:inspect'")
 	runSystemJS(t, `
 const strings={id:'strings',dataset:{symbols:JSON.stringify([{name:'getCommand',href:'h/getCommand'}])}};
-const byID={strings},scene={handlerPart:id=>({get:'strings',orphan:'strings'})[id]||''},read=[];
+const local={id:'local',dataset:{symbols:JSON.stringify([{name:'setCommand',path:'t_string.c',line:9}])}};
+const byID={strings,local},scene={handlerPart:id=>({get:'strings',orphan:'strings',set:'local'})[id]||''},read=[];
+const repomapMembers={sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 function readDeclaration(part,key){read.push([part.id,key]);}
 const link=()=>({listeners:{},addEventListener(k,f){this.listeners[k]=f;}});
-const cardWith=name=>({querySelector:s=>s==='.map-card-handler>a'?name:null});
+const cardWith=name=>({querySelector:s=>s.split(',').includes('.map-card-handler>a')?name:null});
 `+code+`
 const name=link();readsHandler({id:'get',dataset:{activation:'request',handlerSource:'h/getCommand'}},cardWith(name));
 const click=extra=>{let prevented=false;name.listeners.click({button:0,preventDefault(){prevented=true;},stopPropagation(){},...extra});return prevented;};
@@ -172,6 +177,11 @@ assert.deepEqual(read,[['strings','h/getCommand']]);
 assert.equal(click({ctrlKey:true}),false,'a modifier-click opens its code');assert.equal(read.length,1);
 const other=link();readsHandler({id:'orphan',dataset:{activation:'request',handlerSource:'h/elsewhere'}},cardWith(other));
 assert.equal(other.listeners.click,undefined,'a handler its part does not list stays the link it was');
+const plain=Object.assign(link(),{tagName:'SPAN',setAttribute(k,v){this[k]=v;}});
+readsHandler({id:'set',dataset:{activation:'request',handlerNoSource:'true',handlerPath:'t_string.c',handlerLine:'9'}},cardWith(plain));
+plain.listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(read.at(-1),['local',JSON.stringify(['t_string.c',9])],'a handler with no source link reads by its place');
+assert.equal(plain.role,'button','and the keyboard reaches it');
 `)
 }
 
@@ -415,7 +425,7 @@ func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
 	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
 	runSystemJS(t, fakeElements+`
-const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
+const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const decl=(name,part)=>({name,href:'h/'+name,source:'redis.c:1',part});
 const path={dispatched:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:11,inputs:['t1-sinter','t1-smembers']}],reached_from:['t1-exec']},{site:1,of:94,handlers:94,inputs:95}],registered_by:['t1-accept'],
   spine:{steps:[{decl:2,part:'n-strings'},{decl:3,part:'n-strings'}],branches:[{decl:4,part:'n-keys'},{decl:5,part:'n-clients',helper:true},{decl:6,part:'n-clients',helper:true}]},
@@ -491,7 +501,7 @@ func TestAnInputsPathReadsItsSpineAndNamesItsParts(t *testing.T) {
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration") +
 		systemJSPiece(t, "31-reading-column.js", "function rmModelText(", "// A declaration's name: a link into its code")
 	runSystemJS(t, fakeElements+`
-const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
+const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const decls=['start_trading','Worker','run','exit','__init__','FreqtradeBot','process','startup','Configuration','State'].map(name=>({name}));
 `+code+`
 // A class reads with its own line, the model's, from its part's explained
@@ -538,6 +548,7 @@ assert.ok(folded.children.some(c=>c.className==='map-reading-label'&&c.textConte
 func TestADispatchSitesReadingListsTheInputsReachingIt(t *testing.T) {
 	code := systemJSPiece(t, "30-map.js", "// The inputs dispatched at a site", "// Who calls a declaration and what it calls")
 	runSystemJS(t, fakeElements+`
+const repomapMembers={sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const readings={sites:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:5,inputs:['t1-sinter','t1-smembers']}],reached_from:[{input:'t1-exec',calls:[[2,0,0]]},{input:'t1-lpush',calls:[[3,4,0],[4,0,1]]}]},{site:1,of:94,handlers:94,inputs:95}],
   decls:[{name:'call',href:'h/call'},{name:'loadAppendOnlyFile',href:'h/load'},{name:'execCommand'},{name:'lpushCommand'},{name:'handleClientsWaitingListPush'},{name:'sinterCommand'}]};
 const node={dataset:{dispatch:JSON.stringify(readings)}},chosen=[];
@@ -637,5 +648,29 @@ assert.deepEqual(calls,[
 scope='';operation=null;map.explorerMember=null;
 rmCrumbs(container,map.explorationPath(),{href:'#overview',title:map.explorationLabel()});
 assert.deepEqual(container.children.map(a=>[a.textContent,a.href]),[['System map','#overview']],'with nothing read it names the map');
+`)
+}
+
+// The keyboard reads a declaration's name as a click does: Enter and Space
+// on a name linked into its code, and on a name with no source link, then a
+// button the keyboard reaches (control review, 2026-10-02: on a page with
+// no remote the names were spans out of the keyboard's reach, and Space on a
+// linked name scrolled the page).
+func TestTheKeyboardReadsADeclarationsNameAsAClickDoes(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmDeclName(", "// Two declarations a list names alike")
+	runSystemJS(t, fakeElements+`
+const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);if(s.Href)a.href=s.Href;else if(s.NoSource)a.title='No source';return a;}};
+function rmDotBreaks(el){return el;}
+function rmNameIcon(el){return el;}
+`+code+`
+const read=[];
+const press=(el,key)=>{let prevented=false;el.listeners.keydown?.({key,preventDefault(){prevented=true;},stopPropagation(){}});return prevented;};
+const linked=rmDeclName({name:'serverCron',href:'h#serverCron'},'serverCron',d=>read.push(d.name));
+assert.equal(press(linked,' '),true,'Space on a link reads it');
+assert.equal(press(linked,'Enter'),false,'Enter on a link is its own click');
+const plain=rmDeclName({name:'Campaign',no_source:true,key:'["election.go",10]'},'Campaign',d=>read.push(d.name));
+assert.equal(plain.tagName,'SPAN');assert.equal(plain.role,'button');assert.equal(plain.tabIndex,0);assert.equal(plain.title,'No source');
+assert.equal(press(plain,'Enter'),true);assert.equal(press(plain,' '),true);
+assert.deepEqual(read,['serverCron','Campaign','Campaign']);
 `)
 }

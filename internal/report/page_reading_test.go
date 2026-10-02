@@ -529,3 +529,56 @@ func TestAnInputCollectionListsWhatRunsBeforeWhatOnlyDeclaresAValue(t *testing.T
 		t.Fatalf("groups %q, want %q", groups, want)
 	}
 }
+
+// A page with no remote link, a source unavailable at the captured
+// revision, or a served path with no openable ID keeps every declaration's
+// reading: its place, plain text with "No source", keys it, so two
+// functions of one name in two files stay two, each with its caller
+// (control review, 2026-10-02: a render of a run with no remote had lost
+// every function's reading and Code search).
+func TestDeclarationsWithoutASourceLinkKeepTheirReadings(t *testing.T) {
+	for name, data := range map[string]*ReportData{
+		"no remote": {},
+		"unavailable at the captured revision": {GitHubSourceLinks: &GitHubSourceLinks{RepositoryURL: "https://github.com/etcd-io/etcd", Revision: "abc"},
+			UnavailableSourcePaths: []string{"election.go", "lock.go", "main.go"}},
+		"served with no openable ID": {SourceIDs: map[string]string{"server.go": "s1"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := &pageBuilder{subjects: map[string]subjectRef{}, links: newPageLinks(data), byProgram: map[string]*pageSection{"t1": {ID: "t1"}},
+				groupTitles: map[groupindex.Endpoint]string{}}
+			anchors := map[string]*pageAnchor{}
+			object := func(id, name, path string) {
+				b.subjects[subjectKey("t1", id)] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: name,
+					Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: path, Line: 10, Column: 1}}}}
+				anchors[id] = b.links.anchorPointer(path, 10, 1)
+			}
+			object("election", "Campaign", "election.go")
+			object("lock", "Campaign", "lock.go")
+			object("main", "main", "main.go")
+			part := groupindex.Group{ID: "g1", Title: "Election and lock APIs", MemberSubjectIDs: []string{"election", "lock"}}
+			index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{part, {ID: "g2", Title: "main", MemberSubjectIDs: []string{"main"}}}}
+			b.indexes = []groupindex.Index{index}
+			for _, group := range index.Groups {
+				b.groupTitles[groupindex.Endpoint{TargetID: "t1", GroupID: group.ID}] = group.Title
+			}
+			card := pageGroup{ID: "t1-g1", Title: part.Title, Connections: []pageConnection{
+				readingRow(anchors, "←", "#t1-g2", "main", "calls", "main", "main", "election", "Campaign"),
+				readingRow(anchors, "←", "#t1-g2", "main", "calls", "main", "main", "lock", "Campaign"),
+			}}
+			reading := decodeReading(t, b.groupReading(index, part, card))
+			keys := map[string]string{}
+			for _, decl := range reading.Decls {
+				if decl.Key == "" || !decl.NoSource || decl.Href != "" || decl.Open != "" || decl.At != decl.File+":10" {
+					t.Fatalf("%s is not read by its place with No source: %+v", decl.Name, decl)
+				}
+				keys[decl.Key] = decl.File
+			}
+			if len(reading.Members) != 1 || len(reading.Members[0].Decls) != 2 || len(keys) != len(reading.Decls) {
+				t.Fatalf("members %+v, decls %+v: both functions named Campaign, each by its own place", reading.Members, reading.Decls)
+			}
+			if len(reading.In) != 1 || len(reading.In[0].Lines) != 1 || len(reading.In[0].Lines[0].Ends) != 2 {
+				t.Fatalf("callers %+v: main calls both", reading.In)
+			}
+		})
+	}
+}

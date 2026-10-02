@@ -11,7 +11,9 @@ import (
 
 // pageAnchor is one path:line reference on the static page. Href is a
 // permalink at the captured revision; Open is the served-mode editor spec
-// that report.js posts to /api/open. With neither, the anchor is plain text.
+// that report.js posts to /api/open. With neither, the anchor is plain text
+// marked NoSource (no remote, a source unavailable at the captured revision,
+// or a served path with no openable ID), keyed by its place.
 type pageAnchor struct {
 	Path     string
 	Line     int
@@ -90,7 +92,16 @@ func (links pageLinks) anchor(path string, line, column int) pageAnchor {
 	case links.served():
 		if _, openable := links.sourceIDs[path]; openable {
 			anchor.Open = path + ":" + strconv.Itoa(max(line, 0)) + ":" + strconv.Itoa(max(column, 0))
+		} else {
+			anchor.NoSource = true
 		}
+	default:
+		// No remote link and no served source: the place stays plain text
+		// with its "No source" explanation, and a declaration is keyed by
+		// it (declarationKey), its code, explanation and navigation kept
+		// (CONSTITUTION; control review, 2026-10-02: a render of a run with
+		// no remote had lost every function's reading and Code search).
+		anchor.NoSource = true
 	}
 	return anchor
 }

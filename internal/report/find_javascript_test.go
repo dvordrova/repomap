@@ -27,7 +27,7 @@ const node=(title,owner)=>({dataset:{title,symbols,owner},closest:()=>map});
 const item=(name,path,line)=>({name,source:{Href:'h/'+path+'#L'+line,Path:path,Line:line},fields:[]});
 groupNodes.gs=node('Data structures','server');groupNodes.gb=node('Linked list','bench');
 const members=new Map([[groupNodes.gs,[item('listCreate','adlist.c',41),item('list','adlist.h',47)]],[groupNodes.gb,[item('listCreate','adlist.c',41)]]]);
-const repomapMembers={items:n=>members.get(n)||[]};
+const repomapMembers={items:n=>members.get(n)||[],sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const chip=(text,href)=>({textContent:text,tagName:'A',getAttribute:name=>name==='href'?href:null,dataset:{},querySelector:()=>null});
 const section=id=>sections[id];
 function offMap(sectionID,path,text,list){
@@ -77,5 +77,38 @@ assert.equal(entries.length,1);
 assert.equal(entries[0].title,'POST /v3electionpb.Election/Campaign · RegisterElectionHandlerServer','named as its list names it');
 assert.ok(['campaign','/v3/election/campaign','pattern_election_campaign_0'].every(word=>entries[0].haystack.includes(word)),'found by its words and its registration as written: '+entries[0].haystack);
 assert.equal(entries[0].node,input,'it opens the input itself');
+`)
+}
+
+// A page with no source link keys a declaration by its place: Find reads
+// each of two functions of one name in two files as its own tile, and opens
+// it in its part by that key (control review, 2026-10-02: on a render with
+// no remote, Code had found local_request_Election_Campaign_0 and opened
+// its part, never its reading).
+func TestFindReadsADeclarationWithNoSourceLinkByItsPlace(t *testing.T) {
+	code := systemJSPiece(t, "40-find.js", "  // One entry per declaration", "  function sectionsFor(") +
+		systemJSPiece(t, "40-find.js", "  function membership(", "  function appendText(")
+	runSystemJS(t, `
+const entries=[],codeEntries=new Map(),components={server:'server'},groupNodes={};
+function add(entry){entries.push(entry);}
+function rmT(text){return text;}
+function modelText(){return '';}
+const sections={server:{id:'server'}};
+function el(tag){return {tagName:tag.toUpperCase(),children:[],dataset:{},className:'',appendChild(c){this.children.push(c);return c;},
+  get textContent(){return this.own!==undefined?this.own:this.children.map(c=>c.textContent).join('');},set textContent(v){this.own=v;},
+  getAttribute(name){return name==='href'?this.href||null:null;},querySelector(selector){return selector==='.ln'?this.children.find(c=>c.className==='ln')||null:null;}};}
+const document={documentElement:{lang:'en'},getElementById:id=>sections[id]||null,createElement:el,createTextNode:text=>({textContent:text}),querySelectorAll:()=>[]};
+const map={};
+const symbols=JSON.stringify([{name:'Campaign',kind:'function',path:'election.go',line:10,text:'(ctx)'},{name:'Campaign',kind:'function',path:'lock.go',line:10,text:'(l)'}]);
+groupNodes.g=({dataset:{title:'Election and lock APIs',symbols,owner:'server'},closest:()=>map});
+const item=path=>({name:'Campaign',source:{NoSource:true,Path:path,Line:10,Text:path+':10'},fields:[]});
+const repomapMembers={items:()=>[item('election.go'),item('lock.go')],sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+`+code+`
+assert.equal(entries.length,2,'two functions of one name in two files are two results');
+for(const [path,text] of [['election.go','(ctx)'],['lock.go','(l)']]){
+  const entry=entries.find(e=>e.path===path);
+  assert.deepEqual(tileRows(entry),{head:'Campaign'+text,fields:[]},path+': read as its own tile');
+  assert.equal(membership(entry,entry.memberships[0]).codeSource.key,JSON.stringify([path,10]),path+': opened by its place');
+}
 `)
 }
