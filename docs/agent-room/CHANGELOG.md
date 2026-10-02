@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A target the run could not read says why (data 1, 763bb8f2)
+
+- **Gap:** the reason a target failed existed only in the console. `TargetOutcomePortfolio` kept a closed stage and reason (`analysis_failed`) "with no free-form detail by design". litestream's reader saw two failed C programs and could not tell why.
+- **Saved:**
+  - `targetoutcome.Failure.Detail` holds the error's text as `FailureDetail` makes it readable:
+    - the repository's paths relative, and the root alone ".";
+    - the JS/TS helper's `<repository>` treated the same way;
+    - home as "~", so a module cache path keeps its module@version;
+    - any other absolute path as "…/" and its last element;
+    - control characters as spaces, line breaks kept.
+  - It is a display relativization, not a redaction.
+  - The detail is required for a failed target. It is its own fixed point, and a 20,000-text random test checks that.
+  - A failure whose text cannot be shown says so in words, so it never ends the run.
+  - Target outcomes are version 4, and report.json is format 97 (`failure_detail`). Version 3 saves are not read.
+- **Shown:** the closed reason, then the detail verbatim (never translated, line breaks kept) in three places:
+  - under Programs in the home reading;
+  - on the target's Component details card;
+  - in the reading of the map's "Not analysed" note, which shows those cards stacked in the narrow column.
+  - The canvas note still names the targets only.
+- **Skeptic:**
+  - absolute root forms only, longest first, replaced only where a path starts;
+  - a name character required after the slash, so `a / b`, `//` and URLs stay;
+  - `-I/…`, `file:///…`, backticks and `PATH=…:…` handled;
+  - home labelled rather than cut;
+  - the reading's card grid fixed for the narrow column.
+- **Render check:**
+  - A `--no-model` litestream run of `c:src/`, `c:packages/python/litestream_vfs/` and `etc/s3_mock` (20261002-144406-litestream-v24-etc-s3_mock-406ec528db12, exit 0) saved:
+    - src: "no build line compiles src/litestream-vfs.c; parsed with clang's defaults (exit status 1): src/litestream-vfs.c:1:10: fatal error: 'litestream-vfs.h' file not found";
+    - the Python package: "… noop.c … 'Python.h' file not found".
+  - No `/Users/` reached the artifacts.
+  - Headless Chromium showed both reasons under Programs and in the "Not analysed" reading.
+
 ## 2026-10-02 — A library's API is its entries (data 2)
 
 - **Problem (final Lua walk, 20261002-132211):** `c:liblua.a` read with no
