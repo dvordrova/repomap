@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -1069,7 +1070,7 @@ func componentEntries(section *pageSection) string {
 		if entry.Symbol == "" {
 			continue
 		}
-		item := pageEntry{Name: entry.Symbol, Callable: entry.Kind == "callable"}
+		item := pageEntry{Name: entry.Symbol, Callable: entry.Kind == "callable" || entry.Kind == facts.EntrypointExport}
 		if entry.Anchor != nil {
 			item.Href, item.Open, item.NoSource, item.Key = entry.Anchor.Href, entry.Anchor.Open, entry.Anchor.NoSource, declarationKey(entry.Anchor)
 		}

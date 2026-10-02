@@ -151,6 +151,30 @@ linked files), `c_archive` (the archive's rule, `fields.output`,
 `fields.consumers` = the link outputs that link it, `values` = its files),
 `c_main` and `c_library`; the portfolio prompt defines them.
 
+### A library's exports
+
+A library has no main: a program using it calls in through its API, so its
+entries are its exports (ProgramIndex `target.exports`, `exports.go`; owner
+2026-10-02, after Lua's `liblua.a` read with no entry). Of the functions with
+external linkage its units define, an export is one that a repository
+header declares which a program the build links with the library includes
+directly from its own units (`Program.Consumers`, each such link line's
+objects; `Parsed.APIHeaders`, from the same parse their programs read): basis
+`consumer_headers`. Lua's `lua.c` includes `lua.h`, `lauxlib.h` and
+`lualib.h`, so `liblua.a` exports its 156 `lua_*`, `luaL_*` and `luaopen_*`
+functions, and the 205 `luaD_*`, `luaK_*` and other functions with external
+linkage that its internal headers declare (`LUAI_FUNC`, "not to be exported
+to outside modules") stay its own. The fixture's `wirecat` includes
+`wire.h`: `libwire.a` exports `wireEncode` and `wireEscape`, never
+`wireNeedsEscape`, which its own files share through `wire_internal.h`.
+When no program the build links takes the library (a shared object a program
+loads, `upper.so` and Lua's `testes/libs`; a directory's units no link line
+links; an archive nothing links), every function with external linkage is an
+export, basis `linkage`: any program may call it by name, and a loaded
+module's functions need no header. Lua 5.1.5's `luac.c` includes internal
+headers directly: what they declare is its API too, as `luac` enters it. An
+executable exports nothing.
+
 ## Native tooling and platform view
 
 Compile flags pass an allowlist of what changes the parse: defines and

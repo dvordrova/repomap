@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version       = 19
+	Version       = 20
 	HelperVersion = 28
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
@@ -68,27 +68,32 @@ type PackageDependency struct {
 }
 
 type Project struct {
-	Ref              string              `json:"ref"`
-	Name             string              `json:"name"`
-	PackagePath      string              `json:"package_path"`
-	Language         string              `json:"language"`
-	Selector         string              `json:"selector"`
-	ManifestPath     string              `json:"manifest_path"`
-	ManifestFileRef  string              `json:"manifest_file_ref"`
-	ConfigPath       string              `json:"config_path,omitempty"`
-	ConfigFileRef    string              `json:"config_file_ref,omitempty"`
-	PackageManager   string              `json:"package_manager,omitempty"`
-	LockfilePath     string              `json:"lockfile_path,omitempty"`
-	LockfileFileRef  string              `json:"lockfile_file_ref,omitempty"`
-	ModuleResolution string              `json:"module_resolution"`
-	BaseURL          string              `json:"base_url,omitempty"`
-	PathAliases      []PathAlias         `json:"path_aliases"`
-	Scripts          []Script            `json:"scripts"`
-	Binaries         []PackageBinary     `json:"binaries"`
-	SourceRoots      []string            `json:"source_roots"`
-	EntryFileRefs    []string            `json:"entry_file_refs"`
-	ToolConfigs      []ProjectFile       `json:"tool_configs"`
-	Dependencies     []PackageDependency `json:"dependencies"`
+	Ref              string          `json:"ref"`
+	Name             string          `json:"name"`
+	PackagePath      string          `json:"package_path"`
+	Language         string          `json:"language"`
+	Selector         string          `json:"selector"`
+	ManifestPath     string          `json:"manifest_path"`
+	ManifestFileRef  string          `json:"manifest_file_ref"`
+	ConfigPath       string          `json:"config_path,omitempty"`
+	ConfigFileRef    string          `json:"config_file_ref,omitempty"`
+	PackageManager   string          `json:"package_manager,omitempty"`
+	LockfilePath     string          `json:"lockfile_path,omitempty"`
+	LockfileFileRef  string          `json:"lockfile_file_ref,omitempty"`
+	ModuleResolution string          `json:"module_resolution"`
+	BaseURL          string          `json:"base_url,omitempty"`
+	PathAliases      []PathAlias     `json:"path_aliases"`
+	Scripts          []Script        `json:"scripts"`
+	Binaries         []PackageBinary `json:"binaries"`
+	SourceRoots      []string        `json:"source_roots"`
+	EntryFileRefs    []string        `json:"entry_file_refs"`
+	// PackageEntryFileRefs are the modules a program importing the package
+	// loads: the files package.json's main, module, source, types, typings,
+	// browser and exports name (Node refuses any other path when exports is
+	// declared). Empty when the manifest names none.
+	PackageEntryFileRefs []string            `json:"package_entry_file_refs,omitempty"`
+	ToolConfigs          []ProjectFile       `json:"tool_configs"`
+	Dependencies         []PackageDependency `json:"dependencies"`
 }
 
 type File struct {
@@ -494,6 +499,11 @@ func (result Result) Validate() error {
 			return fmt.Errorf("jsts project: project entry has unknown file ref")
 		}
 	}
+	for _, ref := range result.Project.PackageEntryFileRefs {
+		if _, ok := fileRefs[ref]; !ok {
+			return fmt.Errorf("jsts project: package entry has unknown file ref")
+		}
+	}
 	for _, config := range result.Project.ToolConfigs {
 		if !safeRepositoryPath(config.Path) || !projectOwnsPath(config.Path) || strings.TrimSpace(config.FileRef) == "" {
 			return fmt.Errorf("jsts project: invalid tool config")
@@ -858,6 +868,9 @@ func canonicalize(result *Result) {
 	})
 	result.Project.SourceRoots = canonicalStrings(result.Project.SourceRoots)
 	result.Project.EntryFileRefs = canonicalStrings(result.Project.EntryFileRefs)
+	if len(result.Project.PackageEntryFileRefs) > 0 {
+		result.Project.PackageEntryFileRefs = canonicalStrings(result.Project.PackageEntryFileRefs)
+	}
 	if result.Project.ToolConfigs == nil {
 		result.Project.ToolConfigs = []ProjectFile{}
 	}

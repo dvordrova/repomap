@@ -196,6 +196,48 @@ func (kind SeedKind) Valid() bool {
 	}
 }
 
+// ExportBasis says how an adapter knows a library's exports.
+type ExportBasis string
+
+const (
+	// ExportsConsumerHeaders: C functions with external linkage declared in
+	// a repository header that a program the build links with the library
+	// includes from its own units.
+	ExportsConsumerHeaders ExportBasis = "consumer_headers"
+	// ExportsLinkage: every C function with external linkage, which a
+	// program loading or linking the library may call by name; no program
+	// in the repository links it.
+	ExportsLinkage ExportBasis = "linkage"
+	// ExportsVisibility: the language's own exported names (Go
+	// capitalization outside internal packages, Python public names in
+	// public modules, a JS/TS export, a Clojure public var).
+	ExportsVisibility ExportBasis = "visibility"
+	// ExportsEntryModules: what a JS/TS package's declared entry modules
+	// export.
+	ExportsEntryModules ExportBasis = "entry_modules"
+)
+
+func (basis ExportBasis) Valid() bool {
+	switch basis {
+	case ExportsConsumerHeaders, ExportsLinkage, ExportsVisibility, ExportsEntryModules:
+		return true
+	default:
+		return false
+	}
+}
+
+// TargetExportInput binds an adapter-local callable ref to its declaration.
+type TargetExportInput struct {
+	ObjectRef string
+	Location  *Location
+}
+
+// TargetExport is one sealed export: a local callable at its declaration.
+type TargetExport struct {
+	ObjectID string    `json:"object_id"`
+	Location *Location `json:"location"`
+}
+
 // TargetSeedInput binds an adapter-local object ref to one exact launch fact.
 type TargetSeedInput struct {
 	ObjectRef string
@@ -228,9 +270,14 @@ type TargetInput struct {
 	Sources       []TargetSource
 	AnchorFileRef string
 	// Seeds establish where execution can begin for this selected target.
-	// Libraries may leave the set empty; a later semantic cube can then choose
-	// from public objects without pretending they are launch roots.
+	// A library has none: its API is Exports, never a launch root.
 	Seeds []TargetSeedInput
+	// Exports are a library's API: the callables a program using it may
+	// call, where control enters the library, by its adapter's rule
+	// (ExportBasis). An executable has none. They are not launch roots: the
+	// Main flow, start-up phases and the atlas never read them as seeds.
+	Exports     []TargetExportInput
+	ExportBasis ExportBasis
 	// Executables are the names the repository's build gives this
 	// program's executable, a build fact of its adapter: C's linked program
 	// (the Makefile target), a Go main package's directory, a Python
@@ -265,6 +312,10 @@ type Target struct {
 	// Libraries are the import names of the library facet folded into this
 	// program (TargetInput.Libraries), sorted and each once.
 	Libraries []string `json:"libraries,omitempty"`
+	// Exports are a library's API (TargetInput.Exports), sorted by object
+	// ID, with how its adapter knows them.
+	Exports     []TargetExport `json:"exports,omitempty"`
+	ExportBasis ExportBasis    `json:"export_basis,omitempty"`
 }
 
 // Snapshot returns a consumer-owned copy of the selected target boundary.
@@ -275,6 +326,7 @@ func (target Target) Snapshot() Target {
 	result.Seeds = cloneTargetSeeds(target.Seeds)
 	result.Executables = slices.Clone(target.Executables)
 	result.Libraries = slices.Clone(target.Libraries)
+	result.Exports = cloneTargetExports(target.Exports)
 	return result
 }
 
@@ -1540,6 +1592,26 @@ func New(input Input) (Index, error) {
 	sort.Slice(index.Target.Seeds, func(i, j int) bool {
 		return compareTargetSeeds(index.Target.Seeds[i], index.Target.Seeds[j]) < 0
 	})
+	if len(input.Target.Exports) > 0 {
+		if !input.Target.ExportBasis.Valid() {
+			return Index{}, fmt.Errorf("program index: target exports need their basis")
+		}
+		index.Target.ExportBasis = input.Target.ExportBasis
+	}
+	for _, export := range input.Target.Exports {
+		if !validText(export.ObjectRef) || export.Location == nil || !validLocation(*export.Location) {
+			return Index{}, fmt.Errorf("program index: invalid target export input")
+		}
+		id, err := resolveObjectRef(bindings, export.ObjectRef)
+		if err != nil {
+			return Index{}, fmt.Errorf("program index: target export: %w", err)
+		}
+		index.Target.Exports = append(index.Target.Exports, TargetExport{ObjectID: id, Location: cloneLocation(export.Location)})
+	}
+	sort.Slice(index.Target.Exports, func(i, j int) bool {
+		return compactIDLess(index.Target.Exports[i].ObjectID, index.Target.Exports[j].ObjectID, "n")
+	})
+	index.Target.Exports = slices.CompactFunc(index.Target.Exports, func(a, b TargetExport) bool { return a.ObjectID == b.ObjectID })
 	index.Target.ID = input.Target.ID
 	if index.Target.ID == "" {
 		index.Target.ID = "t1"
@@ -1747,6 +1819,14 @@ func (index Index) Validate() error {
 		}
 		if err := validateTargetSeedBinding(seed, object); err != nil {
 			return err
+		}
+	}
+	for _, export := range index.Target.Exports {
+		// An export is a callable at its own declaration.
+		object, ok := objectWithID(index.Objects, export.ObjectID)
+		if !ok || object.Kind != ObjectFunction && object.Kind != ObjectMethod || object.Location == nil ||
+			object.Location.Path != export.Location.Path || object.Location.Line != export.Location.Line {
+			return fmt.Errorf("program index: target export %q is no local callable at its declaration", export.ObjectID)
 		}
 	}
 	type patternArgumentAuthority struct {
@@ -2274,6 +2354,15 @@ func validateTargetShape(target Target) error {
 		}
 		if position > 0 && compareTargetSeeds(target.Seeds[position-1], seed) >= 0 {
 			return fmt.Errorf("program index: target seeds are not canonical")
+		}
+	}
+	if len(target.Exports) > 0 != (target.ExportBasis != "") || target.ExportBasis != "" && !target.ExportBasis.Valid() {
+		return fmt.Errorf("program index: invalid target export basis")
+	}
+	for position, export := range target.Exports {
+		if !validText(export.ObjectID) || export.Location == nil || !validLocation(*export.Location) ||
+			position > 0 && !compactIDLess(target.Exports[position-1].ObjectID, export.ObjectID, "n") {
+			return fmt.Errorf("program index: invalid or noncanonical target exports")
 		}
 	}
 	return nil
@@ -3501,6 +3590,18 @@ func cloneStrings(values []string) []string {
 func cloneTargetSources(values []TargetSource) []TargetSource {
 	result := make([]TargetSource, len(values))
 	copy(result, values)
+	return result
+}
+
+func cloneTargetExports(values []TargetExport) []TargetExport {
+	if values == nil {
+		return nil
+	}
+	result := make([]TargetExport, len(values))
+	copy(result, values)
+	for position := range result {
+		result[position].Location = cloneLocation(values[position].Location)
+	}
 	return result
 }
 

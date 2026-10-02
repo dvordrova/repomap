@@ -115,6 +115,10 @@
     },
     {
       "id": "f29",
+      "path": "wire/wire_internal.h"
+    },
+    {
+      "id": "f30",
       "path": "wire/wirecat.c"
     }
   ]

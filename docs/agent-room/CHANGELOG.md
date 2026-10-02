@@ -1,5 +1,50 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A library's API is its entries (data 2)
+
+- **Problem (final Lua walk, 20261002-132211):** `c:liblua.a` read with no
+  Entry line and no entry part. Every library target in every language had
+  zero seeds.
+- **Skeptic's verdict, taken:**
+  - a separate `target.exports` (ProgramIndex, optional; version 24 kept,
+    so saved runs still render), not a new seed kind: about 12 consumers
+    read seeds as "the process starts here";
+  - C rule: the functions with external linkage that a header the programs
+    linking the archive include declares (`consumer_headers`);
+  - callables only.
+- **Deviation, measured:** with no consuming program, every external function
+  (`linkage`), not only header-declared ones. Lua's `testes/libs` modules
+  declare `luaopen_*` in no header and would export nothing.
+- **Lua:** `liblua.a` exports 156 (`lua_` 98, `luaL_` 48, `luaopen_` 10).
+  The 205 `luaD_`/`luaK_`/... externs of internal headers do not count. The
+  five `.so` export by linkage (lib1.so 4, the others 1).
+- **Consumers:**
+  - read exports: facts `entrypoint` key `export`, dead-module roots,
+    `registeredDuring` stops, GroupsIndex `Entries` and the entry lane;
+  - not read: launch roots (a public handler would lose its sub-arguments:
+    the Python fixture's init), outbound reached-from, phases, atlas seed
+    files and source facts, `targetAnchor`, the Main flow;
+  - orientation counts them (`entrypoint_export`).
+- **Other languages:**
+  - Go: exported functions and exported methods of exported types in public,
+    non-`internal/` packages, outside tests;
+  - Python: public functions and public methods of public classes in
+    modules with no `_` segment, nested functions excluded;
+  - JS/TS: package.json entry modules followed through re-exports
+    (`entry_modules`, JS/TS result 20), else every export;
+  - Clojure: recorded missing (its fixture has no library package).
+- **Fixtures:**
+  - C: `wire/wire_internal.h`, `wireNeedsEscape`;
+  - Go: `servicecfg.Limits.Describe`, `parsed.Raw`;
+  - Python: `scoring.py`, `_formats.py`;
+  - JS/TS: canvas-ui's `"exports": "./canvas.mjs"`.
+- **Checks:** all product tests and vet pass in a clean export of fbd6bab3
+  plus this change. Saved redis and etcd runs render.
+- **Pending (files another agent is editing):** the READING (entry lane) and
+  REPORT (Entry list, recipe) lines, and page_model.go's run recipe skipping
+  exports (a run without a model lists liblua.a's 156 as ways to run it).
+  The column shows the Entry list flat.
+
 ## 2026-10-02 — A Jev row over its envelope is packed or refused unsent, and an unbuilt C unit's failure says so (data 1, ff9af16f, fbd6bab3)
 
 - **Casdoor (fbd6bab3):**

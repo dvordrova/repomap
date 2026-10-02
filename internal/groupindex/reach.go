@@ -130,25 +130,35 @@ type Entry struct {
 	OffMap    string
 }
 
-// entries places every seed of the target on the map or off it.
+// entries places every seed of the target on the map or off it, then every
+// export of a library (programindex Target.Exports) that is no seed.
 func entries(index *Index) []Entry {
-	var result []Entry
+	var subjects []string
 	for _, seed := range index.Target.Seeds {
-		entry := Entry{SubjectID: seed.ObjectID}
+		subjects = append(subjects, seed.ObjectID)
+	}
+	for _, export := range index.Target.Exports {
+		if !slices.Contains(subjects, export.ObjectID) {
+			subjects = append(subjects, export.ObjectID)
+		}
+	}
+	var result []Entry
+	for _, subjectID := range subjects {
+		entry := Entry{SubjectID: subjectID}
 		for _, group := range index.Groups {
-			if slices.Contains(group.MemberSubjectIDs, seed.ObjectID) {
+			if slices.Contains(group.MemberSubjectIDs, subjectID) {
 				entry.GroupID = group.ID
 			}
 		}
 		if entry.GroupID == "" {
 			path := ""
 			for _, subject := range index.Subjects {
-				if subject.ID == seed.ObjectID && subject.Object != nil && subject.Object.Location != nil {
+				if subject.ID == subjectID && subject.Object != nil && subject.Object.Location != nil {
 					path = subject.Object.Location.Path
 				}
 			}
 			for _, file := range index.OffMap {
-				if slices.Contains(file.SubjectIDs, seed.ObjectID) || len(file.SubjectIDs) == 0 && file.Path == path && path != "" {
+				if slices.Contains(file.SubjectIDs, subjectID) || len(file.SubjectIDs) == 0 && file.Path == path && path != "" {
 					entry.OffMap = file.Reason
 					break
 				}

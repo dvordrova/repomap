@@ -83,6 +83,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and a runtime script, library, or tool-only root must never promote itself
   into an application.
 
+## A library's exports
+
+A library package's entries are its API (PROGRAM_INDEX `target.exports`,
+`libraryExports`). When package.json names entry modules (main, module,
+source, types, typings, browser or exports: `Project.PackageEntryFileRefs`,
+JS/TS result 20; Node refuses any other path once exports is declared), its
+exports are what those modules export, followed through `export *` and
+named re-exports, basis `entry_modules`; otherwise what every non-test module
+of the package exports, basis `visibility`. An exported function is an
+export, and an exported class gives its methods but a `#private` one; a
+TypeScript `private` method is not recorded as such yet and counts. The
+canvas UI's manifest exports `canvas.mjs` alone: `drawCanvas` is its API and
+`layout`, which `layout.mjs` exports to its sibling, is not; the local store
+names no entry, so its `get` and `createClient` are
+(`TestCumulativeJSTSLibraryExportsItsAPI`; re-exports in
+`TestLibraryExportsFollowTheEntryModulesReExports`). An application exports
+nothing.
+
 ## Callable JSX and declaration headers
 
 The JSTS result and helper preserve every compiler-observed callable

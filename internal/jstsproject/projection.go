@@ -471,11 +471,94 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 	for _, binary := range result.Project.Binaries {
 		executables = append(executables, binary.Command)
 	}
+	target := programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), TestSources: testSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds, Executables: executables}
+	if target.Kind == "library" {
+		target.Exports, target.ExportBasis = libraryExports(result, declarationByRef)
+	}
 	return programindex.Input{
 		ScenarioSHA256: scenarioSHA, SourceSHA256: result.SourceSHA256,
-		Target:  programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), TestSources: testSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds, Executables: executables},
+		Target:  target,
 		Objects: objects, Relations: relations, Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects), RelationsObserved: len(relations)},
 	}
+}
+
+// libraryExports are a library package's API (JSTS.md "A library's
+// exports"): what its entry modules export (Project.PackageEntryFileRefs),
+// followed through re-exports, or, when package.json names no entry module,
+// what every non-test module of the package exports. An exported function is
+// an export, and an exported class gives its methods but a #private one.
+func libraryExports(result Result, declarations map[string]Declaration) ([]programindex.TargetExportInput, programindex.ExportBasis) {
+	test := make(map[string]bool, len(result.Files))
+	for _, file := range result.Files {
+		test[file.FileRef] = file.Test
+	}
+	// Each module's exports: its exported top-level declarations and its
+	// export statements, by name.
+	type exported struct{ name, declaration, from string }
+	byFile := map[string][]exported{}
+	for _, declaration := range result.Declarations {
+		if declaration.Exported && declaration.OwnerRef == "" && declaration.Kind != "module" {
+			byFile[declaration.Location.FileRef] = append(byFile[declaration.Location.FileRef], exported{name: declaration.Name, declaration: declaration.Ref})
+		}
+	}
+	for _, value := range result.Exports {
+		item := exported{name: value.Name, from: value.ResolvedFileRef}
+		if value.Resolution == "exact" {
+			item.declaration = value.DeclarationRef
+		}
+		byFile[value.Location.FileRef] = append(byFile[value.Location.FileRef], item)
+	}
+	roots, basis := result.Project.PackageEntryFileRefs, programindex.ExportsEntryModules
+	if len(roots) == 0 {
+		basis = programindex.ExportsVisibility
+		for _, file := range result.Files {
+			if !file.Test {
+				roots = append(roots, file.FileRef)
+			}
+		}
+	}
+	chosen := map[string]bool{}
+	type visit struct{ file, name string }
+	seen := map[visit]bool{}
+	// follow takes the exports of file named name ("" for all of them).
+	var follow func(file, name string)
+	follow = func(file, name string) {
+		if seen[visit{file, name}] || seen[visit{file, ""}] {
+			return
+		}
+		seen[visit{file, name}] = true
+		for _, item := range byFile[file] {
+			switch {
+			case name != "" && item.name != name && item.name != "*":
+			case item.declaration != "":
+				chosen[item.declaration] = true
+			case item.from != "" && item.name == "*":
+				follow(item.from, name)
+			case item.from != "":
+				follow(item.from, item.name)
+			}
+		}
+	}
+	for _, root := range roots {
+		follow(root, "")
+	}
+	var exports []programindex.TargetExportInput
+	for _, declaration := range result.Declarations {
+		owner, owned := declarations[declaration.OwnerRef]
+		switch kind := projectedObjectKind(declaration, declarations); {
+		case test[declaration.Location.FileRef]:
+			continue
+		case kind == programindex.ObjectFunction && chosen[declaration.Ref] && declaration.OwnerRef == "":
+		case kind == programindex.ObjectMethod && owned && chosen[owner.Ref] && !strings.HasPrefix(declaration.Name, "#"):
+		default:
+			continue
+		}
+		exports = append(exports, programindex.TargetExportInput{ObjectRef: declaration.Ref, Location: programLocation(declaration.Location)})
+	}
+	if len(exports) == 0 {
+		return nil, ""
+	}
+	return exports, basis
 }
 
 // TargetKind returns application only for an exact browser, server, or package

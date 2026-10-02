@@ -28,6 +28,20 @@ parts shows the signatures of public names only
 are always declared in its body: Python has no method outside its class for
 the map of parts to move.
 
+## A library's exports
+
+A Python library's entries are its API (PROGRAM_INDEX `target.exports`,
+basis `visibility`, `libraryExports`): the public functions of its public
+modules and the public methods of their public classes, outside test
+sources. A module is public when it is importable and no part of its dotted
+name begins with an underscore (`fixture_app._formats`, a `__main__`); a name
+is public by the parser's visibility (`__all__` when declared, else no
+leading underscore); a function nested in another, or in a method, is none.
+The cumulative fixture's `scoring.py` exports `Scoreboard.show`, never
+`Scoreboard._reset`, the `padded` nested in `show`, `_formats.py`'s
+`score_text` or `exports.py`'s `format_score`, which `__all__` leaves out
+(`TestCumulativePythonLibraryExportsItsAPI`). A script exports nothing.
+
 ## Imports and callable identity
 
 The Python adapter owns package/module scope, import restoration, call and

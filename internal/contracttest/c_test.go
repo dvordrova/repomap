@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/cproject"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // The cumulative C fixture is a small key-value server (kvd) and its client
@@ -540,6 +541,48 @@ func TestCFixtureReadsADirectorysOwnMakefile(t *testing.T) {
 	}
 	if raw := fixture.program(t, "c:wire/"); !reflect.DeepEqual(cSpecPaths(raw.Units), []string{"wire/escape_none.c"}) {
 		t.Fatalf("wire's library: %+v", raw)
+	}
+}
+
+// A library's entries are its API: libwire.a exports what wire.h, the header
+// wirecat includes, declares, and never wireNeedsEscape, which its own files
+// share through wire_internal.h. A library no program links (upper.so, which
+// a program loads; wire's escape_none.c) exports every function with
+// external linkage. An executable exports nothing.
+func TestCFixtureLibrariesExportTheirAPI(t *testing.T) {
+	fixture := loadCFixture(t)
+	if headers := fixture.parsed["c:wire/libwire.a"].APIHeaders; !reflect.DeepEqual(headers, []string{"wire/wire.h"}) {
+		t.Fatalf("libwire.a's API headers: %v", headers)
+	}
+	for _, want := range []struct {
+		selector string
+		basis    programindex.ExportBasis
+		names    []string
+	}{
+		{"c:wire/libwire.a", programindex.ExportsConsumerHeaders, []string{"wireEncode", "wireEscape"}},
+		{"c:wire/", programindex.ExportsLinkage, []string{"wireEscape"}},
+		{"c:upper/upper.so", programindex.ExportsLinkage, []string{"upperValue"}},
+		{"c:wire/wirecat", "", nil},
+	} {
+		indexed, err := cproject.Index(fixture.repository, fixture.parsed[want.selector])
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := map[string]string{}
+		for _, object := range indexed.Input.Objects {
+			names[object.SourceRef] = object.Name
+		}
+		var got []string
+		for _, export := range indexed.Input.Target.Exports {
+			got = append(got, names[export.ObjectRef])
+		}
+		slices.Sort(got)
+		if basis := indexed.Input.Target.ExportBasis; basis != want.basis || !reflect.DeepEqual(got, want.names) {
+			t.Fatalf("%s exports %v by %q, want %v by %q", want.selector, got, basis, want.names, want.basis)
+		}
+		if _, err := programindex.New(indexed.Input); err != nil {
+			t.Fatalf("%s: %v", want.selector, err)
+		}
 	}
 }
 

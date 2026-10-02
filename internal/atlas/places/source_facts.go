@@ -14,7 +14,8 @@ func (b *builder) addSourceFacts(graph *atlas.Graph) {
 		targets[target.ID] = target
 	}
 	for _, fact := range b.input.Facts.Facts {
-		if fact.Kind != facts.KindEntrypoint && fact.Kind != facts.KindManifest {
+		// A library's export is its API, not a launch observation.
+		if fact.Kind != facts.KindEntrypoint && fact.Kind != facts.KindManifest || fact.Key == facts.EntrypointExport {
 			continue
 		}
 		if fact.Anchor == nil || fact.Anchor.Line < 1 {

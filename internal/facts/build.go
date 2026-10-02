@@ -326,6 +326,19 @@ func (b *builder) addEntrypoints(target *targetContext) {
 			Key:      string(seed.Kind),
 		}, string(seed.Kind), object.Name)
 	}
+	// A library's exports are its entries: where a program using it calls
+	// in (programindex Target.Exports).
+	for _, export := range target.input.Index.Target.Exports {
+		object, _ := target.object(export.ObjectID)
+		b.add(target.root, Fact{
+			Kind:     KindEntrypoint,
+			TargetID: target.target.ID,
+			Anchor:   &Anchor{Path: export.Location.Path, Line: export.Location.Line},
+			Symbol:   object.Name,
+			ObjectID: export.ObjectID,
+			Key:      EntrypointExport,
+		}, EntrypointExport, object.Name)
+	}
 }
 
 func (b *builder) targetByID(id string) (Target, bool) {

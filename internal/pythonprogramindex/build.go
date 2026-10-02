@@ -463,11 +463,66 @@ func buildInputResults(
 						programTarget.TestSources = append(programTarget.TestSources, module.Path)
 					}
 				}
+				if target.Kind == pythontarget.KindLibrary {
+					if exports := libraryExports(target, parsed.objects, testSources); len(exports) > 0 {
+						programTarget.Exports, programTarget.ExportBasis = exports, programindex.ExportsVisibility
+					}
+				}
 				inputs[group.positions[offset]].Input = shared.ForTarget(programTarget)
 			}
 		}
 	}
 	return inputs, nil
+}
+
+// libraryExports are a library's API (PYTHON.md "A library's exports"):
+// the public functions of its public modules and the public methods of
+// their public classes, outside test sources. A module is public when it is
+// importable and no part of its dotted name begins with an underscore
+// (acme._impl, a __main__ module); a name is public by the parser's
+// visibility (__all__ when declared, else no leading underscore). A
+// function nested in another is no export.
+func libraryExports(target pythontarget.Target, objects []programindex.ObjectInput, testSources map[string]bool) []programindex.TargetExportInput {
+	public := make(map[string]bool, len(target.Modules))
+	for _, module := range target.Modules {
+		private := false
+		for _, part := range strings.Split(module.Name, ".") {
+			private = private || strings.HasPrefix(part, "_")
+		}
+		public[module.Path] = module.Importable && !private && !testSources[module.Path]
+	}
+	byRef := make(map[string]programindex.ObjectInput, len(objects))
+	for _, object := range objects {
+		byRef[object.SourceRef] = object
+	}
+	// topLevel: declared in its module's body, not inside a function or a
+	// class.
+	topLevel := func(object programindex.ObjectInput) bool {
+		container, contained := byRef[object.ContainerRef]
+		return object.ContainerRef == "" || contained && (container.Kind == programindex.ObjectModule || container.Kind == programindex.ObjectPackage)
+	}
+	var exports []programindex.TargetExportInput
+	for _, object := range objects {
+		if object.Location == nil || !public[object.Location.Path] || object.Visibility != programindex.VisibilityPublic {
+			continue
+		}
+		switch object.Kind {
+		case programindex.ObjectFunction:
+			if !topLevel(object) {
+				continue
+			}
+		case programindex.ObjectMethod:
+			class, ok := byRef[object.OwnerRef]
+			if !ok || class.Kind != programindex.ObjectType || class.Visibility != programindex.VisibilityPublic || !topLevel(class) {
+				continue
+			}
+		default:
+			continue
+		}
+		location := *object.Location
+		exports = append(exports, programindex.TargetExportInput{ObjectRef: object.SourceRef, Location: &location})
+	}
+	return exports
 }
 
 // keepReadTables keeps the rows of a module-level table only when a

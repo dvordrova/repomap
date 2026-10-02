@@ -13,7 +13,10 @@ The documentation-tools config includes a sibling's sources for documentation.
 Its own JavaScript and TypeScript tools remain explicit manifest script inputs;
 the sibling sources and an unlisted script do not join that tool package.
 
-The canvas UI tests itself the way the repomap report UI does. Its test
+The canvas UI's manifest exports `canvas.mjs` alone: a program importing the
+package reaches `drawCanvas`, and `layout`, which `layout.mjs` exports to its
+sibling module, is no part of the package's API. The canvas UI tests itself
+the way the repomap report UI does. Its test
 script runs the unit test beside its module with the Node test runner, and
 Playwright runs the checks in `visual/` with a reporter module. Those files,
 the Playwright config and the stub API that only Playwright's `webServer`

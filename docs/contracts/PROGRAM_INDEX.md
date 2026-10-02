@@ -24,6 +24,21 @@ ProgramIndex retains:
   (`repomap-fixture`), each package.json `bin` command. Clojure names none;
   its deps.edn aliases are not executables. The report joins a started
   program to this repository's program by equal name (REPORT);
+- a library's exports (`target.exports`, sorted by object ID, each a local
+  function or method at its declaration, with `target.export_basis`): its
+  API, the callables a program using it may call, which its adapter decides
+  (C: the functions with external linkage a header the programs linking it
+  include declares, `consumer_headers`, else every one, `linkage`; Go,
+  Python and JS/TS without package entries: the language's exported names,
+  `visibility`; JS/TS with package.json entries: what the entry modules
+  export, `entry_modules`). They are not seeds and never change the
+  reading order. The facts make each an `entrypoint` with key `export`, the
+  dead-module verdict and a registration's "registered during" walk start at
+  them as at seeds, and GroupsIndex lists them in `Entries` and stands a part
+  holding one in the entry lane; the atlas's seed files, the Main flow, the
+  launch walk, start-up phases and the orientation request never read them
+  (it counts them, `entrypoint_export`). Optional in the
+  artifact (ProgramIndex 24 reads without it); an executable has none;
 - the import names under which the same build also installs the program's
   code as a library (`target.libraries`, sorted and each once, omitted when
   empty): the declared top-level packages of a Python library of the same

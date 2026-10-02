@@ -12,7 +12,8 @@ own that the root `Makefile` never enters: `cd upper && make` builds
 lists the examples (`make ping` builds `util/ping`, `make watch` times a
 connection with the event loop's clock and `make watch-replay` with the fixed
 clock of `util/fixedclock.c`); and `cd wire && make all` builds `libwire.a`,
-the wire format values travel in, and `wirecat`, which writes its input in
+the wire format values travel in (its API is `wire.h`; `wire_internal.h`
+is shared by its own files), and `wirecat`, which writes its input in
 it (`make raw` links `wirecat-raw` with the escape that changes nothing;
 `wire/selftest.c` is built by hand: `cc -o selftest selftest.c encode.c
 escape.c`).

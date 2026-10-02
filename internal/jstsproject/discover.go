@@ -328,6 +328,15 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 			}
 		}
 	}
+	parsedRefs := make(map[string]bool, len(output.Files))
+	for _, file := range output.Files {
+		parsedRefs[file.FileRef] = true
+	}
+	for _, entry := range packageModulePaths(manifest) {
+		if ref := fileRef(repository, repositoryProjectPath(projectDir, entry)); parsedRefs[ref] {
+			result.Project.PackageEntryFileRefs = append(result.Project.PackageEntryFileRefs, ref)
+		}
+	}
 	for _, script := range result.Project.Scripts {
 		result.Project.EntryFileRefs = append(result.Project.EntryFileRefs, script.EntryFileRefs...)
 	}
@@ -667,6 +676,20 @@ func hasExactOwnedPackageEntry(manifest packageManifest, candidate packageProjec
 // the package's own entry points: module fields and exports, binaries, and the
 // dev and start scripts.
 func packageEntryPaths(manifest packageManifest) (sources, binaries []string) {
+	sources = packageModulePaths(manifest)
+	for _, name := range []string{"dev", "start"} {
+		sources = append(sources, scriptEntryPathsAtWorkingDirectory(manifest.Scripts[name])...)
+	}
+	for _, binary := range packageBinaryCandidates(manifest.Name, manifest.Bin) {
+		binaries = append(binaries, binary.Path)
+	}
+	return sources, binaries
+}
+
+// packageModulePaths are the package-relative modules the manifest's module
+// fields and exports name: what a program importing the package loads.
+func packageModulePaths(manifest packageManifest) []string {
+	var sources []string
 	entries := []string{manifest.Main, manifest.Module, manifest.Source, manifest.Types, manifest.Typings}
 	for _, raw := range []json.RawMessage{manifest.Browser, manifest.Exports} {
 		entries = append(entries, jsonStringLeaves(raw)...)
@@ -679,13 +702,7 @@ func packageEntryPaths(manifest packageManifest) (sources, binaries []string) {
 		}
 		sources = append(sources, entry)
 	}
-	for _, name := range []string{"dev", "start"} {
-		sources = append(sources, scriptEntryPathsAtWorkingDirectory(manifest.Scripts[name])...)
-	}
-	for _, binary := range packageBinaryCandidates(manifest.Name, manifest.Bin) {
-		binaries = append(binaries, binary.Path)
-	}
-	return sources, binaries
+	return sources
 }
 
 func jsonStringLeaves(raw json.RawMessage) []string {

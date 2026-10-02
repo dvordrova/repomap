@@ -153,6 +153,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertProgramIndexRoundTrip(t, libraryIndex)
 	assertGoRepeatedAliasedImports(t, library, libraryIndex)
 	assertGoTestDeclarationProjection(t, repository, libraryIndex)
+	assertGoLibraryExports(t, index, libraryIndex)
 	assertGoTestSourceBuildSelection(t, repositoryPath, repository)
 }
 
@@ -409,6 +410,31 @@ func assertGoInterfaceDeclarations(t *testing.T, authorities goFixtureAuthoritie
 		if ids[relation.FromID] {
 			t.Fatalf("interface declaration invented runtime relations: %+v", relation)
 		}
+	}
+}
+
+// A module library's entries are its API: the exported functions and the
+// exported methods of exported types its public packages declare. Not
+// parsed.Raw (its type is unexported), not internal/localstore.Get (only this
+// module may import internal/), not a test. An executable exports nothing.
+func assertGoLibraryExports(t *testing.T, executable, library programindex.Index) {
+	t.Helper()
+	if len(executable.Target.Exports) != 0 || executable.Target.ExportBasis != "" {
+		t.Fatalf("cmd/app exports %+v", executable.Target.Exports)
+	}
+	var got []string
+	for _, export := range library.Target.Exports {
+		object := programIndexObjectByID(library, export.ObjectID)
+		name := object.Name
+		if owner := programIndexObjectByID(library, object.OwnerID); object.Kind == programindex.ObjectMethod {
+			name = owner.Name + "." + name
+		}
+		got = append(got, export.Location.Path+" "+name)
+	}
+	slices.Sort(got)
+	want := []string{"pkg/servicecfg/settings.go Address", "pkg/servicecfg/settings.go Limits.Describe", "pkg/servicecfg/settings.go PollIntervalSeconds", "root.go PublishedRoot", "root.go ReadAliasedImports"}
+	if library.Target.ExportBasis != programindex.ExportsVisibility || !slices.Equal(got, want) {
+		t.Fatalf("library exports %v by %q, want %v", got, library.Target.ExportBasis, want)
 	}
 }
 

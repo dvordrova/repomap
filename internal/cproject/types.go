@@ -164,6 +164,10 @@ type Program struct {
 	// BuildErr is the build description failure that left these units with
 	// clang's defaults; a unit that then fails reports both errors.
 	BuildErr string `json:"build_error,omitempty"`
+	// Consumers are, for an archive, the own units of the programs the build
+	// links with it (each such link line's objects), sorted by path: the
+	// headers they include name the library's API (Parsed.APIHeaders).
+	Consumers []UnitSpec `json:"consumers,omitempty"`
 }
 
 // programRef is the program's identity: a digest of everything Parse reads.
@@ -186,7 +190,7 @@ func (program Program) Validate() error {
 	if program.Closure && len(program.Units) != 1 {
 		return fmt.Errorf("C: closure program %s must name its main unit alone", program.Selector)
 	}
-	for _, unit := range append(slices.Clone(program.Units), program.Pool...) {
+	for _, unit := range append(append(slices.Clone(program.Units), program.Pool...), program.Consumers...) {
 		if unit.Path == "" || unit.FileRef == "" || unit.Source == "" || unit.Dir == "" {
 			return fmt.Errorf("C: program %s has an incomplete unit %q", program.Selector, unit.Path)
 		}
@@ -209,7 +213,7 @@ func (program Program) ValidateAgainst(repository *corpus.Corpus) error {
 	if ref, ok := repository.ID(program.Anchor.Path); !ok || string(ref) != program.AnchorFileRef {
 		return fmt.Errorf("C: anchor binding mismatch for %s", program.Selector)
 	}
-	for _, unit := range append(slices.Clone(program.Units), program.Pool...) {
+	for _, unit := range append(append(slices.Clone(program.Units), program.Pool...), program.Consumers...) {
 		if ref, ok := repository.ID(unit.Path); !ok || string(ref) != unit.FileRef {
 			return fmt.Errorf("C: source binding mismatch: %s", unit.Path)
 		}
@@ -287,6 +291,10 @@ type Parsed struct {
 	// definition, or for what one needs: alternatives, never linked members.
 	Alternatives     []Alternative `json:"alternatives,omitempty"`
 	AlternativeUnits []string      `json:"alternative_units,omitempty"`
+	// APIHeaders are the repository headers a consumer's own unit includes
+	// directly (Program.Consumers), sorted: the library exports the
+	// functions with external linkage they declare (exports.go).
+	APIHeaders []string `json:"api_headers,omitempty"`
 }
 
 // Main is the program's main definition.

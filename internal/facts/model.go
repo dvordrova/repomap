@@ -34,7 +34,9 @@ type Kind string
 
 const (
 	// KindEntrypoint is a real execution root proved by a language adapter
-	// (main guard, bound module object, callable seed, manifest script).
+	// (main guard, bound module object, callable seed, manifest script), or
+	// a library's export (Key EntrypointExport): where a program using the
+	// library calls in.
 	KindEntrypoint Kind = "entrypoint"
 	// KindRegistration is a call the repository does not own that hands over a
 	// repository callable, an address-like literal, or a literal to a value
@@ -74,6 +76,11 @@ const (
 	// adapter analyses: its path, its language (Key) and its lines.
 	KindUnanalysedFile Kind = "unanalysed_file"
 )
+
+// EntrypointExport is an entrypoint fact's key for a library's export; a
+// launch seed's key is its seed kind (callable, module, main_guard, script,
+// bound_object).
+const EntrypointExport = "export"
 
 func (kind Kind) Valid() bool {
 	switch kind {

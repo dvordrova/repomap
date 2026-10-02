@@ -2,6 +2,7 @@ package groupindex
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -509,13 +510,19 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	for _, seed := range program.Target.Seeds {
 		seeds[seed.ObjectID] = true
 	}
+	// A library is entered through its exports (its API), as a program
+	// through its seeds: a part holding either is the entry.
+	entered := maps.Clone(seeds)
+	for _, export := range program.Target.Exports {
+		entered[export.ObjectID] = true
+	}
 	laneOfBox := make(map[string]Lane, len(target.Boxes))
 	for _, box := range target.Boxes {
 		lane := LaneCore
 		if box.Side == atlas.SideOut {
 			lane = LaneDependencies
 		}
-		if slices.ContainsFunc(membersOfBox[box.ID], func(id string) bool { return seeds[id] }) {
+		if slices.ContainsFunc(membersOfBox[box.ID], func(id string) bool { return entered[id] }) {
 			lane = LaneTriggers
 		}
 		laneOfBox[box.ID] = lane

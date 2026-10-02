@@ -1401,12 +1401,49 @@ func (projection *goProjection) targetInput() (programindex.TargetInput, error) 
 			}
 			input.Sources = append(input.Sources, programindex.TargetSource{FileRef: string(fileRef), Path: info.Entry.Path})
 		}
+		exports, err := projection.libraryExports()
+		if err != nil {
+			return programindex.TargetInput{}, err
+		}
+		if len(exports) > 0 {
+			input.Exports, input.ExportBasis = exports, programindex.ExportsVisibility
+		}
 	default:
 		return programindex.TargetInput{}, fmt.Errorf(
 			"Go program index adapter: unsupported target kind %q", projection.target.Kind,
 		)
 	}
 	return input, nil
+}
+
+// libraryExports are a module library's API (GO.md "A library's exports"):
+// the exported functions, and the exported methods of exported types, that
+// its public packages declare outside test files. A package under internal/
+// is none of them: only its own module may import it.
+func (projection *goProjection) libraryExports() ([]programindex.TargetExportInput, error) {
+	public := make(map[string]bool, len(projection.target.LibraryPackages))
+	for _, pkg := range projection.target.LibraryPackages {
+		public[pkg.PackagePath] = goPackageVisibility(pkg.PackagePath) == programindex.VisibilityPublic
+	}
+	var exports []programindex.TargetExportInput
+	for _, declaration := range projection.core.Callables {
+		// A closure (Open$1) is named after its function, not exported.
+		if !declaration.Exported || !token.IsIdentifier(declaration.Name) || !public[declaration.Package] || strings.HasSuffix(declaration.Location.Path, "_test.go") {
+			continue
+		}
+		if declaration.Kind == gocoreobject.CallableMethod {
+			typeName, ok := receiverTypeName(declaration.Receiver, declaration.Package)
+			if !ok || !token.IsExported(typeName) {
+				continue
+			}
+		}
+		location, err := projection.coreLocation(declaration.Location)
+		if err != nil {
+			return nil, err
+		}
+		exports = append(exports, programindex.TargetExportInput{ObjectRef: declaration.ID, Location: location})
+	}
+	return exports, nil
 }
 
 // executableName is the name `go build` and `go install` give a main

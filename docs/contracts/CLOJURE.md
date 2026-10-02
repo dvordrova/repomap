@@ -104,6 +104,14 @@ declaration and no var of its own: `example.core/shout` in
 `src/example/core.clj` is its `defn` alone (4 code lines); othello's
 `(declare negamax)` had stood as a second tile beside the defn.
 
+## A library's exports (missing)
+
+A Clojure package with no `-main` is a library whose public vars (`defn`,
+neither `defn-` nor `^:private`, outside test sources) would be its exports
+(PROGRAM_INDEX `target.exports`), as Go's exported names are. The cumulative
+fixture's one `deps.edn` package has a `-main`, so no fixture holds a library
+package: a recorded missing equivalent, and the adapter exports nothing yet.
+
 ## Keyword arguments
 
 A call's trailing keyword/value pairs are its keyword arguments, as a

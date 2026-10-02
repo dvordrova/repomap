@@ -161,6 +161,10 @@ func (target *targetContext) registeredDuring(from string, handedTo map[string][
 	for _, seed := range target.input.Index.Target.Seeds {
 		seeds[seed.ObjectID] = true
 	}
+	// A library's export is where a program using it starts the call.
+	for _, export := range target.input.Index.Target.Exports {
+		seeds[export.ObjectID] = true
+	}
 	callers := map[string][]string{}
 	for _, relation := range target.input.Index.Relations {
 		if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionExact && relation.Resolution != programindex.ResolutionAlternatives {

@@ -28,6 +28,19 @@ known external package maps to `package`, and generated cgo `C` authority maps
 to `platform`. An external target absent from that universe fails the adapter
 closed rather than being guessed from its import path.
 
+## A library's exports
+
+A module library's entries are its API (PROGRAM_INDEX `target.exports`,
+basis `visibility`, `goadapter` `libraryExports`): the exported functions,
+and the exported methods of exported types, that its public packages
+(`LibraryPackages`) declare outside `_test.go` files. A package under
+`internal/` is none: only its own module may import it. A closure
+(`Open$1`) is named after its function and exports nothing. The cumulative
+fixture's library exports `PublishedRoot`, `ReadAliasedImports`,
+`servicecfg.Address`, `PollIntervalSeconds` and `Limits.Describe`, never
+`parsed.Raw` (its type is unexported), `internal/localstore.Get` or a test
+(`assertGoLibraryExports`). An executable package exports nothing.
+
 ## Traversal and explicit narrowing
 
 - The ordinary Go direct-call traversal is complete for the selected target:

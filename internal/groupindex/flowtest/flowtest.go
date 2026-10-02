@@ -154,17 +154,20 @@ func Check(t testing.TB, program programindex.Index, index groupindex.Index) {
 			}
 		}
 	}
-	// Only a part holding a seed is the entry, and only an area holding
-	// such a part.
+	// Only a part holding a seed, or a library's export, is the entry, and
+	// only an area holding such a part.
 	seeds := map[string]bool{}
 	for _, seed := range index.Target.Seeds {
 		seeds[seed.ObjectID] = true
+	}
+	for _, export := range index.Target.Exports {
+		seeds[export.ObjectID] = true
 	}
 	lanes := map[string]groupindex.Lane{}
 	for _, g := range index.Groups {
 		lanes[g.ID] = g.Lane
 		if (g.Lane == groupindex.LaneTriggers) != slices.ContainsFunc(g.MemberSubjectIDs, func(id string) bool { return seeds[id] }) {
-			t.Fatalf("part %q is %s, and holding a seed is its only entry", g.Title, g.Lane)
+			t.Fatalf("part %q is %s, and holding a seed or an export is its only entry", g.Title, g.Lane)
 		}
 	}
 	for _, container := range index.Containers {

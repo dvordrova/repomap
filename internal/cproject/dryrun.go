@@ -571,10 +571,18 @@ func archivePrograms(env parseEnv, description buildDescription) ([]Program, map
 		objects[record.object] = record.spec
 	}
 	consumers := map[string][]string{}
+	consumerUnits := map[string][]UnitSpec{}
 	for _, link := range description.links {
 		_, _, archives := expandInputs(env, description, objects, link.inputs)
 		for _, archive := range archives {
 			consumers[archive] = append(consumers[archive], relativeTo(env.roots, link.output))
+			// The link line's own objects: the program's code that uses
+			// the archive, whose includes name its API.
+			for _, input := range link.inputs {
+				if spec, ok := objects[input]; ok && !slices.ContainsFunc(consumerUnits[archive], func(other UnitSpec) bool { return unitKey(other) == unitKey(spec) }) {
+					consumerUnits[archive] = append(consumerUnits[archive], spec)
+				}
+			}
 		}
 	}
 	var programs []Program
@@ -602,7 +610,9 @@ func archivePrograms(env parseEnv, description buildDescription) ([]Program, map
 			slices.Sort(users)
 			fields["consumers"] = strings.Join(slices.Compact(users), " ")
 		}
-		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: ProgramLibrary, Units: specs, Anchor: anchor, Missing: missing,
+		users := slices.Clone(consumerUnits[name])
+		sortUnits(users)
+		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: ProgramLibrary, Units: specs, Anchor: anchor, Missing: missing, Consumers: users,
 			Evidence: []Observation{{Kind: "c_archive", Path: anchor.Path, Line: anchor.Line, Fields: fields, Values: paths}}})
 	}
 	return programs, covered, observations

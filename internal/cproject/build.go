@@ -1081,6 +1081,9 @@ func (b *builder) input() (p.Input, error) {
 		}
 		target.Seeds = append(target.Seeds, p.TargetSeedInput{ObjectRef: fn.ref, Kind: p.SeedCallable, Location: fn.location})
 	}
+	if program.Kind != ProgramExecutable {
+		target.Exports, target.ExportBasis = b.exports()
+	}
 	for file, ref := range sources {
 		target.Sources = append(target.Sources, p.TargetSource{FileRef: ref, Path: file})
 	}

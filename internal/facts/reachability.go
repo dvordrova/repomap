@@ -137,6 +137,10 @@ func seedFiles(target *targetContext) []string {
 			set[filePath] = struct{}{}
 		}
 	}
+	// A library runs from its exports, as a program from its seeds.
+	for _, export := range target.input.Index.Target.Exports {
+		set[export.Location.Path] = struct{}{}
+	}
 	result := make([]string, 0, len(set))
 	for filePath := range set {
 		result = append(result, filePath)

@@ -420,7 +420,8 @@ func parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 		}
 		return strings.Compare(unitKey(a.UnitSpec), unitKey(b.UnitSpec))
 	})
-	parsed := &Parsed{Program: program, Toolchain: tool, Units: units, Outside: outsideSources(program, units), Alternatives: alternatives, AlternativeUnits: alternativeUnits}
+	parsed := &Parsed{Program: program, Toolchain: tool, Units: units, Outside: outsideSources(program, units), Alternatives: alternatives, AlternativeUnits: alternativeUnits,
+		APIHeaders: apiHeaders(ctx, env, store, program.Consumers)}
 	for _, unit := range units {
 		for _, node := range unit.Decls {
 			if !exactMain(node) {
@@ -435,6 +436,27 @@ func parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 		}
 	}
 	return parsed, nil
+}
+
+// apiHeaders are the repository headers the consumers' units include
+// directly, from the same parse their own programs read. A consumer unit
+// clang cannot parse names none; with none parsed, the library has no
+// consumer headers and exports by linkage.
+func apiHeaders(ctx context.Context, env parseEnv, store *Store, consumers []UnitSpec) []string {
+	var headers []string
+	for _, spec := range consumers {
+		unit, err := store.unit(ctx, env, spec)
+		if err != nil {
+			continue
+		}
+		for _, include := range unit.Includes {
+			if include.Depth == 1 && include.Class == FileCorpus && !slices.Contains(headers, include.Path) {
+				headers = append(headers, include.Path)
+			}
+		}
+	}
+	slices.Sort(headers)
+	return headers
 }
 
 // explain adds the build description failure that left the units with

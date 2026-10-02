@@ -128,6 +128,62 @@ func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
 	}
 }
 
+// A Python library's entries are its API: the public functions of its public
+// modules and the public methods of their public classes. scoring.py's
+// Scoreboard.show is one; its _reset, the function nested in show, and
+// _formats.py's score_text (its module's name begins with an underscore)
+// are not, nor is exports.py's format_score, which __all__ leaves out.
+func TestCumulativePythonLibraryExportsItsAPI(t *testing.T) {
+	_, repository := materializeFixtureRepository(t, "python")
+	catalog, err := pythontarget.Discover(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target pythontarget.Target
+	for _, candidate := range catalog.Entries {
+		if candidate.ProjectDir == "." && candidate.Kind == pythontarget.KindLibrary {
+			target = candidate
+		}
+	}
+	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported := map[string]bool{}
+	for _, export := range index.Target.Exports {
+		object := programIndexObjectByID(index, export.ObjectID)
+		name := object.Name
+		if object.Kind == programindex.ObjectMethod {
+			name = programIndexObjectByID(index, object.OwnerID).Name + "." + name
+		}
+		exported[export.Location.Path+" "+name] = true
+	}
+	if index.Target.ExportBasis != programindex.ExportsVisibility {
+		t.Fatalf("library export basis %q", index.Target.ExportBasis)
+	}
+	for name, want := range map[string]bool{
+		"src/fixture_app/scoring.py Scoreboard.show":   true,
+		"src/fixture_app/exports.py render_level":      true,
+		"src/fixture_app/scoring.py Scoreboard._reset": false,
+		"src/fixture_app/scoring.py padded":            false,
+		"src/fixture_app/_formats.py score_text":       false,
+		"src/fixture_app/exports.py format_score":      false,
+	} {
+		if exported[name] != want {
+			t.Fatalf("%s exported %v, want %v", name, exported[name], want)
+		}
+	}
+	for name := range exported {
+		if len(name) > 6 && name[:6] == "tests/" {
+			t.Fatalf("a test is the library's API: %s", name)
+		}
+	}
+}
+
 func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
 	catalog, err := pythontarget.Discover(t.Context(), repository)
@@ -392,6 +448,9 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	seed := programIndexObjectByID(index, index.Target.Seeds[0].ObjectID)
 	if seed.ID == "" || seed.Kind != programindex.ObjectFunction || seed.Name != "main" {
 		t.Fatalf("Python script seed object = %#v, want exact main function", seed)
+	}
+	if len(index.Target.Exports) != 0 {
+		t.Fatalf("a script exports %d callables", len(index.Target.Exports))
 	}
 	assertCumulativePythonSemanticFacts(t, index)
 	assertPythonLocalHTTPNameFacts(t, index)

@@ -338,6 +338,11 @@ func (builder *requestBuilder) facts(omitted map[string]int) []factWire {
 			omitted[string(fact.Kind)]++
 			continue
 		}
+		// A library's exports are its API, never a way to run it: counted.
+		if fact.Kind == facts.KindEntrypoint && fact.Key == facts.EntrypointExport {
+			omitted["entrypoint_export"]++
+			continue
+		}
 		position[fact.ID] = len(advertised)
 		advertised = append(advertised, fact)
 	}
