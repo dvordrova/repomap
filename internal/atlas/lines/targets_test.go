@@ -9,11 +9,14 @@ import (
 )
 
 func TestTargetRowRendersTheLabelsThePromptDefines(t *testing.T) {
-	row := TargetRow(TargetSummary{ID: "svc", Name: "svc", Root: "cmd/svc", Language: "go", Kind: "executable", Readme: "A service.", Entrypoint: "cmd/svc/main.go",
+	row := TargetRow(TargetSummary{ID: "svc", Name: "svc", Root: "cmd/svc", Language: "go", Kind: "executable", Entrypoint: "cmd/svc/main.go",
 		Files: 12, Dirs: 3, Boundaries: map[string]int{"client_request out": 3, "request in": 2, "config out": 1}, Operations: []string{"request: submit job"}})
 	fields := make(map[string]any)
 	for _, field := range row.Fields {
 		fields[field.Name] = field.Value
+	}
+	if _, sent := fields["readme"]; sent {
+		t.Fatal("a target row carries a README line")
 	}
 	if fields["kind"] != "executable" || !reflect.DeepEqual(fields["boundaries"], []string{"client_request out 3", "config out 1", "request in 2"}) {
 		t.Fatalf("target row labels: %+v", fields)

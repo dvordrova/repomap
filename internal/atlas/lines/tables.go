@@ -600,7 +600,10 @@ func BoundaryOwnerContext(owners ...map[string]any) table.Field {
 
 // BoundarySourceContext supplies purpose clues from the same source graph.
 // Parent and native caller identities are the only joins; names and nearby
-// paths cannot attach another declaration or README. Caller context stops at
+// paths cannot attach another declaration. No ancestor directory's README
+// line: model inputs are code structure, not the authors' claims (casdoor's
+// outgoing owners had all read its root README's "Supporting MCP, A2A,
+// OAuth&nbsp;2.0, …<br>"). Caller context stops at
 // that declaration, without expanding its calls or following its own callers.
 // A call site keeps its receiver and argument origins, not its result value:
 // the result trees of six Errorf alternatives explained nothing about the
@@ -613,20 +616,6 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 	}
 	if file.File != nil {
 		context["file"] = map[string]any{"path": file.Path}
-		var ancestors []map[string]any
-		for parent := file.Parent; parent != ""; {
-			directory, found := places[parent]
-			if !found || directory.Directory == nil {
-				break
-			}
-			if directory.Directory.Readme != "" {
-				ancestors = append(ancestors, map[string]any{"path": directory.Path, "readme_claim": directory.Directory.Readme})
-			}
-			parent = directory.Parent
-		}
-		if len(ancestors) > 0 {
-			context["ancestor_directories"] = ancestors
-		}
 	}
 	if owner.Symbol != nil {
 		byID := make(map[string]map[string]any)
@@ -767,7 +756,8 @@ func Targets(rolesBound ...bool) table.Definition {
 	return definition
 }
 
-// TargetSummary is what a portfolio row says about a target.
+// TargetSummary is what a portfolio row says about a target: its code's
+// structure, never its README's first line.
 type TargetSummary struct {
 	SelectedRole string
 	ID           string
@@ -775,7 +765,6 @@ type TargetSummary struct {
 	Root         string
 	Language     string
 	Kind         string
-	Readme       string
 	Entrypoint   string
 	Files        int
 	Dirs         int
@@ -794,9 +783,6 @@ func TargetRow(target TargetSummary) table.Row {
 	}
 	if target.SelectedRole != "" {
 		fields = append(fields, table.Field{Name: "selected_role", Value: target.SelectedRole})
-	}
-	if target.Readme != "" {
-		fields = append(fields, table.Field{Name: "readme", Value: target.Readme})
 	}
 	if target.Entrypoint != "" {
 		fields = append(fields, table.Field{Name: "entrypoint", Value: target.Entrypoint})

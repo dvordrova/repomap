@@ -174,12 +174,21 @@ counts; no README or AGENTS text, docstring, package documentation or
 `author_context`. No other atlas request carries the authors' doc comments
 either (2026-10-01): symbol, type, file, directory, key, boundary, joint,
 question and Learn rows name declarations by path, name, kind and signature,
-never by a docstring, a package doc or a caller's doc; a directory with no
-README is said by what it holds. The places keep the quotes for the
-reader's fallback lines. casdoor's `ApiController` type row had carried
-77 KB of swagger comments in its owned declarations, past the categorizer's
-question envelope (`TestProviderBodiesCarryNoAuthorDocs`). README claims stay
-claims; orientation sends neither them nor docstrings (below).
+never by a docstring, a package doc or a caller's doc. Nor by a README's
+first line (2026-10-02): a directory row, a directory's parent context and
+a file's `directory_facts` say what the directory holds; a target row has
+no `readme`; a boundary owner's `source_context` holds its own file and
+native immediate callers, no ancestor directory's README. casdoor's outgoing
+owners had all read its root README's `Supporting MCP, A2A,
+OAuth&nbsp;2.0, …<br>`; litestream's read a badge's alt text. The one
+exception is Learn's opt-in `directory_readme_claim` (owner decision). The
+places keep the quotes for the reader's fallback lines. casdoor's `ApiController` type row
+had carried 77 KB of swagger comments in its owned declarations, past the
+categorizer's question envelope. `TestProviderBodiesCarryNoAuthorDocs`
+checks every body kvd's captioned reading sends (directories, targets, an
+outgoing boundary's owner context) against its doc comments and README
+line. README claims stay claims; orientation sends neither them nor
+docstrings (below).
 
 **The grouping unit is a whole file or a box.** Each target's role split
 (below) runs first; then one `atlas_zones` request per target

@@ -96,23 +96,18 @@ type Lines interface {
 
 // DirectoryRow builds the row of one directory. Its parent is the window's
 // shared context (DirectoryContext), not a row field: the children of one
-// parent are asked together, and the same README line no longer repeats in
-// every row.
+// parent are asked together. A directory is said by what it holds, never
+// by its README's first line: model inputs are code structure, not the
+// authors' claims (owner, 2026-09-25).
 func DirectoryRow(place atlas.Place) table.Row {
 	facts := place.Directory
-	fields := []table.Field{
+	return table.Row{ID: place.ID, Fields: []table.Field{
 		{Name: "path", Value: place.Path},
 		{Name: "name", Value: displayName(place.Path)},
-	}
-	if facts.Readme != "" {
-		fields = append(fields, table.Field{Name: "readme", Value: facts.Readme})
-	}
-	fields = append(fields,
-		table.Field{Name: "dirs", Value: bounded(facts.Dirs, maxChildren)},
-		table.Field{Name: "files", Value: bounded(facts.Files, maxChildren)},
-		table.Field{Name: "file_count", Value: facts.FileCount},
-	)
-	return table.Row{ID: place.ID, Fields: fields}
+		{Name: "dirs", Value: bounded(facts.Dirs, maxChildren)},
+		{Name: "files", Value: bounded(facts.Files, maxChildren)},
+		{Name: "file_count", Value: facts.FileCount},
+	}}
 }
 
 // DirectoryContext is what the rows of one parent share: the parent's path
@@ -125,16 +120,15 @@ func DirectoryContext(parent *atlas.Place) []table.Field {
 	return []table.Field{{Name: "parent", Value: map[string]any{"path": parent.Path, "line": directoryFacts(*parent)}}}
 }
 
-// directoryFacts is a directory's fallback line as a model reads it: its
-// README's first line, else what it holds. Never its package doc comment,
-// which the place's Given falls back to for the reader: model inputs are
-// code structure, not the authors' prose (owner, 2026-09-25).
+// directoryFacts is a directory's fallback line as a model reads it: what
+// it holds. Never its README's first line or its package doc comment, which
+// the place's Given falls back to for the reader: model inputs are code
+// structure, not the authors' prose (owner, 2026-09-25).
 func directoryFacts(place atlas.Place) string {
 	facts := place.Directory
-	if facts == nil || facts.Readme != "" || facts.Doc == "" {
+	if facts == nil {
 		return place.Given
 	}
-	// The Given fell back to the package doc: say what it holds instead.
 	names := append(append([]string{}, facts.Dirs...), facts.Files...)
 	if len(names) > 3 {
 		names = names[:3]

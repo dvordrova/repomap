@@ -62,17 +62,36 @@ func TestFileRowDescribesEvidenceWithoutDecidingArchitectureMembership(t *testin
 	}
 }
 
+// A directory is said by what it holds: its README's first line is the
+// reader's fallback (the place's Given), never a model input, in its own
+// row, as its children's parent or as a file's directory facts.
 func TestDirectoryRowLeavesTheParentToTheWindowContext(t *testing.T) {
-	parent := atlas.Place{ID: atlas.DirectoryID("pkg"), Kind: atlas.PlaceDirectory, Path: "pkg", Given: "4 files", Directory: &atlas.DirectoryFacts{Readme: "Packages."}}
+	parent := atlas.Place{ID: atlas.DirectoryID("pkg"), Kind: atlas.PlaceDirectory, Path: "pkg", Given: "Packages for the service.",
+		Directory: &atlas.DirectoryFacts{Readme: "Packages for the service.", Dirs: []string{"a", "b"}, Files: []string{"doc.go", "x.go"}, FileCount: 4}}
 	child := atlas.Place{ID: atlas.DirectoryID("pkg/a"), Kind: atlas.PlaceDirectory, Path: "pkg/a", Parent: parent.ID, Directory: &atlas.DirectoryFacts{Dirs: []string{}, Files: []string{"x.go"}, FileCount: 1}}
 	for _, field := range DirectoryRow(child).Fields {
 		if field.Name == "parent" {
 			t.Fatal("parent repeated in the row")
 		}
 	}
+	for _, field := range DirectoryRow(parent).Fields {
+		if field.Name == "readme" || field.Value == parent.Directory.Readme {
+			t.Fatalf("a directory row carries its README line: %+v", field)
+		}
+	}
 	context := DirectoryContext(&parent)
-	if len(context) != 1 || context[0].Name != "parent" || !reflect.DeepEqual(context[0].Value, map[string]any{"path": "pkg", "line": "4 files"}) {
+	if len(context) != 1 || context[0].Name != "parent" || !reflect.DeepEqual(context[0].Value, map[string]any{"path": "pkg", "line": "4 files: a, b, doc.go"}) {
 		t.Fatalf("parent context: %+v", context)
+	}
+	file := atlas.Place{ID: atlas.FileID("pkg/doc.go"), Kind: atlas.PlaceFile, Path: "pkg/doc.go", Parent: parent.ID, File: &atlas.FileFacts{}}
+	var facts any
+	for _, field := range FileRow(file, parent, noLines{}, nil, nil).Fields {
+		if field.Name == "directory_facts" {
+			facts = field.Value
+		}
+	}
+	if facts != "4 files: a, b, doc.go" {
+		t.Fatalf("a file's directory facts: %+v", facts)
 	}
 	if DirectoryContext(nil) != nil {
 		t.Fatal("a root row gained a parent")

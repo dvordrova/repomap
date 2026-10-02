@@ -270,11 +270,29 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   whole directory's extras. `TestProviderBodiesCarryNoAuthorDocs` now covers
   the overview. Since 1300d794 no atlas table, key or symbol row and no Jev
   request carries a docstring.
-- **Known remaining violation:** the atlas still sends README first lines in
-  three rows: a directory's `readme` (`lines.DirectoryRow`), a boundary's
-  `ancestor_directories[].readme_claim` (`lines.BoundarySourceContext`) and
-  a target's `readme` (`lines.TargetRow`). They can colour the group titles
-  and summaries the orientation reads. Removing them re-asks those tables.
+- **No README line in atlas inputs (2026-10-02, closes the remaining
+  violation):** a directory row, a directory's parent context and a file's
+  `directory_facts` say what the directory holds; a target row has no
+  `readme`; a boundary owner's `source_context` has no ancestor directory's
+  README. Learn's opt-in `directory_readme_claim` stays (owner decision).
+  Only outgoing boundaries' `address` had been asked with a README line in
+  ordinary runs (casdoor 36 rows, headscale 10, etcd 3, litestream 1, none
+  in the other six repositories). Warm runs re-asked exactly those 37
+  requests (383k input tokens) and nothing after them: 8 of 50 addresses
+  moved. `TestProviderBodiesCarryNoAuthorDocs` covers directory, target and
+  boundary bodies.
+- **Open: the address question can commit to a value that is no
+  destination.** `address` offers every value the walk read, and the model
+  can take a format string or an object key for the destination. Without the
+  README line it commits more often. casdoor `object/storage.go:171`
+  (`storageProvider.Put(objectKeyRefined, …)`) went from unknown to `%s/%s`,
+  the object key's format; casdoor `object/adapter.go:206`
+  (`xormadapter.NewAdapterByEngineWithTableName(engine, …)`) from
+  `dataSourceName` to the MySQL DSN format `%s:%s@tcp(%s:%d)/%s`; headscale
+  `hscontrol/db/db.go:1089` (`gorm.Open(sqlite.Open(connectionURL))`)
+  answers `:memory:`, the only catalogue value, while its URL comes from
+  `sqliteConfig.ToURL()`. Not fixed: it needs a criterion for what names a
+  destination, which re-asks every address.
 - **Known prompt drift (2026-09-29):** READING says a symbol that runs the
   handed callable in place, wraps or stores it is `binds` `none`;
   `internal/atlas/lines/prompts/entry_options.md`'s `none` names only a

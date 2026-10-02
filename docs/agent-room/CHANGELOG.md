@@ -1,5 +1,70 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A Go interface call no observed flow gives runs the repository's implementations, on the implements basis (data 2)
+
+- **etcd's `server.Campaign`** at api/v3election/v3electionpb/gw/v3election.pb.gw.go:62 (ProgramIndex t1 e26194) stayed unresolved, with the witness `ElectionServer.Campaign`. The cause was not a module, a target or a type assertion.
+  - The receiver is a closure's captured value. It is the `server` parameter of `RegisterElectionHandlerServer`, which no repository code calls: etcd registers the gateway in client mode.
+  - Go resolution followed value flow only, so with no candidate the call stayed open.
+  - The ProgramIndex already held method-set `implements` facts: electionServer.Campaign, electionProxy.Campaign and UnimplementedElectionServer.Campaign each implement ElectionServer.Campaign.
+- **Owner rule:** at 2026-09-30 08:12:54 UTC the coordinator asked, as item 9, «Интерфейсные вызовы. Идти по реализациям как по альтернативам?». At 08:51:11 UTC the owner answered: «"Это близко к «размытому разрешению», которое вы запретили" - я никогда такого не запрещал». The September implementation followed observed stores; this change applies the same approval where no flow is observed, and says so on the edge.
+- **Fix** (skeptic, then the coordinator's decision):
+  - When the value flow gives an interface invoke no candidate at all, and the receiver's static type is an interface the selected repository declares, its candidates are the methods that the repository's named non-interface types implementing it declare. One target is exact, several are alternatives, with no unknown beside them.
+  - Candidates are found by `types.Implements` on the pointer method set, through the matcher now shared with the `implements` facts (`methodSetIndex`). A method promoted from an embedded type is counted once, as that type's; one promoted from an embedded interface is no implementation; generic types are left out.
+  - The handoff evidence is `interface_implementation`. The ProgramIndex relation and the GroupsIndex edge say `basis: implements` (optional field, no version change), so the targets never read as a traced binding.
+  - A call with an observed value keeps its basis, an open path beside it included. Interfaces declared outside the repository are not filled.
+  - GO.md and PROGRAM_INDEX.md updated.
+- **Fixture and tests:**
+  - `RegisterTicketHandlerServer` checks alternatives over two implementations: a type embedding one is counted once, a type embedding the interface and a method of another signature are excluded. `RegisterReceiptHandlerServer` checks the exact case. Both are pinned against the `implements` facts (`assertGoOpenInterfaceCallsFollowImplementations`).
+  - `unknownFacade.Put` now runs all 11 `Put(string)` types, itself included. The command table's `fire` through `write` runs both `readyHandler` implementations. `constructorInjectedFacade.Put` still runs `storedEngine.Put` only.
+- **Other languages,** probed with one small repository each and recorded missing in GO.md:
+  - Python resolves a call on a parameter annotated with the repository's ABC exactly to the abstract method.
+  - JS/TS leaves the call through an interface-typed parameter unresolved.
+  - Clojure resolves a protocol call to the protocol's method.
+  - C has no interfaces.
+- **Warm runs** with HEAD 80e30dba plus these files (binary b046002f), exit 0:
+  - etcd 20261002-195008:
+    - Campaign is e27300: alternatives electionServer.Campaign (election.go:40), electionProxy.Campaign (grpcproxy/election.go:34) and UnimplementedElectionServer.Campaign (v3election_grpc.pb.go:151), basis implements.
+    - t1's unresolved interface calls fell from 836 to 86. On the implements basis, 325 are now exact and 425 alternatives (at most 6 targets); 154 include a generated `Unimplemented*` stub and 18 the caller itself.
+    - The Main flow's second way now serves clients (serveClients > serve > Server > NewWatchServer) where it took the shutdown path.
+  - litestream 20261002-200012: `WriteLTXFile` is unchanged (alternatives of 8 with 4–5 omitted, observed), and 14 unresolved interface calls became implements alternatives.
+    - Its Main flow changed: ReplicateCommand.Run now offers what constructors decided as helpers reach (DirectoryMonitor.run handed to go through NewDirectoryMonitor, Server's handlers through NewServer), and the path goes to DirectoryMonitor.run.
+    - This is the helper look-through of 63bc5e8d, not this change. Recorded for the helper-chain follow-up.
+
+## 2026-10-02 — No README line in atlas inputs (data 1)
+
+- **Found:** three atlas rows still carried a README's first line: a directory's `readme`, a target's `readme` and an outgoing boundary owner's `source_context.ancestor_directories[].readme_claim`.
+  - A fourth channel was hidden: `directoryFacts`, a directory's parent context and a file's `directory_facts`, returned the place's fallback line, which is the README line when the directory has one.
+  - In ordinary runs only the boundaries' `address` was asked with it, because directories and targets are not asked without captions. The latest runs had casdoor 36 rows in 28 requests, headscale 10 in 6, etcd 3 in 2 and litestream 1. redis, freqtrade, othello, beets, lua and Lua 5.1.5 had none.
+  - The lines were casdoor's `Supporting MCP, A2A, OAuth&nbsp;2.0, … Face ID,<br>`, litestream's badge alt text "!GitHub release (latest by date)", etcd's "Note: The main branch may be in an unstable or even broken state…" and headscale's one real sentence.
+  - No later model request reads the address. It is only the outbound operation's shown address, and destinations are keyed by walks and named by package.
+- **Change:**
+  - Directory rows, a directory's parent context and a file's `directory_facts` say what the directory holds.
+  - `TargetSummary.Readme` is gone, and the boundary owner context keeps its own file and native immediate callers.
+  - The directories, targets and target-descriptions prompts no longer mention README lines.
+  - Learn's opt-in `directory_readme_claim` stays (owner decision).
+  - `TestProviderBodiesCarryNoAuthorDocs` now checks every body of kvd's captioned reading against its README line, and requires directory, target and boundary-owner bodies. It failed on the old directory row and, with only the boundary context restored, on `netConnect`'s owner.
+- **Estimate before the change:** 37 requests, about 384k input tokens (about $0.13), with no knock-on.
+  - A cache-off probe of the saved requests (3 draws with the line and 3 without) moved 4 of 50 addresses consistently and about 6 partially.
+  - In 6 of the 50 rows, today's draws on identical bytes already disagreed with the saved answer.
+- **Warm runs** with HEAD 80e30dba plus these files, every exit 0, contracttest green in 4 chunks:
+
+| Repo | Run | Boundary requests re-asked | Input tokens | README rows | Addresses moved |
+|---|---|---|---|---|---|
+| casdoor | 194738 | 28 | 323,512 | 36 → 0 | 7 |
+| headscale | 195133 | 6 | 45,986 | 10 → 0 | 1 |
+| etcd | 195324 | 2 | 10,244 | 3 → 0 | 0 |
+| litestream | 200041 | 1 | 2,869 | 1 → 0 | 0 |
+
+- **The moves:**
+  - casdoor `idp/linkedin.go:313` and `idp/weibo.go:247` go from unknown to their API URLs.
+  - casdoor `object/adapter.go:192` and `:206` go from `dataSourceName` to `%s:%s@tcp(%s:%d)/%s`.
+  - casdoor `object/avatar.go:42` goes from unknown to `%s/img/casbin.svg`, and `object/ldap_conn.go:148` from unknown to `%s:%d`.
+  - casdoor `object/storage.go:171` goes from unknown to `%s/%s`, the object key's format. The report now shows it as the sdk exchange's address.
+  - headscale `hscontrol/db/versioncheck.go:91` goes from `:memory:` to unknown.
+  - The other live requests, casdoor's one Jev Main-flow split and litestream's orientation and glossary, came from commits since the before runs. litestream's before run predated 80c1fb4c.
+  - README text now reaches only the discovery stages (`readme_file_classifier`, `documentation_reduce`, `target_portfolio_selection`).
+- **Open (CURRENT):** the address question can take a format string or an object key for the destination: storage.go:171 `%s/%s`, adapter.go:206 the DSN format, headscale db.go:1089 `:memory:`.
+
 ## 2026-10-02 — The Main flow passes through a helper as the step's own work (data 2)
 
 - **Lua's script flow** went handle_script → luaL_loadfilex → lua_load → luaC_step → the collector.

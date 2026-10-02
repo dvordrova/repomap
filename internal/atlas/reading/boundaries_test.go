@@ -141,10 +141,11 @@ func TestBoundaryKnownHTTPAddressSurvivesAcceptedUnknownAndPreservesSourceAnchor
 	}
 }
 
-// A boundary's purpose reads its native immediate callers and its own
-// ancestors' README claims, never an author's doc comment: model inputs are
-// code structure (owner, 2026-09-25).
-func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t *testing.T) {
+// A boundary's purpose reads its own file and native immediate callers,
+// never an author's doc comment or an ancestor's README line: model inputs
+// are code structure (owner, 2026-09-25; casdoor's outgoing owners had all
+// read its root README's first line until 2026-10-02).
+func TestBoundaryPurposeReadsOnlyNativeImmediateCallersNeverAuthorText(t *testing.T) {
 	root := atlas.Place{ID: "dir:root", Kind: atlas.PlaceDirectory, Path: ".", Directory: &atlas.DirectoryFacts{Readme: "A service that proxies partner data and refreshes snapshots."}}
 	directory := atlas.Place{ID: "dir:utils", Kind: atlas.PlaceDirectory, Path: "utils", Parent: root.ID, Directory: &atlas.DirectoryFacts{Doc: "Shared request helpers."}}
 	file := atlas.Place{ID: "file:requests", Kind: atlas.PlaceFile, Path: "utils/requests.go", Parent: directory.ID, TargetIDs: []string{"service"}, File: &atlas.FileFacts{Doc: "Preserve cancellation when forwarding a request."}}
@@ -184,9 +185,8 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 		if ownFile["path"] != file.Path || ownFile["author_doc"] != nil {
 			t.Fatalf("own file evidence lost or a doc comment sent: %+v", ownFile)
 		}
-		ancestors := context["ancestor_directories"].([]any)
-		if len(ancestors) != 1 || ancestors[0].(map[string]any)["path"] != root.Path || ancestors[0].(map[string]any)["readme_claim"] != root.Directory.Readme {
-			t.Fatalf("ancestor README claim lost or a doc comment sent: %+v", ancestors)
+		if ancestors, sent := context["ancestor_directories"]; sent {
+			t.Fatalf("an ancestor's README line was sent: %+v", ancestors)
 		}
 		callers := context["immediate_callers"].([]any)
 		if len(callers) != 3 {
@@ -218,7 +218,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 		}
 		encoded, _ := json.Marshal(input)
 		for _, forbidden := range []string{"grandparent-marker", "grandparent-document-marker", "unexpanded-callee-marker", "unrelated-readme-marker", "symbol:proxy", "object:refresh",
-			directory.Directory.Doc, file.File.Doc, proxy.Symbol.Decl.Doc, refresh.Symbol.Decl.Doc} {
+			root.Directory.Readme, "readme", directory.Directory.Doc, file.File.Doc, proxy.Symbol.Decl.Doc, refresh.Symbol.Decl.Doc} {
 			if strings.Contains(string(encoded), forbidden) {
 				t.Errorf("unrelated source or native identity leaked: %s", forbidden)
 			}

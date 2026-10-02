@@ -141,9 +141,18 @@ func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
 			docs = append(docs, doc)
 		}
 	}
+	// A directory's README first line is the authors' claim too: no
+	// directory, target or boundary row carries it (casdoor's boundaries
+	// had read "Supporting MCP, A2A, OAuth&nbsp;2.0, …<br>" as every
+	// outgoing owner's ancestor context).
+	readmeLines := 0
 	for _, place := range graph.Places {
 		if place.Directory != nil {
 			add(place.Directory.Doc)
+			if place.Directory.Readme != "" {
+				add(place.Directory.Readme)
+				readmeLines++
+			}
 		}
 		if place.File != nil {
 			add(place.File.Doc)
@@ -163,6 +172,9 @@ func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
 	}
 	if !slices.ContainsFunc(docs, func(doc string) bool { return strings.Contains(doc, "Runs every complete line") }) {
 		t.Fatalf("kvd's places hold none of its doc comments: the test no longer covers them (%q)", docs)
+	}
+	if readmeLines == 0 {
+		t.Fatal("kvd's directories hold no README line: the test no longer covers them")
 	}
 	preset := &kvdPreset{roles: map[string]map[string]string{"sys/socket.h.connect": {"talks": "client_request"}}}
 	categorizer := preset.categorizer()
@@ -208,6 +220,13 @@ func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
 	overview := asked.bodies(t)
 	if len(bodies) == 0 || len(overview) != 1 {
 		t.Fatalf("the reading sent %d bodies and the orientation %d", len(bodies), len(overview))
+	}
+	// The tables a README line had reached: directories, targets and an
+	// outgoing boundary's owner context (kvcli's connect, its address asked).
+	for _, needle := range []string{`atlas_directories`, `atlas_targets`, `source_context`} {
+		if !slices.ContainsFunc(bodies, func(body []byte) bool { return strings.Contains(string(body), needle) }) {
+			t.Fatalf("no body the reading sent carries %s: the test no longer covers it", needle)
+		}
 	}
 	bodies = append(bodies, overview...)
 	if strings.Contains(string(overview[0]), `"claims"`) || strings.Contains(string(overview[0]), `"author_doc"`) {

@@ -69,11 +69,6 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 		SelectedRole: target.SelectedRole,
 		Boundaries:   make(map[string]int),
 	}
-	if root, ok := r.places[r.directoryID(target.Root)]; ok {
-		// The README's line, never the package's doc comment: model
-		// inputs are code structure, not the authors' prose.
-		summary.Readme = root.Directory.Readme
-	}
 	dirs := make(map[string]struct{})
 	for _, place := range r.opts.Graph.Places {
 		if place.Kind != atlas.PlaceFile || !contains(place.TargetIDs, target.ID) {
