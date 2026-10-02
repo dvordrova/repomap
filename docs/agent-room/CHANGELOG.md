@@ -1,5 +1,41 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A Main flow step's registration is read by the walk and saved (data 1)
+
+- **1f6c49e6 + 484640b2 (orientation 3):** where a step's callable is
+  registered and what runs it are read once in orientation, over the
+  walk's own edges (exact calls, alternatives, a function value's possible
+  callees, hand-overs).
+  - Registrations start from the latest earlier step reaching a
+    registering function. The fewest hops win, and every run of that
+    length is kept.
+  - Runners other than the step's own site are read from the flow's first
+    step.
+  - Both are saved on `FlowStep.Registered` / `RunBy`, each hop marked
+    `Possible` / `Handed`. The report only displays them; `registeredStep`
+    is gone.
+  - A hop reads in words, never a count: "may call", "hands over", "→".
+  - "Also runs on its own:" still reads saved facts on the page
+    (`ownWorkReading`), so runs without a model keep it.
+- **Warm runs** (my build of 484640b2, exit 0), before (114831 / 114928 /
+  120545 / 113809) → after:
+  - redis 20261002-123430:
+    - readQueryFromClient: "aeProcessEvents → processTimeEvents →
+      serverCron → syncWithMaster → createClient registers it; main →
+      aeMain → aeProcessEvents runs it" → "aeProcessEvents may call
+      acceptHandler → createClient registers it".
+    - setCommand: "redis.c registers it; main → loadAppendOnlyFile runs
+      it; main → aeMain → beforeSleep → call runs it" → "redis.c registers
+      it; main → loadAppendOnlyFile runs it". `call` is the step's own
+      site.
+    - An earlier build read runners from the step before: "call may call
+      debugCommand → loadAppendOnlyFile". 484640b2 reads them from the
+      flow's first step.
+  - freqtrade 123443 and etcd 123814: unchanged.
+  - othello 123811: play-ai "launch-ai registers it" → "start! hands over
+    update-state hands over launch-ai registers it".
+  - Own-work lists: unchanged.
+
 ## 2026-10-02 — The facts route walk skips what leads to no literal (data 2)
 
 - **What exploded on Lua (c:lua, 2078 objects, 11465 relations):** the
