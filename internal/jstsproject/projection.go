@@ -313,7 +313,22 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		}
 		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, jstsInvocation(value.Invocation))
 		callRelations[value.Ref] = relationIndex
-		if value.Dispatch == programindex.DispatchFunctionValue {
+		for _, store := range value.Stores {
+			// Each store names the function it put in the variable, the
+			// call's target when the stores reaching it resolve it.
+			detail := declarationDisplayName(declarationByRef[store.Ref], declarationByRef) + " stored in " + value.StoredIn
+			if store.Conditional {
+				detail += " under a condition"
+			}
+			relation := &relations[relationIndex]
+			relation.Witnesses = append(relation.Witnesses, programindex.Witness{
+				Kind: "function_value_store", Detail: detail, Location: programLocation(store.Location), ObjectRef: store.Ref,
+			})
+			relation.WitnessesObserved = len(relation.Witnesses)
+		}
+		if value.Dispatch == programindex.DispatchFunctionValue && len(value.Stores) > 0 {
+			relations[relationIndex].Dispatch = value.Dispatch
+		} else if value.Dispatch == programindex.DispatchFunctionValue {
 			// The condition's choice is the call's: its alternatives are
 			// the functions the branches name, witnessed as C's are.
 			names := make([]string, 0, len(value.CalleeRefs))

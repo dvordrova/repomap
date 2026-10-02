@@ -370,6 +370,62 @@ constructor, an outside function) leaves the call open: a call fact holds one
 outside symbol, so outside functions are not alternatives as in Python and C
 (`watchTickAgain`, `TestCumulativeJSTSACalleeChosenByAConditionCallsOneOfItsFunctions`).
 
+A call through a variable calls what the stores that may reach it put
+there. This applies the owner's rule of 2026-09-30: one known target is
+exact, several are alternatives, and there are no cautious unknowns. Python
+does the same for a name a branch reassigns, and Go for the SSA phi of a
+function value (PYTHON, GO).
+
+- **Which variables.** One `let`, `const` or `var` declarator with a plain
+  name, in a module or a function. Not one that is ambient, in a namespace,
+  or a script's global.
+- **Its stores.** Its initializer and each plain `v = x`. A `let` with no
+  initializer holds nothing callable until a store.
+- **Which stores reach the call.** As in Python, a store takes effect where
+  its statement ends. From the stores before the call, the last one no
+  branch skips reaches it, and so does every store after that one. A later
+  store reaches the call only from inside the outermost loop of the
+  variable's scope around the call.
+  - A branch is an `if`'s branch, a `?:` arm, or the right of `&&`, `||`,
+    `??` and their assignments.
+  - It is also a loop's body, a `try` or `catch` block, a `switch`'s cases,
+    a labeled block a `break` may leave, what follows `?.`, or a default
+    value.
+- **A call in another function or file.** This covers a closure, an array's
+  callback and an importer. Such a call runs at another time, eagerly or
+  later, so it knows only a variable whose one store is its initializer:
+  `items.map(() => handler())` written before `handler = acceptClient`
+  stays open.
+- **Values.** A store's value is followed when it is:
+  - a function declaration or a method with a body;
+  - for `new`, a class's declared constructor;
+  - the declarator's own arrow or function initializer;
+  - another such variable, followed through the stores that reach its read.
+
+  Anything else is no plain function: a call's result, a getter, an
+  overload's signature, an arrow assigned later, a `?:` expression.
+- **Targets.** One target is the ordinary exact call:
+  `const handler = acceptClient; handler()` calls `acceptClient`. Several
+  are `alternatives` with dispatch `function_value`, and each reaching store
+  is a `function_value_store` witness.
+- **What stays as it was.** A variable whose one store is an initializer
+  that is no plain function stays an exact call of the variable itself. That
+  is a factory's result, such as `const navigate = useNavigate()`.
+- **What stays open.** The call is unresolved, and each store naming a
+  function is its witness, when:
+  - a closure calls a variable with several stores;
+  - the variable is written by a compound or logical assignment, `++`/`--`,
+    destructuring, as a `for-in`/`for-of` target, or by a closure;
+  - an `eval` or a `with` may write a `let` or `var`;
+  - a function of the same name is declared in a `var`'s scope.
+
+  A parameter is joined from its callers as above.
+
+The fixture's `callConstant`, `callChosenLet`, `callTypedLet`,
+`callOverwritten`, `callInLoop`, `callFromClosure`, `callAfterCompound`,
+`callFactory`, `callInMapOfConstant` and `callInMapBeforeStore` hold each
+case (`TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere`).
+
 Missing equivalents, recorded rather than fabricated:
 
 - The fixture has no input of its own, so GroupsIndex's reach is checked by
@@ -408,20 +464,9 @@ Missing equivalents, recorded rather than fabricated:
   (`this.onRead = getCommand`) is only a value read of that function. A call
   through a property is never resolved from its stores. The C adapter makes
   one store exact and several stores alternatives.
-- No unresolved call names the functions its stores could put there, so no
-  such call draws the possible arrows the C, Go and Python witnesses draw.
-- A call through a local constant holding a function
-  (`const handler = acceptClient; handler()`) is an exact call of the constant
-  itself. The function is only read at the constant's initializer. A `let`
-  a branch reassigns reads each assigned function where it is assigned, and
-  the call through it never calls them. An initialized or typed `let`
-  (`let g: () => void = a; if (c) g = b; g()`) is an exact call of the
-  variable's own declaration, so `b` is not reached. An untyped one
-  (`let f; if (c) f = a; else f = b; f()`) is an unresolved call that names
-  neither function. Python calls the functions such stores put there as
-  alternatives (PYTHON, Handler tables), and Go calls the SSA phi of a
-  function value a branch chooses the same way (GO, `WatchTick`). Neither
-  call through a variable says that it runs a function value.
+- No unresolved call through a property names the functions its stores could
+  put there, so no such call draws the possible arrows the C, Go and Python
+  witnesses draw; an open call through a variable names its stores.
 
 ## Test sources
 

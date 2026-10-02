@@ -1,5 +1,29 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A JS/TS call through a variable calls what its stores put there (lead)
+
+- **Decision:** the coordinator's, applying the owner's rule of 2026-09-30 (one known target exact, several alternatives, no cautious unknowns). It replaces JSTS.md's own rule that `const h = a; h()` calls the constant itself.
+- **Before:**
+  - `const h = a; h()` called `h`, whose declaration has no body, so `a` was never reached.
+  - `let g: () => void = a; if (c) g = b; g()` was exact `g`, and `b` was missed.
+  - `let f; if (c) f = a; else f = b; f()` was unresolved.
+- **Fix** (helper.mjs `storedCallee`, model `Stores`/`StoredIn`, `function_value_store` witnesses):
+  - Store ordering is the same as Python's (5424a8ac): a store takes effect where its statement ends, the last unconditional one counts, and a later store counts only within a loop around the call.
+  - A call in another function or file (a closure, an array's `map` callback, an importer) knows only a variable whose one store is its initializer. So `items.map(() => handler())` written before `handler = acceptClient` stays open, the JS analogue of the eager comprehension.
+  - Values are followed only for functions or methods with a body, a class's declared constructor, the declarator's own arrow, or another such variable at its read. Getters and overload signatures are not followed.
+  - Open, with store witnesses: a closure over several stores, compound or logical assignments, `++`/`--`, destructuring, for-in/of targets, closure writes, `eval`/`with` for a `let` or `var`, and a same-named function in a `var`'s scope.
+  - A factory's result (`const navigate = useNavigate()`) stays an exact call of the variable.
+  - Conditional-callee leaves use the same resolver.
+- **Skeptic guards:** namespaces and ambient declarations are excluded; shorthand destructuring is found through the value symbol; destructuring defaults are not stores; logical-assignment right sides, `?.` tails, labeled blocks and default values are conditional.
+- **Fixture:** `stored-callbacks.ts` holds the ten cases in `TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere`. No files were added.
+  - The 20:53 focused failure was this test's own expectation. The compound case's initializer was `readable ? acceptClient : undefined`, which is no plain function, so it correctly had no witness. The fixture now initializes it with `acceptClient`.
+- **casdoor web** (`--no-model --target jsts:web/package.json`, HEAD binary against HEAD plus these files):
+  - 27,458 relations and 6,617 objects. The relations JSON is byte-identical, so no edge changed.
+  - Its code calls through no function-valued `let`/`const`: class components, `this.` methods, and factory results such as `useNavigate()`.
+  - CPU (user) 87.2 s → 91.6 s.
+  - A first run failed validation because store locations were not rebased to the package directory (fixed in discover.go). The second made every module-level `let`/`const` of Setting.js open over its `eval`; `eval` now opens only a `let` or `var`.
+- **Checks:** jstsproject, contracttest (three serial groups) and the run package's JSTS tests are green; vet is clean.
+
 ## 2026-10-03 — The Main flow passes through a helper that only passes the call on (data 2)
 
 - **The reader's outcome** for "./lua script.lua": the file is loaded, then the VM runs it.

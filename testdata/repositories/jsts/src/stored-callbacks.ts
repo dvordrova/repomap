@@ -109,3 +109,79 @@ export function watchTickAgain(ms: number, seconds: boolean, clock: typeof Milli
   new (seconds ? SecondsClock : MillisClock)(ms);
   new (seconds ? SecondsClock : clock)(ms);
 }
+
+// A call through a variable calls what the stores that may reach it put
+// there (owner, 2026-09-30: one known target exact, several alternatives),
+// as the Python adapter calls a name a branch reassigns and Go the SSA phi of
+// a function value: a constant its one function, a `let` a branch reassigns
+// each function its stores put there, from the last store no branch skips; a
+// later store reaches the call only around a loop. A closure calling a
+// variable with several stores, a store of no plain function and a write the
+// index cannot follow leave the call open; a constant holding a factory's
+// result stays a call of the constant, and a parameter is joined as above.
+function makeHandler(): () => void {
+  return acceptClient;
+}
+
+export function callConstant(): void {
+  const handler = acceptClient;
+  handler();
+}
+
+export function callChosenLet(readable: boolean): void {
+  let handler;
+  if (readable) handler = acceptClient;
+  else handler = flushReplies;
+  handler();
+}
+
+export function callTypedLet(readable: boolean): void {
+  let handler: () => void = flushReplies;
+  if (readable) handler = acceptClient;
+  handler();
+}
+
+export function callOverwritten(readable: boolean): void {
+  let handler: () => void = flushReplies;
+  if (readable) handler = acceptClient;
+  handler = flushReplies;
+  handler();
+}
+
+export function callInLoop(items: number[]): void {
+  let handler: () => void = flushReplies;
+  for (const item of items) {
+    handler();
+    if (item > 0) handler = acceptClient;
+  }
+}
+
+export function callFromClosure(readable: boolean): () => void {
+  let handler: () => void = flushReplies;
+  if (readable) handler = acceptClient;
+  return () => handler();
+}
+
+export function callAfterCompound(): void {
+  let handler: (() => void) | undefined = acceptClient;
+  handler ??= flushReplies;
+  handler();
+}
+
+export function callFactory(): void {
+  const handler = makeHandler();
+  handler();
+}
+
+// An array's callback runs at its call, before any store written after it:
+// a closure knows only a variable whose one store is its initializer.
+export function callInMapOfConstant(items: number[]): void {
+  const handler = acceptClient;
+  items.map(() => handler());
+}
+
+export function callInMapBeforeStore(items: number[]): void {
+  let handler!: () => void;
+  items.map(() => handler());
+  handler = acceptClient;
+}

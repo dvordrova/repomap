@@ -1157,6 +1157,297 @@ function refsForExpression(node) {
   return refs
 }
 
+// A call through a variable (owner, 2026-09-30: one known target exact,
+// several alternatives; Python's stored_callees, Go's phi of a function
+// value a branch chooses). The variable is one `let`, `const` or `var`
+// declarator of a module or a function, never ambient, in a namespace or a
+// script's global; its stores are its initializer and each plain `v = x`.
+function ownFunction(node) {
+  for (let current = node.parent; current && !ts.isSourceFile(current); current = current.parent) {
+    if (ts.isFunctionLike(current) || ts.isPropertyDeclaration(current) || ts.isClassStaticBlockDeclaration?.(current)) return current
+  }
+  return undefined
+}
+
+function storedVariable(symbol) {
+  const declarations = symbol?.declarations || []
+  if (declarations.length !== 1) return undefined
+  const declaration = declarations[0]
+  if (!ts.isVariableDeclaration(declaration) || !ts.isIdentifier(declaration.name)) return undefined
+  const list = declaration.parent, statement = list?.parent
+  if (!list || !ts.isVariableDeclarationList(list) || !statement || !ts.isVariableStatement(statement)) return undefined
+  const sourceFile = declaration.getSourceFile()
+  if (sourceFile.isDeclarationFile || (declaration.flags & ts.NodeFlags.Ambient) ||
+      (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Ambient)) return undefined
+  for (let current = statement.parent; current && !ts.isSourceFile(current); current = current.parent) {
+    if (ts.isModuleBlock(current)) return undefined
+  }
+  if (!ownFunction(declaration) && !sourceFile.externalModuleIndicator && !sourceFile.commonJsModuleIndicator) return undefined
+  return declaration
+}
+
+// The block a `let` or `const` lives in, the function or file a `var` does.
+function variableScope(declaration) {
+  const list = declaration.parent
+  if (list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) return list.parent.parent
+  const own = ownFunction(declaration)
+  return own ? (own.body || own) : declaration.getSourceFile()
+}
+
+// Every store of the variable, each with where its statement starts and ends
+// and whether a branch of its scope may skip it; open when some write is no
+// plain store of the variable's own function (compound, logical, ++/--,
+// destructuring, a for-in/of target, a closure's), or an eval, a with or a
+// declaration of the same name may write it.
+const variableStoresByDeclaration = new Map()
+function variableStores(declaration) {
+  if (variableStoresByDeclaration.has(declaration)) return variableStoresByDeclaration.get(declaration)
+  variableStoresByDeclaration.set(declaration, { open: true, stores: [] })
+  const result = collectVariableStores(declaration)
+  variableStoresByDeclaration.set(declaration, result)
+  return result
+}
+
+function collectVariableStores(declaration) {
+  const checker = checkerForNode(declaration)
+  let symbol
+  try { symbol = checker?.getSymbolAtLocation(declaration.name) } catch {}
+  const result = { open: !symbol, stores: [] }
+  if (result.open) return result
+  const statement = declaration.parent.parent, own = ownFunction(declaration), scope = variableScope(declaration)
+  const name = declaration.name.text
+  const add = (value, span) => result.stores.push({
+    value, start: span.getStart(), end: span.end, conditional: conditionalWithin(span, scope),
+    declaration: span === statement ? declaration : undefined,
+  })
+  if (declaration.initializer) add(declaration.initializer, statement)
+  // An eval or a with may assign a `let` or `var`, never a `const`; a
+  // function declaration of the same name in a `var`'s scope may be it.
+  const list = declaration.parent, index = scopeIndex(scope)
+  if ((!(list.flags & ts.NodeFlags.Const) && index.evaluates) ||
+      (!(list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) && index.declared.has(name))) {
+    result.open = true
+    return result
+  }
+  for (const node of index.names.get(name) || []) {
+    if (node === declaration.name) continue
+    let referenced
+    try {
+      referenced = ts.isShorthandPropertyAssignment(node.parent) && node.parent.name === node
+        ? checker.getShorthandAssignmentValueSymbol(node.parent) : checker.getSymbolAtLocation(node)
+    } catch {}
+    if (referenced !== symbol) continue
+    const write = variableWrite(node)
+    if (write === "open" || (write && ownFunction(node) !== own)) {
+      result.open = true
+      return result
+    }
+    if (write) add(write.value, write.span)
+  }
+  return result
+}
+
+// Each scope's identifiers by name, whether an eval or a with is in it, and
+// the functions and classes it declares, walked once (collectVariableStores).
+const scopeIndexes = new Map()
+function scopeIndex(scope) {
+  let index = scopeIndexes.get(scope)
+  if (index) return index
+  index = { names: new Map(), evaluates: false, declared: new Set() }
+  const walk = (node) => {
+    if (ts.isIdentifier(node)) {
+      const named = index.names.get(node.text)
+      if (named) named.push(node)
+      else index.names.set(node.text, [node])
+    } else if (ts.isWithStatement(node) || (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "eval")) {
+      index.evaluates = true
+    }
+    if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name) index.declared.add(node.name.text)
+    ts.forEachChild(node, walk)
+  }
+  walk(scope)
+  scopeIndexes.set(scope, index)
+  return index
+}
+
+// A plain store `v = x` (its value, and the statement it ends with), "open"
+// for any other write, else undefined for a read.
+function variableWrite(node) {
+  if (destructuringTarget(node)) return "open"
+  let current = node
+  while (current.parent && (ts.isParenthesizedExpression(current.parent) || ts.isAsExpression(current.parent) ||
+      ts.isNonNullExpression(current.parent) || ts.isTypeAssertionExpression(current.parent) || ts.isSatisfiesExpression?.(current.parent))) {
+    current = current.parent
+  }
+  const parent = current.parent
+  if (parent && ts.isBinaryExpression(parent) && parent.left === current && assignmentOperator(parent.operatorToken.kind)) {
+    if (parent.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return "open"
+    let span = parent
+    while (span.parent && ts.isParenthesizedExpression(span.parent)) span = span.parent
+    return { value: parent.right, span: ts.isExpressionStatement(span.parent) ? span.parent : parent }
+  }
+  if (parent && (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) &&
+      (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken)) return "open"
+  if (parent && (ts.isForInStatement(parent) || ts.isForOfStatement(parent)) && parent.initializer === current) return "open"
+  return undefined
+}
+
+function assignmentOperator(kind) {
+  return (kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment) ||
+    kind === ts.SyntaxKind.BarBarEqualsToken || kind === ts.SyntaxKind.AmpersandAmpersandEqualsToken ||
+    kind === ts.SyntaxKind.QuestionQuestionEqualsToken
+}
+
+// Whether the node is written by a destructuring assignment
+// (`[v] = xs`, `({v} = o)`, `[v = a] = xs`, `for ([v] of xs)`).
+function destructuringTarget(node) {
+  let current = node, literal = false
+  while (current.parent) {
+    const parent = current.parent
+    const assigns = ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && parent.left === current
+    if (ts.isArrayLiteralExpression(parent) || ts.isObjectLiteralExpression(parent)) literal = true
+    else if (literal && (assigns || ((ts.isForInStatement(parent) || ts.isForOfStatement(parent)) && parent.initializer === current))) return true
+    else if (!(assigns || ts.isParenthesizedExpression(parent) || ts.isSpreadElement(parent) || ts.isSpreadAssignment(parent) ||
+        ts.isShorthandPropertyAssignment(parent) || (ts.isPropertyAssignment(parent) && parent.initializer === current))) return false
+    current = parent
+  }
+  return false
+}
+
+const conditionalOperators = new Set([
+  ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken, ts.SyntaxKind.BarBarEqualsToken, ts.SyntaxKind.QuestionQuestionEqualsToken,
+])
+
+// Whether a branch between the node and its variable's scope may skip it:
+// an if's branch, a ?: arm, the right of && || ?? and their assignments, a
+// loop's body, a try or catch block, a switch's cases, a labeled block a
+// break may leave, what follows ?. in a chain, or a default value.
+function conditionalWithin(node, scope) {
+  for (let current = node; current.parent && current !== scope; current = current.parent) {
+    const parent = current.parent
+    if ((ts.isIfStatement(parent) && parent.expression !== current) ||
+        (ts.isConditionalExpression(parent) && parent.condition !== current) ||
+        (ts.isBinaryExpression(parent) && parent.right === current && conditionalOperators.has(parent.operatorToken.kind)) ||
+        (ts.isBinaryExpression(parent) && parent.right === current && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && destructuringTarget(parent.left)) ||
+        (ts.isIterationStatement(parent, false) && !(ts.isForStatement(parent) && parent.initializer === current) &&
+          !((ts.isForInStatement(parent) || ts.isForOfStatement(parent)) && parent.expression === current)) ||
+        (ts.isTryStatement(parent) && parent.finallyBlock !== current) ||
+        ts.isCaseBlock(parent) ||
+        (ts.isLabeledStatement(parent) && !ts.isIterationStatement(parent.statement, false)) ||
+        (ts.isOptionalChain(parent) && parent.expression !== current) ||
+        ((ts.isBindingElement(parent) || ts.isParameter(parent)) && parent.initializer === current) ||
+        (ts.isShorthandPropertyAssignment(parent) && parent.objectAssignmentInitializer === current)) return true
+  }
+  return false
+}
+
+// The stores that may reach a site reading the variable (a call, an alias's
+// read): from those ending before it, the last no branch skips and all after
+// it, and a later one only inside the outermost loop of the variable's scope
+// around the site. A site in another function or file runs at another time,
+// eagerly (an array's `map` callback) or later: it knows only a variable
+// whose one store is its initializer, which holds it whenever it can be read;
+// a store written after the site may not have run.
+function reachingStores(declaration, site) {
+  const { open, stores } = variableStores(declaration)
+  if (open) return undefined
+  if (ownFunction(site) !== ownFunction(declaration) || site.getSourceFile() !== declaration.getSourceFile()) {
+    return stores.length === 1 && stores[0].declaration ? stores : undefined
+  }
+  const scope = variableScope(declaration), start = site.getStart()
+  const before = stores.filter((store) => store.end <= start).sort((a, b) => a.end - b.end)
+  let last = 0
+  before.forEach((store, index) => { if (!store.conditional) last = index })
+  const reaching = before.slice(last)
+  let loop
+  for (let current = site.parent; current && current !== scope; current = current.parent) {
+    if (ts.isIterationStatement(current, false)) loop = current
+  }
+  if (loop) reaching.push(...stores.filter((store) => store.end > start && store.start >= loop.getStart() && store.end <= loop.end))
+  return reaching
+}
+
+// What one store puts in the variable: its own function when the store is
+// the declarator's function initializer, else what the value names.
+function storedValueRefs(store, construct, seen) {
+  const value = unwrapReceiverExpression(store.value)
+  if (!value) return []
+  if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+    return !construct && store.declaration && declarationRefByNode.has(store.declaration) ? [declarationRefByNode.get(store.declaration)] : []
+  }
+  return valueRefs(value, construct, seen)
+}
+
+// The functions (for `new`, the constructors) a name or member names: a
+// function or method with a body, a class's declared constructor, or what
+// the stores of a variable reaching it put there; none for anything else (a
+// getter's result, an overload's signature, a call's result).
+function valueRefs(leaf, construct, seen = new Set()) {
+  if (!leaf || (!ts.isIdentifier(leaf) && !ts.isPropertyAccessExpression(leaf))) return []
+  const checker = checkerForNode(leaf)
+  let symbol
+  try {
+    symbol = checker?.getSymbolAtLocation(ts.isPropertyAccessExpression(leaf) ? leaf.name : leaf)
+    if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
+  } catch {}
+  const variable = storedVariable(symbol)
+  if (variable) {
+    if (seen.has(variable)) return []
+    const reaching = reachingStores(variable, leaf)
+    if (!reaching || reaching.length === 0) return []
+    const refs = []
+    for (const store of reaching) {
+      const found = storedValueRefs(store, construct, new Set([...seen, variable]))
+      if (found.length === 0) return []
+      refs.push(...found)
+    }
+    return [...new Set(refs)].sort()
+  }
+  return (construct ? constructorRefs(leaf) : functionRefs(leaf)).filter((ref) => {
+    const node = declarationNodeByRef.get(ref)
+    if (!node) return false
+    if (ts.isVariableDeclaration(node)) return Boolean(node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)))
+    return (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node)) && Boolean(node.body)
+  })
+}
+
+// The call's targets when its callee is a variable: what the stores reaching
+// it put there, each store a witness when there are several. A variable whose
+// one store is its initializer of a value no function is (a factory's
+// result) keeps today's call of the variable itself. A variable no reaching
+// store resolves, or written some way the index cannot follow, leaves the
+// call open, each store naming a function its witness.
+function storedCallee(call) {
+  const leaf = unwrapReceiverExpression(call.expression)
+  if (!leaf || !ts.isIdentifier(leaf)) return undefined
+  const checker = checkerForNode(leaf)
+  let symbol
+  try {
+    symbol = checker?.getSymbolAtLocation(leaf)
+    if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
+  } catch {}
+  const declaration = storedVariable(symbol)
+  if (!declaration) return undefined
+  const construct = ts.isNewExpression(call), seen = new Set([declaration])
+  const { open, stores } = variableStores(declaration)
+  const witnesses = (list) => list.flatMap((store) => storedValueRefs(store, construct, seen)
+    .map((ref) => ({ ref, conditional: store.conditional, location: locationOf(store.value) })))
+  if (!open && stores.length === 1 && stores[0].declaration && storedValueRefs(stores[0], construct, seen).length === 0) return undefined
+  const reaching = reachingStores(declaration, call)
+  if (reaching?.length > 0) {
+    const refs = []
+    for (const store of reaching) {
+      const found = storedValueRefs(store, construct, seen)
+      if (found.length === 0) return { refs: [], stores: witnesses(stores) }
+      refs.push(...found)
+    }
+    const unique = [...new Set(refs)].sort()
+    return { refs: unique, stores: unique.length > 1 ? witnesses(reaching) : [] }
+  }
+  return { refs: [], stores: witnesses(stores) }
+}
+
 // The local functions a callee chosen by a condition names, each branch's
 // (C.md's conditional callee): `(seconds ? tickSeconds : tickMillis)(ms)`.
 // Nested conditions and parenthesised, asserted or non-null names are the
@@ -2427,11 +2718,17 @@ for (const { sourceFile } of sourceFiles) {
         .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
       // A callee a condition chooses among functions calls one of them:
       // several are alternatives through a function value, one the call.
+      const construct = ts.isNewExpression(node)
       const chosen = localRefs.length === 0 && conditional
-        ? conditionalCalleeRefs(node.expression, ts.isNewExpression(node) ? constructorRefs : functionRefs) : []
+        ? conditionalCalleeRefs(node.expression, (leaf) => valueRefs(leaf, construct)) : []
       if (chosen.length > 0) localRefs = chosen
-      let externalImport = localRefs.length === 0 ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
-      if (localRefs.length === 0 && !externalImport.package) externalImport = externalMethodForInvocation(node) || externalImport
+      // A call through a variable calls what the stores reaching it put
+      // there (storedCallee); a variable some write cannot be followed
+      // through leaves it open, and no outside authority stands in.
+      const stored = conditional ? undefined : storedCallee(node)
+      if (stored) localRefs = stored.refs
+      let externalImport = localRefs.length === 0 && !stored ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
+      if (localRefs.length === 0 && !stored && !externalImport.package) externalImport = externalMethodForInvocation(node) || externalImport
       let externalPackage = externalImport.package
       let externalExport = externalPackage ? externalImport.exportName : ""
       let externalReceiver = ""
@@ -2441,7 +2738,7 @@ for (const { sourceFile } of sourceFiles) {
       if (externalPackage && !externalName) externalName = externalExport
       if (externalPackage && externalExport && externalName && externalName !== externalExport) externalReceiver = externalExport
       let platformTarget
-      if (localRefs.length === 0 && externalPackage === "") {
+      if (localRefs.length === 0 && externalPackage === "" && !stored) {
         platformTarget = platformTargetForInvocation(node)
         if (platformTarget) {
           externalPackage = "platform:javascript"
@@ -2464,7 +2761,11 @@ for (const { sourceFile } of sourceFiles) {
         external_receiver: externalReceiver, external_name: externalName,
         expression: displayExpression, resolution, location: callSiteLocation(node),
       }
-      if (chosen.length > 1) call.dispatch = "function_value"
+      if (chosen.length > 1 || stored?.refs.length > 1) call.dispatch = "function_value"
+      if (stored?.stores.length > 0) {
+        call.stores = stored.stores
+        call.stored_in = unwrapReceiverExpression(node.expression).text
+      }
       if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
         const pattern = callPattern(node)
         call.patterns_observed = 1

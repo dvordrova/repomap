@@ -15,8 +15,8 @@ import (
 // The TypeScript equivalent of a C callback stored in one of two
 // function-pointer fields under a branch (src/stored-callbacks.ts). The calls
 // through the properties gain no handler, and each handler keeps its
-// registration at its own call. A table of handlers keeps no binding and a
-// call through a local constant names the constant; JSTS.md records both.
+// registration at its own call. A table of handlers keeps no binding;
+// JSTS.md records it.
 func TestCumulativeJSTSStoredCallbacksStayUnresolved(t *testing.T) {
 	root := preparedCompilerProject(t)
 	const path = "src/stored-callbacks.ts"

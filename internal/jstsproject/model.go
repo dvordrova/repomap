@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -186,9 +187,23 @@ type Call struct {
 	CalleeParameter int `json:"callee_parameter,omitempty"`
 	SpreadFrom      int `json:"spread_from,omitempty"`
 	// Dispatch is "function_value" for a call whose callee a condition
-	// chooses among the functions its branches name, CalleeRefs its
-	// alternatives (C.md's conditional callee).
+	// chooses among the functions its branches name, or whose variable's
+	// reaching stores put several functions there, CalleeRefs its
+	// alternatives (C.md's conditional callee; owner, 2026-09-30).
 	Dispatch string `json:"dispatch,omitempty"`
+	// Stores are, for a call through the variable StoredIn, the function
+	// each store puts there: the reaching ones of a call they resolve, every
+	// one of an open call.
+	Stores   []CallStore `json:"stores,omitempty"`
+	StoredIn string      `json:"stored_in,omitempty"`
+}
+
+// CallStore is one store of a function into the variable a call goes
+// through, at the stored value.
+type CallStore struct {
+	Ref         string   `json:"ref"`
+	Conditional bool     `json:"conditional,omitempty"`
+	Location    Location `json:"location"`
 }
 
 // Binding records a callable value supplied to a JSX attribute, not an
@@ -748,6 +763,16 @@ func (result Result) Validate() error {
 		if value.Dispatch != "" && (value.Dispatch != "function_value" || (value.Invocation != "call" && value.Invocation != "construct") ||
 			value.Resolution != "alternatives" || len(value.CalleeRefs) < 2 || value.ExternalPackage != "") {
 			return fmt.Errorf("jsts project: call dispatch without alternatives a condition chooses")
+		}
+		if (len(value.Stores) > 0) != (value.StoredIn != "") ||
+			(len(value.Stores) > 0 && value.Resolution != "unresolved" && value.Dispatch != "function_value") {
+			return fmt.Errorf("jsts project: call stores without the variable or alternatives they put there")
+		}
+		for _, store := range value.Stores {
+			if _, ok := declarations[store.Ref]; !ok || !validLocation(store.Location, fileRefs) ||
+				(value.Resolution != "unresolved" && !slices.Contains(value.CalleeRefs, store.Ref)) {
+				return fmt.Errorf("jsts project: call store names no function the call reaches")
+			}
 		}
 		if value.ExternalPackage != "" && len(value.CalleeRefs) != 0 {
 			return fmt.Errorf("jsts project: call mixes local and external authority")

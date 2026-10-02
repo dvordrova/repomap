@@ -20,29 +20,8 @@ import (
 // constructor, never the one the compiler's union signature picks. A branch
 // naming anything else leaves the call open.
 func TestCumulativeJSTSACalleeChosenByAConditionCallsOneOfItsFunctions(t *testing.T) {
-	root := preparedCompilerProject(t)
 	const path = "src/stored-callbacks.ts"
-	tracked := []string{"package.json", "tsconfig.json", "vitest.config.ts", "src/test-setup.ts", "src/market.test.ts", path}
-	for _, file := range tracked {
-		contents, err := os.ReadFile(filepath.Join("..", "..", "testdata", "repositories", "jsts", filepath.FromSlash(file)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeTestFile(t, root, file, string(contents))
-	}
-	repository, err := corpus.New(t.Context(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer repository.Close()
-	_, index, _, err := Build(t.Context(), repository, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := map[string]string{}
-	for _, object := range index.Objects {
-		names[object.ID] = object.Name
-	}
+	index, names := storedCallbacksIndex(t, path)
 	want := map[int]string{
 		101: "watchTick->tickMillis,tickSeconds alternatives function_value",
 		// A nested condition and an asserted, parenthesised name.
@@ -79,5 +58,90 @@ func TestCumulativeJSTSACalleeChosenByAConditionCallsOneOfItsFunctions(t *testin
 		if !slices.Equal(got[line], []string{expected}) {
 			t.Fatalf("line %d: calls %q, want [%q]", line, got[line], expected)
 		}
+	}
+}
+
+// storedCallbacksIndex builds the cumulative fixture's stored-callbacks
+// example with the project files it needs.
+func storedCallbacksIndex(t *testing.T, path string) (programindex.Index, map[string]string) {
+	t.Helper()
+	root := preparedCompilerProject(t)
+	tracked := []string{"package.json", "tsconfig.json", "vitest.config.ts", "src/test-setup.ts", "src/market.test.ts", path}
+	for _, file := range tracked {
+		contents, err := os.ReadFile(filepath.Join("..", "..", "testdata", "repositories", "jsts", filepath.FromSlash(file)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, root, file, string(contents))
+	}
+	repository, err := corpus.New(t.Context(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	_, index, _, err := Build(t.Context(), repository, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]string{}
+	for _, object := range index.Objects {
+		names[object.ID] = object.Name
+	}
+	return index, names
+}
+
+// A call through a variable calls what the stores that may reach it put
+// there (owner, 2026-09-30), the TypeScript equivalent of Python's name a
+// branch reassigns and Go's phi of a function value (src/stored-callbacks.ts).
+// Several targets are alternatives through a function value, each reaching
+// store a witness; an open call names every store.
+func TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere(t *testing.T) {
+	const path = "src/stored-callbacks.ts"
+	index, names := storedCallbacksIndex(t, path)
+	want := map[int]string{
+		128: "callConstant -> acceptClient exact ",
+		135: "callChosenLet -> acceptClient,flushReplies alternatives function_value | acceptClient stored in handler under a condition@133, flushReplies stored in handler under a condition@134",
+		141: "callTypedLet -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@139, acceptClient stored in handler under a condition@140",
+		// The store no branch skips overwrites what came before it.
+		148: "callOverwritten -> flushReplies exact ",
+		// A later store reaches the call around the loop.
+		154: "callInLoop -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@152, acceptClient stored in handler under a condition@155",
+		// A closure runs at any time: several stores leave it open.
+		162: "callFromClosure.returned_handler ->  unresolved  | flushReplies stored in handler@160, acceptClient stored in handler under a condition@161",
+		// A logical assignment is a write the index does not follow.
+		168: "callAfterCompound ->  unresolved  | acceptClient stored in handler@166",
+		// A factory's result is no plain function: the call of the constant stays.
+		173: "callFactory -> callFactory.handler exact ",
+		// An array's callback runs at once: a later store may not have run.
+		180: "callInMapOfConstant -> acceptClient exact ",
+		185: "callInMapBeforeStore ->  unresolved  | acceptClient stored in handler@186",
+	}
+	for _, relation := range index.Relations {
+		line := lineOrZero(relation.Location)
+		expected, ok := want[line]
+		if !ok || relation.Location.Path != path || relation.Kind != programindex.RelationCalls || !strings.HasPrefix(expected, names[relation.FromID]+" ->") {
+			continue
+		}
+		var to, stores []string
+		for _, id := range relation.ToIDs {
+			to = append(to, names[id])
+		}
+		slices.Sort(to)
+		for _, witness := range relation.Witnesses {
+			if witness.Kind == "function_value_store" && witness.Location != nil && names[witness.ObjectID] != "" {
+				stores = append(stores, fmt.Sprintf("%s@%d", witness.Detail, witness.Location.Line))
+			}
+		}
+		got := fmt.Sprintf("%s -> %s %s %s", names[relation.FromID], strings.Join(to, ","), relation.Resolution, relation.Dispatch)
+		if len(stores) > 0 {
+			got += " | " + strings.Join(stores, ", ")
+		}
+		if got != expected {
+			t.Fatalf("line %d: call = %q, want %q", line, got, expected)
+		}
+		delete(want, line)
+	}
+	if len(want) != 0 {
+		t.Fatalf("calls not seen: %v", want)
 	}
 }

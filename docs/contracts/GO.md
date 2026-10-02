@@ -108,8 +108,8 @@ owner's 2026-09-30 decision yet, recorded missing rather than fabricated: the
 C adapter keeps a function pointer stored under a branch a witness (C),
 Python an attribute stored under a branch (a name so stored now calls its
 stores' functions as alternatives, PYTHON, Handler tables), JS/TS a property
-and a `let` a branch reassigns (JSTS), and Clojure's protocol dispatch stays
-unresolved (CLOJURE); their fixtures keep today's witnesses.
+(a variable calls its stores' functions, JSTS), and Clojure's protocol
+dispatch stays unresolved (CLOJURE); their fixtures keep today's witnesses.
 
 Dynamic value traversal reuses immutable summaries within one root and exact
 interface method. The function key also retains `throughFlow`; factory result

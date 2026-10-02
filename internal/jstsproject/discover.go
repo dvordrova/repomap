@@ -1048,6 +1048,9 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	}
 	for index := range output.Calls {
 		rebaseLocation(&output.Calls[index].Location)
+		for i := range output.Calls[index].Stores {
+			rebaseLocation(&output.Calls[index].Stores[i].Location)
+		}
 		if pattern := output.Calls[index].Pattern; pattern != nil {
 			pattern.ReceiverValue = projectValue(pattern.ReceiverValue)
 			pattern.ResultValue = projectValue(pattern.ResultValue)
