@@ -246,11 +246,11 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is
   no program's data; a schema or migration no adapter reads keeps the root
   rule ([EXTRACTORS](../EXTRACTORS.md)).
-- **Known remaining violation:** key selection still sends a declaration's
-  full docstring as `author_documentation`, and symbol selection sends
-  docstrings too. The trusted-inputs rule covers both; the next change strips
-  them with its own before/after on keys. Docstrings stay for captions,
-  orientation, glossary and claims until the owner extends the rule.
+- **Known remaining violation:** orientation's request rows (its seeds and
+  each declaration it shows) still send the declaration's docstring as
+  `author_doc` (`internal/orientation/rows.go`). Since 1300d794 no atlas
+  table, key or symbol row and no Jev request carries one
+  (`TestProviderBodiesCarryNoAuthorDocs`); README claims stay claims.
 - **Known prompt drift (2026-09-29):** READING says a symbol that runs the
   handed callable in place, wraps or stores it is `binds` `none`;
   `internal/atlas/lines/prompts/entry_options.md`'s `none` names only a
