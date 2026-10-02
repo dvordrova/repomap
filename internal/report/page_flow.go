@@ -53,6 +53,11 @@ type pageFlowCall struct {
 	Sites    []pageReadingSite `json:"sites,omitempty"`
 	Macro    string            `json:"macro,omitempty"`
 	Every    bool              `json:"every,omitempty"`
+	// Unresolved marks a call no implementation is established for, named
+	// as written where it is written (calledName): etcd's
+	// local_request_Election_Campaign_0 calling server.Campaign, an
+	// interface's method, at gw/v3election.pb.gw.go:62.
+	Unresolved bool `json:"unresolved,omitempty"`
 	// Launch marks a call starting a program the code does not name
 	// (unnamedLaunch): its function's reading says so, where no outside
 	// system stands for it.
@@ -332,6 +337,33 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 				call.One = []int{callee}
 			}
 			call.Decl = nil
+		}
+		at[key] = len(calls)
+		calls = append(calls, call)
+	}
+	// A call no implementation is established for, as saved with no
+	// callee: named as written, linked where it is written (the flow's
+	// edges hold none of it; the reading had dropped etcd's server.Campaign).
+	for _, relation := range builder.callRelations(index.Target.ID)[callerID] {
+		if len(relation.ToIDs) > 0 || relation.Resolution != programindex.ResolutionUnresolved {
+			continue
+		}
+		if within != nil && (relation.Location == nil || relation.Location.Line < within.Line || relation.Location.Line > within.EndLine) {
+			continue
+		}
+		name := calledName(relation)
+		if name == "" {
+			continue
+		}
+		call := pageFlowCall{Name: name, Possible: true, Unresolved: true}
+		if relation.Location != nil {
+			anchor := builder.links.anchor(relation.Location.Path, relation.Location.Line, relation.Location.Column)
+			call.Sites = []pageReadingSite{{At: anchor.Text, Href: anchor.Href, Open: anchor.Open}}
+		}
+		key := "\x02" + name
+		if listed, seen := at[key]; seen {
+			calls[listed].Sites = append(calls[listed].Sites, call.Sites...)
+			continue
 		}
 		at[key] = len(calls)
 		calls = append(calls, call)

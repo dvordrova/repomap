@@ -620,7 +620,8 @@ func (builder *pageBuilder) mapTrace(section *pageSection, index groupindex.Inde
 		}
 		return strings.Join(anchors, " ")
 	}
-	for _, start := range builder.startSteps(section, index) {
+	starts, _ := builder.startSteps(section, index)
+	for _, start := range starts {
 		if start.Href == "" {
 			continue
 		}

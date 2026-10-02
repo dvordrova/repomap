@@ -961,6 +961,15 @@ var russianUI = map[string]string{
 	"handed over":               "передаётся",
 	"its member":                "член его типа",
 
+	// An entry read forward with no way of its own, and its parts' other
+	// connections apart (target.html).
+	"calls nothing":                  "ничего не вызывает",
+	"implementation not established": "реализация не установлена",
+	"it calls":                       "вызывает",
+	"Elsewhere in":                   "Ещё в части",
+	"not from these entries:":        "не из этих точек входа:",
+	"uses the headers or types of":   "использует заголовки или типы:",
+
 	// A target whose entrypoints reach all of its code (target.html).
 	"Reachability: its entrypoints reach all of its code.": "Достижимость: его точки входа достигают всего его кода.",
 

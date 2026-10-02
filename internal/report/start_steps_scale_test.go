@@ -56,7 +56,7 @@ func TestStartStepsReadAPartsConnectionsOnceForAllItsEntrypoints(t *testing.T) {
 	b.indexes = []groupindex.Index{library, server}
 	b.byProgram = map[string]*pageSection{"lib": section, "srv": {ID: "server", ShortLabel: "server"}}
 
-	steps := b.startSteps(section, library)
+	steps, _ := b.startSteps(section, library)
 	if len(steps) != exports {
 		t.Fatalf("%d steps, want one per export", len(steps))
 	}
@@ -72,9 +72,10 @@ func TestStartStepsReadAPartsConnectionsOnceForAllItsEntrypoints(t *testing.T) {
 	if len(first[0].Continues) != 1 || first[0].Continues[0].Name != "server" {
 		t.Fatalf("an inner connection lost where its part goes on to: %+v", first[0].Continues)
 	}
+	// The other exports make none of them: export0's are never their way.
 	for _, step := range steps[1:] {
-		if len(step.Reaches) != maxStartReaches {
-			t.Fatalf("export %s reads %d connections, want %d", step.Symbol, len(step.Reaches), maxStartReaches)
+		if len(step.Reaches) != 0 {
+			t.Fatalf("export %s reads %d of export0's connections as its own", step.Symbol, len(step.Reaches))
 		}
 	}
 	// Per export a handful of allocations; read again per connection and
@@ -82,5 +83,64 @@ func TestStartStepsReadAPartsConnectionsOnceForAllItsEntrypoints(t *testing.T) {
 	allocations := testing.AllocsPerRun(1, func() { b.startSteps(section, library) })
 	if bound := float64(40*exports + 20*(connections+operations)); allocations > bound {
 		t.Fatalf("startSteps made %.0f allocations for %d exports, %d connections and %d operations, over %.0f: its work grows faster than its entrypoints", allocations, exports, connections, operations, bound)
+	}
+}
+
+// Lua 5.1.5's etc/noparser.c leaves the parser out: luaX_init is empty and
+// luaY_parser only reports "parser not loaded" through lua_error. The start
+// list had read both as "uses Parser", "uses Lexer": its part's header uses
+// and its other members' calls, under each entry (control review,
+// 2026-10-02). An entry reads only its own way: an empty one says it calls
+// nothing, one whose calls reach no other part names them, and the part's
+// other connections stand apart with their owners, its header and type uses
+// on their own.
+func TestAnEntryReadsOnlyItsOwnWayAndItsPartsOtherConnectionsApart(t *testing.T) {
+	stubs := groupindex.Index{Target: programindex.Target{ID: "etc"}, Groups: []groupindex.Group{{ID: "stubs", Title: "Parser stubs", MemberSubjectIDs: []string{"init", "parser", "helper"}}, {ID: "io", Title: "IO"}}}
+	stubs.Connections = []groupindex.Connection{
+		{From: groupindex.Endpoint{TargetID: "etc", GroupID: "stubs"}, To: groupindex.Endpoint{TargetID: "etc", GroupID: "io"}, SourceID: "h", SourceKind: "imports", Label: "uses IO"},
+		{From: groupindex.Endpoint{TargetID: "etc", GroupID: "stubs"}, To: groupindex.Endpoint{TargetID: "etc", GroupID: "io"}, SourceID: "w", SourceKind: "native_calls", Label: "helper calls fwrite_stub", FromSubjectID: "helper", FromLocation: &programindex.Location{Path: "etc/noparser.c", Line: 40, Column: 3}},
+	}
+	b := pageBuilder{
+		data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "etc"},
+			Objects: []programindex.Object{{ID: "init", Name: "luaX_init"}, {ID: "parser", Name: "luaY_parser"}},
+			// As saved: calls no unit of etc defines, with no target.
+			Relations: []programindex.Relation{
+				{ID: "e4", Kind: programindex.RelationCalls, FromID: "parser", Resolution: programindex.ResolutionUnresolved,
+					Location: &programindex.Location{Path: "etc/noparser.c", Line: 30, Column: 3}, Patterns: []programindex.RelationPattern{{Selector: "lua_error"}}},
+				{ID: "e3", Kind: programindex.RelationCalls, FromID: "parser", Resolution: programindex.ResolutionUnresolved,
+					Location: &programindex.Location{Path: "etc/noparser.c", Line: 29, Column: 3}, Patterns: []programindex.RelationPattern{{Selector: "lua_pushliteral"}}},
+			}}}}},
+		subjects:    map[string]subjectRef{},
+		subjectAt:   map[string]string{},
+		groupTitles: map[groupindex.Endpoint]string{{TargetID: "etc", GroupID: "io"}: "IO"},
+	}
+	section := &pageSection{ID: "etc"}
+	b.byProgram = map[string]*pageSection{"etc": section}
+	b.indexes = []groupindex.Index{stubs}
+	for line, id := range map[int]string{21: "init", 25: "parser"} {
+		location := &programindex.Location{Path: "etc/noparser.c", Line: line, Column: 1}
+		b.subjects[subjectKey("etc", id)] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: id, Location: location}}}
+		b.subjectAt[subjectLocationKey("etc", "etc/noparser.c", line)] = id
+	}
+	section.Entrypoints = []pageEntrypoint{{Symbol: "luaX_init", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 21}}, {Symbol: "luaY_parser", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 25}}}
+	steps, elsewhere := b.startSteps(section, stubs)
+	if len(steps) != 2 || len(steps[0].Reaches)+len(steps[1].Reaches) != 0 {
+		t.Fatalf("an entry read its part's connections as its way: %+v", steps)
+	}
+	if !steps[0].Silent || len(steps[0].Calls) != 0 {
+		t.Fatalf("the empty luaX_init: silent %v, calls %v", steps[0].Silent, steps[0].Calls)
+	}
+	// Its calls named as written, where they are written, in that order,
+	// their implementation not established.
+	var calls []string
+	for _, call := range steps[1].Calls {
+		calls = append(calls, fmt.Sprintf("%s:%d:%v", call.Anchor.Text, call.Anchor.Line, call.Unresolved))
+	}
+	if steps[1].Silent || fmt.Sprint(calls) != "[lua_pushliteral:29:true lua_error:30:true]" {
+		t.Fatalf("luaY_parser: silent %v, calls %v", steps[1].Silent, calls)
+	}
+	if len(elsewhere) != 1 || elsewhere[0].Group != "Parser stubs" || len(elsewhere[0].Rows) != 1 || elsewhere[0].Rows[0].Label != "helper calls fwrite_stub" ||
+		len(elsewhere[0].Uses) != 1 || elsewhere[0].Uses[0].Title != "IO" {
+		t.Fatalf("the part's other connections: %+v", elsewhere)
 	}
 }

@@ -81,8 +81,11 @@ type pageSection struct {
 	// this target: each entrypoint, the group it lands in, and what that
 	// group reaches first. Three of chi's four targets said only that the
 	// repository's main flow does not pass through them.
-	Start       []pageStart
-	FlowMissing string
+	Start []pageStart
+	// StartElsewhere are the entries' parts' other connections, read as
+	// the parts' and never as an entry's way (StartSteps).
+	StartElsewhere []pageElsewhere
+	FlowMissing    string
 	// OwnWork is what the program runs on its own, read after its Main
 	// flow (ownWork).
 	OwnWork []pageOwnWork
@@ -303,9 +306,11 @@ func operationsByFile(rows []pageGroupOperation) []pageOperationFile {
 }
 
 type pageEntrypoint struct {
-	Symbol   string
-	Kind     string
-	Anchor   *pageAnchor
+	Symbol string
+	Kind   string
+	Anchor *pageAnchor
+	// ObjectID is the declaration the entrypoint fact names (GroupsIndex's
+	// subject).
 	ObjectID string
 }
 
@@ -322,6 +327,20 @@ type pageStart struct {
 	Part string
 	Key  string
 	Code string
+	// Calls are what the entry calls where none of its calls reaches
+	// another part (its program's own call relations, each linked to where
+	// it is written); Silent, that it calls nothing at all (Lua 5.1.5's
+	// empty luaX_init).
+	Calls  []pageOwnCall
+	Silent bool
+}
+
+// pageElsewhere is a part's connections no listed entry of it makes: each
+// with its own owner and source, and its header and type uses apart.
+type pageElsewhere struct {
+	Group, Href string
+	Rows        []pageConnection
+	Uses        []pageConnection
 }
 
 type pageDependency struct {
@@ -576,6 +595,9 @@ type pageConnection struct {
 	fromTarget, toTarget, toSubject string
 	// input says the other end (Href) is an input, not a part.
 	input bool
+	// imports says the connection is a part's use of another's headers or
+	// types (GroupsIndex source kind imports), never a call.
+	imports bool
 }
 
 // buildSections creates one section per analyzed target and fills it from the
@@ -607,7 +629,7 @@ func (builder *pageBuilder) buildSections() {
 		section.OwnWork = builder.ownWork(section, section.Flow, shown)
 		if section.Flow == nil {
 			if index := builder.graphIndex(section.programTargetID); index != nil {
-				section.Start = builder.startSteps(section, *index)
+				section.Start, section.StartElsewhere = builder.startSteps(section, *index)
 			}
 		}
 		if section.Flow == nil {
@@ -1373,6 +1395,7 @@ func (builder *pageBuilder) groupConnections(
 			Summary:     connection.Summary,
 			Possible:    connection.SupportResolution == programindex.PatternValuePossible,
 			fromSubject: connection.FromSubjectID,
+			imports:     connection.SourceKind == "imports",
 			at:          connection.FromLocation,
 			fromTarget:  connection.From.TargetID,
 			toTarget:    connection.To.TargetID,
@@ -1578,10 +1601,15 @@ func nearestDocstring(docs []claims.Claim, declarations []int, line int) string 
 const maxStartReaches = 3
 
 // startSteps reads each entrypoint forward through the group graph: the
-// group the entrypoint's symbol is in, then what that group reaches. It is
-// assembled from facts and the graph, so it exists for every target, model
-// flow or not.
-func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.Index) []pageStart {
+// group the entrypoint's symbol is in, then the connections the entrypoint
+// itself makes, never another member's (control review, 2026-10-02: Lua
+// 5.1.5's empty luaX_init had read "uses Parser", "uses Lexer" from its
+// part's header uses). An entry none of whose calls reaches another part
+// names its own calls, or says it calls nothing; the parts' other
+// connections stand apart, each with its owner and source, header and type
+// uses on their own. It is assembled from facts and the graph, so it
+// exists for every target, model flow or not.
+func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.Index) ([]pageStart, []pageElsewhere) {
 	groupOf := make(map[string]groupindex.Group)
 	for _, group := range index.Groups {
 		for _, member := range group.MemberSubjectIDs {
@@ -1591,11 +1619,19 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 	// A group's connections are read once however many entrypoints it
 	// holds: a library's every export is one (headscale's 1,788).
 	connectionsOf := make(map[string][]pageConnection)
+	entriesOf := make(map[string]map[string]bool)
+	var order []groupindex.Group
 	var steps []pageStart
 	for _, entry := range section.Entrypoints {
 		step := pageStart{Symbol: entry.Symbol, Anchor: entry.Anchor}
 		if entry.Anchor != nil {
-			if subjectID, known := builder.subjectAt[subjectLocationKey(index.Target.ID, entry.Anchor.Path, entry.Anchor.Line)]; known {
+			// The declaration its fact names; by its line only where the fact
+			// names none (beets' main shares its line with its args).
+			subjectID, known := entry.ObjectID, entry.ObjectID != ""
+			if _, inGroup := groupOf[subjectID]; !inGroup {
+				subjectID, known = builder.subjectAt[subjectLocationKey(index.Target.ID, entry.Anchor.Path, entry.Anchor.Line)]
+			}
+			if known {
 				if group, inGroup := groupOf[subjectID]; inGroup {
 					step.Group = group.Title
 					step.Href = "#" + groupAnchorID(section.ID, group.ID)
@@ -1613,33 +1649,197 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 					if !read {
 						rows = builder.groupConnections(index, group)
 						connectionsOf[group.ID] = rows
+						entriesOf[group.ID] = map[string]bool{}
+						order = append(order, group)
 					}
+					entriesOf[group.ID][subjectID] = true
 					step.Reaches = startReaches(rows, subjectID, maxStartReaches)
+					if len(step.Reaches) == 0 {
+						calls, any := builder.ownCalls(index.Target.ID, subjectID)
+						step.Calls, step.Silent = calls, !any
+					}
 				}
 			}
 		}
 		steps = append(steps, step)
 	}
-	return steps
+	var elsewhere []pageElsewhere
+	for _, group := range order {
+		part := pageElsewhere{Group: group.Title, Href: "#" + groupAnchorID(section.ID, group.ID)}
+		shown := map[[3]string]bool{}
+		for _, row := range connectionsOf[group.ID] {
+			line := [3]string{row.Label, row.Title, row.Href}
+			if row.Arrow != "→" || entriesOf[group.ID][row.fromSubject] || shown[line] {
+				continue
+			}
+			shown[line] = true
+			if row.imports {
+				part.Uses = append(part.Uses, row)
+			} else if len(part.Rows) < maxStartReaches {
+				// Its sentence links where it is written, the owner named in it.
+				if row.FromSource != nil {
+					source := *row.FromSource
+					source.Text = row.Label
+					row.FromSource = &source
+				}
+				part.Rows = append(part.Rows, row)
+			}
+		}
+		if len(part.Rows)+len(part.Uses) > 0 {
+			elsewhere = append(elsewhere, part)
+		}
+	}
+	return steps, elsewhere
 }
 
-// startReaches reads an entrypoint forward: the outgoing connections of its
-// group, the entrypoint's own calls first and then the group's others, each
-// in the order they are written, the first few, each line once. Three call
-// sites of main calling aeMain are one step, and the next distinct
-// connection takes the freed place. In the connections' stored order,
-// grouped by the part they reach, redis-benchmark's start read "main calls
-// aeMain" before the aeCreateEventLoop main calls thirty lines earlier.
-func startReaches(rows []pageConnection, entry string, most int) []pageConnection {
-	own := func(row pageConnection) bool { return entry != "" && row.fromSubject == entry }
-	rows = slices.Clone(rows)
-	slices.SortStableFunc(rows, func(a, b pageConnection) int {
-		switch {
-		case own(a) != own(b) && own(a):
-			return -1
-		case own(a) != own(b):
-			return 1
+// pageOwnCall is one call an entry makes itself: its name linked to where
+// it is written, and whether the code establishes no implementation for it
+// (an unresolved relation: a C function declared and defined in no unit of
+// the program, a Go interface's method).
+type pageOwnCall struct {
+	Anchor     *pageAnchor
+	Unresolved bool
+	More       bool
+}
+
+// ownCalls are the calls an entry makes itself, in written order, each name
+// once: of the program's own code and of code outside it (an external
+// symbol by its last path element: impl.Export.MessageStringOf), and those
+// whose implementation is not established, named as written (calledName),
+// the first few, a last "…" saying there are more; and whether it calls
+// anything at all (ProgramIndex relations of its program, read once a
+// program).
+func (builder *pageBuilder) ownCalls(programTargetID, objectID string) ([]pageOwnCall, bool) {
+	if builder.data == nil || builder.data.ProgramPortfolio == nil {
+		return nil, true
+	}
+	relations, any := builder.callRelations(programTargetID)[objectID]
+	if !any {
+		return nil, false
+	}
+	names := builder.objectNames(programTargetID)
+	var calls []pageOwnCall
+	seen := map[string]bool{}
+	add := func(name string, relation programindex.Relation, unresolved bool) {
+		if name == "" || seen[name] {
+			return
 		}
+		seen[name] = true
+		anchor := pageAnchor{Text: name}
+		if relation.Location != nil {
+			anchor = builder.links.anchor(relation.Location.Path, relation.Location.Line, relation.Location.Column)
+			anchor.Text = name
+		}
+		calls = append(calls, pageOwnCall{Anchor: &anchor, Unresolved: unresolved})
+	}
+	for _, relation := range relations {
+		if len(relation.ToIDs) == 0 {
+			add(calledName(relation), relation, relation.Resolution == programindex.ResolutionUnresolved)
+			continue
+		}
+		for _, to := range relation.ToIDs {
+			add(names[to], relation, relation.Resolution == programindex.ResolutionUnresolved)
+		}
+	}
+	if len(calls) > maxOwnCalls {
+		calls = append(calls[:maxOwnCalls:maxOwnCalls], pageOwnCall{More: true})
+	}
+	return calls, true
+}
+
+// callRelations are a program's call relations (its own code's and code
+// outside it) by caller, in written order, read once a program.
+func (builder *pageBuilder) callRelations(programTargetID string) map[string][]programindex.Relation {
+	if builder.callsFrom == nil {
+		builder.callsFrom = map[string]map[string][]programindex.Relation{}
+	}
+	if from, read := builder.callsFrom[programTargetID]; read {
+		return from
+	}
+	from := map[string][]programindex.Relation{}
+	if builder.data != nil && builder.data.ProgramPortfolio != nil {
+		for _, entry := range builder.data.ProgramPortfolio.Entries {
+			if entry.Target.ID != programTargetID {
+				continue
+			}
+			for _, relation := range entry.Relations {
+				if relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationInvokesExternal {
+					from[relation.FromID] = append(from[relation.FromID], relation)
+				}
+			}
+		}
+	}
+	for caller, relations := range from {
+		slices.SortStableFunc(relations, func(a, b programindex.Relation) int { return compareSites(a.Location, b.Location) })
+		from[caller] = relations
+	}
+	builder.callsFrom[programTargetID] = from
+	return from
+}
+
+// objectNames are a program's declarations' names by object ID, an
+// external symbol's by its last path element, read once a program.
+func (builder *pageBuilder) objectNames(programTargetID string) map[string]string {
+	if builder.namesOf == nil {
+		builder.namesOf = map[string]map[string]string{}
+	}
+	if names, read := builder.namesOf[programTargetID]; read {
+		return names
+	}
+	names := map[string]string{}
+	for _, entry := range builder.data.ProgramPortfolio.Entries {
+		if entry.Target.ID != programTargetID {
+			continue
+		}
+		for _, object := range entry.Objects {
+			name := object.Name
+			if object.Kind == programindex.ObjectExternalSymbol {
+				name = name[strings.LastIndex(name, "/")+1:]
+			}
+			names[object.ID] = name
+		}
+	}
+	builder.namesOf[programTargetID] = names
+	return names
+}
+
+// calledName is the name a call no implementation is established for is
+// written with: its call's selector (C's lua_error, a macro as written:
+// lua_pushliteral), else the method its dispatch witness names
+// (v3electionpb.ElectionServer.Campaign for etcd's server.Campaign), else
+// its invocation as saved; empty where none is saved.
+func calledName(relation programindex.Relation) string {
+	for _, pattern := range relation.Patterns {
+		if pattern.Selector != "" {
+			return pattern.Selector
+		}
+	}
+	for _, witness := range relation.Witnesses {
+		if strings.HasSuffix(witness.Kind, "_handoff") && witness.Detail != "" {
+			name, _, _ := strings.Cut(witness.Detail, " ")
+			return name[strings.LastIndex(name, "/")+1:]
+		}
+	}
+	return relation.Invocation
+}
+
+// maxOwnCalls is how many of its own calls an entry with no way to another
+// part names.
+const maxOwnCalls = 5
+
+// startReaches reads an entrypoint forward: the outgoing connections it
+// makes itself, in the order they are written, the first few, each line
+// once. Three call sites of main calling aeMain are one step, and the next
+// distinct connection takes the freed place. In the connections' stored
+// order, grouped by the part they reach, redis-benchmark's start read "main
+// calls aeMain" before the aeCreateEventLoop main calls thirty lines
+// earlier. Another member's connection is never the entry's way.
+func startReaches(rows []pageConnection, entry string, most int) []pageConnection {
+	if entry == "" {
+		return nil
+	}
+	rows = slices.DeleteFunc(slices.Clone(rows), func(row pageConnection) bool { return row.fromSubject != entry })
+	slices.SortStableFunc(rows, func(a, b pageConnection) int {
 		switch {
 		case a.at == nil && b.at == nil:
 			return 0

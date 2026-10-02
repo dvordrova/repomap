@@ -306,6 +306,10 @@ type pageBuilder struct {
 	arities map[string]map[string]string
 	// typesOf are each program's field types by object ID (fieldTypes).
 	typesOf map[string]map[string][]programindex.Location
+	// callsFrom are a program's call relations by caller, in written order,
+	// and namesOf its declarations' names (ownCalls).
+	callsFrom map[string]map[string][]programindex.Relation
+	namesOf   map[string]map[string]string
 	// declarationEnds is the last line of each declaration by its place
 	// (path, line, column), from every program's index, built once.
 	declarationEnds map[string]int

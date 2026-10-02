@@ -459,14 +459,14 @@ func TestReadmeClaimsQuoteEveryReadmeShallowestFirst(t *testing.T) {
 	}
 }
 
-// An entrypoint read forward shows only what its group reaches, the first
+// An entrypoint read forward shows only what it reaches itself, the first
 // few, never what reaches it.
 func TestStartReachesKeepsOutgoingHopsOnly(t *testing.T) {
 	rows := []pageConnection{
-		{Arrow: "←", Title: "caller"}, {Arrow: "→", Title: "a"}, {Arrow: "→", Title: "b"},
-		{Arrow: "→", Title: "c"}, {Arrow: "→", Title: "d"},
+		{Arrow: "←", Title: "caller", fromSubject: "e"}, {Arrow: "→", Title: "a", fromSubject: "e"}, {Arrow: "→", Title: "b", fromSubject: "e"},
+		{Arrow: "→", Title: "c", fromSubject: "e"}, {Arrow: "→", Title: "d", fromSubject: "e"},
 	}
-	got := startReaches(rows, "", 3)
+	got := startReaches(rows, "e", 3)
 	if len(got) != 3 || got[0].Title != "a" || got[2].Title != "c" {
 		t.Fatalf("startReaches = %#v", got)
 	}
@@ -501,14 +501,13 @@ func TestStartReachesReadTheEntryForwardNamingEachStepOnce(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("read forward = %q, want %q", got, want)
 	}
-	// An entry with no outgoing call of its own reads its part's calls in
-	// the order they are written.
-	got = nil
-	for _, row := range startReaches(rows, "n9", 2) {
-		got = append(got, row.Label)
-	}
-	if want := []string{"createClient calls aeCreateFileEvent", "main calls aeCreateEventLoop"}; strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("read forward without own calls = %q, want %q", got, want)
+	// An entry with no outgoing connection of its own reads none of its
+	// part's: another member's call is never its way (control review,
+	// 2026-10-02: Lua 5.1.5's empty luaX_init had read its part's "uses
+	// Parser"); startSteps names its own calls, or says it calls nothing,
+	// and the part's other connections apart.
+	if got := startReaches(rows, "n9", 2); len(got) != 0 {
+		t.Fatalf("read forward without own calls = %v, want none", got)
 	}
 }
 

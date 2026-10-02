@@ -733,3 +733,23 @@ func TestAFlowsViaReadsInThePagesLanguage(t *testing.T) {
 		}
 	}
 }
+
+// etcd's local_request_Election_Campaign_0 calls server.Campaign at
+// gw/v3election.pb.gw.go:62: an interface's method, saved unresolved with
+// no callee and its witness naming ElectionServer.Campaign. The flow had
+// dropped it, its reading listing only NewDecoder, Decode, Is and Errorf.
+// It stands named as written, where it is written, its implementation not
+// established; none is invented.
+func TestAFlowNamesACallNoImplementationIsEstablishedFor(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g1", Title: "Election", MemberSubjectIDs: []string{"n1"}}}}
+	at := &programindex.Location{Path: "gw/v3election.pb.gw.go", Line: 62, Column: 29}
+	b := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "t1"},
+		Relations: []programindex.Relation{{ID: "e26194", Kind: programindex.RelationCalls, FromID: "n1", Resolution: programindex.ResolutionUnresolved, Dispatch: "interface", Location: at,
+			Witnesses: []programindex.Witness{{Kind: "go_ssa_dynamic_handoff", Detail: "go.etcd.io/etcd/server/v3/etcdserver/api/v3election/v3electionpb.ElectionServer.Campaign func(context.Context) error"}}}}}}}},
+		subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://example.test/etcd", blobPrefix: "/blob/", revision: "r"}}
+	calls := b.flowOf(&index, "n1", func(string) int { return -1 }, nil)
+	if len(calls) != 1 || calls[0].Name != "v3electionpb.ElectionServer.Campaign" || !calls[0].Unresolved || len(calls[0].Sites) != 1 ||
+		calls[0].Sites[0].Href != "https://example.test/etcd/blob/r/gw/v3election.pb.gw.go#L62" {
+		t.Fatalf("the unresolved call: %+v", calls)
+	}
+}

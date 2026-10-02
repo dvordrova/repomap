@@ -761,7 +761,15 @@ main had shown "Server lifecycle and cron" four times). A library call is no row
 one muted line ends the flow, "also calls: …", each name once in
 written order, its library on hover, gathering those of every call opened
 in place too, each such name's hover saying who calls it (reviewer,
-2026-09-30: othello's key-pressed had stacked three). A declaration no part holds is a plain
+2026-09-30: othello's key-pressed had stacked three). A call no
+implementation is established for (an unresolved relation saved with no
+callee: a C function no unit of the program defines, a Go interface's
+method) stands on that line too, named as written (its call's selector,
+else the method its dispatch witness names: etcd's
+`local_request_Election_Campaign_0` calling `v3electionpb.ElectionServer.Campaign`
+at gw/v3election.pb.gw.go:62), linked where it is written, with
+"(implementation not established)"; none is invented (control review,
+2026-10-02: the reading had dropped it). A declaration no part holds is a plain
 name whose own flow still opens, carried in the calling reading, so no call
 is dropped. A call a macro's expansion makes is shown as the code writes it:
 the macro, once (C's `macro_expansion` witness and the call's selector),
@@ -836,11 +844,22 @@ each step it follows one call the step before may make; open a step for all
 of its calls."
 Each step's twist, opening its calls in place, is always shown. A program no
 model flow passes reads forward from its entry in a start list: each
-entrypoint with its part and key, its name linking to all of its code, then
-that part's outgoing connections, the entrypoint's own calls first and then
-the part's others, each in written order, the first few, each line once;
-several call sites of one caller calling one callee are one step, the next
-distinct connection taking the freed place, each on a line of its own. With
+entrypoint with its part and key (the declaration its fact names), its name
+linking to all of its code, then the outgoing connections it makes itself,
+in written order, the first few, each line once; several call sites of one
+caller calling one callee are one step, the next distinct connection taking
+the freed place, each on a line of its own. Another member's connection is
+never an entry's way (control review, 2026-10-02: Lua 5.1.5's empty
+luaX_init and luaY_parser, which only reports "parser not loaded", had read
+"uses Parser", "uses Lexer" from their part's header uses). An entry none of
+whose calls reaches another part names its own calls, each linked where it
+is written, a call no implementation is established for named as written
+with "implementation not established" (luaY_parser's lua_pushliteral and
+lua_error, defined in no unit of etc), or says it "calls nothing". After the
+list, each entry's part's other connections stand apart, "Elsewhere in
+{part}, not from these entries:", each sentence naming its own owner and
+linking where it is written, the part's uses of other parts' headers or
+types on their own; the native relations stay whole behind them. With
 one entry its calls stand open under it in written order and the connections'
 line goes (owner, 2026-09-30: redis-cli's had run on). A component without a
 flow or start list shows no flow section.

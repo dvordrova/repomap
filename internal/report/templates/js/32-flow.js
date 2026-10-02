@@ -167,7 +167,14 @@ function rmFlowList(ctx,data,own,opts){
         var by=shown===list?'':rmT('called from {0}',shown.rmCaller);
         if(names.indexOf(name)>=0){if(by&&spans[name].title.indexOf(by)<0)spans[name].title+='\n'+by;return;}
         line.appendChild(document.createTextNode(names.length?', ':' '));names.push(name);
-        var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[said.title,call.lib,call.macro?rmT('a macro'):'',by].filter(Boolean).join('\n');line.appendChild(said);spans[name]=said;
+        var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[said.title,call.lib,call.macro?rmT('a macro'):'',by].filter(Boolean).join('\n');
+        // A call no implementation is established for links where it is
+        // written and says so (page_flow.go Unresolved: etcd's
+        // server.Campaign, Lua's lua_error in etc).
+        var site=call.unresolved&&(call.sites||[])[0];
+        if(site&&(site.href||site.open)&&typeof repomapMembers!=='undefined'){var link=repomapMembers.sourceLink({Href:site.href,Open:site.open,Text:name});link.title=said.title;said=rmDotBreaks(link);}
+        line.appendChild(said);spans[name]=said;
+        if(call.unresolved)line.appendChild(rmEl('span','map-flow-unresolved',' ('+rmT('implementation not established')+')'));
         // A program the code does not name is no outside system: its call
         // says so here (page_outbound.go unnamedLaunch).
         if(call.launch)line.appendChild(rmEl('span','map-flow-launch',' ('+rmT('starts a program the code does not name')+')'));
