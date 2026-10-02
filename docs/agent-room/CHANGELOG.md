@@ -1,5 +1,111 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The final walk's display stumbles: titles in sight, inputs named whole, a reading kept on its path, a library's entries by part (lead, 5297a765)
+
+Display only, from saved data. Verified with `repomap render` of the final runs
+(othello 20261002-131523, casdoor 131527, etcd 132010, freqtrade 131200,
+lua 132211; own binary, ff9af16f plus these files, since HEAD's format 97
+refuses them; every render exit 0, 0 provider requests). Before is the
+829626d6 publication on 8900, after is the render. liblua.a's Entry list was
+checked on 20261002-145510-lua-7d5ba595f525 (format 97, fa1f4d22 plus these
+files).
+
+- **Titles in sight (item 1):**
+  - casdoor's home cut the web program's Inputs box at −38 px ("ts") and held
+    the big Outside frame's title 34 px above the canvas. Now the camera at
+    rest brings the box in whole (`keepTitles`, at 16 px), or takes it wholly
+    out of sight where that would push a framed name out, and the Outside frame
+    is named at the canvas's top.
+  - othello's key-pressed left the program's title at −23 px ("hello"). A
+    frame whose left edge is out moves its title in along its own band.
+  - etcd's "Show input" title reads "Inputs" (it read "puts"). On Campaign,
+    "server (executable)" and "Client APIs" are named a row apart at the top.
+    The first version had drawn them over each other.
+  - The invariants run found three more cases:
+    - othello's area levels held the program frame's title 30 px above the
+      canvas while its band reached in. A frame is now named at the top once
+      any of its own title is above it, and the part still showing is hidden
+      under that name.
+    - The names sat inside the marks' overlay, whose overflow the text lint
+      reads as a cut. They now have their own layer, under the marks and tips.
+    - A title hidden that way counted as lost on a pan. The harness counts a
+      title named at the top as kept.
+  - New harness invariant `title-sight`: a frame whose body is in sight has
+    its title wholly in sight and uncovered; on the whole map, so does a closed
+    program or Inputs box. A probe finds no frame title and no closed program
+    or Inputs title cut on the five homes or the walked levels. A unit test
+    holds `keepTitles` (bring in, take out, stay).
+  - Still cut: a closed card or part-group beside the one read, past the
+    canvas edge (etcd's "gRPC proxy", casdoor's "Email providers"). The
+    invariant is about frames.
+- **The page moving by itself (item 2):** the large drifts were the walk
+  helper's own `scrollIntoView`. What remained was 16 px: `rmScrollToReading`
+  scrolled to put the map under the toolbar even when it was already wholly in
+  sight (freqtrade, a declaration chosen from trade's flow). A map already in
+  sight now stays (scrollY 0 → 0). Back restores the place as before.
+- **A reading kept on its input's path (item 3):** choosing FreqtradeBot in
+  trade's "Its flow" now keeps "Input: trade" and "Leave input path". Before,
+  the column dropped them (the input context read "(none)").
+- **etcd's told-apart names (item 4):**
+  - The Inputs list link is the whole "POST /v3electionpb.Election/Campaign ·
+    RegisterElectionHandlerServer". A click on the words used to do nothing,
+    because the link covered "POST" alone.
+  - The reading's heading, "Input: …" and the page's path line show that
+    whole name. They had shown "POST".
+  - The raw code at the reading's top was the registration as written,
+    1,144 characters with the gateway's inline handler body: `Boundary.Written`
+    carries the whole closure. The heading now folds the first braced body over
+    80 characters to "{…}" when a line is over 160, leaving 138 characters
+    ("mux.Handle(http.MethodPost, pattern_Election_Campaign_0, func(…) {…})").
+    The whole line stays behind its link. Trimming it at the source would be
+    atlas's (data 1's) choice.
+- **Huge text (item 5):**
+  - The camera framing a box stops where its level's words read at 1.35 times
+    their size. casdoor's Custom Logout Endpoint had filled the canvas in
+    90-pixel letters; its opened group now reads at 16–22 px.
+  - No word on the canvas, and no chip or bucket mark, is drawn larger than
+    1.6 times its own size. The part-groups beside the opened one had read in
+    50-pixel letters and now read at 19 px. Their names can stand past
+    the canvas edge.
+- **About this run (item 6):** "Questions were not generated in this run." is
+  its first line on freqtrade and Lua (it had been last).
+- **casdoor's part-group stack (item 7):** a click reads "The outside systems
+  only this part calls". It names the part as its card, then lists Custom
+  Logout Endpoint, Acme Challenge Server, Face Image Host and Webhook Endpoint,
+  each with "Made in" and "Called from". Before, it read Core data models' own
+  files. The new heading has its Russian translation.
+- **liblua.a's Entry list:**
+  - The 156 exports had stood flat, each a link to its source, because the
+    page data gave a part only to the program's seed.
+  - Each entry now carries the part GroupsIndex stands it in. A list over
+    twelve folds by those parts, each closed under its box and its count:
+    Core API · 83, Auxiliary library · 34, Standard libraries · 24,
+    Debugging · 8, Runtime and calls · 7.
+  - An entry reads its function in its part: `lua_checkstack()` opens
+    "Function · Core API", called by the auxiliary and standard libraries.
+  - Test: `TestALibrarysExportsNameTheirParts`, which fails without the page
+    change.
+- **Data 2's items, landed with this batch:**
+  - The recipe wording patch: a library alone says "No manifest rows or launch
+    entrypoints were found; a library's exports are the API it offers, not
+    ways to run it", in English and Russian, with its test.
+  - The contract lines on entry marking (READING) and the Entry list (REPORT).
+- **Checks:**
+  - Web unit tests: 169 pass.
+  - `go vet` and `go test ./internal/report/` pass on HEAD plus these files.
+  - `internal/contracttest` passes.
+  - `scene.spec`: 7 pass.
+  - Invariants: othello all pass on every level (home, 2 programs, 6 areas);
+    casdoor all pass on every level (home, 2 programs, 7 areas), 13 minutes for both.
+  - Contracts:
+    - REPORT.md: canvas invariants, the camera at rest and titles, the camera
+      and word caps, the part-group click, a reading on its path, where
+      told-apart words appear, the registration fold, the reveal scroll and
+      the Entry list.
+    - READING.md: the questions line first, and entry marking.
+- **Not mine, seen in passing:** `internal/report/page_entity_writes.go` is
+  not gofmt-clean at HEAD (since 3aea5b07).
+
 ## 2026-10-02 — A target the run could not read says why (data 1, 763bb8f2)
 
 - **Gap:** the reason a target failed existed only in the console. `TargetOutcomePortfolio` kept a closed stage and reason (`analysis_failed`) "with no free-form detail by design". litestream's reader saw two failed C programs and could not tell why.
