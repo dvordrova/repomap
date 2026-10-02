@@ -95,9 +95,60 @@ func (r *reader) programDestinations(target string, members []destinationMember)
 		if a, b := role(calling), role(meta); (a == atlas.RoleFixture || b == atlas.RoleFixture) && (a != b || fixtureRoot(calling.Root) != fixtureRoot(meta.Root)) {
 			continue
 		}
-		programs = append(programs, lines.Destination{Value: meta.Name, Program: true, Takes: takes[meta.ID], Target: meta.ID})
+		programs = append(programs, lines.Destination{Value: r.programName(meta), Program: true, Takes: takes[meta.ID], Target: meta.ID})
 	}
 	return programs
+}
+
+// programNames are, by target, the names the destination question offers
+// and calls this repository's programs by: the one name the toolchain gives
+// a program's executable (TargetMeta.Executables), the name the report
+// titles it by, else its target name. casdoor's server was offered as
+// github.com/casdoor/casdoor, and its web's calls to it were answered
+// "other: Casdoor" in three windows of six; offered "casdoor", that answer
+// writes the offered name. A program keeps its target name where its
+// executable's name is another program's, or a system's the systems
+// question gave any package of the run (names, case aside): two things the
+// question offers, and the destinations the page joins by name, are never
+// spelled alike. Facts only: no name is composed or shortened.
+func programNames(targets []TargetMeta, names map[string]string) map[string]string {
+	systems := make(map[string]bool, len(names))
+	for _, name := range names {
+		if name != "" {
+			systems[strings.ToLower(name)] = true
+		}
+	}
+	executable := func(meta TargetMeta) string {
+		if len(meta.Executables) == 1 && meta.Executables[0] != "" && !systems[strings.ToLower(meta.Executables[0])] {
+			return meta.Executables[0]
+		}
+		return ""
+	}
+	count := make(map[string]int, len(targets))
+	for _, meta := range targets {
+		if name := executable(meta); name != "" {
+			count[strings.ToLower(name)]++
+		}
+	}
+	result := make(map[string]string, len(targets))
+	for _, meta := range targets {
+		result[meta.ID] = meta.Name
+		if name := executable(meta); name != "" && count[strings.ToLower(name)] == 1 && !slices.ContainsFunc(targets, func(other TargetMeta) bool {
+			return other.ID != meta.ID && strings.EqualFold(other.Name, name) && executable(other) == ""
+		}) {
+			result[meta.ID] = name
+		}
+	}
+	return result
+}
+
+// programName is the name a program is offered and called by
+// (programNames), its target name before the systems are named.
+func (r *reader) programName(meta TargetMeta) string {
+	if name := r.programNamesOf[meta.ID]; name != "" {
+		return name
+	}
+	return meta.Name
 }
 
 // repositoryPackage reports a Go package this repository builds: one of a

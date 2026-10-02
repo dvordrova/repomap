@@ -145,6 +145,7 @@ func packageSystem(state *boundaryState, catalog []lines.Destination) string {
 // package's, and each row without one is asked alone. A refused answer
 // names none.
 func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, packages targetPackages, names map[string]string, owners map[string]atlas.Place) error {
+	r.programNamesOf = programNames(r.opts.Targets, names)
 	byKey := make(map[string][]destinationMember)
 	var keys []string
 	for _, state := range states {
@@ -229,9 +230,10 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 	handlers := r.entryHandlers()
 	subjects := make(map[string]rowSubject, len(questions))
 	readable := strings.NewReplacer("\x00", " ", "\x01", " | ", "\x02", " · ")
+	// The program asking is called as the catalogue calls programs.
 	programs := make(map[string]string, len(r.opts.Targets))
 	for _, target := range r.opts.Targets {
-		programs[target.ID] = target.Name
+		programs[target.ID] = r.programName(target)
 	}
 	byCatalog := make(map[string]int)
 	var groups rowGroups

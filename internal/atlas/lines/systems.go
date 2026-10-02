@@ -94,9 +94,10 @@ func WithPrograms(catalog, programs []Destination) []Destination {
 // where "freqtrade" was offered: a form difference, not a second choice),
 // unless a system of the catalogue has that name too. A free name is never
 // read through a program's import path: a path's last element proves no
-// runtime endpoint (review 2026-10-02: casdoor's "other: Casdoor" stays a
-// name, not github.com/casdoor/casdoor). Empty for a system, an unknown
-// ref or any other name.
+// runtime endpoint (review 2026-10-02). A program is offered by the name
+// the toolchain gives its executable (reading's programNames), so casdoor's
+// "other: Casdoor" writes the offered "casdoor". Empty for a system, an
+// unknown ref or any other name.
 func DestinationTarget(catalog []Destination, ref, name string) (string, string) {
 	for _, entry := range catalog {
 		if entry.Ref == ref {

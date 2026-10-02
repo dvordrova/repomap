@@ -187,6 +187,111 @@ func TestAnOutgoingCallAnsweredWithASystemsRefKeepsTheSystem(t *testing.T) {
 	}
 }
 
+// A program is offered, and a program asking is called, by the one name
+// the toolchain gives its executable, the name the report titles it by:
+// casdoor's server, offered as github.com/casdoor/casdoor, had its web's
+// calls answered "other: Casdoor" in three windows of six. That answer now
+// writes the offered name and reaches the program. A program keeps its
+// target name where its executable's name is another program's, or a
+// system's the systems question gave any package of the run.
+func TestAProgramIsOfferedByItsExecutablesName(t *testing.T) {
+	targets := []TargetMeta{
+		{ID: "t1", Name: "github.com/casdoor/casdoor", Executables: []string{"casdoor"}},
+		{ID: "t2", Name: "web"},
+		{ID: "t3", Name: "go.etcd.io/etcd/server/v3", Executables: []string{"server"}},
+		{ID: "t4", Name: "go.etcd.io/etcd/etcdctl/v3", Executables: []string{"etcdctl"}},
+		{ID: "t5", Name: "freqtrade", Executables: []string{"freqtrade"}},
+		{ID: "t6", Name: "freqtrade-client", Executables: []string{"freqtrade-client"}},
+		// Two programs whose executables are named alike keep their names.
+		{ID: "t7", Name: "example.com/a/cmd/worker", Executables: []string{"worker"}},
+		{ID: "t8", Name: "example.com/b/cmd/worker", Executables: []string{"worker"}},
+		// An executable named as another program is keeps its target name.
+		{ID: "t9", Name: "github.com/benbjohnson/litestream/cmd/litestream-vfs", Executables: []string{"litestream-vfs"}},
+		{ID: "t10", Name: "litestream-vfs"},
+		// An executable named as a system the run names keeps its target name.
+		{ID: "t11", Name: "example.com/tools/cmd/stripe", Executables: []string{"stripe"}},
+		// A program its build names twice keeps its target name.
+		{ID: "t12", Name: "example.com/multi", Executables: []string{"a", "b"}},
+	}
+	got := programNames(targets, map[string]string{"github.com/stripe/stripe-go": "Stripe", "database/sql": ""})
+	want := map[string]string{
+		"t1": "casdoor", "t2": "web", "t3": "server", "t4": "etcdctl", "t5": "freqtrade", "t6": "freqtrade-client",
+		"t7": "example.com/a/cmd/worker", "t8": "example.com/b/cmd/worker",
+		"t9": "github.com/benbjohnson/litestream/cmd/litestream-vfs", "t10": "litestream-vfs",
+		"t11": "example.com/tools/cmd/stripe", "t12": "example.com/multi",
+	}
+	for id, name := range want {
+		if got[id] != name {
+			t.Errorf("%s offered as %q, want %q", id, got[id], name)
+		}
+	}
+
+	// Read through the destination question: the web's request, answered
+	// "other: Casdoor", reaches the casdoor program offered by that name,
+	// and the asking program is called web.
+	get := atlas.SymbolCall{Kind: "invokes_external", Name: "fetch", Line: 7, Column: 9, API: &atlas.CallAPI{Package: "platform:javascript", Name: "fetch"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Text: "url", Position: 1, Anchor: &sourcevalue.Anchor{Path: "web/src/backend.js", Line: 5, Column: 11}}}}}
+	call := atlas.Place{ID: "symbol:fetchUser", Kind: atlas.PlaceSymbol, Path: "web/src/backend.js", LineNo: 5, Parent: "file:backend", TargetIDs: []string{"t2"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:fetchUser", Name: "fetchUser"}, Calls: []atlas.SymbolCall{get}}}
+	route := atlas.Place{ID: "fact:user", Kind: atlas.PlaceBoundary, Path: "controllers/user.go", LineNo: 3, Column: 2, Parent: "file:user", TargetIDs: []string{"t1"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "t1", FactID: "user"}}, Method: "GET", Values: []string{"/api/get-user"}, Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryRequest}}
+	graph := []atlas.Place{call, route}
+	var mu sync.Mutex
+	var offered, asking any
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		mu.Lock()
+		defer mu.Unlock()
+		if input["table"] == "atlas_systems" {
+			for i := range rows {
+				rows[i]["system"] = "none"
+			}
+			return
+		}
+		for _, column := range input["fill"].([]any) {
+			if column.(map[string]any)["name"] != "destination" {
+				continue
+			}
+			context := input["context"].(map[string]any)
+			offered, asking = context["destination_catalog"], context["program"]
+			for i := range input["rows"].([]any) {
+				rows[i]["destination"] = "other: Casdoor"
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through, r.opts.Graph.Places = "", graph
+	r.opts.Targets = []TargetMeta{{ID: "t1", Name: "github.com/casdoor/casdoor", Root: ".", Language: "go", Executables: []string{"casdoor"}}, {ID: "t2", Name: "web", Root: "web", Language: "javascript"}}
+	r.opts.ReadSource = func(string) ([]byte, error) { return nil, nil }
+	r.places = map[string]atlas.Place{}
+	for _, place := range graph {
+		r.places[place.ID] = place
+	}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{"platform:javascript.fetch": {talks: atlas.BoundaryClientRequest}}
+	r.arguments = map[string]ArgumentChoice{"platform:javascript.fetch": {Position: 1}}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if catalog := string(mustJSON(offered)); !strings.Contains(catalog, `"ref":"d1","takes":["request GET /api/get-user"],"value":"casdoor"`) || asking != "web" {
+		t.Fatalf("offered %s to %v, want the program casdoor to web", catalog, asking)
+	}
+	var found bool
+	for _, state := range r.boundaries {
+		if state.place.Boundary.Direction == atlas.DirectionOut && state.kind == atlas.BoundaryClientRequest {
+			found = true
+			t.Logf("web's request reaches %q, program %q", state.destinationOf("t2"), state.destinationTargets["t2"])
+			if state.destinationOf("t2") != "casdoor" || state.destinationTargets["t2"] != "t1" {
+				t.Fatalf("web's request answered \"other: Casdoor\" reaches %q (%v), want the program casdoor", state.destinationOf("t2"), state.destinationTargets)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("web's request made no outgoing boundary")
+	}
+}
+
 // A destination ref the model chose stands: a system's ref is that system
 // and a program's that program, whatever the cell's name matches. Only a
 // free name may choose a program, and only by the program's offered name

@@ -95,6 +95,7 @@ func readRepositoryAtlas(
 		meta := reading.TargetMeta{
 			ID: index.Target.ID, Language: index.Target.Language, Kind: index.Target.Kind,
 			Name: index.Target.Name, Root: root, Dependencies: externalDependencies(catalog),
+			Executables: slices.Clone(index.Target.Executables),
 		}
 		if target, ok := planned[run.SelectedTargetKey]; ok {
 			meta.SelectedRole = target.Placement

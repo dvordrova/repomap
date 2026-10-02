@@ -43,6 +43,12 @@ type TargetMeta struct {
 	Root         string   `json:"root"`
 	SelectedRole string   `json:"selected_role,omitempty"`
 	SharedCode   []string `json:"shared_code,omitempty"`
+	// Executables are the names the toolchain gives the program's
+	// executable (programindex Target.Executables): Go's from its main
+	// package, a Python console script's, a C build's output. The
+	// destination question offers a program by its one such name
+	// (programNames).
+	Executables []string `json:"executables,omitempty"`
 	// Dependencies are the external packages the target imports, as its
 	// dependency catalogue records them. The systems question shows an
 	// outside package's record beside its calls; none is a destination.
@@ -191,6 +197,7 @@ type reader struct {
 	nextJoint           int
 	boundaryIDs         map[string]string                // stable source identity -> compact boundary ID
 	sites               map[sourceSite]*atlas.SymbolCall // every call of the graph by its site (declared.go)
+	programNamesOf      map[string]string                // target -> the name the destination question offers it by (programNames)
 	boxes               map[string]*boxState             // box ID -> box
 	offMap              map[string][]offMapEntry         // target -> what no part holds
 	mapFailure          map[string]string                // target -> why it has no map of parts
