@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {basename} from 'node:path';
-import {journeys,journeyHelpers,lintLevel,lintOutside,lintPath,collapsedLists,longestFold,inputSample,levels} from './journeys.mjs';
+import {journeys,journeyHelpers,lintLevel,lintOutside,lintPath,collapsedLists,longestFold,inputSample,levels,fileLine} from './journeys.mjs';
 
 // The frozen journey check and the reading lints (journeys.mjs) on reports
 // rendered by `repomap render` (no provider call), named by
@@ -54,7 +54,7 @@ for(const [index,file] of reports.entries()){
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await open(page,index);
     const repo=await repoOf(page),findings=[];
-    await page.evaluate(`window.__lintLevel=${lintLevel.toString()};window.__lintPath=${lintPath.toString()};window.__collapsedLists=${collapsedLists.toString()}`);
+    await page.evaluate(`window.__fileLine=${fileLine.toString()};window.__lintLevel=${lintLevel.toString()};window.__lintPath=${lintPath.toString()};window.__collapsedLists=${collapsedLists.toString()}`);
     const lint=async(level,cards=2)=>{
       findings.push(...await page.evaluate(level=>window.__lintLevel(level),`${repo} ${level}`));
       findings.push(...await page.evaluate(level=>window.__lintPath(level),`${repo} ${level}`));
@@ -81,7 +81,7 @@ for(const [index,file] of reports.entries()){
     for(const level of [...await page.evaluate(levels),...await page.evaluate(`(${inputSample.toString()})(${JSON.stringify(named)})`)]){
       await page.evaluate(id=>document.querySelector('[data-map-explorer]').goToLevel({id,kind:'frame'}),level.id);
       await settle(page);
-      await lint(`${level.branch} ${level.title}`,level.branch==='part'?0:2);
+      await lint(`${level.branch} ${level.title} [${level.id}]`,level.branch==='part'?0:2);
     }
     const seen=new Set(),unique=findings.filter(f=>{const key=`${f.kind}|${f.element}`;if(seen.has(key))return false;seen.add(key);return true;});
     const counts={};for(const f of unique)counts[f.kind]=(counts[f.kind]||0)+1;

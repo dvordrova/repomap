@@ -82,6 +82,22 @@ export function journeyHelpers(){
   };
 }
 
+// A place written as file:line: a path-like token with a file extension (a
+// letter first) and a line, never an address and port ("8.8.8.8:80",
+// "localhost:2379", "example.com:443"). Pure, so the page and a node test
+// share it (window.__fileLine).
+export function fileLine(text){
+  const hosts=/^(localhost|com|org|net|io|dev|app|ai|co|cloud|edu|gov|info|biz|me|tv|xyz|local|internal|us|uk|de|ru|cn|jp|fr|eu)$/i;
+  for(const m of String(text).matchAll(/(?:^|[\s("'`])((?:[\w@~+.-]+[\/\\])*[\w@~+-]+(?:\.[\w-]+)*\.([A-Za-z][A-Za-z0-9]{0,9})):(\d+)(?::\d+)?(?=$|[\s)"'`,;.])/g)){
+    const [,token,extension]=m;
+    // An address: a dotted host with no path, its last label a top-level
+    // domain or a host name, or numbers only.
+    if(!/[\/\\]/.test(token)&&(hosts.test(extension)||/^\d+(\.\d+){3}$/.test(token)))continue;
+    return `${token}:${m[3]}`;
+  }
+  return '';
+}
+
 // Page side: the lints of what is read at one level, over the reading
 // column and the arrow cards open, and the canvas in sight.
 export function lintLevel(level){
@@ -96,7 +112,7 @@ export function lintLevel(level){
   // No place written as file:line in a row.
   for(const root of readings)for(const el of root.querySelectorAll('*')){
     const words=own(el);if(!words||!shown(el))continue;
-    const at=/\S+\.\w+:\d+/.exec(words);if(at)add('file:line',`"${at[0]}" in "${words}"`);
+    const at=window.__fileLine?window.__fileLine(words):(/\S+\.\w+:\d+/.exec(words)||[''])[0];if(at)add('file:line',`"${at}" in "${words}"`);
   }
   // No entry repeated within one list: a list's items, or a card's rows.
   for(const root of readings)for(const list of root.querySelectorAll('ul,ol,.flow-card-rows')){
@@ -124,7 +140,7 @@ export function lintLevel(level){
   };
   const texts=[...readings.flatMap(root=>[...root.querySelectorAll('*')]),...(canvas?document.querySelectorAll('.flow-root *'):[])]
     .filter(el=>own(el)&&shown(el)&&(!el.closest('.flow-root')||inSight(el)));
-  for(const el of texts){const why=cut(el);if(why)add('cut',`"${text(el)}" ${why} (${where(el)})`);}
+  for(const el of texts){const why=cut(el);if(why)add('cut',`"${text(el)}" ${why} (${where(el)}${el.closest('.react-flow__node')?` in ${el.closest('.react-flow__node').dataset.id}`:''})`);}
   // No empty box in sight: a card with no words, or a frame with neither
   // its title nor anything in it.
   if(canvas){
