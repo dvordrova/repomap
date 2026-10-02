@@ -101,7 +101,7 @@ func (r *reader) programDestinations(target string, members []destinationMember)
 }
 
 // programNames are, by target, the names the destination question offers
-// and calls this repository's programs by: the one name the toolchain gives
+// this repository's programs by: the one name the toolchain gives
 // a program's executable (TargetMeta.Executables), the name the report
 // titles it by, else its target name. casdoor's server was offered as
 // github.com/casdoor/casdoor, and its web's calls to it were answered

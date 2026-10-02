@@ -230,10 +230,13 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 	handlers := r.entryHandlers()
 	subjects := make(map[string]rowSubject, len(questions))
 	readable := strings.NewReplacer("\x00", " ", "\x01", " | ", "\x02", " · ")
-	// The program asking is called as the catalogue calls programs.
+	// The program asking keeps its target name: renaming it re-asks every
+	// window of that program, offered a program or not, and casdoor's
+	// server, re-asked so, had named a GetUserInfo of its Casdoor identity
+	// provider "Adyen" (one draw).
 	programs := make(map[string]string, len(r.opts.Targets))
 	for _, target := range r.opts.Targets {
-		programs[target.ID] = r.programName(target)
+		programs[target.ID] = target.Name
 	}
 	byCatalog := make(map[string]int)
 	var groups rowGroups

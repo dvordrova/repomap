@@ -1255,15 +1255,16 @@ catalogue is built from the systems' names for the destination's program
 package answered `none` gives none. After them, marked `program`, come the
 repository's other programs that serve requests or listen while they run,
 each with what it `takes` (those entries by kind, method and name), each
-offered, and the program asking called (`program`), by the one name the
-toolchain gives its executable (`TargetMeta.Executables`: Go's from its main
+offered by the one name the toolchain gives its executable (`TargetMeta.Executables`: Go's from its main
 package, a console script's, a C build's output), the name the report
 titles it by, else by its target name; a program keeps its target name
 where that executable name is another program's, or a system's the systems
 question gave any package of the run (`programNames`; casdoor's server,
 offered as `github.com/casdoor/casdoor`, had its web's calls answered
 "other: Casdoor" in three windows of six;
-`TestAProgramIsOfferedByItsExecutablesName`); never
+`TestAProgramIsOfferedByItsExecutablesName`; the program asking keeps its
+target name in `program`, so a window offering no program is not asked
+again); never
 the destination's own program (a replica's primary is another copy of it),
 and a fixture only to fixtures of its root. Only a destination with a
 `client_request` call (a request sent or a connection opened, the talks
