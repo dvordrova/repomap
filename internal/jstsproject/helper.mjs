@@ -1157,6 +1157,58 @@ function refsForExpression(node) {
   return refs
 }
 
+// The local functions a callee chosen by a condition names, each branch's
+// (C.md's conditional callee): `(seconds ? tickSeconds : tickMillis)(ms)`.
+// Nested conditions and parenthesised, asserted or non-null names are the
+// same choice, and a literal condition takes its branch. A branch naming no
+// local function returns none and the call stays open: the compiler's
+// signature for the union of the branches' types is no authority.
+function conditionalCalleeRefs(node, leafRefs) {
+  const value = unwrapReceiverExpression(node)
+  if (!value || !ts.isConditionalExpression(value)) return []
+  const literal = literalCondition(value.condition)
+  const branches = literal === true ? [value.whenTrue] : literal === false ? [value.whenFalse] : [value.whenTrue, value.whenFalse]
+  const refs = []
+  for (const branch of branches) {
+    const leaf = unwrapReceiverExpression(branch)
+    const found = ts.isConditionalExpression(leaf) ? conditionalCalleeRefs(leaf, leafRefs)
+      : ts.isIdentifier(leaf) || ts.isPropertyAccessExpression(leaf) ? leafRefs(leaf) : []
+    if (found.length === 0) return []
+    refs.push(...found)
+  }
+  return [...new Set(refs)].sort()
+}
+
+// The local functions a branch names.
+function functionRefs(leaf) {
+  return refsForExpression(leaf).filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+}
+
+// The constructor a class a branch names declares; a class declaring none
+// names none, and the `new` stays open.
+function constructorRefs(leaf) {
+  const checker = checkerForNode(leaf)
+  if (!checker) return []
+  let symbol
+  try {
+    symbol = checker.getSymbolAtLocation(leaf)
+    if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
+  } catch {}
+  if (!(symbol?.flags & ts.SymbolFlags.Class)) return []
+  return (symbol.members?.get(ts.InternalSymbolName.Constructor)?.declarations || [])
+    .filter((declaration) => declarationRefByNode.has(declaration))
+    .map((declaration) => declarationRefByNode.get(declaration))
+    .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+}
+
+function literalCondition(node) {
+  const value = unwrapReceiverExpression(node)
+  if (value?.kind === ts.SyntaxKind.TrueKeyword) return true
+  if (value?.kind === ts.SyntaxKind.FalseKeyword) return false
+  if (value && ts.isNumericLiteral(value)) return Number(value.text) !== 0
+  return undefined
+}
+
 function resolvedSignatureDeclaration(node, checker) {
   try {
     const signature = checker.getResolvedSignature(node)
@@ -2368,8 +2420,16 @@ for (const { sourceFile } of sourceFiles) {
       const decorates = node.parent && ts.isDecorator(node.parent) && !(node.parent.parent && ts.isParameter(node.parent.parent))
       const invocation = ts.isNewExpression(node) ? "construct" : decorates ? "decorator" : "call"
       const callerRef = refForDeclarationNode(node)
-      let localRefs = (ts.isNewExpression(node) ? localRefsForInvocation(node) : expressionRefs(node.expression))
+      // A class a condition chooses is no one constructor the compiler's
+      // signature for the union names (conditionalCalleeRefs).
+      const conditional = ts.isConditionalExpression(unwrapReceiverExpression(node.expression))
+      let localRefs = (ts.isNewExpression(node) ? (conditional ? [] : localRefsForInvocation(node)) : expressionRefs(node.expression))
         .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+      // A callee a condition chooses among functions calls one of them:
+      // several are alternatives through a function value, one the call.
+      const chosen = localRefs.length === 0 && conditional
+        ? conditionalCalleeRefs(node.expression, ts.isNewExpression(node) ? constructorRefs : functionRefs) : []
+      if (chosen.length > 0) localRefs = chosen
       let externalImport = localRefs.length === 0 ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
       if (localRefs.length === 0 && !externalImport.package) externalImport = externalMethodForInvocation(node) || externalImport
       let externalPackage = externalImport.package
@@ -2404,6 +2464,7 @@ for (const { sourceFile } of sourceFiles) {
         external_receiver: externalReceiver, external_name: externalName,
         expression: displayExpression, resolution, location: callSiteLocation(node),
       }
+      if (chosen.length > 1) call.dispatch = "function_value"
       if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
         const pattern = callPattern(node)
         call.patterns_observed = 1

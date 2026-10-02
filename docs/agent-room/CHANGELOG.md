@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A callee chosen by a condition, the helper a step goes through, a case read with no calls (lead, ea3ace9f, 80e30dba, 75493c70)
+
+- **Through, shown (ea3ace9f):** a Main flow step or a split's candidate that `FlowStep.Through`/`FlowBranch.Through` carries reads "lua_pcallk — called through docall", with docall linked to its own reading (en/ru; REPORT Main flow). Saved data only. Rendered offline: Lua 190850 (handle_script > lua_pcallk through docall) and 5.1.5 191903 (dotty, f_call, luaD_protectedparser); clicking docall reads it.
+- **A case with no calls (80e30dba):** etcd's staleList threw a TypeError in 32-flow.js on a case whose saved `flow` is null. A null list is now read as empty everywhere the reader reads `flow`, `calls`, `inputs`, `steps`, `chain`, `sites`, `decls`, `lines`, `ends`, `groups`, `kinds` or `cases`. Such a case says "No call is read in the lines of its case." A test covers a null-flow case. A real click and return on staleList raised no pageerror.
+- **C callee a condition chooses (75493c70):** Lua 5.1.5's f_parser calls `(c == LUA_SIGNATURE[0] ? luaU_undump : luaY_parser)(...)`, and the call had stayed open.
+  - Every branch naming a function makes a `function_value` call to those functions as alternatives, with a `c_conditional_callee` witness. This covers nested conditions and names that are parenthesised, cast, dereferenced or have their address taken.
+  - One function in every branch is a plain call. An integer-literal condition takes its branch. Branches all outside the repository give `invokes_external`. Anything else stays open.
+  - Fixture: `util/watch.c`; C.md.
+  - Real probe on lua-5.1.5: the `lua`, `luac`, `liblua.a` and `etc/min.c` programs each get f_parser → {luaU_undump, luaY_parser}. The `etc/all.c` program did not parse in the probe (a clang error in the SDK's `_stdio.h`, unrelated to the index).
+- **Equivalents:**
+  - **Python:** `(a if c else b)(x)` is the same call. It records a `python_conditional_callee` witness. Classes are constructed, and outside functions make `invokes_external`.
+  - **TypeScript:** `(c ? a : b)(x)` is the same call, with a `typescript_conditional_callee` witness.
+    - The probe found a false exact: `new (c ? A : B)()` had been an exact call of A's constructor, the compiler's union signature. It now names each class's own constructor, as alternatives.
+    - Outside functions stay open, because a call fact holds one outside symbol.
+  - **Go:** has no conditional expression. Its equivalent, a function value a branch chooses (the SSA phi), was already alternatives. It is now in the fixture (`WatchTick`).
+  - **Clojure:** `((if c a b) x)` records no call at all, and each branch is a read. Recorded in CLOJURE.md, not patched.
+  - Python fixture and test: `stored_callbacks.py`, `TestCumulativePythonACalleeChosenByAConditionCallsOneOfItsCallables`. TypeScript: `stored-callbacks.ts`, `TestCumulativeJSTSACalleeChosenByAConditionCallsOneOfItsFunctions`. Go: the stored-callbacks assertion.
+- **Checks:** contracttest in three groups under 5 min each, jstsproject, pythonprogramindex, cproject, pythontarget, claims, facts and the run fixture tests are green.
+
 ## 2026-10-03 — A Go interface call no observed flow gives runs the repository's implementations, on the implements basis (data 2)
 
 - **etcd's `server.Campaign`** at api/v3election/v3electionpb/gw/v3election.pb.gw.go:62 (ProgramIndex t1 e26194) stayed unresolved, with the witness `ElectionServer.Campaign`. The cause was not a module, a target or a type assertion.

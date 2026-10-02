@@ -187,6 +187,12 @@ Missing equivalents, recorded rather than fabricated:
   looked-up value (`((:on-read @handlers))`, `((commands name) args)`) records
   no call of its own, because the head of that form is a form rather than a
   symbol. The inner `(commands name)` is still an exact call of the map var.
+- A callee an `if` chooses (`((if seconds tick-seconds tick-millis) ms)`, the
+  equivalent of C's conditional callee) records no call either, for the same
+  reason: each branch's function is only a `reads` of its var where the
+  branch names it, where C, Python and JS/TS call the functions as the call's
+  alternatives and Go calls a function value a branch chooses so (C). Calls
+  come from clj-kondo's usage rows, which have none for a form-headed call.
 
 ## Calls written through macros
 

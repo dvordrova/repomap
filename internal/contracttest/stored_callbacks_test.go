@@ -291,8 +291,11 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		// field: the call through it calls each stored client (litestream's
 		// Replica.Client).
 		245: {calls, "sync", "Put,Put", alternatives},
+		// Go's equivalent of C's callee a condition chooses: the function
+		// value a branch chooses calls both functions as alternatives.
+		278: {calls, "WatchTick", "tickMillis,tickSeconds", alternatives},
 	})
-	throughFields := map[int]bool{40: true, 60: true, 61: true, 77: true, 86: true, 185: true, 192: true, 200: true}
+	throughFields := map[int]bool{40: true, 60: true, 61: true, 77: true, 86: true, 185: true, 192: true, 200: true, 278: true}
 	for _, view := range relations {
 		functionValue := view.relation.Dispatch == programindex.DispatchFunctionValue
 		if functionValue != (view.relation.Kind == calls && throughFields[view.line]) {

@@ -261,3 +261,19 @@ type hookedRun struct{ hook LinkedHook }
 func (h *hookedRun) fire() { h.hook.Run() }
 
 func RunLinkedHook(hook LinkedHook) { (&hookedRun{hook: hook}).fire() }
+
+// Go has no conditional expression. The equivalent of C's callee a condition
+// chooses (util/watch.c's watchTick) is a function value a branch chooses,
+// the SSA phi of both functions: the call through it calls one of them,
+// alternatives through a function value.
+func tickSeconds(ms int) int { return ms / 1000 }
+
+func tickMillis(ms int) int { return ms }
+
+func WatchTick(ms int, seconds bool) int {
+	tick := tickMillis
+	if seconds {
+		tick = tickSeconds
+	}
+	return tick(ms)
+}

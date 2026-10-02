@@ -353,6 +353,23 @@ function outside the tests nothing. A closure calling its enclosing
 function's parameter, and a rest, destructured or `this` parameter, are not
 joined.
 
+A callee a conditional expression chooses, every branch naming a local
+function, method or indexed arrow function, nested conditions and
+parenthesised, asserted (`as`) or non-null names included, calls one of them,
+the condition deciding which, as C's conditional callee does (C): their
+alternatives, with the `function_value` dispatch and a
+`typescript_conditional_callee` (`javascript_conditional_callee`) witness
+naming the expression and each candidate (`watchTick`'s
+`(seconds ? tickSeconds : tickMillis)(ms)`). `new` of a class a condition
+chooses constructs one of them, each by the constructor it declares: the
+compiler's resolved signature for the union is no authority, as it had named
+the first class's constructor exactly. One function in every branch, or a
+`true`, `false` or number condition, is the ordinary call of the one it
+selects. A branch naming anything else (a parameter, a class declaring no
+constructor, an outside function) leaves the call open: a call fact holds one
+outside symbol, so outside functions are not alternatives as in Python and C
+(`watchTickAgain`, `TestCumulativeJSTSACalleeChosenByAConditionCallsOneOfItsFunctions`).
+
 Missing equivalents, recorded rather than fabricated:
 
 - The fixture has no input of its own and no relation resolved as several

@@ -318,6 +318,10 @@ seed.
   constant condition that is not a literal (an enum, a `const`) is not
   evaluated: both branches stay. The fixture's `util/watch.c` holds each
   case (`TestCFixtureACalleeChosenByAConditionCallsOneOfItsFunctions`).
+  Python's `(a if c else b)(x)` and TypeScript's `(c ? a : b)(x)` are the
+  same call (PYTHON, JSTS, Handler tables); Go, which has no conditional
+  expression, calls a function value a branch chooses so (GO); Clojure's
+  `((if c a b) x)` records no call (CLOJURE).
 - A function cast to an integer is an address used as data, never a callable.
 - A function body that names a file-scope variable of the program reads it:
   one exact `reads` relation per place it names it (a `c_variable_read`

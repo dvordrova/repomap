@@ -313,6 +313,22 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		}
 		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, jstsInvocation(value.Invocation))
 		callRelations[value.Ref] = relationIndex
+		if value.Dispatch == programindex.DispatchFunctionValue {
+			// The condition's choice is the call's: its alternatives are
+			// the functions the branches name, witnessed as C's are.
+			names := make([]string, 0, len(value.CalleeRefs))
+			for _, ref := range value.CalleeRefs {
+				names = append(names, declarationDisplayName(declarationByRef[ref], declarationByRef))
+			}
+			relation := &relations[relationIndex]
+			relation.Dispatch = value.Dispatch
+			relation.Witnesses = append(relation.Witnesses, programindex.Witness{
+				Kind:     strings.TrimSuffix(witnessKind, "_call") + "_conditional_callee",
+				Detail:   value.Expression + " calls " + strings.Join(names, " or ") + ", as its condition decides",
+				Location: programLocation(value.Location),
+			})
+			relation.WitnessesObserved = len(relation.Witnesses)
+		}
 		relations[relationIndex].Patterns = programCallPatterns(value)
 		if first := value.SameValueAs; first != "" && value.Pattern != nil && len(relations[relationIndex].Patterns) == 1 && spelling[first] == spelling[value.Ref] {
 			relations[relationIndex].Patterns[0].SameValueAs = &programindex.PatternRefInput{RelationSourceRef: "program:" + first, PatternSourceRef: "pattern:" + first}

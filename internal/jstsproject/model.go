@@ -185,6 +185,10 @@ type Call struct {
 	// fill; SpreadFrom the position of the call's first spread argument.
 	CalleeParameter int `json:"callee_parameter,omitempty"`
 	SpreadFrom      int `json:"spread_from,omitempty"`
+	// Dispatch is "function_value" for a call whose callee a condition
+	// chooses among the functions its branches name, CalleeRefs its
+	// alternatives (C.md's conditional callee).
+	Dispatch string `json:"dispatch,omitempty"`
 }
 
 // Binding records a callable value supplied to a JSX attribute, not an
@@ -740,6 +744,10 @@ func (result Result) Validate() error {
 		if value.ExternalPackage != "" && value.ExternalPackage != javascriptPlatform &&
 			(value.ExternalExport == "" || value.ExternalName == "") && value.Resolution != "unresolved" {
 			return fmt.Errorf("jsts project: resolved external call lacks package export authority")
+		}
+		if value.Dispatch != "" && (value.Dispatch != "function_value" || (value.Invocation != "call" && value.Invocation != "construct") ||
+			value.Resolution != "alternatives" || len(value.CalleeRefs) < 2 || value.ExternalPackage != "") {
+			return fmt.Errorf("jsts project: call dispatch without alternatives a condition chooses")
 		}
 		if value.ExternalPackage != "" && len(value.CalleeRefs) != 0 {
 			return fmt.Errorf("jsts project: call mixes local and external authority")

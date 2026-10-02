@@ -102,3 +102,38 @@ class Loop:
 
     def _process(self):
         return accept_client()
+
+
+# A callee chosen by a condition calls one of the callables its branches
+# name, the condition deciding which (C.md's conditional callee, Lua's
+# f_parser): alternatives through a function value. Nested conditions and
+# parenthesised names are the same choice, classes are constructed and
+# outside functions are invoked. A constant condition, or two branches
+# naming one function, calls it plainly; a branch naming anything else, here
+# a parameter, leaves the call open.
+import time
+
+
+def tick_seconds(ms):
+    return ms // 1000
+
+
+def tick_millis(ms):
+    return ms
+
+
+def tick_tenths(ms):
+    return ms // 100
+
+
+def watch_tick(ms, seconds, tenths, held):
+    (tick_seconds if seconds else tick_millis)(ms)
+    (tick_tenths if tenths else (tick_seconds if seconds else (tick_millis)))(ms)
+    (tick_seconds if seconds else held)(ms)
+
+
+def watch_tick_again(ms, seconds):
+    (tick_seconds if True else tick_millis)(ms)
+    (tick_millis if seconds else tick_millis)(ms)
+    (time.monotonic if seconds else time.perf_counter)()
+    (EventLoop if seconds else Loop)()

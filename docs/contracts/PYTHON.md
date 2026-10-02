@@ -585,6 +585,19 @@ supports:
   under the test runner only (the fixture's test hands `throttle` a lambda).
   A closure calling its enclosing def's parameter (a decorator's `wrapper`)
   and a lambda's parameter are not joined.
+- A callee a conditional expression chooses, every arm naming a callable the
+  index knows (a def, a method, a lambda, a class or an outside function),
+  nested conditional expressions and parenthesised names included, calls one
+  of them, the condition deciding which, as C's conditional callee does (C):
+  their `alternatives`, with the `function_value` dispatch and a
+  `python_conditional_callee` witness naming the expression and each
+  candidate (`watch_tick`'s `(tick_seconds if seconds else tick_millis)(ms)`).
+  Classes it chooses are constructed (invocation `construct`, without their
+  `__init__` calls), and outside functions alone make an `invokes_external`
+  call. One callable in every arm, or a `True`, `False` or integer condition,
+  is the ordinary call of the one it selects. An arm naming anything else
+  (here a parameter) leaves the call open (`watch_tick_again`,
+  `TestCumulativePythonACalleeChosenByAConditionCallsOneOfItsCallables`).
 
 A branch is the body of an `if`, a loop, a `try` (not its `finally`), a `with`
 or a `match` case, an arm of a conditional expression, an operand of a boolean

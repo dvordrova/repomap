@@ -543,6 +543,11 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
   its own frontier, so `register(readable, h)` still gives neither field
   both handlers. A closure calling its enclosing function's parameter is not
   joined. Tests are not loaded, so no test hands anything.
+- Go has no conditional expression. The equivalent of C's callee a condition
+  chooses (C) is a local function value a branch chooses: after
+  `tick := tickMillis` and `if seconds { tick = tickSeconds }`, `tick(ms)`
+  calls the SSA phi of both functions, so both are its alternatives, dispatch
+  `function_value` (`WatchTick`).
 
 Missing equivalents, recorded rather than fabricated:
 

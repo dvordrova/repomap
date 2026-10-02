@@ -1936,6 +1936,35 @@ class RelationVisitor(ast.NodeVisitor):
             return "exact", [ref]
         return "unresolved", []
 
+    def conditional_callees(self, node):
+        """The callables a conditional expression's branches name, nested
+        conditions included, each (origin, ref): Lua 5.1.5's C f_parser and
+        `(seconds if flag else millis)(ms)` alike. A constant condition takes
+        the branch it selects. Any branch that names no callable the index
+        knows returns [], and the call stays open."""
+        if not isinstance(node, ast.IfExp):
+            return []
+        branches = [node.body, node.orelse]
+        if isinstance(node.test, ast.Constant) and isinstance(node.test.value, (bool, int)):
+            branches = [node.body] if node.test.value else [node.orelse]
+        chosen = []
+        for branch in branches:
+            if isinstance(branch, ast.IfExp):
+                nested = self.conditional_callees(branch)
+                if not nested:
+                    return []
+                chosen.extend(nested)
+                continue
+            if not isinstance(branch, (ast.Name, ast.Attribute)):
+                return []
+            origin, ref = self.resolved_call_target(branch)
+            if origin not in ("local", "external") or not ref:
+                return []
+            if origin == "local" and (self.object(ref) or {}).get("kind") not in ("function", "method", "lambda", "type"):
+                return []
+            chosen.append((origin, ref))
+        return chosen
+
     def resolved_call_target(self, node):
         resolved = self.resolve(node)
         if resolved[0] == "local" and resolved[1]:
@@ -3201,6 +3230,13 @@ class RelationVisitor(ast.NodeVisitor):
                 )
 
         resolved = self.resolved_call_target(node.func)
+        # A callee chosen by a condition whose every branch names a callable
+        # calls one of them, the condition deciding which (C.md's conditional
+        # callee). One callable, a constant condition or both branches the
+        # same, is the ordinary call; several are alternatives below.
+        chosen = self.conditional_callees(node.func) if not resolved[1] else []
+        if len({ref for _, ref in chosen}) == 1:
+            resolved, chosen = chosen[0], []
         # Filled only for the ordinary call relation retained below. Dynamic-only
         # builtins have no nested pattern argument to cite.
         pattern = None
@@ -3223,7 +3259,27 @@ class RelationVisitor(ast.NodeVisitor):
             # (registered_classes) is each class's method of that name: its
             # implementations, several of them alternatives.
             members = self.registered_members(node.func) if not resolved[1] else []
-            if members:
+            if chosen:
+                # Several callables a condition chooses between: alternatives
+                # through a function value, the owner's rule for several
+                # known targets. Classes it chooses between are constructed.
+                refs = sorted({ref for _, ref in chosen})
+                names = [ref_name for _, ref_name in sorted((ref, self.object(ref)["name"]) for ref in refs)]
+                witness = {"kind": "python_conditional_callee",
+                           "detail": bounded_text(ast.unparse(node.func) + " calls " + " or ".join(names) + ", as its condition decides")}
+                location = source_location(self.module["path"], node.func)
+                if location is not None:
+                    witness["location"] = location
+                if all(self.object(ref)["kind"] == "type" for ref in refs):
+                    invocation = "construct"
+                call_relation_ref = self.analyzer.add_relation(
+                    "invokes_external" if all(origin == "external" for origin, _ in chosen) else "calls",
+                    self.scope.ref, refs, "alternatives", node, "callsite",
+                    name, invocation=invocation, targets_observed=len(refs), source_expression=source_expression,
+                    witness_callee=node.func, patterns=[pattern] if pattern else [], patterns_observed=patterns_observed,
+                    extra_witnesses=(witness,), dispatch="function_value",
+                )
+            elif members:
                 call_relation_ref = self.analyzer.add_relation(
                     "calls", self.scope.ref, members, "alternatives" if len(members) > 1 else "exact", node, "callsite",
                     name, invocation=invocation, targets_observed=len(members), source_expression=source_expression,
