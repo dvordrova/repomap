@@ -50,7 +50,9 @@ for(const [index,file] of reports.entries()){
   });
 
   test(`reading lints of ${basename(file)}`,async({page})=>{
-    test.setTimeout(900_000);
+    // REPOMAP_JOURNEY_LINT_TIMEOUT (ms) gives a large report's lints longer
+    // than the 15 minutes they had (casdoor, etcd).
+    test.setTimeout(Number(process.env.REPOMAP_JOURNEY_LINT_TIMEOUT||900_000));
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await open(page,index);
     const repo=await repoOf(page),findings=[];
