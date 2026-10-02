@@ -581,12 +581,16 @@ func (projection *goProjection) projectRelations() error {
 				Kind: "go_direct_call", Detail: locationDetail(edge.RepresentativeCallsite), Location: location,
 			})
 		}
+		guard, err := projection.guard(edge.Guard)
+		if err != nil {
+			return err
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef: edge.ID, Kind: programindex.RelationCalls,
 			FromRef: fromRef, ToRefs: []string{toRef}, Resolution: programindex.ResolutionExact,
 			Invocation: goInvocation(string(edge.Invocation)), Location: location, TargetsObserved: 1,
 			Witnesses: witnesses, WitnessesObserved: len(witnesses),
-			Patterns: patterns, PatternsObserved: edge.PatternsObserved,
+			Patterns: patterns, PatternsObserved: edge.PatternsObserved, Guard: guard,
 		})
 	}
 	if err := projection.projectFieldAccesses(); err != nil {
@@ -676,12 +680,16 @@ func (projection *goProjection) projectRelations() error {
 				resolution = programindex.ResolutionExact
 			}
 		}
+		guard, err := projection.sitesGuard(family.Callsites)
+		if err != nil {
+			return err
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef: family.ID, Kind: programindex.RelationInvokesExternal,
 			FromRef: fromRef, ToRefs: []string{toRef}, Resolution: resolution,
 			Invocation: invocation, Dispatch: dispatch, Location: relationLocation, TargetsObserved: targetsObserved,
 			Witnesses: witnesses, WitnessesObserved: len(witnesses),
-			Patterns: patterns, PatternsObserved: family.PatternsObserved,
+			Patterns: patterns, PatternsObserved: family.PatternsObserved, Guard: guard,
 		})
 	}
 
@@ -849,6 +857,35 @@ func (projection *goProjection) projectInterfaceImplementations() error {
 		}
 	}
 	return nil
+}
+
+// guard is a call edge's folded guard as the ProgramIndex says it (GO).
+func (projection *goProjection) guard(value *surfacediscovery.CallGuard) (*programindex.Guard, error) {
+	if value == nil {
+		return nil, nil
+	}
+	location, err := projection.surfaceLocation(value.Location)
+	if err != nil {
+		return nil, err
+	}
+	return &programindex.Guard{Kind: value.Kind, Location: location}, nil
+}
+
+// sitesGuard folds the guards of a relation's call sites: one unguarded
+// site, or one the walk did not see, leaves none.
+func (projection *goProjection) sitesGuard(callsites []surfacediscovery.Location) (*programindex.Guard, error) {
+	var folded *surfacediscovery.CallGuard
+	for position, callsite := range callsites {
+		guard, ok := projection.direct.CallGuards[callsite]
+		if !ok {
+			return nil, nil
+		}
+		if position == 0 || folded != nil && (guard.Kind == surfacediscovery.CallGuardBranch && folded.Kind != surfacediscovery.CallGuardBranch) {
+			copied := guard
+			folded = &copied
+		}
+	}
+	return projection.guard(folded)
 }
 
 func (projection *goProjection) callPatterns(
@@ -1108,6 +1145,13 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			// call stays open and the implementation is never its target.
 			witnesses = append(witnesses, programindex.Witness{Kind: kind, Detail: detail, Location: at, ObjectRef: projection.directNodeObjectRefs[witness.FunctionID]})
 		}
+		var guard *programindex.Guard
+		if kind != programindex.RelationBindsImplementation {
+			guard, err = projection.sitesGuard([]surfacediscovery.Location{{Path: handoff.Callsite.Path, Line: handoff.Callsite.Line, Column: handoff.Callsite.Column}})
+			if err != nil {
+				return nil, err
+			}
+		}
 		// Targets known by the repository's implementations of the
 		// interface, no observed flow giving the value, say so.
 		basis := ""
@@ -1129,6 +1173,7 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			WitnessesObserved: len(witnesses),
 			SourceArgument:    sourceArgument,
 			Basis:             basis,
+			Guard:             guard,
 		})
 		counts := represented[handoff.CallerID]
 		switch handoff.Kind {

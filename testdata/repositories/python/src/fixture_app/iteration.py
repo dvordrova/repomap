@@ -90,3 +90,46 @@ def underscore_result():
 
 def underscore_unknown(_):
     _.advance()  # untyped underscore parameter
+
+
+def report_failure(name):
+    return name
+
+
+def report_long(name):
+    return name
+
+
+def describe(name):
+    return name
+
+
+def count(name):
+    return name
+
+
+def checked_store(store, name, error):
+    """A call's guard: an arm ending in a raise, a raise's operand and an
+    except body run only on a failing path; any other arm is a branch; a try
+    body and the rest run unguarded."""
+    if error is not None:
+        report_failure(name)
+        raise ValueError(describe(name))
+    if len(name) > 64:
+        report_long(name)
+    try:
+        store.put(name)
+    except KeyError:
+        report_failure(name)
+    count(name)
+
+
+def checked_long(name):
+    """An arm with a return before its raise does not only fail: it is a
+    branch."""
+    if len(name) > 128:
+        report_long(name)
+        if name.startswith("ok"):
+            return name
+        raise ValueError(name)
+    return count(name)

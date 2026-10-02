@@ -82,10 +82,22 @@ type FlowStep struct {
 	// giving the value, "implements" (ProgramIndex Relation.Basis): known by
 	// method set, never a traced call (etcd's gateway reaching
 	// electionServer.Campaign).
-	Basis    string       `json:"basis,omitempty"`
-	Branches []FlowBranch `json:"branches,omitempty"`
-	Passed   []FlowBranch `json:"passed,omitempty"`
-	Paths    []FlowPath   `json:"paths,omitempty"`
+	Basis string `json:"basis,omitempty"`
+	// Guard is the construct the step before's call of it runs under, the
+	// weakest of its ways (ProgramIndex Guard), Loop the loop statement it
+	// runs in; Stop, on the last step of a path, why the path ends there,
+	// and StopSubject, for a way that goes on as another way, where that
+	// way starts.
+	Guard       *programindex.Guard    `json:"guard,omitempty"`
+	Loop        *programindex.Location `json:"loop,omitempty"`
+	Stop        string                 `json:"stop,omitempty"`
+	StopSubject string                 `json:"stop_subject,omitempty"`
+	// OpenAt is, on a route's last step, where the step calls through a
+	// value the index leaves open with no possible target.
+	OpenAt   *programindex.Location `json:"open_at,omitempty"`
+	Branches []FlowBranch           `json:"branches,omitempty"`
+	Passed   []FlowBranch           `json:"passed,omitempty"`
+	Paths    []FlowPath             `json:"paths,omitempty"`
 	// Registered and RunBy are, for a step whose callable a registration
 	// hands over, where it is registered and what runs it, as the walk
 	// reaches them (readRegistrations, version 3).
@@ -102,11 +114,54 @@ type FlowPath struct {
 // FlowBranch is one candidate of a named fork: the declaration and how the
 // fork's step reaches it.
 type FlowBranch struct {
-	SubjectID string   `json:"subject_id"`
-	Via       string   `json:"via,omitempty"`
-	Site      string   `json:"site,omitempty"`
-	Through   []string `json:"through,omitempty"`
-	Basis     string   `json:"basis,omitempty"`
+	SubjectID string                 `json:"subject_id"`
+	Via       string                 `json:"via,omitempty"`
+	Site      string                 `json:"site,omitempty"`
+	Through   []string               `json:"through,omitempty"`
+	Basis     string                 `json:"basis,omitempty"`
+	Guard     *programindex.Guard    `json:"guard,omitempty"`
+	Loop      *programindex.Location `json:"loop,omitempty"`
+}
+
+// Why a walked path ends at its last step (FlowStep.Stop).
+const (
+	StopTorn        = "torn"
+	StopUnanswered  = "unanswered"
+	StopLeaf        = "leaf"
+	StopFailureOnly = "failure_only"
+	StopRevisits    = "revisits"
+	StopJoins       = "joins"
+)
+
+func validStop(stop, subject string) bool {
+	switch stop {
+	case "", StopTorn, StopUnanswered, StopLeaf, StopFailureOnly, StopRevisits:
+		return subject == ""
+	case StopJoins:
+		return validText(subject)
+	}
+	return false
+}
+
+func validGuard(guard *programindex.Guard) bool {
+	return guard == nil || guard.Kind == programindex.GuardBranch || guard.Kind == programindex.GuardError || guard.Kind == programindex.GuardNoReturn
+}
+
+func cloneGuard(guard *programindex.Guard) *programindex.Guard {
+	if guard == nil {
+		return nil
+	}
+	copied := *guard
+	copied.Location = cloneLocation(guard.Location)
+	return &copied
+}
+
+func cloneLocation(location *programindex.Location) *programindex.Location {
+	if location == nil {
+		return nil
+	}
+	copied := *location
+	return &copied
 }
 
 // MainFlow is the one end-to-end path the reader should follow first.
@@ -273,12 +328,12 @@ func validBasis(basis string) bool {
 func validFlowSteps(steps []FlowStep) error {
 	for position, step := range steps {
 		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) ||
-			!validThrough(step.Through) || !validBasis(step.Basis) {
+			!validThrough(step.Through) || !validBasis(step.Basis) || !validGuard(step.Guard) || !validStop(step.Stop, step.StopSubject) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
 		for _, branch := range append(slices.Clone(step.Branches), step.Passed...) {
 			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) || !validThrough(branch.Through) ||
-				!validBasis(branch.Basis) {
+				!validBasis(branch.Basis) || !validGuard(branch.Guard) {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
 			}
 		}
@@ -403,6 +458,7 @@ func cloneBranches(branches []FlowBranch) []FlowBranch {
 	owned := cloneSlice(branches)
 	for position := range owned {
 		owned[position].Through = cloneSlice(branches[position].Through)
+		owned[position].Guard, owned[position].Loop = cloneGuard(branches[position].Guard), cloneLocation(branches[position].Loop)
 	}
 	return owned
 }
@@ -412,6 +468,8 @@ func cloneFlowSteps(steps []FlowStep) []FlowStep {
 	owned := cloneSlice(steps)
 	for position := range owned {
 		owned[position].Through = cloneSlice(steps[position].Through)
+		owned[position].Guard, owned[position].Loop = cloneGuard(steps[position].Guard), cloneLocation(steps[position].Loop)
+		owned[position].OpenAt = cloneLocation(steps[position].OpenAt)
 		owned[position].Branches = cloneBranches(steps[position].Branches)
 		owned[position].Passed = cloneBranches(steps[position].Passed)
 		owned[position].Registered = cloneSlice(steps[position].Registered)

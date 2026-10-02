@@ -1135,6 +1135,66 @@ func validDispatch(value string) bool {
 	return value == "" || value == DispatchInterface || value == DispatchInterfaceMethod || value == DispatchFunctionValue
 }
 
+// Guard is, on a call relation, the strongest construct of its function that
+// every one of its call sites runs under, with that construct's location:
+// GuardBranch an if or else arm, a case, a ?: arm or the right operand of a
+// short-circuit operator (a call in a condition itself runs unguarded);
+// GuardError a path that fails (what a raise, throw or panic hands over, an
+// except or catch body, an arm ending in one, Go's arm taken when a value of
+// the error type is not nil); GuardNoReturn a call of a function that never
+// returns, or an arm ending in one (C: a callee whose type says noreturn,
+// outside the corpus, or a corpus function every path of whose body ends in
+// such a call). One unguarded site leaves the relation unguarded; the
+// weakest of its sites' guards stands for it. It is a native fact of the
+// code's structure, saved, never a provider row (owner, control review
+// 2026-10-03: Lua's forprep calls luaG_runerror only when the step is zero,
+// and the error message's allocation had read as the path's outcome).
+type Guard struct {
+	Kind     string    `json:"kind"`
+	Location *Location `json:"location,omitempty"`
+}
+
+// The guard kinds, weakest first; an error and a call that never returns are
+// equally strong.
+const (
+	GuardBranch   = "branch"
+	GuardError    = "error"
+	GuardNoReturn = "noreturn"
+)
+
+// GuardStrength orders guard kinds: 0 for none, 1 a branch, 2 a failing path.
+func GuardStrength(guard *Guard) int {
+	switch {
+	case guard == nil:
+		return 0
+	case guard.Kind == GuardBranch:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// Fails says a guard is a failing path: an error or a call that never returns.
+func (guard *Guard) Fails() bool {
+	return guard != nil && (guard.Kind == GuardError || guard.Kind == GuardNoReturn)
+}
+
+// WeakestGuard folds the guards of several sites of one relation: an
+// unguarded site leaves none, else the weakest stands (the first of equal
+// strength).
+func WeakestGuard(guards []*Guard) *Guard {
+	var weakest *Guard
+	for position, guard := range guards {
+		if guard == nil {
+			return nil
+		}
+		if position == 0 || GuardStrength(guard) < GuardStrength(weakest) {
+			weakest = guard
+		}
+	}
+	return weakest
+}
+
 // BasisImplements is, on a call through a repository interface whose value
 // no observed flow gives, how its targets are known: they are the methods of
 // the repository's types that implement the interface (owner, 2026-09-16 and
@@ -1166,6 +1226,9 @@ type RelationInput struct {
 	FieldPath string
 	// Basis is how a call's targets are known (Relation.Basis).
 	Basis string
+	// Guard is the construct every site of the call runs under
+	// (Relation.Guard).
+	Guard *Guard
 	// Value is, on a writes relation with a FieldPath, the value the site
 	// assigns (Relation.Value).
 	Value *sourcevalue.Value
@@ -1204,6 +1267,9 @@ type Relation struct {
 	// observed flow gives, BasisImplements: its targets are the
 	// implementations of the interface's method in the repository (GO).
 	Basis string `json:"basis,omitempty"`
+	// Guard is, on a calls, invokes_external or passes_callback relation,
+	// the construct every site of it runs under (Guard).
+	Guard *Guard `json:"guard,omitempty"`
 	// Value is, on a writes relation with a FieldPath, the value a plain
 	// assignment stores in the field there, as the adapter records any
 	// source value (`server.dbfilename = "dump.rdb"` stores the literal,
@@ -1436,6 +1502,15 @@ func (decoded indexArtifact) restore() Index {
 	index.Coverage = compileCoverage(index.Objects, index.Relations,
 		len(index.Objects)+decoded.Coverage.ObjectsOmitted, len(index.Relations)+decoded.Coverage.RelationsOmitted)
 	return index
+}
+
+func cloneGuard(guard *Guard) *Guard {
+	if guard == nil {
+		return nil
+	}
+	copied := *guard
+	copied.Location = cloneLocation(guard.Location)
+	return &copied
 }
 
 func restoreRelationCounts(relation *Relation) {
@@ -1704,6 +1779,7 @@ func New(input Input) (Index, error) {
 			PatternsOmitted: value.PatternsObserved - len(patterns),
 			FieldPath:       value.FieldPath,
 			Basis:           value.Basis,
+			Guard:           cloneGuard(value.Guard),
 			Value:           sourcevalue.Clone(value.Value),
 		}
 		if value.SourceArgument != nil {
@@ -2470,6 +2546,11 @@ func validateRelationShape(value Relation) error {
 	}
 	if value.Basis != "" && (value.Basis != BasisImplements || value.Kind != RelationCalls || value.Dispatch != DispatchInterface || value.Resolution == ResolutionUnresolved) {
 		return fmt.Errorf("program index: an implements basis belongs to a resolved interface call")
+	}
+	if guard := value.Guard; guard != nil && (guard.Kind != GuardBranch && guard.Kind != GuardError && guard.Kind != GuardNoReturn ||
+		!validOptionalLocation(guard.Location) ||
+		value.Kind != RelationCalls && value.Kind != RelationInvokesExternal && value.Kind != RelationPassesCallback) {
+		return fmt.Errorf("program index: a guard belongs to a call or a callback handed over, with a known kind")
 	}
 	if value.TargetsObserved <= 0 || value.TargetsObserved < len(value.ToIDs) ||
 		value.TargetsOmitted != value.TargetsObserved-len(value.ToIDs) ||

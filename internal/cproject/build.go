@@ -76,6 +76,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 	if err := b.defineFunctionsAndVariables(); err != nil {
 		return nil, fmt.Errorf("C program %s: %w", parsed.Program.Selector, err)
 	}
+	b.findEnding()
 	b.walkAll()
 	b.findEscapes()
 	b.recordParameterStores()
@@ -97,6 +98,11 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 }
 
 type builder struct {
+	// ending are the corpus functions that never return (findEnding);
+	// leaves and armEnding keep what guards.go reads of a statement once.
+	ending     map[string]bool
+	leaves     map[*Node]bool
+	armEnding  map[*Node]bool
 	repository *corpus.Corpus
 	parsed     *Parsed
 	sources    map[string][]byte
@@ -840,7 +846,7 @@ func (b *builder) emitCalls() {
 		if first := c.sameValueAs; first != nil && at != nil && location(first.site) != nil {
 			pattern.SameValueAs = &p.PatternRefInput{RelationSourceRef: first.relationRef, PatternSourceRef: first.patternRef}
 		}
-		r := p.RelationInput{SourceRef: c.relationRef, Kind: p.RelationCalls, FromRef: c.from, Location: at, Patterns: []p.RelationPatternInput{pattern}}
+		r := p.RelationInput{SourceRef: c.relationRef, Kind: p.RelationCalls, FromRef: c.from, Location: at, Patterns: []p.RelationPatternInput{pattern}, Guard: c.guard}
 		switch {
 		case len(c.direct.alternatives) > 0:
 			// Several units define the name and the build does not say
@@ -929,7 +935,7 @@ func (b *builder) emitCalls() {
 			b.sequence++
 			b.relation(p.RelationInput{SourceRef: fmt.Sprintf("c:callback:%d", b.sequence), Kind: p.RelationPassesCallback, FromRef: c.from,
 				ToRefs: []string{d.fn}, Resolution: p.ResolutionExact, Location: location(d.site), Witnesses: []p.Witness{witness},
-				SourceArgument: &p.PatternArgumentRefInput{RelationSourceRef: c.relationRef, PatternSourceRef: c.patternRef, Position: position}})
+				SourceArgument: &p.PatternArgumentRefInput{RelationSourceRef: c.relationRef, PatternSourceRef: c.patternRef, Position: position}, Guard: c.guard})
 		}
 	}
 }

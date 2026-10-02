@@ -460,6 +460,9 @@ type walker struct {
 	function    *function
 	loops       []programindex.Witness
 	conditional bool
+	// arms are the constructs whose condition decides whether the code
+	// walked runs, outermost first (guards.go).
+	arms []arm
 	// branch is, while an if statement's condition is walked, the lines of
 	// the statement it guards.
 	branch *programindex.LineRange
@@ -472,6 +475,13 @@ type walker struct {
 
 func (w walker) with(conditional bool) walker {
 	w.conditional = w.conditional || conditional
+	return w
+}
+
+// in walks an arm of a construct deciding whether it runs.
+func (w walker) in(site Position, node *Node) walker {
+	w.conditional = true
+	w.arms = append(append([]arm(nil), w.arms...), arm{site: site, node: node})
 	return w
 }
 
@@ -522,7 +532,7 @@ func (w walker) walk(n *Node) {
 				operands = w.b.joinOperands(n)
 			}
 			w.walk(n.Inner[0])
-			w.with(true).walk(n.Inner[1])
+			w.in(n.Begin.Site(), n.Inner[1]).walk(n.Inner[1])
 			w.b.joinOr(operands)
 			return
 		}
@@ -532,7 +542,10 @@ func (w walker) walk(n *Node) {
 		// A call in the condition knows the lines the condition guards:
 		// `strcasecmp(argv[0],"slaveof")` selects its block.
 		for i, child := range n.Inner {
-			next := w.with(i > 0)
+			next := w
+			if i > 0 {
+				next = w.in(n.Begin.Site(), child)
+			}
 			next.branch = nil
 			if i == 0 && len(n.Inner) > 1 {
 				begin, end := n.Inner[1].Begin.Site(), n.Inner[1].End.Site()
@@ -545,13 +558,21 @@ func (w walker) walk(n *Node) {
 		return
 	case "ConditionalOperator", "BinaryConditionalOperator":
 		for i, child := range n.Inner {
-			w.with(i > 0).walk(child)
+			if i > 0 {
+				w.in(n.Begin.Site(), child).walk(child)
+				continue
+			}
+			w.walk(child)
 		}
 		return
 	case "SwitchStmt":
 		w.b.switchComparison(w, n)
 		for i, child := range n.Inner {
-			w.with(i == len(n.Inner)-1).walk(child)
+			if i == len(n.Inner)-1 {
+				w.in(n.Begin.Site(), nil).walk(child)
+				continue
+			}
+			w.walk(child)
 		}
 		return
 	case "ForStmt":
@@ -1329,6 +1350,8 @@ type call struct {
 	// sameValueAs is the earlier call this call is another spelling of
 	// (spellings.go).
 	sameValueAs *call
+	// guard is the construct the call runs under (guards.go).
+	guard *programindex.Guard
 }
 
 type designated struct {
@@ -1344,7 +1367,7 @@ func (b *builder) call(w walker, n *Node) {
 	}
 	b.sequence++
 	c := &call{relationRef: fmt.Sprintf("c:call:%d", b.sequence), patternRef: fmt.Sprintf("c:call:%d:pattern", b.sequence),
-		from: w.owner, context: slices.Clone(w.loops), branch: w.branch, designators: map[int]designated{}}
+		from: w.owner, context: slices.Clone(w.loops), branch: w.branch, designators: map[int]designated{}, guard: b.guard(w, n)}
 	callee := n.Inner[0]
 	named := designator(callee)
 	start := callee.Begin

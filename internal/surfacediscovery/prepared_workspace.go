@@ -468,6 +468,10 @@ func analyzePreparedTarget(a *analyzer) (Result, error) {
 	finishIndex(len(a.allFunctions), len(a.allFunctions))
 
 	direct := a.directCallIndex.finish()
+	if a.callGuards == nil {
+		a.buildCallGuards()
+	}
+	direct.CallGuards = a.callGuards
 	a.result.DirectCallIndex = &direct
 	if a.opts.CaptureCoreObjectIndex {
 		index, err := a.captureCoreObjectIndex(direct)

@@ -32,6 +32,11 @@ type flowWalk struct {
 	// met are the candidates the walk met, by the index a candidate step
 	// carries as its Edge.
 	met []flowCandidate
+	// failing are, by a step's Edge (-1 the entry), the candidates its work
+	// reaches only on failing paths, never a way on; kept the units of the
+	// others, before the walk leaves out those already on the path.
+	failing map[int][]flowCandidate
+	kept    map[int][]string
 }
 
 // flowAsk is one split the categorizer was asked about: the one it
@@ -85,7 +90,7 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 	if start == "" || !graph.member(start) {
 		return flowWalk{}, nil
 	}
-	var walk flowWalk
+	walk := flowWalk{failing: map[int][]flowCandidate{}, kept: map[int][]string{}}
 	var failure error
 	meet := func(candidate flowCandidate) groupindex.SpineStep {
 		walk.met = append(walk.met, candidate)
@@ -104,11 +109,22 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 					continue
 				}
 				steps = append(steps, meet(flowCandidate{unit: member, members: []string{member}, reach: flowEdge{to: member, via: "its member " + graph.name(member)}}))
+				walk.kept[step.Edge] = append(walk.kept[step.Edge], member)
 			}
 			return steps
 		}
+		// A unit the step's work reaches only on failing paths (an error, a
+		// call that never returns) is no way on: it stays beside the step,
+		// said so, never asked or followed (control review, 2026-10-03:
+		// Lua's forprep reaches the collector only through luaG_runerror,
+		// when the step is zero).
 		for _, candidate := range graph.candidates(unit, step.Members) {
+			if candidate.guard.Fails() {
+				walk.failing[step.Edge] = append(walk.failing[step.Edge], candidate)
+				continue
+			}
 			steps = append(steps, meet(candidate))
+			walk.kept[step.Edge] = append(walk.kept[step.Edge], candidate.unit)
 		}
 		return steps
 	}
@@ -129,7 +145,7 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 	if failure != nil {
 		return flowWalk{}, failure
 	}
-	walk.flow.Steps = walk.flowSteps(path, targetID, graph)
+	walk.flow.Steps = walk.flowSteps(path, targetID, graph, nil)
 	readRegistrations(walk.flow.Steps, nil, graph, input.Facts.OfKind(facts.KindRegistration))
 	walk.flow.Title = flowTitle(walk.flow.Steps, graph)
 	return walk, nil
@@ -140,20 +156,33 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 // split, the candidates the path passed; the last, where the path parts,
 // holds each way followed as a path of its own and the candidates none
 // follows.
-func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, graph *flowGraph) []FlowStep {
+func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, graph *flowGraph, siblings []string) []FlowStep {
 	var rows []FlowStep
+	said := func(met flowCandidate, subject string) FlowBranch {
+		reach := met.reach
+		return FlowBranch{SubjectID: subject, Via: reach.via, Site: reach.site, Through: slices.Clone(reach.through), Basis: reach.basis,
+			Guard: cloneGuard(met.guard), Loop: cloneLocation(reach.loop)}
+	}
 	branch := func(candidate groupindex.SpineStep) FlowBranch {
-		reach := walk.met[candidate.Edge].reach
-		return FlowBranch{SubjectID: stepSubject(candidate), Via: reach.via, Site: reach.site, Through: slices.Clone(reach.through), Basis: reach.basis}
+		return said(walk.met[candidate.Edge], stepSubject(candidate))
 	}
 	for position, step := range path.Steps {
 		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
 		if step.Edge >= 0 {
-			reach := walk.met[step.Edge].reach
+			met := walk.met[step.Edge]
+			reach := met.reach
 			row.Via, row.Site, row.Through, row.Basis = reach.via, reach.site, slices.Clone(reach.through), reach.basis
+			row.Guard, row.Loop = cloneGuard(met.guard), cloneLocation(reach.loop)
 		}
 		for _, candidate := range path.Passed[position] {
 			row.Passed = append(row.Passed, branch(candidate))
+		}
+		for _, failing := range walk.failing[step.Edge] {
+			subject := failing.unit
+			if len(failing.members) > 0 && graph.subjects[failing.unit] != nil && graph.subjects[failing.unit].Object != nil && graph.subjects[failing.unit].Object.Kind == programindex.ObjectType {
+				subject = failing.members[0]
+			}
+			row.Passed = append(row.Passed, said(failing, subject))
 		}
 		// A class step going on through one of its members is that
 		// member's step, reached as the class was; a way that starts at
@@ -175,13 +204,54 @@ func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, grap
 			for _, candidate := range path.Rest {
 				row.Branches = append(row.Branches, branch(candidate))
 			}
+			var ways []string
 			for _, way := range path.Paths {
-				row.Paths = append(row.Paths, FlowPath{Steps: walk.flowSteps(way, targetID, graph)})
+				ways = append(ways, stepSubject(way.Steps[0]))
+			}
+			for at, way := range path.Paths {
+				others := slices.Delete(slices.Clone(ways), at, at+1)
+				row.Paths = append(row.Paths, FlowPath{Steps: walk.flowSteps(way, targetID, graph, others)})
+			}
+			row.Stop, row.StopSubject = walk.stop(path, step, siblings)
+			// A route ending while its step calls through a value the index
+			// leaves open says so: the code may go on where no edge says
+			// (Lua's luaD_hook calls (*hook)(L, &ar)).
+			if row.Stop == StopLeaf || row.Stop == StopFailureOnly || row.Stop == StopRevisits {
+				for _, member := range step.Members {
+					if at := graph.openAt[member]; at != nil {
+						row.OpenAt = cloneLocation(at)
+						break
+					}
+				}
 			}
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// stop is why a walked path ends at its last step (FlowStep.Stop): it parts
+// into ways; the categorizer left its split undecided; its work reaches no
+// further unit; it reaches further units only on failing paths; every unit it
+// reaches is already on the path, or, for a way, is where another way of the
+// same split starts, which the path then goes on as (StopSubject).
+func (walk *flowWalk) stop(path groupindex.SpinePath, last groupindex.SpineStep, siblings []string) (string, string) {
+	switch {
+	case len(path.Paths) > 0:
+		return StopTorn, ""
+	case len(path.Rest) > 0:
+		return StopUnanswered, ""
+	case len(walk.kept[last.Edge]) == 0 && len(walk.failing[last.Edge]) > 0:
+		return StopFailureOnly, ""
+	case len(walk.kept[last.Edge]) == 0:
+		return StopLeaf, ""
+	}
+	for _, unit := range walk.kept[last.Edge] {
+		if slices.Contains(siblings, unit) {
+			return StopJoins, unit
+		}
+	}
+	return StopRevisits, ""
 }
 
 // flowTitle is "From <first> to <last>", naming each end of a flow that
@@ -192,6 +262,10 @@ func flowTitle(steps []FlowStep, graph *flowGraph) string {
 	var collect func([]FlowStep)
 	collect = func(steps []FlowStep) {
 		last := steps[len(steps)-1]
+		// A way that goes on as another way ends nowhere of its own.
+		if last.Stop == StopJoins {
+			return
+		}
 		if len(last.Paths) == 0 {
 			if name := graph.qualified(last.SubjectID); !slices.Contains(ends, name) {
 				ends = append(ends, name)
@@ -205,6 +279,8 @@ func flowTitle(steps []FlowStep, graph *flowGraph) string {
 	collect(steps)
 	first := graph.qualified(steps[0].SubjectID)
 	switch {
+	case len(ends) == 0:
+		return fmt.Sprintf("From %s to %s", first, graph.qualified(steps[len(steps)-1].SubjectID))
 	case len(ends) == 1:
 		return fmt.Sprintf("From %s to %s", first, ends[0])
 	case len(ends) <= 3:

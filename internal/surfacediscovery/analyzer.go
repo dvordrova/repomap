@@ -48,9 +48,11 @@ type analyzer struct {
 	// valueUsed and invokedMethods are computed once too
 	// (reachedOtherwise): the functions a repository function uses as a
 	// value, and the method names an interface call invokes.
-	valueUsed       map[*ssa.Function]bool
-	invokedMethods  map[string]bool
-	callControls    map[Location][]ControlContext
+	valueUsed      map[*ssa.Function]bool
+	invokedMethods map[string]bool
+	callControls   map[Location][]ControlContext
+	// callGuards are the call sites' guards (call_guard.go), built once.
+	callGuards      map[Location]CallGuard
 	methodArguments map[Location][]*sourcevalue.Value
 	// sameValues is, by call site, the earlier call each call reads the
 	// same value as (same_value_calls.go).

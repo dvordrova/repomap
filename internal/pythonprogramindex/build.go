@@ -132,6 +132,7 @@ type parsedRelation struct {
 	Patterns          []parsedRelationPattern   `json:"patterns"`
 	PatternsObserved  int                       `json:"patterns_observed"`
 	SourceArgument    *parsedPatternArgumentRef `json:"source_argument,omitempty"`
+	Guard             *programindex.Guard       `json:"guard,omitempty"`
 }
 
 // parsedWitness is a relation witness as the parser writes it; object_ref
@@ -899,6 +900,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 			WitnessesObserved: value.WitnessesObserved,
 			Patterns:          patterns, PatternsObserved: value.PatternsObserved,
 			SourceArgument: clonePatternArgumentRefInput(value.SourceArgument),
+			Guard:          value.Guard,
 		})
 	}
 	return parsedGroup{objects: objects, relations: relations, objectRefs: objectRefs}, nil

@@ -49,3 +49,39 @@ void sbFree(strbuf *sb) {
     sb->buf = NULL;
     sb->len = sb->cap = 0;
 }
+
+/* The most bytes one reservation may ask for. */
+#define SB_LIMIT (1u << 20)
+
+static void sbTrace(const strbuf *sb, const char *what) {
+    fprintf(stderr, "strbuf at %zu: %s\n", sb->len, what);
+}
+
+/* sbCheckOrAbort returns when its check holds and aborts otherwise: with a
+ * path that returns it is no function that never returns, so its call runs
+ * unguarded and what follows it runs (`if (ok) return; abort();`). */
+static void sbCheckOrAbort(int ok) {
+    if (ok) return;
+    abort();
+}
+
+/* sbReserve fails on a size of zero or past the limit: oom ends in abort,
+ * so its calls, and what the arm ending in one does first, run only on a
+ * failing path. Draining for ever is declared noreturn but loops, so its
+ * call is an ordinary branch; growing is unguarded. */
+void sbReserve(strbuf *sb, size_t len) {
+    if (len == 0) oom("an empty reservation");
+    if (len > SB_LIMIT) {
+        sbTrace(sb, "past the limit");
+        oom("a reservation past the limit");
+    } else {
+        sbTrace(sb, "within the limit");
+    }
+    if (len == SB_LIMIT) sbDrainForever(sb);
+    sbCheckOrAbort(sb->buf != NULL);
+    sbAppend(sb, "", 0);
+}
+
+_Noreturn void sbDrainForever(strbuf *sb) {
+    for (;;) sbConsume(sb, sb->len);
+}

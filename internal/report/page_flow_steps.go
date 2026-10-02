@@ -32,6 +32,11 @@ type pageStepName struct {
 	// repository type implementing the interface called, known by method
 	// set (orientation FlowBranch.Basis).
 	Implemented bool
+	// Guard and Loop are, for a split's candidate, what the call reaching
+	// it runs under (orientation FlowBranch.Guard, Loop): a failing path's
+	// candidate is never a way on, and says so.
+	Guard *pageGuard
+	Loop  *pageAnchor
 }
 
 // pageStepRegistration is one place a step's callable is registered: the

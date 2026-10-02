@@ -589,6 +589,9 @@ class Analyzer:
             relation["location"] = location
         if source_argument is not None:
             relation["source_argument"] = source_argument
+        guard = getattr(node, "repomap_guard", None)
+        if guard is not None and kind in ("calls", "invokes_external", "passes_callback"):
+            relation["guard"] = dict(guard)
         self.relations.append(relation)
         self.relations_by_key[key] = relation
         return ref
@@ -4344,6 +4347,104 @@ def attach_control_context(tree, path):
     walk(tree, [])
 
 
+def attach_guards(tree, path):
+    # A call's guard (ProgramIndex Guard): the strongest construct of its
+    # function it runs under, at that construct. "branch": an if or else
+    # arm, a conditional expression's arm, a match case, the operands of
+    # and/or after the first, a try's else. "error": what a raise raises or
+    # chains, an except body, an assert's message, an arm ending in a raise.
+    # A test, a subject or a try body is in no arm; a function, lambda or
+    # class body starts afresh.
+    def strength(guard):
+        return 0 if guard is None else (1 if guard["kind"] == "branch" else 2)
+
+    def stronger(guard, kind, node):
+        inner = {"kind": kind, "location": source_location(path, node)}
+        return guard if strength(guard) > strength(inner) else inner
+
+    def returns(nodes):
+        # A return before the raise is a way out that does not fail.
+        for node in nodes:
+            if isinstance(node, ast.Return):
+                return True
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                continue
+            if returns(list(ast.iter_child_nodes(node))):
+                return True
+        return False
+
+    def ends_in_raise(body):
+        return bool(body) and isinstance(body[-1], ast.Raise) and not returns(body)
+
+    def arm(guard, body, node):
+        return stronger(guard, "error" if ends_in_raise(body) else "branch", node)
+
+    def walk(node, guard):
+        if guard is not None:
+            node.repomap_guard = guard
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            body = node.body if isinstance(node.body, list) else [node.body]
+            for child in ast.iter_child_nodes(node):
+                walk(child, None if child in body else guard)
+            return
+        if isinstance(node, ast.If):
+            walk(node.test, guard)
+            inner = arm(guard, node.body, node)
+            for child in node.body:
+                walk(child, inner)
+            if node.orelse:
+                inner = arm(guard, node.orelse, node.orelse[0])
+                for child in node.orelse:
+                    walk(child, inner)
+            return
+        if isinstance(node, ast.IfExp):
+            walk(node.test, guard)
+            walk(node.body, stronger(guard, "branch", node))
+            walk(node.orelse, stronger(guard, "branch", node))
+            return
+        if isinstance(node, ast.BoolOp):
+            walk(node.values[0], guard)
+            for value in node.values[1:]:
+                walk(value, stronger(guard, "branch", node))
+            return
+        if hasattr(ast, "Match") and isinstance(node, ast.Match):
+            walk(node.subject, guard)
+            for case in node.cases:
+                inner = arm(guard, case.body, case.pattern)
+                if case.guard is not None:
+                    walk(case.guard, guard)
+                for child in case.body:
+                    walk(child, inner)
+            return
+        if isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+            for child in node.body + node.finalbody:
+                walk(child, guard)
+            for handler in node.handlers:
+                inner = stronger(guard, "error", handler)
+                if handler.type is not None:
+                    walk(handler.type, guard)
+                for child in handler.body:
+                    walk(child, inner)
+            if node.orelse:
+                inner = stronger(guard, "branch", node.orelse[0])
+                for child in node.orelse:
+                    walk(child, inner)
+            return
+        if isinstance(node, ast.Raise):
+            inner = stronger(guard, "error", node)
+            for child in ast.iter_child_nodes(node):
+                walk(child, inner)
+            return
+        if isinstance(node, ast.Assert):
+            walk(node.test, guard)
+            if node.msg is not None:
+                walk(node.msg, stronger(guard, "error", node))
+            return
+        for child in ast.iter_child_nodes(node):
+            walk(child, guard)
+    walk(tree, None)
+
+
 def parse_sources(rows):
     parsed = {}
     for item in sorted(rows, key=lambda value: value.get("path", "")):
@@ -4357,6 +4458,7 @@ def parse_sources(rows):
         try:
             parsed[path] = ast.parse(content, filename=path, type_comments=True)
             attach_control_context(parsed[path], path)
+            attach_guards(parsed[path], path)
         except (SyntaxError, ValueError):
             raise ValueError("module %s has invalid Python syntax" % path)
         parsed[path].repomap_code_lines = code_line_set(content, parsed[path])

@@ -144,6 +144,9 @@ type DirectCallEdge struct {
 	Patterns               []ExternalCallPattern `json:"patterns"`
 	PatternsObserved       int                   `json:"patterns_observed"`
 	PatternsOmitted        int                   `json:"patterns_omitted"`
+	// Guard is the construct every site of the edge runs under, the
+	// weakest of its sites' (call_guard.go); nil when one runs unguarded.
+	Guard *CallGuard `json:"guard,omitempty"`
 }
 
 // DirectCallFieldAccess is one read or write of a field of a struct type
@@ -327,6 +330,10 @@ type DirectCallIndex struct {
 	Comparisons []DirectCallComparison  `json:"comparisons,omitempty"`
 	Coverage    DirectCallIndexCoverage `json:"coverage"`
 	SHA256      string                  `json:"sha256"`
+	// CallGuards are the target's call sites' guards by position
+	// (call_guard.go): what the edges fold, and what an interface invoke or
+	// an external call's sites run under. A live-run handoff, unsealed.
+	CallGuards map[Location]CallGuard `json:"-"`
 
 	nodeLookup map[string]int
 }
@@ -400,6 +407,10 @@ func (index *DirectCallIndex) Node(id string) (DirectCallNode, bool) {
 
 func copyDirectCallEdge(value DirectCallEdge) DirectCallEdge {
 	value.Patterns = cloneExternalCallPatterns(value.Patterns)
+	if value.Guard != nil {
+		guard := *value.Guard
+		value.Guard = &guard
+	}
 	return value
 }
 
@@ -865,7 +876,7 @@ func (builder *directCallIndexBuilder) addEdge(a *analyzer, call ssa.CallInstruc
 	edge := DirectCallEdge{
 		CallerID: callerID, CalleeID: calleeID, ScenarioID: builder.scenario.ID,
 		Invocation: directCallInvocation(call), RepresentativeCallsite: callsite,
-		WitnessCount: 1, Patterns: []ExternalCallPattern{},
+		WitnessCount: 1, Patterns: []ExternalCallPattern{}, Guard: a.callGuard(callsite),
 	}
 	if pattern := a.externalCallPattern(call, callsite); pattern != nil {
 		edge.Patterns = appendDirectCallPattern(edge.Patterns, *pattern)
@@ -881,6 +892,7 @@ func (builder *directCallIndexBuilder) addEdge(a *analyzer, call ssa.CallInstruc
 			existing.Patterns = appendDirectCallPattern(existing.Patterns, *pattern)
 		}
 		existing.PatternsObserved = len(existing.Patterns)
+		existing.Guard = weakerCallGuard(existing.Guard, edge.Guard)
 		builder.edges[edge.ID] = existing
 		builder.coverage.DirectStaticWitnessesIndexed++
 		return true

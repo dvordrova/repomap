@@ -29,8 +29,10 @@ type flowGraph struct {
 	// when no part of the program is core.
 	core map[string]bool
 	// open holds the declarations making a call the index leaves open with
-	// no possible target: work no edge says (conduit).
-	open map[string]bool
+	// no possible target: work no edge says (conduit); openAt where the
+	// first of them is written.
+	open   map[string]bool
+	openAt map[string]*programindex.Location
 }
 
 // flowEdge is one way a declaration reaches another: via says it as the
@@ -53,6 +55,21 @@ type flowEdge struct {
 	// programindex.BasisImplements (GO): the page says so, never a traced
 	// call.
 	basis string
+	// guard is what the call runs under (ProgramIndex Guard), the strongest
+	// along the helpers passed on the way; loop the loop statement it runs
+	// in.
+	guard *programindex.Guard
+	loop  *programindex.Location
+}
+
+// strongerGuard is the stronger of two guards a chain of calls runs under,
+// the first of equal strength: a call reached through a helper runs only
+// when both do.
+func strongerGuard(outer, inner *programindex.Guard) *programindex.Guard {
+	if programindex.GuardStrength(inner) > programindex.GuardStrength(outer) {
+		return inner
+	}
+	return outer
 }
 
 // asked is how a candidate is reached as the categorizer reads it: "one of
@@ -82,6 +99,9 @@ type flowCandidate struct {
 	by    []string
 	// ways are, by member entered, how the step's work first reaches it.
 	ways map[string]flowEdge
+	// guard is the weakest guard of the ways the step's work reaches the
+	// unit: a unit reached only on failing paths is no way on (path.go).
+	guard *programindex.Guard
 }
 
 func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGraph {
@@ -124,14 +144,23 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 			return
 		}
 		if seen[[2]string{from, edge.to}] {
-			// A traced call of a callee the declaration also reaches as an
-			// interface's implementation is how it is reached.
-			if edge.basis == "" {
-				for position, known := range graph.out[from] {
-					if known.to == edge.to && known.basis != "" {
-						graph.out[from][position] = edge
-					}
+			for position, known := range graph.out[from] {
+				if known.to != edge.to {
+					continue
 				}
+				// A traced call of a callee the declaration also reaches as
+				// an interface's implementation is how it is reached.
+				guard, loop := programindex.WeakestGuard([]*programindex.Guard{known.guard, edge.guard}), known.loop
+				if loop == nil {
+					loop = edge.loop
+				}
+				if edge.basis == "" && known.basis != "" {
+					known = edge
+				}
+				// Each site of the call counts: the weakest guard, a loop
+				// if any site runs in one.
+				known.guard, known.loop = guard, loop
+				graph.out[from][position] = known
 			}
 			return
 		}
@@ -160,7 +189,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 			if edge.Resolution == programindex.ResolutionAlternatives {
 				reach = flowEdge{to: edge.ToSubjectID, via: fmt.Sprintf("one of %d", alternatives[edge.RelationID]), site: edge.FromSubjectID, at: siteOf(edge.Location)}
 			}
-			reach.basis = edge.Basis
+			reach.basis, reach.guard, reach.loop = edge.Basis, edge.Guard, edge.Loop
 			add(edge.FromSubjectID, reach)
 		case programindex.RelationPassesCallback:
 			via := "handed over"
@@ -179,20 +208,24 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 					via = "handed to " + nearest.name
 				}
 			}
-			add(edge.FromSubjectID, flowEdge{to: edge.ToSubjectID, via: via})
+			add(edge.FromSubjectID, flowEdge{to: edge.ToSubjectID, via: via, guard: edge.Guard, loop: edge.Loop})
 		}
 	}
 	// A call through a function value the index leaves open reaches, as one
 	// of its possible targets, each function its stores put there (the
 	// map's possible arrows): redis's aeProcessEvents calls fe->rfileProc,
 	// which acceptHandler, readQueryFromClient and sendReplyToClient fill.
-	graph.open = map[string]bool{}
+	graph.open, graph.openAt = map[string]bool{}, map[string]*programindex.Location{}
 	for _, call := range index.Unresolved {
 		if len(call.Possible) == 0 {
 			graph.open[call.FromSubjectID] = true
+			if graph.openAt[call.FromSubjectID] == nil && call.Location != nil {
+				graph.openAt[call.FromSubjectID] = call.Location
+			}
 		}
 		for _, end := range call.Possible {
-			add(call.FromSubjectID, flowEdge{to: end, via: fmt.Sprintf("one of %d", len(call.Possible)), site: call.FromSubjectID, at: siteOf(call.Location)})
+			add(call.FromSubjectID, flowEdge{to: end, via: fmt.Sprintf("one of %d", len(call.Possible)), site: call.FromSubjectID, at: siteOf(call.Location),
+				guard: call.Guard, loop: call.Loop})
 		}
 	}
 	graph.core = graph.closuresEnteringCore()
@@ -302,13 +335,32 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 					continue
 				}
 				edge.through, edge.said = passed[from].through, passed[from].said
+				// A call through a helper runs only when the helper's call
+				// does too.
+				edge.guard = strongerGuard(passed[from].guard, edge.guard)
+				if edge.loop == nil {
+					edge.loop = passed[from].loop
+				}
 				if helper {
 					// A helper's own helpers serve it, not the step, unless it
 					// only passes the call on (conduit).
-					if (len(edge.through) == 0 || graph.conduit(from)) && !seen[edge.to] {
-						seen[edge.to] = true
-						passed[edge.to] = flowEdge{through: append(slices.Clone(edge.through), edge.to), said: append(slices.Clone(edge.said), graph.qualified(edge.to))}
-						queue = append(queue, edge.to)
+					if len(edge.through) == 0 || graph.conduit(from) {
+						route := flowEdge{through: append(slices.Clone(edge.through), edge.to), said: append(slices.Clone(edge.said), graph.qualified(edge.to)),
+							guard: edge.guard, loop: edge.loop}
+						known, reached := passed[edge.to]
+						switch {
+						case !seen[edge.to]:
+							seen[edge.to] = true
+							passed[edge.to] = route
+							queue = append(queue, edge.to)
+						case reached && programindex.GuardStrength(route.guard) < programindex.GuardStrength(known.guard):
+							// A weaker route to a helper reached before goes on
+							// too, whichever came first (control review,
+							// 2026-10-03: a normal route through a helper a
+							// failing route had reached first had been lost).
+							passed[edge.to] = route
+							queue = append(queue, edge.to)
+						}
 					}
 					continue
 				}
@@ -316,7 +368,11 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 				if !known {
 					position = len(result)
 					at[target] = position
-					result = append(result, flowCandidate{unit: target, reach: edge, through: start, roots: map[string]string{}, ways: map[string]flowEdge{}})
+					result = append(result, flowCandidate{unit: target, reach: edge, through: start, roots: map[string]string{}, ways: map[string]flowEdge{}, guard: edge.guard})
+				} else if programindex.GuardStrength(edge.guard) < programindex.GuardStrength(result[position].guard) {
+					// The weakest way is how the unit is reached.
+					result[position].reach, result[position].guard = edge, edge.guard
+					result[position].ways[edge.to] = edge
 				}
 				candidate := &result[position]
 				if _, known := candidate.roots[edge.to]; !known {

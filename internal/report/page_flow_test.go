@@ -891,3 +891,45 @@ func TestATracedCallAndAnImplementationOfTheSameCalleeKeepTheirBasis(t *testing.
 		}
 	}
 }
+
+// A Main flow step says what the call reaching it runs under, with the
+// construct's place, a candidate beside it the same way, and the last step
+// why the path ends there, in both languages (control review, 2026-10-03:
+// Lua's forprep reaches the collector only through luaG_runerror).
+func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "lvm.c", Line: line, Column: 5}
+	}
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called",
+		Guard: &programindex.Guard{Kind: programindex.GuardBranch, Location: at(218)}, Loop: at(1180), Stop: orientation.StopFailureOnly, OpenAt: at(462),
+		Passed: []orientation.FlowBranch{{SubjectID: "h2", Via: "called", Guard: &programindex.Guard{Kind: programindex.GuardNoReturn, Location: at(223)}}}}, section, map[string]bool{})
+	if step.Guard == nil || step.Loop == nil || step.Stop == "" || step.Passed == nil || step.Passed.Names[0].Guard == nil {
+		t.Fatalf("the step's guard, loop or stop is lost: %+v", step)
+	}
+	for language, words := range map[DisplayLanguage][]string{
+		English: {"only under a condition", "in a loop", "never returns", "This route ends here: the next steps identified for this route are on failure paths.",
+			"it calls through a value whose target is not established"},
+		Russian: {"только при условии", "в цикле", "не возвращает управление", "найденные следующие шаги этого пути идут по путям отказа",
+			"вызывает через значение, цель которого не установлена"},
+	} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		for _, word := range words {
+			if !strings.Contains(html, word) {
+				t.Fatalf("%v: the step does not say %q: %s", language, word, html)
+			}
+		}
+		if !strings.Contains(html, "lvm.c:223") || !strings.Contains(html, "lvm.c:1180") || !strings.Contains(html, "lvm.c:462") {
+			t.Fatalf("%v: a guard or loop lost its place: %s", language, html)
+		}
+	}
+}

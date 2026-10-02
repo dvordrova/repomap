@@ -627,3 +627,104 @@ func TestAStepsWorkPassesThroughConduits(t *testing.T) {
 		t.Fatalf("a flow through conduits does not seal: %v", err)
 	}
 }
+
+// A unit the step's work reaches only on failing paths (a call that never
+// returns, an error path, or a helper reached so) is no way on: it stays
+// beside the step with its guard, never asked or followed, and a step left
+// with only such units ends the path, saying so. Lua's forprep reaches the
+// collector only through luaG_runerror, which never returns.
+func TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "lvm.c", Line: line, Column: 3}
+	}
+	guard := func(kind string, line int) *programindex.Guard {
+		return &programindex.Guard{Kind: kind, Location: at(line)}
+	}
+	subject := func(id string, helper bool) groupindex.Subject {
+		result := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: at(1)}}
+		if helper {
+			result.Interpretation = &groupindex.Interpretation{Line: "Raises an error.", Helper: true}
+		}
+		return result
+	}
+	calls := func(from, to string, guarded *programindex.Guard, loop *programindex.Location) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls,
+			Resolution: programindex.ResolutionExact, Guard: guarded, Loop: loop}
+	}
+	index := groupindex.Index{
+		Target:   programindex.Target{ID: "t1", Name: "vm", Seeds: []programindex.TargetSeed{{ObjectID: "execute", Kind: programindex.SeedCallable}}},
+		Subjects: []groupindex.Subject{subject("execute", false), subject("forprep", false), subject("runerror", true), subject("collect", false), subject("panic", false)},
+		Groups:   []groupindex.Group{{ID: "g1", Title: "Virtual machine", Core: true, MemberSubjectIDs: []string{"execute", "forprep", "runerror", "collect", "panic"}}},
+		StructuralEdges: []groupindex.StructuralEdge{
+			calls("execute", "forprep", guard(programindex.GuardBranch, 10), at(5)),
+			calls("execute", "panic", guard(programindex.GuardNoReturn, 12), nil),
+			calls("forprep", "runerror", guard(programindex.GuardNoReturn, 223), nil),
+			calls("runerror", "collect", nil, nil),
+		},
+		Unresolved: []groupindex.UnresolvedCall{{FromSubjectID: "forprep", Location: at(462)}},
+	}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, nil, Input{Groups: []groupindex.Index{index}}, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := walk.flow.Steps
+	if len(steps) != 2 || steps[1].SubjectID != "forprep" || steps[1].Guard == nil || steps[1].Guard.Kind != programindex.GuardBranch || steps[1].Loop == nil || steps[1].Loop.Line != 5 {
+		t.Fatalf("the flow is %+v, want execute then forprep, under its branch, in its loop", steps)
+	}
+	if passed := steps[0].Passed; len(passed) != 1 || passed[0].SubjectID != "panic" || !passed[0].Guard.Fails() || passed[0].Guard.Location.Line != 12 {
+		t.Fatalf("execute passed %+v, want panic, never returning at line 12", passed)
+	}
+	if passed := steps[1].Passed; len(passed) != 1 || passed[0].SubjectID != "collect" || passed[0].Guard.Kind != programindex.GuardNoReturn ||
+		passed[0].Guard.Location.Line != 223 || !slices.Equal(passed[0].Through, []string{"runerror"}) {
+		t.Fatalf("forprep passed %+v, want collect through runerror, never returning at line 223", passed)
+	}
+	// The route ends while forprep calls through a value whose target is
+	// not established: it says where.
+	if steps[1].OpenAt == nil || steps[1].OpenAt.Line != 462 || steps[0].OpenAt != nil {
+		t.Fatalf("open calls: %+v, %+v", steps[0].OpenAt, steps[1].OpenAt)
+	}
+	if steps[1].Stop != StopFailureOnly || steps[0].Stop != "" || walk.flow.Title != "From execute to forprep" {
+		t.Fatalf("stops %q, %q; title %q", steps[0].Stop, steps[1].Stop, walk.flow.Title)
+	}
+	if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {
+		t.Fatalf("a flow with failing paths beside it does not seal: %v", err)
+	}
+}
+
+// A unit reached through a helper two routes share keeps the weakest route,
+// whichever the walk meets first: a normal route through H2 is not lost
+// behind a failing route through H1 (control review, 2026-10-03).
+func TestAWeakerRouteThroughASharedHelperGoesOn(t *testing.T) {
+	failing := &programindex.Guard{Kind: programindex.GuardNoReturn, Location: &programindex.Location{Path: "s.c", Line: 3, Column: 1}}
+	for _, test := range []struct {
+		name    string
+		failing string
+		through []string
+	}{{"the failing route first", "H1", []string{"H2", "H3"}}, {"the failing route second", "H2", []string{"H1", "H3"}}} {
+		subject := func(id string) groupindex.Subject {
+			result := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "s.c", Line: 1, Column: 1}}}
+			if strings.HasPrefix(id, "H") {
+				result.Interpretation = &groupindex.Interpretation{Line: "Passes a call on.", Helper: true}
+			}
+			return result
+		}
+		calls := func(from, to string) groupindex.StructuralEdge {
+			edge := groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
+			if from == "S" && to == test.failing {
+				edge.Guard = failing
+			}
+			return edge
+		}
+		index := groupindex.Index{
+			Target:          programindex.Target{ID: "t1", Name: "s", Seeds: []programindex.TargetSeed{{ObjectID: "S", Kind: programindex.SeedCallable}}},
+			Subjects:        []groupindex.Subject{subject("S"), subject("H1"), subject("H2"), subject("H3"), subject("X")},
+			Groups:          []groupindex.Group{{ID: "g1", Title: "Work", Core: true, MemberSubjectIDs: []string{"S", "H1", "H2", "H3", "X"}}},
+			StructuralEdges: []groupindex.StructuralEdge{calls("S", "H1"), calls("S", "H2"), calls("H1", "H3"), calls("H2", "H3"), calls("H3", "X")},
+		}
+		graph := newFlowGraph(&index, nil)
+		candidates := graph.candidates("S", []string{"S"})
+		if len(candidates) != 1 || candidates[0].unit != "X" || candidates[0].guard.Fails() || !slices.Equal(candidates[0].reach.through, test.through) {
+			t.Fatalf("%s: S reaches %+v, want X on its normal route through %v", test.name, candidates, test.through)
+		}
+	}
+}

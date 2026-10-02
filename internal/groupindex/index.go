@@ -377,6 +377,27 @@ type StructuralEdge struct {
 	// known (ProgramIndex Relation.Basis): "implements", a method of a
 	// repository type implementing the interface, not a traced binding.
 	Basis string `json:"basis,omitempty"`
+	// Guard is, on a relation target edge, the construct every site of the
+	// call runs under (ProgramIndex Relation.Guard); Loop the loop statement
+	// a site of it runs in, from its patterns' control contexts (a select
+	// is no loop).
+	Guard *programindex.Guard    `json:"guard,omitempty"`
+	Loop  *programindex.Location `json:"loop,omitempty"`
+}
+
+// relationLoop is the loop statement a site of a relation runs in, by its
+// patterns' control contexts, the innermost of the first site that has one:
+// for, range, while and do-while bodies, never a select.
+func relationLoop(relation programindex.Relation) *programindex.Location {
+	for _, pattern := range relation.Patterns {
+		for position := len(pattern.Context) - 1; position >= 0; position-- {
+			context := pattern.Context[position]
+			if context.Kind == "control_context" && !strings.HasPrefix(context.Detail, "select") && context.Location != nil {
+				return cloneLocation(context.Location)
+			}
+		}
+	}
+	return nil
 }
 
 // Index is the single sealed group-graph authority for one enriched
@@ -458,6 +479,18 @@ type UnresolvedCall struct {
 	// name (drawnEnds): what a call through a function value the index
 	// leaves open may reach, never its targets.
 	Possible []string
+	// Guard and Loop are what the call runs under (StructuralEdge).
+	Guard *programindex.Guard    `json:"guard,omitempty"`
+	Loop  *programindex.Location `json:"loop,omitempty"`
+}
+
+func cloneGuard(guard *programindex.Guard) *programindex.Guard {
+	if guard == nil {
+		return nil
+	}
+	copied := *guard
+	copied.Location = cloneLocation(guard.Location)
+	return &copied
 }
 
 // InputBranch is one case's or guard's branch: SubjectID compares at
@@ -509,7 +542,8 @@ func compileUnresolvedCalls(program programindex.Index, retained map[string]stru
 		if _, ok := retained[relation.FromID]; !ok {
 			continue
 		}
-		call := UnresolvedCall{RelationID: relation.ID, FromSubjectID: relation.FromID, Location: cloneLocation(relation.Location)}
+		call := UnresolvedCall{RelationID: relation.ID, FromSubjectID: relation.FromID, Location: cloneLocation(relation.Location),
+			Guard: cloneGuard(relation.Guard), Loop: relationLoop(relation)}
 		for _, end := range drawnEnds(relation) {
 			if _, kept := retained[end]; kept {
 				call.Possible = append(call.Possible, end)
@@ -1520,6 +1554,7 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 				Role: EdgeRelationTarget, RelationID: relation.ID,
 				RelationKind: relation.Kind, Resolution: relation.Resolution,
 				Location: cloneLocation(relation.Location), FieldPath: relation.FieldPath, Basis: relation.Basis,
+				Guard: cloneGuard(relation.Guard), Loop: relationLoop(relation),
 			})
 		}
 		for _, pattern := range relation.Patterns {

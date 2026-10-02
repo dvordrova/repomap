@@ -409,6 +409,18 @@ type pageFlowStep struct {
 	// flow giving the value (orientation FlowStep.Basis), that it is known
 	// by method set, never a traced call.
 	Implemented bool
+	// Guard and Loop are what the step before's call of it runs under
+	// (orientation FlowStep.Guard, Loop), each with its construct's place.
+	Guard *pageGuard
+	Loop  *pageAnchor
+	// Stop is, on the last step of a path, why the path ends there, as a
+	// message of the page's language (flowStopMessage); StopName, for a way
+	// going on as another, where that way starts.
+	Stop     string
+	StopName *pageStepName
+	// OpenAt is, on a route's last step, where it calls through a value
+	// whose target is not established (orientation FlowStep.OpenAt).
+	OpenAt *pageAnchor
 	// OneOf is, for a step reached as one of the callables a call through a
 	// value may run, that reach in words ("one of the calls serverCron may
 	// make"), never a count; Via is then empty.
@@ -1727,6 +1739,14 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 		}
 	}
 	return steps, elsewhere
+}
+
+// pageGuard is what a call runs under, as a message of the page's language
+// ("never returns", "on an error path", "only under a condition") and the
+// construct's place, a link into the code.
+type pageGuard struct {
+	Key string
+	At  *pageAnchor
 }
 
 // pageOwnCall is one call an entry makes itself: its name linked to where

@@ -154,3 +154,36 @@ func (receiptDesk) PrintReceipt(string) {}
 func RegisterReceiptHandlerServer(mux map[string]func(string), server receiptServer) {
 	mux["print"] = func(name string) { server.PrintReceipt(name) }
 }
+
+// A call's guard (GO): the arm a non-nil error takes, what panic is handed
+// and an arm ending in panic run only on a failing path; any other arm is a
+// branch; the rest runs unguarded.
+func CheckedStore(key string, err error) {
+	if err != nil {
+		reportStoreFailure(key)
+		return
+	}
+	if key == "" {
+		panic(describeStore(key))
+	}
+	if len(key) > 64 {
+		reportLongKey(key)
+	}
+	countStore(key)
+}
+
+func reportStoreFailure(string)       {}
+func describeStore(key string) string { return key }
+func reportLongKey(string)            {}
+func countStore(string)               {}
+
+// An arm with a return before its panic does not only fail: it is a branch.
+func CheckedLongKey(key string) {
+	if len(key) > 128 {
+		reportLongKey(key)
+		if key[0] == 'o' {
+			return
+		}
+		panic(key)
+	}
+}

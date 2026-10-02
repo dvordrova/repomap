@@ -62,12 +62,13 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 	}{
 		// The command functions only the table and staticsyms.h's integer
 		// casts name still run: the table exists before main.
-		// loopNowMs is util/watch.c's clock: neither program reads it.
-		{server, []string{"loop.c:loopNowMs", "net.c:netConnect"}},
+		// loopNowMs is util/watch.c's clock: neither program reads it, nor
+		// strbuf.c's reservation example (TestCFixtureACallSaysWhatItRunsUnder).
+		{server, []string{"loop.c:loopNowMs", "net.c:netConnect", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
 		{client, []string{"loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopMain", "loop.c:loopNowMs", "loop.c:loopProcessEvents",
 			"loop.c:loopSetBeforeSleep", "loop.c:loopStop", "loop.c:oom", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiPoll",
-			"net.c:netListen", "strbuf.c:sbConsume"}},
-		{dump, []string{"strbuf.c:sbConsume"}},
+			"net.c:netListen", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
+		{dump, []string{"strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
 	} {
 		if got := cUnreachable(want.index); !reflect.DeepEqual(got, want.names) {
 			t.Errorf("%s never runs %v, want %v", want.index.Target.Name, got, want.names)

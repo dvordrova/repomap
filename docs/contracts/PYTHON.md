@@ -542,6 +542,18 @@ stored twice (the fixture's `MutableAdapter.url`, a default and a
 replacement) is unknown, so a file read from such a field is a path not
 established (READING, files a program keeps; 2026-09-29 files pass).
 
+## What a call runs under
+
+Each parsed tree is annotated once with its calls' guards (PROGRAM_INDEX),
+beside its loop contexts (`attach_guards`): an if or else arm, a
+conditional expression's arm, a match case, the operands of `and`/`or`
+after the first and a try's else are `branch`; what a raise raises or
+chains, an except body, an assert's message and an arm ending in a raise
+are `error`; a test, a match subject and a try body are in no arm; a
+function, lambda or class body starts afresh. iteration.py's checked_store
+checks each kind (`TestCumulativePythonACallSaysWhatItRunsUnder`).
+`typing.NoReturn` annotations are not read.
+
 ## Handler tables and stored callbacks
 
 These are the Python equivalents of the C adapter's command table, its

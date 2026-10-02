@@ -1,5 +1,28 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — What a call runs under, and why a route ends (data 2)
+
+- **Control review, 21:34:** Lua 5.5's Main flow went on from forprep to the collector through luaG_runerror. That happens only when the step is zero, and the error message's allocation read as the outcome ("From main to sweeplist or luaD_hook"). The reader outcome is that the script is loaded, then the VM runs it; error and collector branches stay reachable, labelled, and each route says why it ends.
+- **Native guards** (skeptic, then two control-review P1s fixed): ProgramIndex `Relation.Guard {kind, location}` is optional, saved, and never a provider row. It is carried to GroupsIndex edges and unresolved calls with `loop`, taken from the patterns' control contexts (a select is not a loop).
+  - **C:** if/else arms, ?: arms, the right operand of && and ||, and a switch body are `branch`.
+  - **C noreturn:** a call of a function that never returns is `noreturn`, as is a call in an arm ending in one. That covers platform callees whose type says noreturn and corpus functions every path of which ends in such a call. The author's declaration is taken while the body agrees; otherwise the least fixpoint decides.
+  - **C early returns:** a statement that may return or goto stops a block from ending, so `if (x) return; abort();` returns (P1). Fixture: strbuf.c's sbReserve, sbDrainForever and sbCheckOrAbort.
+  - **Go:** arms, case and select clauses, and the right operand of && and || are `branch`. Error arms are those taken when an error-typed value is non-nil, panic's arguments, and an arm ending in panic with no return before it. Fixture: CheckedStore, CheckedLongKey.
+  - **Python:** arms, conditional expressions, match cases, and/or operands, and try-else are `branch`. Raise operands, except bodies, assert messages, and an arm ending in raise with no return before it are `error`. Fixture: iteration.py's checked_store, checked_long.
+  - **Missing:** JS/TS (another agent was in helper.mjs) and Clojure.
+- **Walk.** Edges keep the weakest guard of their sites; through helpers the strongest along the way is kept. A weaker route through a shared helper goes on too, in either order (P2 of the review's P1 pair, the diamond).
+  - A unit reached only on failing paths is no way on: it is never asked or followed, and stays among the step's passed calls with its guard.
+  - Every route's last step saves `stop`: torn, unanswered, leaf, failure_only, revisits or joins. A joining way leaves the title. `open_at` records an open call on a route's last step.
+  - The page states guards and loops with their places, and the stop in this route's terms (P2: "This route ends here: the next steps identified for this route are on failure paths."), in English and Russian.
+  - Option texts are unchanged.
+- **Warm runs** with HEAD b00dd0ba plus these files (binary 5c8794fe, after both P1 fixes), every exit 0:
+  - lua 224532: main > pmain > handle_script (under lua.c:759) > lua_pcallk (through docall). It parts into luaV_execute (through luaD_call, ccall) > forprep (in a loop at lvm.c:1223), stop failure_only, luaC_step passed as "never returns, lvm.c:223"; and luaD_precall > luaD_hook, stop leaf. Title: "From main to forprep or luaD_hook".
+  - lua-5.1.5 230744: unchanged apart from guards and stops. The script way goes through the parser to llex > luaC_step "under a condition" (llex.c:422) and ends at the collector. Its handle_script cannot offer lua_pcall, which the REPL way holds.
+  - othello 224640: way 1 timed-deepen "goes on as the way from choose-at-depth", title "From othello.core/-main to othello.rules/apply-move".
+  - litestream 224658: Sync "in a loop" (replicate.go:3061 site).
+  - etcd and freqtrade: flows unchanged, 0 orientation requests.
+  - Live requests were 1 atlas_boundaries each on lua and othello (another change's boundary criteria) and 1 orientation on litestream.
+
 ## 2026-10-03 — A destination's walked value reads "Argument value"; a placeless mode never answers an address (data 1)
 
 - **Destination card:** the one value all of a destination's walks end in (`destinationWritten`) had stood unlabelled on its map card and reading, the way an input's registration does (`Written`).

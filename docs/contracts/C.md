@@ -402,6 +402,30 @@ typedef merges with its record, a tentative definition is one variable and an
 `#if` alternative parses one branch. `kvd.c`'s `bgsaveCommand` (17 of its 18
 lines; one comment line) asserts the count.
 
+## What a call runs under
+
+A call's guard (PROGRAM_INDEX) is read from the statements around it while
+its function is walked: an if's then and else arms, a ?: arm, the right
+operand of `&&` and `||`, and a switch's body are arms, at the construct's
+own line; a call in a condition is in none. A call never returns when its
+callee is a function outside the corpus whose type, as clang prints it,
+says `noreturn` (the platform's `__dead2` on abort, exit and longjmp) or a
+corpus function that never returns: every path of its body ends in such a
+call, a block holding one at its top level, an if whose both arms end, a
+`do { } while (0)` whose body ends; a return completes a statement and a
+loop never ends. A function its author declares noreturn (the GNU attribute
+in its type, C11's `_Noreturn`) is taken at its word while its body agrees,
+so Lua 5.4's luaD_throw, which re-throws through itself, ends; another is
+found from the calls it ends in, the least fixpoint, so Lua 5.1.5's,
+undeclared, ends in longjmp or exit. A call of such a function is
+`noreturn` at the call; a call in an arm ending in one is `noreturn` at the
+arm's construct; any other call in an arm is a `branch` at the innermost.
+The callbacks a call hands over take its guard. strbuf.c's sbReserve checks
+each kind, sbDrainForever, declared `_Noreturn` but looping, being an
+ordinary branch (`TestCFixtureACallSaysWhatItRunsUnder`). C has no raise or
+catch, and an early return is not read as a failing path: a C error check
+returning a code is a `branch`, a missing equivalent of Go's error arm.
+
 ## What a program never runs
 
 A C function runs only when code that runs names it: calls it directly, or

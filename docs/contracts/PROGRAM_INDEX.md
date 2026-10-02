@@ -105,7 +105,25 @@ ProgramIndex retains:
   the interface (Go, GO: the owner's rule that an interface call follows the
   repository's implementations), never a traced binding of that value;
   absent, the targets are observed. Validation refuses it on any other
-  relation;
+  relation. `guard` says what a call, an external call or a callback handed
+  over runs under, from the code's structure, saved and never a provider
+  row: `branch` (an if or else arm, a case, a ?: arm, the operands of a
+  short-circuit operator after the first; a call in a condition itself is
+  in no arm), `error` (what a raise, throw or panic hands over, an except or
+  catch body, an arm ending in one, Go's arm taken when a value of the error
+  type is not nil) or `noreturn` (a call of a function that never returns,
+  or an arm ending in one), each with the construct's `location`; nested
+  constructs give the strongest, a failing one over a branch. One unguarded
+  site leaves the relation unguarded; folded sites keep the weakest guard.
+  Loops stay the patterns' `control_context` witnesses (a select is none).
+  C, Go and Python record guards (C, GO, PYTHON); JS/TS and Clojure record
+  none yet, a missing equivalent: their native views have the statements
+  (TypeScript's AST; Clojure forms through clj-kondo give no statement
+  nesting), and Python's `typing.NoReturn`, TypeScript's `never`, Go's
+  `os.Exit` and C11 `_Noreturn` declarations outside the corpus are not
+  read (owner, control review 2026-10-03: Lua's forprep calls luaG_runerror
+  only when its step is zero, and the error message's allocation had read
+  as the Main flow's outcome);
 - one resolution rule for every language: one known target is `exact`, several
   are `alternatives`, none is `unresolved`;
 - one owner rule for every language: a call, read or callback belongs to the

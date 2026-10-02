@@ -141,6 +141,22 @@ method limits eligible observed implementations, and the cumulative Go fixture
 requires the constructor-injected facade to retain `storedEngine.Put` as its
 one observed target.
 
+### What a call runs under
+
+A call's guard (PROGRAM_INDEX) is read from the already loaded syntax and
+types, once per target (`call_guard.go`): an if's body and else, a case or
+select clause and the right operand of `&&` or `||` are arms; the arm taken
+when an operand whose type is identical to the predeclared `error` is not
+nil (the body of `!= nil`, also as an `&&` conjunct; the else of `== nil`),
+what builtin `panic` is handed and an arm ending in `panic` are `error`; a
+function literal's body starts afresh; a call in a condition, a tag or a
+case's list is in no arm. A call edge folds its sites as it folds them into
+one edge: one unguarded site leaves it unguarded, else the weakest stands,
+kept out of the edge's identity; an interface invoke or an external call
+takes its sites' guards. storefixture/handoff_flow.go's CheckedStore checks
+each kind (`assertGoCallGuards`). `os.Exit` and `log.Fatal` are names, not
+structure: not read.
+
 ### A value no observed flow gives
 
 An interface call follows the repository's implementations (owner). On

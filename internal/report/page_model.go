@@ -1040,6 +1040,14 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	}
 	row.Through = builder.flowThrough(step.TargetID, step.Through)
 	row.Implemented = step.Basis == programindex.BasisImplements
+	row.Guard, row.Loop = builder.flowGuard(step.Guard), builder.flowLoop(step.Loop)
+	row.Stop = flowStopMessage(step.Stop)
+	row.OpenAt = builder.flowLoop(step.OpenAt)
+	if step.Stop == orientation.StopJoins {
+		if name, ok := builder.flowName(step.TargetID, step.StopSubject); ok {
+			row.StopName = &name
+		}
+	}
 	row.Fork = builder.flowFork(step)
 	row.Passed = builder.flowPassed(step)
 	builder.flowStepOwn(&row, step, section)
@@ -1218,6 +1226,50 @@ func flowViaMessage(via string) (string, string) {
 	return "", ""
 }
 
+// flowGuard is what a walked call runs under, in words, with its
+// construct's place (saved data only).
+func (builder *pageBuilder) flowGuard(guard *programindex.Guard) *pageGuard {
+	if guard == nil {
+		return nil
+	}
+	said := &pageGuard{Key: "only under a condition"}
+	switch guard.Kind {
+	case programindex.GuardNoReturn:
+		said.Key = "never returns"
+	case programindex.GuardError:
+		said.Key = "on an error path"
+	}
+	if at := guard.Location; at != nil {
+		said.At = builder.links.anchorPointer(at.Path, at.Line, at.Column)
+	}
+	return said
+}
+
+// flowLoop is the loop statement a walked call runs in, a link.
+func (builder *pageBuilder) flowLoop(loop *programindex.Location) *pageAnchor {
+	if loop == nil {
+		return nil
+	}
+	return builder.links.anchorPointer(loop.Path, loop.Line, loop.Column)
+}
+
+// flowStopMessage is why a path ends at its last step, in the page's
+// words; a split left undecided or parting says itself by its fork or
+// ways.
+func flowStopMessage(stop string) string {
+	switch stop {
+	case orientation.StopLeaf:
+		return "This route ends here: the report has not identified a next step."
+	case orientation.StopFailureOnly:
+		return "This route ends here: the next steps identified for this route are on failure paths."
+	case orientation.StopRevisits:
+		return "This route ends here: the next steps identified for this route are already on it."
+	case orientation.StopJoins:
+		return "From here this route goes on as the way from {0}."
+	}
+	return ""
+}
+
 // flowThrough are the helpers a step or a split's candidate is reached
 // through, by name, each read as a step's name is (saved data only).
 func (builder *pageBuilder) flowThrough(targetID string, through []string) []pageStepName {
@@ -1289,6 +1341,7 @@ func (builder *pageBuilder) flowBranchNames(targetID string, branches []orientat
 		}
 		name.Through = builder.flowThrough(targetID, branch.Through)
 		name.Implemented = branch.Basis == programindex.BasisImplements
+		name.Guard, name.Loop = builder.flowGuard(branch.Guard), builder.flowLoop(branch.Loop)
 		result = append(result, name)
 		names, spellings = append(names, name.Name), append(spellings, groupindex.Where(name.Name, file, part))
 	}

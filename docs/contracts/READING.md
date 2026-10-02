@@ -2063,7 +2063,24 @@ the same callee winning; the page reads it as known by method set, never a
 traced call, as it reads such a call in a declaration's Calls ("implemented
 in this repository by these"), among an entry's own calls and in an input's
 flow (`TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis`,
-`TestACallKnownByItsInterfacesImplementationsSaysSo`). No unit whose closure enters no
+`TestACallKnownByItsInterfacesImplementationsSaysSo`). Each edge keeps what
+the call runs under (ProgramIndex `guard`, the loop of its patterns'
+control contexts), duplicate edges the weakest guard and any loop, and a
+call through helpers the strongest along the way; a unit the step's work
+reaches only on failing paths (its weakest way an error or a call that
+never returns) is no way on: it is neither asked about nor followed, and
+stays beside the step among its passed calls with its guard, the step's
+own guard and loop saved too (`FlowStep.Guard`, `Loop`); the option text of
+the split is unchanged (control review, 2026-10-03: Lua's forprep had gone
+on to the collector through luaG_runerror, which never returns, and the
+title had named sweeplist). The last step of every path says why the path
+ends (`FlowStep.Stop`): it parts into ways (`torn`), its split is left
+undecided (`unanswered`), its work reaches no further unit (`leaf`), only
+failing paths (`failure_only`), only units already on the path
+(`revisits`), or, for a way, where another way of the same split starts,
+which it goes on as (`joins`, `StopSubject`; the title leaves such a way
+out); the page says it under the step, and each guard and loop with its
+place (`TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops`). No unit whose closure enters no
 part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the
