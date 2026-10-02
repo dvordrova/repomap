@@ -849,6 +849,10 @@ func (builder *pageBuilder) recipe(view *pageView) {
 		})
 	}
 	for _, fact := range builder.data.Facts.OfKind(facts.KindEntrypoint) {
+		if fact.Key == facts.EntrypointExport {
+			// A library's API is no way to run it.
+			continue
+		}
 		row := pageRecipe{Command: factLabel(fact), Anchors: anchorList(builder.links.factAnchor(fact))}
 		if fact.Anchor != nil {
 			row.Cwd = path.Dir(fact.Anchor.Path)

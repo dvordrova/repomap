@@ -72,10 +72,10 @@
   - JS/TS: canvas-ui's `"exports": "./canvas.mjs"`.
 - **Checks:** all product tests and vet pass in a clean export of fbd6bab3
   plus this change. Saved redis and etcd runs render.
+- **Run recipe:** a run without a model no longer lists a library's
+  exports as ways to run it (`TestRecipeListsNoLibraryExport`).
 - **Pending (files another agent is editing):** the READING (entry lane) and
-  REPORT (Entry list, recipe) lines, and page_model.go's run recipe skipping
-  exports (a run without a model lists liblua.a's 156 as ways to run it).
-  The column shows the Entry list flat.
+  REPORT (Entry list, recipe) lines. The column shows the Entry list flat.
 
 ## 2026-10-02 — A Jev row over its envelope is packed or refused unsent, and an unbuilt C unit's failure says so (data 1, ff9af16f, fbd6bab3)
 

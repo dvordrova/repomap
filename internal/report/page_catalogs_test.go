@@ -72,6 +72,22 @@ func TestRecipeNeverPromotesAnEntrypointToDocumentedCommand(t *testing.T) {
 	}
 }
 
+// Without a model recipe the page lists the proved entrypoints as ways to
+// run the program, but never a library's exports: liblua.a's 156 lua_*
+// functions are its API, no way to run it.
+func TestRecipeListsNoLibraryExport(t *testing.T) {
+	layer := &facts.Result{Facts: []facts.Fact{
+		{ID: "main", Kind: facts.KindEntrypoint, Key: "callable", Symbol: "main", Anchor: &facts.Anchor{Path: "lua.c", Line: 10}},
+		{ID: "api", Kind: facts.KindEntrypoint, Key: facts.EntrypointExport, Symbol: "lua_gettop", Anchor: &facts.Anchor{Path: "lapi.c", Line: 20}},
+	}}
+	builder := &pageBuilder{data: &ReportData{Facts: layer}, links: pageLinks{}}
+	var view pageView
+	builder.recipe(&view)
+	if len(view.Recipe) != 1 || view.Recipe[0].Command != "main" {
+		t.Fatalf("recipe: %+v", view.Recipe)
+	}
+}
+
 // A word checked only inside another input's handler is that input's
 // sub-argument, never an input of its own: redis-server listed "5 commands"
 // named hashtable, int, limit, raw and zipmap, DEBUG OBJECT's encodings and
