@@ -431,3 +431,66 @@ func TestAHandledInputIsSaidOfEveryOptionOrNone(t *testing.T) {
 		})
 	}
 }
+
+// A helper is never a step and never a dead end: a helper the step calls or
+// hands over serves the step, so what it calls or hands over, other than
+// further helpers, is the step's work, said through it, and the step taken
+// through it keeps it; a helper's own helpers serve that helper and are not
+// looked through. Decided otherwise, it is a candidate of its own and what
+// it reaches is its own (Lua's handle_script runs the script through docall,
+// a helper: dropped with all it reaches, it had left the path only the
+// loader).
+func TestAStepsWorkPassesThroughItsHelpers(t *testing.T) {
+	program := func(helpers ...string) Input {
+		subject := func(id string) groupindex.Subject {
+			result := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "app.c", Line: 1, Column: 1}}}
+			if slices.Contains(helpers, id) {
+				result.Interpretation = &groupindex.Interpretation{Line: "Wraps a call.", Helper: true}
+			}
+			return result
+		}
+		calls := func(from, to string) groupindex.StructuralEdge {
+			return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
+		}
+		index := groupindex.Index{
+			Target:   programindex.Target{ID: "t1", Name: "app", Seeds: []programindex.TargetSeed{{ObjectID: "S", Kind: programindex.SeedCallable}}},
+			Subjects: []groupindex.Subject{subject("S"), subject("A"), subject("B"), subject("C"), subject("H"), subject("H2"), subject("X")},
+			Groups: []groupindex.Group{{ID: "g1", Title: "Startup", MemberSubjectIDs: []string{"S", "H", "H2"}},
+				{ID: "g2", Title: "Work", Core: true, MemberSubjectIDs: []string{"A", "B", "C", "X"}}},
+			StructuralEdges: []groupindex.StructuralEdge{calls("S", "A"), calls("S", "H"), calls("S", "B"), calls("H", "H2"), calls("H", "B"), calls("H2", "X")},
+		}
+		handed := facts.Fact{Kind: facts.KindRegistration, TargetID: "t1", OwnerID: "H", ObjectID: "C", Text: "X"}
+		return Input{Groups: []groupindex.Index{index}, Facts: facts.Result{Facts: []facts.Fact{handed}}}
+	}
+	reached := func(input Input, step string) map[string]string {
+		graph := newFlowGraph(&input.Groups[0], input.Facts.Facts)
+		result := map[string]string{}
+		for _, candidate := range graph.candidates(step, []string{step}) {
+			result[candidate.unit] = candidate.reach.asked()
+		}
+		return result
+	}
+	// X is reached only through H's own helper H2: no work of S's.
+	if got, want := reached(program("H", "H2"), "S"), map[string]string{"A": "called", "B": "called", "C": "handed to X through H"}; !maps.Equal(got, want) {
+		t.Fatalf("S reaches %q, want %q", got, want)
+	}
+	if got, want := reached(program("H2"), "S"), map[string]string{"A": "called", "H": "called", "B": "called"}; !maps.Equal(got, want) {
+		t.Fatalf("with H no helper, S reaches %q, want %q", got, want)
+	}
+	if got, want := reached(program("H2"), "H"), map[string]string{"B": "called", "C": "handed to X", "X": "called through H2"}; !maps.Equal(got, want) {
+		t.Fatalf("with H no helper, H reaches %q, want %q", got, want)
+	}
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		return llm.Verdict{Choice: "C", Probabilities: map[string]float64{"C": 0.8, "A": 0.1, "B": 0.1}}, true
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, program("H", "H2"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if steps := walk.flow.Steps; len(steps) != 2 || steps[1].SubjectID != "C" || steps[1].Via != "handed to X" || !slices.Equal(steps[1].Through, []string{"H"}) {
+		t.Fatalf("the flow is %+v, want S then C handed to X through H", steps)
+	}
+	if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {
+		t.Fatalf("a flow through helpers does not seal: %v", err)
+	}
+}

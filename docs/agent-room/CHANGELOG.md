@@ -1,5 +1,38 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The Main flow passes through a helper as the step's own work (data 2)
+
+- **Lua's script flow** went handle_script → luaL_loadfilex → lua_load → luaC_step → the collector.
+  - handle_script runs the script through `docall`, and lua_load parses through `luaD_protectedparser`. The helper question decided both are helpers, and the walk dropped a helper together with everything it reaches.
+  - That left handle_script only luaL_loadfilex and lua_load only the collector's step, so no split was ever asked.
+  - The helper decisions are right by the map's own definition and are not flaky. Uncached draws: docall helper 0.77–0.81 over 8 draws, luaD_protectedparser 0.62–0.70, msghandler about 0.80. Without "wrappers" in the helper criteria, docall is still 0.75–0.80.
+  - A skeptic rejected rewording the helper question, which would re-ask every helper request of every repository with no measured flip. The walk was misusing a correct decision.
+- **Fix:** a helper the step calls or hands over serves the step. What it calls or hands over, other than further helpers, is the step's work: the option says "called through docall", and the step taken keeps the helper as `FlowStep.Through` (also on branches; optional field). A helper's own helpers serve that helper and are not looked through. `TestAStepsWorkPassesThroughItsHelpers`; READING Main flow.
+  - The first version looked through helpers at every depth. On Lua it reached the VM from f_parser by way of the stack's error handler (luaD_growstack, luaG_runerror, luaG_errormsg, luaD_callnoyield, ccall), and the ways wandered through error and collector code: 20 orientation requests where there had been 1.
+  - With that version, redis went on past setCommand through addReply and freeClient, and othello's dead end went on to negamax through two helpers.
+- **Warm runs** with HEAD ca27982e plus these files (binary 30c2b669), every exit 0, flows before (aa0e3fe7 runs) → after:
+
+| Repo | Before | After |
+|---|---|---|
+| lua 190850 | main > pmain > handle_script > luaL_loadfilex > lua_load > luaC_step > youngcollection > sweepgen | main > pmain > handle_script > lua_pcallk (through docall) |
+| lua-5.1.5 191903 | pmain parts: handle_script > luaL_loadfile > lua_load; runargs > dolibrary | pmain parts: lua_pcall (through dotty) > luaD_call (through f_call) > luaD_precall > collector or io_readline; handle_script > luaL_loadfile > lua_load > f_parser (through luaD_protectedparser) > luaC_step > singlestep > propagatemark |
+| othello 190930 | to timed-deepen or choose-at-depth | unchanged |
+| redis 190935 | main … processCommand > call > setCommand | unchanged |
+| etcd 190948 | to filePipeline.Open or Member.Clone | unchanged |
+| freqtrade 191313 | to IStrategy.adjust_trade_position | unchanged |
+
+- **Draws:** 5 uncached draws per split.
+  - Lua handle_script → lua_pcallk 5/5 (0.68–0.74, luaL_loadfilex 0.24–0.30).
+  - Lua main → pmain 5/5 (0.90–0.93).
+  - othello setup → play-ai 5/5 (0.62–0.67, the new fresh-ui through initial-state 0.33–0.38).
+  - Lua 5.1.5 pmain is torn: lua_pcall through dotty 0.33–0.37, handle_script 0.27–0.33.
+  - Lua 5.1.5 handle_script → luaL_loadfile 5/5 (0.74–0.79). lua_pcall is not offered there because the other way holds it.
+  - Orientation requests per run: lua 2, lua-5.1.5 7, redis 2, etcd 2, othello and freqtrade 0.
+- **Next stumbles, not changed here:**
+  - Lua 5.1.5's REPL `dotty` is decided a helper, so its lua_pcall stands at pmain.
+  - Lua 5.1.5's f_parser calls `(c == LUA_SIGNATURE[0] ? luaU_undump : luaY_parser)(...)`. The C index leaves a call through a choice of two functions open, so the collector is its only candidate.
+  - 5.4's path ends at lua_pcallk, since luaD_call, ccall and luaD_precall are helpers near 0.5.
+
 ## 2026-10-02 — Orientation from code structure only, each role from its own target (data 1, 80c1fb4c, 46ec53d4, dfc832c8)
 
 - **Found:**

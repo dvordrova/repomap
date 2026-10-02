@@ -64,15 +64,20 @@ type RecipeStep struct {
 // FreqtradeBot.process passes IStrategy). Registered and RunBy (version 3)
 // say where a registered callable is registered and what runs it.
 type FlowStep struct {
-	TargetID    string       `json:"target_id"`
-	FactID      string       `json:"fact_id,omitempty"`
-	SubjectID   string       `json:"subject_id,omitempty"`
-	Explanation string       `json:"explanation,omitempty"`
-	Via         string       `json:"via,omitempty"`
-	Site        string       `json:"site,omitempty"`
-	Branches    []FlowBranch `json:"branches,omitempty"`
-	Passed      []FlowBranch `json:"passed,omitempty"`
-	Paths       []FlowPath   `json:"paths,omitempty"`
+	TargetID    string `json:"target_id"`
+	FactID      string `json:"fact_id,omitempty"`
+	SubjectID   string `json:"subject_id,omitempty"`
+	Explanation string `json:"explanation,omitempty"`
+	Via         string `json:"via,omitempty"`
+	Site        string `json:"site,omitempty"`
+	// Through is the helper the step before's work passes on its way to
+	// this one: a subject the helper question decided serves others' work,
+	// never a step of its own (Lua's handle_script reaches lua_pcallk
+	// through docall).
+	Through  []string     `json:"through,omitempty"`
+	Branches []FlowBranch `json:"branches,omitempty"`
+	Passed   []FlowBranch `json:"passed,omitempty"`
+	Paths    []FlowPath   `json:"paths,omitempty"`
 	// Registered and RunBy are, for a step whose callable a registration
 	// hands over, where it is registered and what runs it, as the walk
 	// reaches them (readRegistrations, version 3).
@@ -89,9 +94,10 @@ type FlowPath struct {
 // FlowBranch is one candidate of a named fork: the declaration and how the
 // fork's step reaches it.
 type FlowBranch struct {
-	SubjectID string `json:"subject_id"`
-	Via       string `json:"via,omitempty"`
-	Site      string `json:"site,omitempty"`
+	SubjectID string   `json:"subject_id"`
+	Via       string   `json:"via,omitempty"`
+	Site      string   `json:"site,omitempty"`
+	Through   []string `json:"through,omitempty"`
 }
 
 // MainFlow is the one end-to-end path the reader should follow first.
@@ -241,15 +247,22 @@ func (result Result) Validate() error {
 	return nil
 }
 
+// validThrough checks the helpers a flow step or branch is reached through:
+// each a subject ref.
+func validThrough(through []string) bool {
+	return !slices.ContainsFunc(through, func(id string) bool { return !validText(id) })
+}
+
 // validFlowSteps checks a flow's steps and, on a step that parts, each of
 // its paths the same way.
 func validFlowSteps(steps []FlowStep) error {
 	for position, step := range steps {
-		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) {
+		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) ||
+			!validThrough(step.Through) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
 		for _, branch := range append(slices.Clone(step.Branches), step.Passed...) {
-			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) {
+			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) || !validThrough(branch.Through) {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
 			}
 		}
@@ -368,12 +381,23 @@ func clone(result Result) Result {
 	return owned
 }
 
+// cloneBranches copies a step's branches with the helpers each is reached
+// through.
+func cloneBranches(branches []FlowBranch) []FlowBranch {
+	owned := cloneSlice(branches)
+	for position := range owned {
+		owned[position].Through = cloneSlice(branches[position].Through)
+	}
+	return owned
+}
+
 // cloneFlowSteps copies a flow's steps, their branches and paths.
 func cloneFlowSteps(steps []FlowStep) []FlowStep {
 	owned := cloneSlice(steps)
 	for position := range owned {
-		owned[position].Branches = cloneSlice(steps[position].Branches)
-		owned[position].Passed = cloneSlice(steps[position].Passed)
+		owned[position].Through = cloneSlice(steps[position].Through)
+		owned[position].Branches = cloneBranches(steps[position].Branches)
+		owned[position].Passed = cloneBranches(steps[position].Passed)
 		owned[position].Registered = cloneSlice(steps[position].Registered)
 		for at := range owned[position].Registered {
 			owned[position].Registered[at].Chain = cloneSlice(steps[position].Registered[at].Chain)

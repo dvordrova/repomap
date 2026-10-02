@@ -1994,9 +1994,23 @@ not yet on the path, that its exact calls, every alternative of a dispatch
 site, the possible targets of a function-value call the index leaves open
 (the witnesses of its stores, GroupsIndex `UnresolvedCall.Possible`: redis's
 fe->rfileProc) and its hand-overs (a passed callable, a registration fact's
-owner handing its object) reach; a unit the helper question decided is
-none, nor one whose closure enters no part the program exists for
-(`Group.Core`), when it has one. None ends the path, the step being its
+owner handing its object) reach; a declaration the helper question decided
+serves others' work is never a step and never a dead end: a helper the step
+calls or hands over serves the step, so what it calls or hands over, other
+than further helpers, is the step's work, its option saying it ("called
+through docall") and the step taken keeping it (`FlowStep.Through`), while
+a helper's own helpers serve that helper (raising an error, growing a
+stack, allocating) and are not looked through (2026-10-02: Lua's
+handle_script runs the script through docall, a helper 0.77-0.81 over 8
+draws whatever the wording, and lua_load parses through
+luaD_protectedparser; dropped with all they reach, they had left
+handle_script only luaL_loadfilex and lua_load only the collector's step,
+and the walk ran into the collector; looked through at every depth, f_parser
+reached the VM by the stack's error handler and the ways wandered the error
+and collector code, 20 requests where there had been 1; now handle_script
+goes on to lua_pcallk through docall 5 of 5, 0.68-0.74;
+`TestAStepsWorkPassesThroughItsHelpers`). No unit whose closure enters no
+part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the
 task names the program and its core parts, the item is the step's name,

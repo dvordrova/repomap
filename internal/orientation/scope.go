@@ -15,10 +15,11 @@ import (
 // folds its methods, groupindex.Units), with every exact call, every
 // alternative of a dispatch site and every hand-over (a callable passed as
 // an argument, a registration fact's owner handing its object), each with
-// how the code reaches it. The filters trust earlier stages: a unit the
-// helper question decided serves others' work is no candidate, nor one whose
-// closure (its calls and hand-overs, transitively) enters no part the
-// program exists for (Group.Core), when the program has such a part.
+// how the code reaches it. The walk trusts earlier stages: a helper the
+// helper question decided serves others' work is passed through as part of
+// the step calling it, never a step of its own, and a unit whose closure
+// (its calls and hand-overs, transitively) enters no part the program exists
+// for (Group.Core) is no candidate, when the program has such a part.
 type flowGraph struct {
 	index    *groupindex.Index
 	subjects map[string]*groupindex.Subject
@@ -34,21 +35,29 @@ type flowGraph struct {
 // alternative of a dispatch site, or a possible end of an open call, is
 // said with the declaration holding the site (site) and, to the
 // categorizer alone, the site's file and line (at: "server.c:88"). The
-// reader's column prints no line.
+// reader's column prints no line. through is the helper the step's work
+// passes on its way there (candidates), and said how the categorizer reads
+// it ("docall").
 type flowEdge struct {
-	to   string
-	via  string
-	site string
-	at   string
+	to      string
+	via     string
+	site    string
+	at      string
+	through []string
+	said    []string
 }
 
 // asked is how a candidate is reached as the categorizer reads it: "one of
-// 94 at redis.c:2054".
+// 94 at redis.c:2054", "called through docall".
 func (edge flowEdge) asked() string {
-	if edge.at == "" {
-		return edge.via
+	asked := edge.via
+	if len(edge.said) > 0 {
+		asked += " through " + strings.Join(edge.said, ", ")
 	}
-	return edge.via + " at " + edge.at
+	if edge.at != "" {
+		asked += " at " + edge.at
+	}
+	return asked
 }
 
 // flowCandidate is one unit a step's work enters: the unit, the members of
@@ -224,8 +233,19 @@ func (graph *flowGraph) closuresEnteringCore() map[string]bool {
 // the step's own class that its work calls is a candidate of its own, a step
 // of the class's work (FreqtradeBot.process calls enter_positions and
 // exit_positions, which had been folded into it with 46 others); a private
-// helper stays folded into the step. A helper unit and one whose closure
-// enters no core part are none.
+// helper stays folded into the step. A declaration the helper question
+// decided serves others' work is never a step and never a dead end: a
+// helper the step calls or hands over serves the step, so what it calls or
+// hands over, other than further helpers, is the step's work, said through
+// it ("called through docall"); a helper's own helpers serve that helper
+// (raising an error, growing a stack, allocating) and are not looked
+// through. Lua's handle_script runs the script through docall, a helper
+// (0.77-0.81 over 8 draws), and lua_load parses through
+// luaD_protectedparser: dropped with all they reach, they had left
+// handle_script only luaL_loadfilex and lua_load only the collector's step,
+// so the path ran into the collector; looked through at every depth, every
+// step reached most of the runtime by its error and allocation helpers.
+// One whose closure enters no core part is none.
 func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidate {
 	var result []flowCandidate
 	at := map[string]int{}
@@ -235,15 +255,30 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 	for _, start := range entered {
 		seen := map[string]bool{start: true}
 		queue := []string{start}
+		// passed are, by a helper the step's work passes through, that
+		// helper; the step's own members pass none.
+		passed := map[string]flowEdge{}
 		for next := 0; next < len(queue); next++ {
-			for _, edge := range graph.out[queue[next]] {
+			from := queue[next]
+			for _, edge := range graph.out[from] {
 				target := graph.unit(edge.to)
-				if target == unit && start != unit && graph.public(edge.to) {
+				helper := graph.decidedHelper(edge.to) || graph.decidedHelper(target)
+				if target == unit && start != unit && graph.public(edge.to) && !helper {
 					target = edge.to
 				}
 				if target == unit {
 					if !seen[edge.to] {
 						seen[edge.to] = true
+						queue = append(queue, edge.to)
+					}
+					continue
+				}
+				edge.through, edge.said = passed[from].through, passed[from].said
+				if helper {
+					// A helper's own helpers serve it, not the step.
+					if len(edge.through) == 0 && !seen[edge.to] {
+						seen[edge.to] = true
+						passed[edge.to] = flowEdge{through: []string{edge.to}, said: []string{graph.qualified(edge.to)}}
 						queue = append(queue, edge.to)
 					}
 					continue
@@ -269,7 +304,7 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 		}
 	}
 	return slices.DeleteFunc(result, func(candidate flowCandidate) bool {
-		return graph.helper(candidate) || graph.core != nil && !slices.ContainsFunc(candidate.members, func(id string) bool { return graph.core[id] })
+		return graph.core != nil && !slices.ContainsFunc(candidate.members, func(id string) bool { return graph.core[id] })
 	})
 }
 
@@ -304,20 +339,6 @@ func (graph *flowGraph) coreParts(candidate flowCandidate) []string {
 		}
 	}
 	return parts
-}
-
-// helper says the helper question decided a candidate serves others' work:
-// its unit, or every member of it entered.
-func (graph *flowGraph) helper(candidate flowCandidate) bool {
-	if graph.decidedHelper(candidate.unit) {
-		return true
-	}
-	for _, member := range candidate.members {
-		if !graph.decidedHelper(member) {
-			return false
-		}
-	}
-	return len(candidate.members) > 0
 }
 
 func (graph *flowGraph) decidedHelper(id string) bool {
