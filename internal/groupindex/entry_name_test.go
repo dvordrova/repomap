@@ -1,6 +1,7 @@
 package groupindex
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -65,5 +66,42 @@ func TestAnInputsKeyIsItsFirstWordBeyondItsName(t *testing.T) {
 		if got := entryKey(c.name, c.values); got != c.want {
 			t.Fatalf("key of %q from %q = %q, want %q", c.name, c.values, got, c.want)
 		}
+	}
+}
+
+// A handled input's key is the first word its registration wrote beyond
+// its name, else its handler's name, so two same-named inputs read apart:
+// othello's sketch entries, all named by the sketch's title, by their
+// keywords (setup); etcd's two cobra "start" commands, of the gateway and
+// of the gRPC proxy, whose parent commands no fact names, by their
+// handlers.
+func TestAHandledInputsKeyIsItsWordElseItsHandler(t *testing.T) {
+	p := atlasTestProgram(t, "etcd", "server/gateway.go", "server/grpc_proxy.go", "ui/sketch.clj")
+	gateway, proxy, setup := p.Objects[0], p.Objects[1], p.Objects[2]
+	box := func(id, dir, path string, member string) atlas.Box {
+		return atlas.Box{ID: id, Dir: dir, Title: id, Line: "Does.", Side: atlas.SideIn, MemberIDs: []string{member},
+			Files: []atlas.File{{Path: path, Line: "Does.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}}
+	}
+	entry := func(id string, object programindex.Object, kind, name string, values ...string) atlas.Boundary {
+		return atlas.Boundary{ID: id, ObjectID: object.ID, BoxID: map[string]string{"server/gateway.go": "gw", "server/grpc_proxy.go": "px", "ui/sketch.clj": "ui"}[object.Location.Path],
+			Path: object.Location.Path, LineNo: 3, Column: 1, Caller: object.Name, Direction: atlas.DirectionIn, Kind: kind, Name: name, Values: values, Line: "Starts.", FactID: "f" + id}
+	}
+	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
+		Boxes: []atlas.Box{box("gw", "server", "server/gateway.go", gateway.ID), box("px", "server", "server/grpc_proxy.go", proxy.ID), box("ui", "ui", "ui/sketch.clj", setup.ID)},
+		Boundaries: []atlas.Boundary{
+			entry("b1", gateway, atlas.BoundaryCommand, "start", "start the gateway", "start"),
+			entry("b2", proxy, atlas.BoundaryCommand, "start", "start the grpc proxy", "start"),
+			entry("b3", setup, atlas.BoundaryExtension, "Othello", "setup", "Othello"),
+		}}
+	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Repository: "test", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]string{}
+	for _, operation := range indexes[0].Operations {
+		keys[operation.ID] = operation.Key
+	}
+	if want := map[string]string{"o1": gateway.Name, "o2": proxy.Name, "o3": "setup"}; !maps.Equal(keys, want) {
+		t.Fatalf("keys = %v, want %v", keys, want)
 	}
 }

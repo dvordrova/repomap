@@ -575,7 +575,15 @@ what the callable wraps, which could name both ends alike: litestream's
 cards had read "FindSQLiteDatabases$1 calls IsSQLiteDatabase", 2026-09-30;
 a declaration an input's reading names
 reads the same). litestream's `RestoreTool$1` calls `isReplicaURL` beside its
-outside calls and is "RestoreTool (inline)", never that helper. No name is composed from a fact's
+outside calls and is "RestoreTool (inline)", never that helper. Callables
+one function writes alike are told apart by the word each one's hand-over
+gives it, a string field of the value it is handed in (headscale's cmd/hi
+commands, `Name = "doctor"`: "main (inline for doctor)", read "anonymous
+function in main for doctor"); when no field tells them all apart each
+is said as one of how many they are, in words, never a number or an
+ordinal of one's own (owner's reviewer, 2026-10-02: casdoor's two
+goroutines of proxy `Start` are "Start (inline, 2)", read "one of two
+anonymous functions in Start"; ten or more read "one of many"). No name is composed from a fact's
 method and values, and no code tells a verb, path, command or topic apart.
 Nothing is asked when the registration wrote no word. A declaration whose
 native route already is its operation is no operation of its own: the entry
@@ -887,7 +895,13 @@ words as written, and GroupsIndex keeps each other spelling's name, site
 and call as written among its `Operation.Aliases`, in source order, with
 no input of its own; a joint naming a spelling names the input. Each call
 is still asked on its own and keeps its answer: a spelling answered
-another kind, or none, is not folded, and nothing new is asked. A value of
+another kind, or none, is not folded, and nothing new is asked. Once
+named, an entry a declaration names again by the same words, of the same
+kind, on the same object is that entry's alias too (`foldRepeated`: etcd's
+proto-annotations `cmd.MarkFlagRequired("annotation")` after
+`cmd.Flags().StringVar(&annotation, "annotation", …)`, both on `cmd`); one
+name on two objects (two subcommands' `--verbose`) or on an object not
+known stays two. A value of
 another entry (below) is none. A condition testing two different values
 together with `||` (`q.Get("user") == "" || q.Get("password") == ""`)
 reads as one value if both are answered the same kind: a known limit of

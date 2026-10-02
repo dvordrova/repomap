@@ -31,6 +31,9 @@ const d=rmDotBreaks(rmEl('span','','InfoCommand.Run (inline)'));
 assert.equal(d.textContent,'anonymous function in InfoCommand.Run','an inline callable is an anonymous function in its home');
 assert.ok(d.children.some(x=>!x.has&&/^\s+$/.test(x.textContent)),'words break at their spaces');
 assert.equal(rmInlineText('main → Run (inline)'),'main → anonymous function in Run');
+assert.equal(rmInlineText('main (inline for doctor)'),'anonymous function in main for doctor','one of several by the word its hand-over gives it');
+assert.equal(rmInlineText('Start (inline, 2)'),'one of two anonymous functions in Start','several nothing tells apart as one of how many, in words');
+assert.equal(rmInlineText('Serve (inline, 14)'),'one of many anonymous functions in Serve','never a number of one\'s own');
 `)
 }
 

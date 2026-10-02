@@ -644,12 +644,19 @@ read by a hundred functions folds each larger part to its line. Choosing a
 name reads that declaration in its own part, in place when that is the part
 being read, so a chain is followed one call at a time; equal names with different source locations stay
 separate. A method or a field is named with its type ("ReplicateCommand.Run",
-"RPCMessageType.ANALYZED_DF"); two declarations one list still names alike
-are told apart by their file's folder, or their file, quiet after the name
-(litestream's ReplicaClient, one per package). Two inputs of one kind in an
+"RPCMessageType.ANALYZED_DF"); two declarations a part's reading names
+alike are named apart where the reading is made (`tellDeclsApart`,
+`groupindex.TellApart`): by their file's folder, else their file
+(headscale's policy.PolicyManager and v2.PolicyManager, beets's
+library.Item.path and plugins.Item.path), and the column tells two one list
+still names alike apart the same way, quiet after the name (litestream's
+ReplicaClient, one per package). Two inputs of one kind in an
 Inputs reading sharing a word are told apart by the subcommands they are
 options of, else by the declaration declaring each when those differ
-(freqtrade's dataformat_ohlcv in SCHEMA_TRADE_REQUIRED), in words only:
+(freqtrade's dataformat_ohlcv in SCHEMA_TRADE_REQUIRED), else by their key
+(GroupsIndex `Operation.Key`: the first word their registration wrote
+beyond their name, else a handled input's handler, etcd's two cobra
+"start" startGateway and startGRPCProxy), in words only:
 never by their code as written, which stays behind their link (owner's
 review, 2026-09-30: redis's setting "save strcasecmp(argv[0]" and
 freqtrade's "-V --version "version": Arg("-V""); inputs of two kinds (redis's

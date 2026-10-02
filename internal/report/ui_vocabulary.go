@@ -893,6 +893,18 @@ var russianUI = map[string]string{
 	"Sends to":                                        "Отправляет в",
 	"handed to {0}":                                   "передаётся в {0}",
 	"by {0}":                                          "меняет: {0}",
+
+	// Callables one function writes alike (31-reading-column.js rmInlineText).
+	"anonymous function in {0} for {1}":       "анонимная функция в {0} для {1}",
+	"one of two anonymous functions in {0}":   "одна из двух анонимных функций в {0}",
+	"one of three anonymous functions in {0}": "одна из трёх анонимных функций в {0}",
+	"one of four anonymous functions in {0}":  "одна из четырёх анонимных функций в {0}",
+	"one of five anonymous functions in {0}":  "одна из пяти анонимных функций в {0}",
+	"one of six anonymous functions in {0}":   "одна из шести анонимных функций в {0}",
+	"one of seven anonymous functions in {0}": "одна из семи анонимных функций в {0}",
+	"one of eight anonymous functions in {0}": "одна из восьми анонимных функций в {0}",
+	"one of nine anonymous functions in {0}":  "одна из девяти анонимных функций в {0}",
+	"one of many anonymous functions in {0}":  "одна из многих анонимных функций в {0}",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

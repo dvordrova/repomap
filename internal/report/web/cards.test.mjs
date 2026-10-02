@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines} from './cards.mjs';
+import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines,inlineName} from './cards.mjs';
 
 // canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
 const column=260-2*1.5-2*16;
@@ -241,6 +241,18 @@ test('an input written inline is named as the reading names it',()=>{
   const [input]=prepareCards([{id:'run',title:'ReplicateCommand.Run (inline)',activation:'command'}],{},text=>String(text).length*7,(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),'translated '+key));
   assert.equal(input.name,'translated anonymous function in ReplicateCommand.Run');
   assert.doesNotMatch(input.title,/inline/);
+});
+
+// Callables one function writes alike read apart (groupindex inline.go):
+// by the word their hand-over gives each, else as one of how many they
+// are, in words, never a number of one's own.
+test('inline callables written alike are named apart, in words',()=>{
+  const translate=(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),key);
+  assert.equal(inlineName('main (inline for doctor)',translate),'anonymous function in main for doctor');
+  assert.equal(inlineName('Start (inline, 2)',translate),'one of two anonymous functions in Start');
+  assert.equal(inlineName('Headscale.Serve (inline, 12)',translate),'one of many anonymous functions in Headscale.Serve');
+  const [card]=prepareCards([{id:'go',title:'Start (inline, 2)',activation:'continuous'}],{},text=>String(text).length*7,translate);
+  assert.equal(card.name,'one of two anonymous functions in Start');
 });
 
 // "applies pluggabl…": a card's description ends after a whole word.

@@ -428,3 +428,29 @@ func TestAnInputCollectionKeysOnlyItsSameNamedInputs(t *testing.T) {
 		t.Fatalf("keys %v, want %v", collection.Keys, want)
 	}
 }
+
+// A reading names two declarations it lists alike by where they stand, so
+// no list of it says one name for two things (reviewer, 2026-10-02):
+// headscale's Policy engine's two PolicyManager types, beets's Item.path of
+// the library and of a test. A name no other shares, and two alike in one
+// file, which nothing where they stand tells apart, keep theirs.
+func TestAReadingTellsItsSameNamedDeclarationsApart(t *testing.T) {
+	decls := []pageReadingDecl{
+		{Name: "PolicyManager", File: "hscontrol/policy/pm.go"},
+		{Name: "PolicyManager", File: "hscontrol/policy/v2/policy.go"},
+		{Name: "Item.path", File: "beets/library/models.py"},
+		{Name: "Item.path", File: "test/plugins/test_fromfilename.py"},
+		{Name: "BeatportClient.search", File: "beetsplug/beatport.py"},
+		{Name: "BeatportClient.search", File: "beetsplug/beatport.py"},
+		{Name: "NewState", File: "hscontrol/state/state.go"},
+	}
+	tellDeclsApart(decls)
+	var got []string
+	for _, decl := range decls {
+		got = append(got, decl.Name)
+	}
+	want := []string{"policy.PolicyManager", "v2.PolicyManager", "library.Item.path", "plugins.Item.path", "BeatportClient.search", "BeatportClient.search", "NewState"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("names = %q, want %q", got, want)
+	}
+}

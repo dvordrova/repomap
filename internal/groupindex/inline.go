@@ -1,6 +1,7 @@
 package groupindex
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -90,7 +91,100 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 			result[closure.ID] = named(*holder) + " (inline)"
 		}
 	}
+	// Callables one function writes alike are told apart by the word each
+	// one's hand-over gives it: a field of the value it is handed in
+	// (headscale's cmd/hi commands, Name = "doctor"), read "anonymous
+	// function in main for doctor". When nothing tells them apart they are
+	// each said as one of how many they are, never by a number or an
+	// ordinal of one's own (owner's reviewer, 2026-10-02): casdoor's two
+	// goroutines of Start are "Start (inline, 2)", read "one of two
+	// anonymous functions in Start".
+	alike := map[string][]string{}
+	var order []string
+	for _, closure := range closures {
+		name := result[closure.ID]
+		if !strings.HasSuffix(name, " (inline)") {
+			continue
+		}
+		if _, seen := alike[name]; !seen {
+			order = append(order, name)
+		}
+		alike[name] = append(alike[name], closure.ID)
+	}
+	for _, name := range order {
+		ids := alike[name]
+		if len(ids) < 2 {
+			continue
+		}
+		holder := strings.TrimSuffix(name, " (inline)")
+		if words := handedWords(program, ids); words != nil {
+			for position, id := range ids {
+				result[id] = holder + " (inline for " + words[position] + ")"
+			}
+			continue
+		}
+		for _, id := range ids {
+			result[id] = holder + " (inline, " + strconv.Itoa(len(ids)) + ")"
+		}
+	}
 	return result
+}
+
+// handedWords are, for callables written alike, the words telling them
+// apart: the string one field of the value each is handed in holds
+// (callable_receiver_field witnesses, Name = "doctor"), the first field
+// every one of them has, with a word of no space that differs for each.
+// Nil when no field tells them all apart.
+func handedWords(program programindex.Index, ids []string) []string {
+	fields := make([]map[string]string, len(ids))
+	var names []string
+	position := make(map[string]int, len(ids))
+	for i, id := range ids {
+		fields[i] = map[string]string{}
+		position[id] = i
+	}
+	for _, relation := range program.Relations {
+		if relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		for _, to := range relation.ToIDs {
+			at, ours := position[to]
+			if !ours {
+				continue
+			}
+			for _, witness := range relation.Witnesses {
+				field, literal, found := strings.Cut(witness.Detail, " = ")
+				if witness.Kind != "callable_receiver_field" || !found {
+					continue
+				}
+				word, err := strconv.Unquote(literal)
+				if err != nil || fields[at][field] != "" {
+					continue
+				}
+				fields[at][field] = word
+				if !containsString(names, field) {
+					names = append(names, field)
+				}
+			}
+		}
+	}
+	for _, field := range names {
+		words := make([]string, len(ids))
+		seen := map[string]bool{}
+		for i := range ids {
+			word := fields[i][field]
+			if word == "" || seen[word] || strings.ContainsAny(word, " \t\r\n()") || !validText(word) {
+				words = nil
+				break
+			}
+			seen[word] = true
+			words[i] = word
+		}
+		if words != nil {
+			return words
+		}
+	}
+	return nil
 }
 
 // closureNumbered says a name ends as the Go adapter numbers a function

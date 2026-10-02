@@ -912,7 +912,16 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		onOf[boundary.ID] = declaredOn(boundary)
 		wordless[boundary.ID] = len(boundary.Values) == 0
-		operation := Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written}
+		// Its key word tells it apart from same-named inputs (a sketch's
+		// entries named alike by its title, by their keywords setup and
+		// draw), else its handler's name (etcd's two "start", startGateway
+		// and startGRPCProxy, whose parent commands no fact names).
+		key := entryKey(name, boundary.Values)
+		if subject := byID[subjectID]; key == "" && subject != nil && subject.Object != nil && subject.Object.Inline == "" && subject.Object.Name != name &&
+			!strings.ContainsAny(subject.Object.Name, " \t\r\n") && validText(subject.Object.Name) {
+			key = subject.Object.Name
+		}
+		operation := Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written, Key: key}
 		if boundary.BranchLine > 0 && subjectID != "" {
 			operation.Branch = &programindex.LineRange{Line: boundary.BranchLine, EndLine: boundary.BranchEnd}
 		}

@@ -797,11 +797,29 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	if len(reading.Decls) == 0 {
 		return ""
 	}
+	tellDeclsApart(reading.Decls)
 	raw, err := json.Marshal(reading)
 	if err != nil {
 		return ""
 	}
 	return string(raw)
+}
+
+// tellDeclsApart names the declarations a reading names alike by where
+// they stand (groupindex.TellApart), so no list of the reading says one
+// name for two things: headscale's Policy engine holds policy's and v2's
+// PolicyManager, policy.PolicyManager and v2.PolicyManager; beets's Item.path
+// of the library and of a test's Item are library.Item.path and
+// plugins.Item.path.
+func tellDeclsApart(decls []pageReadingDecl) {
+	names := make([]string, len(decls))
+	spellings := make([][]string, len(decls))
+	for position, decl := range decls {
+		names[position], spellings[position] = decl.Name, groupindex.Where(decl.Name, decl.File, "")
+	}
+	for position, told := range groupindex.TellApart(names, spellings) {
+		decls[position].Name = told
+	}
 }
 
 // readingFan says a caller's dispatch into a part: how many its site can

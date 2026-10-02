@@ -115,9 +115,18 @@ function rmEndTitle(ctx,decl){
 // ("zunionInter" / "BlockClient…"), each part of it whole; the whole name
 // stays on its hover. A callable written inline reads "anonymous function
 // in ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
-// (inline)").
+// (inline)"); one of several its function writes alike, the word its
+// hand-over gives it, "anonymous function in main for doctor" ("main
+// (inline for doctor)"), or, when nothing tells them apart, as one of how
+// many they are, "one of two anonymous functions in Start" ("Start
+// (inline, 2)").
 var rmLongPiece=24;
-function rmInlineText(text){return String(text).replace(/([^\s→(]+) \(inline\)/g,function(_,home){return rmT('anonymous function in {0}',home);});}
+var rmInlineMany={2:'one of two anonymous functions in {0}',3:'one of three anonymous functions in {0}',4:'one of four anonymous functions in {0}',5:'one of five anonymous functions in {0}',6:'one of six anonymous functions in {0}',7:'one of seven anonymous functions in {0}',8:'one of eight anonymous functions in {0}',9:'one of nine anonymous functions in {0}'};
+function rmInlineText(text){return String(text).replace(/([^\s→(]+) \(inline(?: for ([^)]+)|, (\d+))?\)/g,function(_,home,word,count){
+  if(word)return rmT('anonymous function in {0} for {1}',home,word);
+  if(count)return rmT(rmInlineMany[count]||'one of many anonymous functions in {0}',home);
+  return rmT('anonymous function in {0}',home);
+});}
 // A long piece's words: after each underscore, else at each hump.
 function rmPieceWords(piece){
   var words=piece.split(/(?<=_)(?=.)/);
@@ -494,7 +503,10 @@ function rmPartView(ctx,node,data){
       if(calls.length)rmFoldBy(calls,function(end){return rmFileGroup(data.decls[end.decl]);},function(list){return rmEndRuns(ctx,data,list,'out').parts;}).forEach(function(part){box.appendChild(part);});
       if(uses.childElementCount){
         uses.querySelectorAll('.map-reading-relation').forEach(function(word){word.remove();});box.appendChild(rmEl('p','map-reading-uses',rmT('Uses variables')));
-        var usedEnds=ends.filter(function(end){return rmUsesVariable(end.kind);});
+        // A variable read and written is one variable used: the list says
+        // no relation, so it names it once (beets's Item.path, read and
+        // written by Replace plugin, had stood twice).
+        var usedDecls=new Set(),usedEnds=ends.filter(function(end){if(!rmUsesVariable(end.kind)||usedDecls.has(end.decl))return false;usedDecls.add(end.decl);return true;});
         rmFoldBy(usedEnds,function(end){return rmNameGroup(data.decls[end.decl]);},function(list){var ul=rmEl('ul','map-reading-ends');list.forEach(function(end){var item=rmEndItem(ctx,data,end,'out');var word=item.querySelector&&item.querySelector('.map-reading-relation');if(word)word.remove();ul.appendChild(item);});return [ul];}).forEach(function(part){box.appendChild(part);});
       }
       outgoing.appendChild(box);

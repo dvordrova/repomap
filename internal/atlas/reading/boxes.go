@@ -1019,6 +1019,8 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			state.valueOf = ""
 		}
 	}
+	// Named, an entry a declaration names again is that entry.
+	r.foldRepeated()
 	r.reportStage(lines.StageBoundaries)
 	return r.joinPublishes(ctx, publishes)
 }

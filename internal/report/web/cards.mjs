@@ -237,14 +237,19 @@ export function describedHeading(node,title,text,maxScale,measure,reservedWidth,
 // A callable written inline is named as the reading column names it
 // (31-reading-column.js rmInlineText): "anonymous function in
 // ReplicateCommand.Run", never GroupsIndex's "ReplicateCommand.Run
-// (inline)" on the canvas beside it.
+// (inline)" on the canvas beside it; "anonymous function in main for
+// doctor" for "main (inline for doctor)"; "one of two anonymous functions
+// in Start" for "Start (inline, 2)".
+export const inlineWritten=/([^\s→(]+) \(inline(?: for ([^)]+)|, (\d+))?\)/g;
+const inlineMany={2:'one of two anonymous functions in {0}',3:'one of three anonymous functions in {0}',4:'one of four anonymous functions in {0}',5:'one of five anonymous functions in {0}',6:'one of six anonymous functions in {0}',7:'one of seven anonymous functions in {0}',8:'one of eight anonymous functions in {0}',9:'one of nine anonymous functions in {0}'};
 export function inlineName(text,translate=text=>text){
-  return typeof text==='string'?text.replace(/([^\s→(]+) \(inline\)/g,(_,home)=>translate('anonymous function in {0}',home).replace('{0}',home)):text;
+  const said=(key,...values)=>values.reduce((out,value,i)=>out.replace(`{${i}}`,value),translate(key,...values));
+  return typeof text==='string'?text.replace(inlineWritten,(_,home,word,count)=>word?said('anonymous function in {0} for {1}',home,word):count?said(inlineMany[count]||'one of many anonymous functions in {0}',home):said('anonymous function in {0}',home)):text;
 }
 
 export function prepareCards(records, _inputOwner, measure, translate) {
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
-  records=records.map(n=>n.title&&n.title.includes(' (inline)')?{...n,title:inlineName(n.title,translate)}:n);
+  records=records.map(n=>n.title&&/ \(inline[ ,)]/.test(n.title)?{...n,title:inlineName(n.title,translate)}:n);
   const byID=new Map(records.map(n=>[n.id,n]));
   // An input collection's inputs, through the part groups inside it.
   const leavesOf=id=>{const n=byID.get(id);return n?.children?.length?n.children.flatMap(leavesOf):[id];};

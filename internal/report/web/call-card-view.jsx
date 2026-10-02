@@ -1,5 +1,6 @@
 import React from 'react';
 import {countsHandlers, countsInputs, headingRows, briefCard} from './call-card.mjs';
+import {inlineName} from './cards.mjs';
 
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
@@ -8,8 +9,8 @@ const stop=event=>event.stopPropagation();
 // ("/api/v1/backtest/history") had been clipped in its row.
 // A callable written inline reads "anonymous function in
 // ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
-// (inline)").
-const inline=text=>{const said=typeof text==='string'&&/^(.+) \(inline\)$/.exec(text);return said?t('anonymous function in {0}',said[1]):text;};
+// (inline)"), as the reading column reads it (cards.mjs inlineName).
+const inline=text=>typeof text==='string'?inlineName(text,t):text;
 const dotted=text=>{text=inline(text);return typeof text==='string'&&/[./]/.test(text)?text.split(/(?<=[./])/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;};
 function Link({href,title,children}){
   children=dotted(children);
