@@ -72,6 +72,11 @@ type CPlatformUnit struct {
 	Built   bool     `json:"built"`
 	Kept    []string `json:"kept,omitempty"`
 	Dropped []string `json:"dropped,omitempty"`
+	// Makefile is the makefile below the root that compiled it, and
+	// ObjectRule that its flags are that makefile's rule for its object
+	// rather than a line of its default goal (C.md "Nested makefiles").
+	Makefile   string `json:"makefile,omitempty"`
+	ObjectRule bool   `json:"object_rule,omitempty"`
 }
 
 // RunTiming is the Time stage of a run as data.

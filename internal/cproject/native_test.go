@@ -162,7 +162,7 @@ func TestShellCommandsFollowRecipeSyntax(t *testing.T) {
 		t.Fatalf("compiler words: %q", words)
 	}
 	// A bare archiver word is not an archive command.
-	parseDryRun(parseEnv{roots: []string{"/repo"}}, "ar\nar -t\n")
+	parseDryRun(parseEnv{roots: []string{"/repo"}}, "ar\nar -t\n", "/repo")
 	if _, ok := shellCommands(`echo "unterminated`); ok {
 		t.Fatal("an unterminated quote split")
 	}

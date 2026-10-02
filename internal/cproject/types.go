@@ -45,10 +45,13 @@ func Parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 
 // Project is the result of discovery.
 type Project struct {
-	Root         string           `json:"root"`
-	CorpusSHA256 string           `json:"corpus_sha256"`
-	Toolchain    Toolchain        `json:"toolchain"`
-	Build        Build            `json:"build"`
+	Root         string    `json:"root"`
+	CorpusSHA256 string    `json:"corpus_sha256"`
+	Toolchain    Toolchain `json:"toolchain"`
+	Build        Build     `json:"build"`
+	// Nested are the dry runs of the makefiles below the root that no dry
+	// run entered (C.md "Nested makefiles"), in the order they ran.
+	Nested       []Build          `json:"nested,omitempty"`
 	Units        []UnitSpec       `json:"units"`
 	Included     []IncludedSource `json:"included,omitempty"`
 	Programs     []Program        `json:"programs"`
@@ -90,6 +93,13 @@ type UnitSpec struct {
 	// Built is true when the build description compiles the unit, false when
 	// it is parsed with clang's defaults.
 	Built bool `json:"built,omitempty"`
+	// Makefile is the makefile below the root whose dry run compiled the
+	// unit (C.md "Nested makefiles"), empty for the root's build. ObjectRule
+	// says its flags are those that makefile's rule for its object gives
+	// (make's built-in rule fed its CFLAGS and CPPFLAGS, or its own rule),
+	// not a line of what its default goal builds.
+	Makefile   string `json:"makefile,omitempty"`
+	ObjectRule bool   `json:"object_rule,omitempty"`
 	// Main is the exact non-static main with a body that discovery found
 	// in a unit no link line links. It is nil for linked units, whose main
 	// is located by Parse.

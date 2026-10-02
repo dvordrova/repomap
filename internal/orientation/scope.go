@@ -63,8 +63,6 @@ type flowCandidate struct {
 	// entered it first; by are every member of the step reaching it.
 	roots map[string]string
 	by    []string
-	// ways are, by member entered, how the step's work first reaches it.
-	ways map[string]flowEdge
 }
 
 func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGraph {
@@ -252,12 +250,11 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 				if !known {
 					position = len(result)
 					at[target] = position
-					result = append(result, flowCandidate{unit: target, reach: edge, through: start, roots: map[string]string{}, ways: map[string]flowEdge{}})
+					result = append(result, flowCandidate{unit: target, reach: edge, through: start, roots: map[string]string{}})
 				}
 				candidate := &result[position]
 				if _, known := candidate.roots[edge.to]; !known {
 					candidate.roots[edge.to] = start
-					candidate.ways[edge.to] = edge
 				}
 				if !slices.Contains(candidate.members, edge.to) {
 					candidate.members = append(candidate.members, edge.to)

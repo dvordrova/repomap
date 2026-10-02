@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -646,7 +648,7 @@ func TestParseDryRunFollowsDirectoriesAndArchives(t *testing.T) {
 		"cc -shared -o libgen.so gen/d.c",
 		"make: Leaving directory `" + root + "'",
 	}, "\n")
-	description := parseDryRun(env, output)
+	description := parseDryRun(env, output, env.root)
 	programs, linked, observations := linkPrograms(env, description)
 	if len(observations) != 0 || len(programs) != 2 {
 		t.Fatalf("programs %+v observations %+v", programs, observations)
@@ -717,4 +719,110 @@ func TestRealRepositoryProbe(t *testing.T) {
 		}
 	}
 	t.Logf("checked %d sites against the source", checked)
+}
+
+// A directory's own makefile the root never reaches is read as a developer
+// runs make there (C.md "Nested makefiles"): its default goal's lines join
+// the build (Lua's testes/libs builds its test libraries with -I../../, a
+// shared library each); a makefile whose default goal compiles none of its
+// units compiles them as it compiles their objects (Lua 5.1.5's etc/Makefile
+// only prints its targets), their flags only; a unit no rule compiles keeps
+// clang's defaults and says so without a build error; a makefile that fails
+// is a build error naming it, and its programs carry that failure. The root
+// has no makefile here.
+func TestDiscoverReadsADirectorysOwnMakefile(t *testing.T) {
+	files := map[string]string{
+		"include/api.h": "int api_version(void);\n",
+		"lib/api.c":     "#include \"api.h\"\nint api_version(void) { return 1; }\n",
+		"lib/Makefile":  "CFLAGS = -O2 -I../include -DLIB\n\nall: libapi.a\n\nlibapi.a: api.o\n\tar rcs libapi.a api.o\n",
+		"mods/Makefile": "CFLAGS = -Wall -I../include -fPIC -shared\n\nall: mod.so\n\nmod.so: mod.c\n\t$(CC) $(CFLAGS) -o mod.so mod.c\n",
+		"mods/mod.c":    "#include \"api.h\"\nint mod_open(void) { return api_version(); }\n",
+		// No built-in rule: only hello.o has one.
+		"examples/Makefile": "CFLAGS = -O2 -I../include\n.SUFFIXES:\n%.o: %.c\n\ndefault:\n\t@echo 'Please choose: hello'\n\n" +
+			"hello.o: hello.c\n\t$(CC) $(CFLAGS) -DHELLO -c hello.c\n",
+		"examples/hello.c": "#include \"api.h\"\nint main(void) { return api_version(); }\n",
+		"examples/bye.c":   "int bye(void) { return 0; }\n",
+		"broken/Makefile":  "$(error this makefile only runs from the root)\n",
+		"broken/main.c":    "#include \"api.h\"\nint main(void) { return api_version(); }\n",
+	}
+	root, repository := writeRepository(t, files)
+	project, err := Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Build.Kind != BuildNone {
+		t.Fatalf("root build: %+v", project.Build)
+	}
+	var runs []string
+	for _, build := range project.Nested {
+		runs = append(runs, build.Path+" "+strings.Join(build.Command[1:], " ")+" "+strconv.FormatBool(build.Err != ""))
+	}
+	want := []string{
+		"broken/Makefile -n -B -w -o Makefile true", "broken/Makefile -n -B -k -w -o Makefile main.o true",
+		"examples/Makefile -n -B -w -o Makefile false", "examples/Makefile -n -B -k -w -o Makefile bye.o hello.o true",
+		"lib/Makefile -n -B -w -o Makefile false",
+		"mods/Makefile -n -B -w -o Makefile false",
+	}
+	if !slices.Equal(runs, want) {
+		t.Fatalf("nested runs %q, want %q", runs, want)
+	}
+	units := map[string]UnitSpec{}
+	for _, spec := range project.Units {
+		units[spec.Path] = spec
+	}
+	if spec := units["mods/mod.c"]; !spec.Built || spec.Makefile != "mods/Makefile" || spec.ObjectRule || !slices.Equal(spec.Args, []string{"-I../include", "-fPIC"}) {
+		t.Fatalf("mods/mod.c: %+v", spec)
+	}
+	if spec := units["examples/hello.c"]; !spec.Built || spec.Makefile != "examples/Makefile" || !spec.ObjectRule || !slices.Equal(spec.Args, []string{"-I../include", "-DHELLO"}) {
+		t.Fatalf("examples/hello.c: %+v", spec)
+	}
+	if spec := units["lib/api.c"]; !spec.Built || spec.Makefile != "lib/Makefile" || !slices.Equal(spec.Args, []string{"-I../include", "-DLIB"}) {
+		t.Fatalf("lib/api.c: %+v", spec)
+	}
+	if spec := units["examples/bye.c"]; spec.Built || units["broken/main.c"].Built {
+		t.Fatalf("units no rule compiled keep clang's defaults: %+v %+v", spec, units["broken/main.c"])
+	}
+	var said []string
+	for _, observation := range project.Observations {
+		if observation.Kind == "c_build_error" || observation.Kind == "c_unit_unbuilt" {
+			said = append(said, observation.Kind+" "+observation.Path)
+		}
+	}
+	if want := []string{"c_build_error broken/Makefile", "c_build_error broken/Makefile", "c_unit_unbuilt broken/main.c", "c_unit_unbuilt examples/bye.c"}; !slices.Equal(said, want) {
+		t.Fatalf("observations %q, want %q", said, want)
+	}
+	module := programBySelector(t, project, "c:mods/mod.so")
+	if module.Kind != ProgramShared || module.Anchor != (Site{Path: "mods/Makefile", Line: 5}) || len(module.Units) != 1 || module.Units[0].Path != "mods/mod.c" {
+		t.Fatalf("a shared library its makefile links: %+v", module)
+	}
+	broken := programBySelector(t, project, "c:broken/main.c")
+	if !strings.Contains(broken.BuildErr, "this makefile only runs from the root") || programBySelector(t, project, "c:examples/hello.c").BuildErr != "" {
+		t.Fatalf("a program whose makefile failed carries its failure: %q", broken.BuildErr)
+	}
+}
+
+// Of units in several directories defining one name, the closure takes the
+// one in the directory of the unit needing it (Lua 5.1.5's etc/noparser.c
+// and src/llex.c both define luaX_init, which src/lstate.c calls); a tie
+// left in that directory still fails.
+func TestAClosurePrefersTheNeedingUnitsDirectory(t *testing.T) {
+	files := map[string]string{
+		"app/main.c":    "int run(void);\nint main(void) { return run(); }\n",
+		"app/run.c":     "int setup(void);\nint run(void) { return setup(); }\n",
+		"app/setup.c":   "int setup(void) { return 1; }\n",
+		"other/setup.c": "int setup(void) { return 2; }\n",
+		"other/extra.c": "int extra(void) { return 3; }\n",
+	}
+	root, repository := writeRepository(t, files)
+	project, err := Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app/main.c"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unitPaths(parsed.Units); !slices.Equal(got, []string{"app/main.c", "app/run.c", "app/setup.c"}) {
+		t.Fatalf("closure took %v", got)
+	}
 }

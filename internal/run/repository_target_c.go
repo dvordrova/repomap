@@ -139,6 +139,7 @@ func cPlatformView(parsed *cproject.Parsed) *debugdump.CPlatform {
 	for _, unit := range parsed.Units {
 		view.Units = append(view.Units, debugdump.CPlatformUnit{
 			Path: unit.Path, Built: unit.Built, Kept: slices.Clone(unit.Args), Dropped: slices.Clone(unit.Dropped),
+			Makefile: unit.Makefile, ObjectRule: unit.ObjectRule,
 		})
 	}
 	return view

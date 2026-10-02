@@ -172,8 +172,9 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	}
 	// Each link line is a program; tools/dump.c, which no link line links, is
 	// one through its own main. Every unit belongs to a program, so there is
-	// no library.
-	if !reflect.DeepEqual(selectors, []string{"c:kvcli", "c:kvd", "c:tools/dump.c"}) {
+	// no library. upper/ and util/ have makefiles of their own (the test
+	// below).
+	if !reflect.DeepEqual(selectors, []string{"c:kvcli", "c:kvd", "c:tools/dump.c", "c:upper/upper.so", "c:util/ping.c"}) {
 		t.Fatalf("programs: %v", selectors)
 	}
 
@@ -376,17 +377,22 @@ func TestCFixtureParsesEachProgramInTheBuildsView(t *testing.T) {
 	}
 }
 
-// Nested in a bigger repository, the fixture's Makefile is not at the root,
-// so nothing gives its flags: each main is a program whose files the linker
-// closure decides, parsed with clang's defaults. loop.c then takes the host's
-// own backend, and every program still parses on every host. (Under a
-// testdata directory, as in repomap's own repository, its files are no units
-// at all.)
+// Without its makefiles, nothing gives the fixture's flags: each main is a
+// program whose files the linker closure decides, parsed with clang's
+// defaults. loop.c then takes the host's own backend, and every program
+// still parses on every host. (upper/ and util/ need their makefiles' -I..
+// and go with them. Under a testdata directory, as in repomap's own
+// repository, its files are no units at all.)
 func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
 	isolateFixtureGitEnvironment(t)
 	const prefix = "services/kv/"
 	root := filepath.Join(t.TempDir(), "repository")
 	copyFixtureTree(t, filepath.Join(repositoryRoot(t), "testdata", "repositories", "c"), filepath.Join(root, filepath.FromSlash(prefix)))
+	for _, made := range []string{"Makefile", "upper", "util"} {
+		if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(prefix), made)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	runFixtureGit(t, root, "init", "--quiet")
 	runFixtureGit(t, root, "add", "--all", "--")
 	repository, err := corpus.Open(t.Context(), root)
@@ -437,5 +443,90 @@ func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
 		if !mains["c:"+prefix+main] {
 			t.Fatalf("no program for %s%s: %v", prefix, main, mains)
 		}
+	}
+}
+
+// A directory's own makefile the root never reaches is read as a developer
+// runs make there (C.md "Nested makefiles"): upper/makefile's default goal
+// links upper.so, a shared library whose unit takes -I.. and -fPIC; util's
+// Makefile only lists its examples by default, so util/ping.c is compiled as
+// that makefile compiles ping.o, its flags only, and is a program through its
+// own main. Both parse in the build's view, ping's closure taking the root's
+// net.c.
+func TestCFixtureReadsADirectorysOwnMakefile(t *testing.T) {
+	fixture := loadCFixture(t)
+	var runs []string
+	for _, build := range fixture.project.Nested {
+		runs = append(runs, build.Path+": "+strings.Join(build.Command, " "))
+		if build.Err != "" {
+			t.Fatalf("%s failed: %s", build.Path, build.Err)
+		}
+	}
+	if want := []string{"upper/makefile: make -n -B -w -o makefile", "util/Makefile: make -n -B -w -o Makefile", "util/Makefile: make -n -B -k -w -o Makefile ping.o"}; !reflect.DeepEqual(runs, want) {
+		t.Fatalf("nested runs %q, want %q", runs, want)
+	}
+	upper := fixture.program(t, "c:upper/upper.so")
+	rule, _ := fixture.at(t, "upper/makefile", "upper.so: upper.c", "")
+	if upper.Kind != cproject.ProgramShared || upper.Anchor != (cproject.Site{Path: "upper/makefile", Line: rule}) || !reflect.DeepEqual(cSpecPaths(upper.Units), []string{"upper/upper.c"}) ||
+		!reflect.DeepEqual(upper.LinkArgs, []string{"-shared"}) {
+		t.Fatalf("upper.so: %+v", upper)
+	}
+	if unit := upper.Units[0]; !unit.Built || unit.Makefile != "upper/makefile" || unit.ObjectRule || unit.Dir != "upper" || !reflect.DeepEqual(unit.Args, []string{"-I..", "-fPIC"}) {
+		t.Fatalf("upper.c flags: %+v", unit)
+	}
+	ping := fixture.program(t, "c:util/ping.c")
+	if unit := ping.Units[0]; !ping.Closure || !unit.Built || unit.Makefile != "util/Makefile" || !unit.ObjectRule || !reflect.DeepEqual(unit.Args, []string{"-I.."}) ||
+		!reflect.DeepEqual(unit.Dropped, []string{"-O2", "-Wall"}) {
+		t.Fatalf("ping.c: %+v", ping)
+	}
+	for _, observation := range fixture.project.Observations {
+		if observation.Kind == "c_build_error" || observation.Kind == "c_unit_unbuilt" || observation.Kind == "c_unit_error" {
+			t.Fatalf("the fixture's makefiles: %+v", observation)
+		}
+	}
+	if units := cUnitPaths(fixture.parsed["c:util/ping.c"].Units); !reflect.DeepEqual(units, []string{"net.c", "util/ping.c"}) {
+		t.Fatalf("ping links %v", units)
+	}
+	if units := cUnitPaths(fixture.parsed["c:upper/upper.so"].Units); !reflect.DeepEqual(units, []string{"upper/upper.c"}) {
+		t.Fatalf("upper.so parses %v", units)
+	}
+}
+
+// Nested in a bigger repository whose root has no makefile, the fixture's
+// Makefile is a directory's own: kvd and kvcli are its link lines, their
+// units its flags, and upper/ and util/ read their own makefiles below it.
+func TestCFixtureNestedInARepositoryReadsItsMakefile(t *testing.T) {
+	isolateFixtureGitEnvironment(t)
+	const prefix = "services/kv/"
+	root := filepath.Join(t.TempDir(), "repository")
+	copyFixtureTree(t, filepath.Join(repositoryRoot(t), "testdata", "repositories", "c"), filepath.Join(root, filepath.FromSlash(prefix)))
+	runFixtureGit(t, root, "init", "--quiet")
+	runFixtureGit(t, root, "add", "--all", "--")
+	repository, err := corpus.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	project, err := cproject.Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Build.Kind != cproject.BuildNone {
+		t.Fatalf("root build: %+v", project.Build)
+	}
+	var selectors []string
+	for _, program := range project.Programs {
+		selectors = append(selectors, program.Selector)
+		if program.Selector == "c:"+prefix+"kvd" {
+			for _, unit := range program.Units {
+				if !unit.Built || unit.Makefile != prefix+"Makefile" || !reflect.DeepEqual(unit.Args, []string{"-std=c99", "-D_DEFAULT_SOURCE", "-DLOOP_POLL"}) {
+					t.Fatalf("%s: %+v", unit.Path, unit)
+				}
+			}
+		}
+	}
+	want := []string{"c:" + prefix + "kvcli", "c:" + prefix + "kvd", "c:" + prefix + "tools/dump.c", "c:" + prefix + "upper/upper.so", "c:" + prefix + "util/ping.c"}
+	if !reflect.DeepEqual(selectors, want) {
+		t.Fatalf("programs %v, want %v", selectors, want)
 	}
 }

@@ -6,7 +6,10 @@ A small in-memory key-value server, `kvd`, and its command-line client,
 
 `make` builds both programs; `make test` starts the server, pings it and stops
 it. `tools/dump.c` prints the keys of a snapshot and is built by hand:
-`cc -o dump tools/dump.c strbuf.c`.
+`cc -o dump tools/dump.c strbuf.c`. Two directories have makefiles of their
+own that the root `Makefile` never enters: `cd upper && make` builds
+`upper.so`, a module that uppercases a value in place, and `cd util && make`
+lists the examples (`make ping` builds `util/ping`).
 
 The server listens on `KVD_PORT` (7379 by default), lets `KVD_BACKLOG`
 connections wait (16 by default) and runs the shell command

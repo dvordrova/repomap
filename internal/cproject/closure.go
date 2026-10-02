@@ -2,6 +2,7 @@ package cproject
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -145,7 +146,13 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 		definition
 		unit *Unit
 	}{}
-	var queue []string
+	// A needed name with the unit that needs it: of several units defining
+	// it, the one in that unit's directory takes it.
+	type need struct {
+		name string
+		from *Unit
+	}
+	var queue []need
 	take := func(unit *Unit) error {
 		inProgram[unit] = true
 		taken = append(taken, unit)
@@ -169,7 +176,9 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 				unit *Unit
 			}{def, unit}
 		}
-		queue = append(queue, table[unit].refs...)
+		for _, name := range table[unit].refs {
+			queue = append(queue, need{name, unit})
+		}
 		return nil
 	}
 	if err := take(main); err != nil {
@@ -177,7 +186,7 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 	}
 	unresolved := map[string]bool{}
 	for len(queue) > 0 {
-		name := queue[0]
+		name, from := queue[0].name, queue[0].from
 		queue = queue[1:]
 		if _, ok := defined[name]; ok {
 			continue
@@ -194,6 +203,21 @@ func linkClosure(main *Unit, pool []*Unit) ([]*Unit, []string, error) {
 		}
 		if len(candidates) == 0 && len(tentative) == 1 {
 			candidates = tentative
+		}
+		// Units of several directories defining one name: the needing
+		// unit's directory decides, as its directory's makefile links its
+		// own objects (Lua 5.1.5's etc/noparser.c replaces luaX_init, and
+		// src/lstate.c, which calls it, links src/llex.c's).
+		if len(candidates) > 1 {
+			var near []*Unit
+			for _, unit := range candidates {
+				if path.Dir(unit.Path) == path.Dir(from.Path) {
+					near = append(near, unit)
+				}
+			}
+			if len(near) == 1 {
+				candidates = near
+			}
 		}
 		switch len(candidates) {
 		case 0:

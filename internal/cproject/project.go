@@ -62,6 +62,15 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 	if description.build.Err != "" {
 		project.Observations = append(project.Observations, Observation{Kind: "c_build_error", Path: description.build.Path, Fields: map[string]string{"error": description.build.Err}})
 	}
+	// A directory's own makefile the root never reaches, as a developer runs
+	// make there.
+	var nestedObservations []Observation
+	var nestedFailed map[string]string
+	project.Nested, nestedObservations, nestedFailed = readNested(ctx, env, &description, func(file string) bool { return included[file] || corpus.ToolingPath(file) })
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	project.Observations = append(project.Observations, nestedObservations...)
 	// Units the build compiles, then every other .c file with clang's defaults.
 	var units []UnitSpec
 	compiled := map[string]bool{}
@@ -172,6 +181,14 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 		program.Included = project.Included
 		if !description.fromBuild {
 			program.BuildErr = description.build.Err
+		}
+		// A unit its own makefile could not compile names that makefile's
+		// failure.
+		for _, spec := range program.Units {
+			if reason := nestedFailed[spec.Path]; reason != "" && !spec.Built {
+				program.BuildErr = reason
+				break
+			}
 		}
 		program.Ref = programRef(program)
 		project.Programs = append(project.Programs, program)

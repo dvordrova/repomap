@@ -1,7 +1,8 @@
 # C adapter
 
 The ordinary C adapter reads the C programs the repository's own build
-describes, through `clang` run as a subprocess. It runs whenever the corpus
+describes, its root's and its directories' own makefiles, through `clang`
+run as a subprocess. It runs whenever the corpus
 has a `.c` file outside the tooling directories;
 `internal/run/repository_target_c.go` registers it with the selector prefix
 `c:` and rank 4 after Go, Python, JS/TS and Clojure. Nothing in it knows a
@@ -23,15 +24,56 @@ another adapter owns runs no C discovery either.
    `make -n -B -w -o <makefile>` on the default goal, with `LC_ALL=C`, the
    caller's `MAKEFLAGS` and related variables removed, and a 30 s limit that
    stops make's whole process group;
-3. clang's defaults for every `.c` file no other file includes.
 
-A failed dry run is recorded (`c_build_error`) and the units fall back to (3);
-a unit that then fails to parse reports both errors. `make -n` is not a pure
-dry run: GNU make still runs `$(shell ...)`, recipes that start with `+` or
-call `$(MAKE)`, and rules that remake the makefiles it reads, and `-B` makes
-all of them out of date. `-o <makefile>` keeps the root makefile as it is;
-makefiles it includes are still remade. The selected repository is trusted, so
-this is recorded rather than prevented. macOS ships GNU make 3.81.
+then from the makefiles of the directories below the root that no dry run
+entered (Nested makefiles, below), and gives clang's defaults to every `.c`
+file no line compiles and no other file includes.
+
+A failed dry run is recorded (`c_build_error`, naming its makefile) and the
+units it would have compiled keep clang's defaults; a unit that then fails to
+parse reports both errors. `make -n` is not a pure dry run: GNU make still
+runs `$(shell ...)`, recipes that start with `+` or call `$(MAKE)`, and rules
+that remake the makefiles it reads, and `-B` makes all of them out of date.
+`-o <makefile>` keeps the makefile a run reads as it is; makefiles it
+includes are still remade and may be written. The selected repository is
+trusted, so this is recorded rather than prevented. macOS ships GNU make 3.81.
+
+### Nested makefiles
+
+A developer runs `make` in a directory whose own makefile the root's never
+reaches (Lua's `testes/libs/makefile` builds the test libraries with
+`-I../../`; Lua 5.1.5's `etc/Makefile` builds `min.c` with `-I../src`), and
+so does discovery (`nested.go`). A directory counts when the corpus holds a
+makefile there (`GNUmakefile`, `makefile`, `Makefile`, the first of make's
+names) and `.c` units whose nearest makefile is that one that no line
+compiled yet, outside the tooling directories; a directory a dry run entered
+(`make[N]: Entering directory`, the root's recursive `$(MAKE)`) is that
+run's and is not run again. Directories run shallow first, each in its own
+directory with the root's command on its own makefile:
+
+1. Its default goal's compile and link lines join the build's, as the
+   root's do: Lua's `testes/libs` gives five shared libraries,
+   `c:testes/libs/lib1.so` …, anchored on its makefile's rules.
+2. When that goal compiles none of its units, they are compiled as that
+   makefile compiles their objects: one `make -n -B -k -w -o <makefile>
+   x.o …` naming each unit's object relative to the directory, its own rule
+   or make's built-in rule fed its `CFLAGS` and `CPPFLAGS`. Only their
+   compile lines are taken, never a link line: a program is then found by
+   its main (`c:etc/min.c`). Lua 5.1.5's `etc/Makefile` only prints "Please
+   choose a target" by default. A default goal compiling some of its units
+   leaves the others out, as the platform's build does (D3).
+
+Each unit records the makefile that compiled it and whether its flags come
+from that makefile's object rule (`UnitSpec.Makefile`, `ObjectRule`); the
+root's units name none. A run that fails is a `c_build_error` on its
+makefile, and step 2 still runs after step 1 fails; with `-k`, an object no
+rule makes fails the run while the others print, so a unit only the output
+leaves without a line is a `c_unit_unbuilt` on its makefile, not a build
+error. A program whose units kept clang's defaults because their makefile's
+runs failed carries that failure (`BuildErr`). The root's own units are
+never read by step 2: what its default goal leaves out is the platform's
+choice. Measured 2026-10-02 on moby, deploy, go, ghidra and kubernetes: 0, 0,
+2, 2 and 2 nested runs, none failing, discovery 2–9 s.
 
 Each link line is one program (`c:<output>`, anchored on its makefile rule)
 whose files are the units it links; a `-shared`/`-dynamiclib` line is a shared
@@ -42,7 +84,10 @@ a `compile_commands.json`, which has no link lines) that has an exact,
 non-static `main` with a body (a filtered clang parse, since
 `-ast-dump-filter` matches substrings) is a program `c:<path>` whose files the
 linker closure decides: each unresolved external name goes to the one unit
-that defines it. Units no program links and that define no main are their
+that defines it, or, of units in several directories defining it, to the one
+in the directory of the unit needing it (Lua 5.1.5's `etc/noparser.c` and
+`src/llex.c` both define `luaX_init`, which `src/lstate.c` calls); units of
+one directory defining it alike fail the program. Units no program links and that define no main are their
 directory's library (`c:<dir>/`). A `.c` file another file `#include`s belongs
 to its includer; one no parsed unit enters on this platform (an `#ifdef` chose
 another backend) is outside this platform's build, and the run prints it
@@ -92,7 +137,8 @@ where a reader of the saved run finds it: clang's version line, target triple
 and sysroot, the overrides every unit gets after its own flags (the fortify
 override and the pre-C99 diagnostics), the build description's failure when
 the units fell back to clang's defaults, each unit's kept and dropped flags
-and whether the build or clang's defaults gave them, and the included sources
+and whether the build or clang's defaults gave them (and which directory's
+makefile, by its default goal or its object rule), and the included sources
 outside this platform's build (an epoll backend beside a kqueue build on
 macOS). The page and the report JSON carry no label for it.
 
@@ -545,8 +591,19 @@ Install clang on the normal PATH: on macOS the Command Line Tools
 ## Verification
 
 `testdata/repositories/c` is the cumulative executable repository and
-`testdata/contracts/c.files.json` binds its exact inventory. The run tests
-cover discovery from link lines, repomap's own repository offering no C target
+`testdata/contracts/c.files.json` binds its exact inventory. Its `upper/`
+and `util/` have makefiles the root never enters
+(`TestCFixtureReadsADirectorysOwnMakefile`: `c:upper/upper.so`, a shared
+library its makefile links with `-I..`, and `c:util/ping.c`, compiled by
+`util/Makefile`'s object rule; `TestCFixtureNestedInARepositoryReadsItsMakefile`
+reads the whole fixture below a root without a makefile), and
+`TestDiscoverReadsADirectorysOwnMakefile` and
+`TestAClosurePrefersTheNeedingUnitsDirectory` cover a makefile that fails, an
+object no rule makes and the closure's directory tie-break. The native
+equivalents exist: Go reads every `go.mod`'s module, JS/TS the deepest
+`package.json`, Clojure each `deps.edn` or `project.clj` up to the nested
+ones, Python every project manifest with the deepest root deciding a file.
+The run tests cover discovery from link lines, repomap's own repository offering no C target
 and running no tool for its fixture, tooling sources beside a program, another
 adapter's explicit target, the files that restore each program, one parse per
 plan for a shared unit and its release after the last projection that needs it,

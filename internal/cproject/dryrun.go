@@ -27,6 +27,7 @@ type buildDescription struct {
 	compiles  []compileRecord
 	links     []linkRecord
 	archives  map[string][]string // absolute archive or partial-link object -> absolute members
+	entered   []string            // absolute directories make reported entering
 }
 
 type compileRecord struct {
@@ -82,13 +83,14 @@ func readBuild(ctx context.Context, env parseEnv) (buildDescription, error) {
 	if err != nil {
 		return buildDescription{build: Build{Kind: BuildNone, Path: makefile, Command: command, Err: err.Error()}}, nil
 	}
-	description := parseDryRun(env, output)
+	description := parseDryRun(env, output, env.root)
 	description.build = Build{Kind: BuildMake, Path: makefile, Command: command}
 	description.fromBuild = true
 	return description, nil
 }
 
-// dryRun runs make without its caller's make environment and returns stdout.
+// dryRun runs make without its caller's make environment and returns stdout,
+// what it printed before failing too.
 func dryRun(ctx context.Context, root string, command []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, dryRunTimeout)
 	defer cancel()
@@ -116,7 +118,7 @@ func dryRun(ctx context.Context, root string, command []string) (string, error) 
 		if detail == "" {
 			detail = err.Error()
 		}
-		return "", fmt.Errorf("%s failed: %s", strings.Join(command, " "), detail)
+		return stdout.String(), fmt.Errorf("%s failed: %s", strings.Join(command, " "), detail)
 	}
 	return stdout.String(), nil
 }
@@ -198,10 +200,11 @@ var (
 )
 
 // parseDryRun reads the compile, link and archive commands `make -n -B -w`
-// printed, following the directories make reports and `cd` in a recipe.
-func parseDryRun(env parseEnv, output string) buildDescription {
+// printed in start, following the directories make reports and `cd` in a
+// recipe.
+func parseDryRun(env parseEnv, output, start string) buildDescription {
 	description := buildDescription{archives: map[string][]string{}}
-	dirs := []string{env.root}
+	dirs := []string{start}
 	var logical []string
 	pending := ""
 	for _, line := range strings.Split(output, "\n") {
@@ -220,6 +223,7 @@ func parseDryRun(env parseEnv, output string) buildDescription {
 		if match := makeDirectory.FindStringSubmatch(line); match != nil {
 			if match[1] == "Entering" {
 				dirs = append(dirs, filepath.Clean(match[2]))
+				description.entered = append(description.entered, filepath.Clean(match[2]))
 			} else if len(dirs) > 1 {
 				dirs = dirs[:len(dirs)-1]
 			}
