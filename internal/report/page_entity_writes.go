@@ -330,7 +330,9 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		result = append(result, change)
 	}
 	// The program's data (dataTypes).
-	data := func(field string, owner groupindex.Subject) bool { return facts.data[owner.ID] || facts.persisted[field] }
+	data := func(field string, owner groupindex.Subject) bool {
+		return facts.data[owner.ID] || facts.persisted[field]
+	}
 	typed := func(change pageEntityWrite, entity groupindex.Subject) (pageEntityWrite, bool) {
 		name, anchor := builder.subjectDisplay(entity)
 		if anchor == nil {
