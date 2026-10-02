@@ -4,8 +4,8 @@ import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {invariants,invariantKit,compare,random,hash} from './invariants.mjs';
 import {lintCanvas} from './geometry.mjs';
 
-// The rewrite's invariant table (invariants.mjs): every invariant at every
-// level of each report, on the old path and on `?scene=1`. Reports rendered
+// The canvas's invariant table (invariants.mjs): every invariant at every
+// level of each report. Reports rendered
 // by `repomap render` (no provider call) are named by
 // REPOMAP_INVARIANT_REPORTS, a comma list of HTML files the test server
 // serves as /invariant-<n>.html; the seeded synthetic graphs of
@@ -13,15 +13,15 @@ import {lintCanvas} from './geometry.mjs';
 // list of their names, or "all"), drawn by the fixture page:
 //   REPOMAP_INVARIANT_REPORTS=a.html,b.html REPOMAP_INVARIANT_OUT=dir \
 //     npx playwright test invariants --workers=1
-// REPOMAP_INVARIANT_PATHS picks "old", "scene" or both (default both), or
-// "canvas": the page as it opens, with no flag, once the scene path is the
-// only one.
+// REPOMAP_INVARIANT_PATHS names how a page is opened: "canvas" (default),
+// as it opens; "scene" adds the ?scene=1 the canvas read before S5 (the
+// tables of 2026-10-01/02), "old" was the old canvas's.
 // Each report and path writes <out>/<repo>.<path>.json; the table is
 // written by `node visual/invariant-table.mjs <out>`. The run passes unless
 // REPOMAP_INVARIANT_STRICT is set: the table is the result.
 const reports=(process.env.REPOMAP_INVARIANT_REPORTS||'').split(',').filter(Boolean);
 const graphNames=process.env.REPOMAP_INVARIANT_GRAPHS==='all'?['no-inputs','outside-150','cycles','loose-40']:(process.env.REPOMAP_INVARIANT_GRAPHS||'').split(',').filter(Boolean);
-const paths=(process.env.REPOMAP_INVARIANT_PATHS||'old,scene').split(',').filter(Boolean);
+const paths=(process.env.REPOMAP_INVARIANT_PATHS||'canvas').split(',').filter(Boolean);
 const out=process.env.REPOMAP_INVARIANT_OUT||new URL('../test-results/invariants/',import.meta.url).pathname;
 const pans=Number(process.env.REPOMAP_INVARIANT_PANS||24),moves=Number(process.env.REPOMAP_INVARIANT_MOVES||50);
 const strict=!!process.env.REPOMAP_INVARIANT_STRICT;

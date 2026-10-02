@@ -159,60 +159,61 @@ covers source/question return, exact input selection, map camera stability,
 connection-label navigation, dense areas and the separate reading column. The
 report contains the runtime JS/CSS inline and needs no network asset requests.
 
-### Canvas screenshot tests
+### Canvas browser tests
 
 `make ui-visual-test` runs Chromium against prepared input containing two
-systems and five external participants. The test host supplies records and
-callbacks to the ordinary bundled canvas: the production code measures cards,
-chooses the layout, routes connections and handles mouse gestures. No provider
-request or saved layout is involved. This fixture supplements ordinary report
-acceptance; it does not check analysis quality or replace source/Back journeys
-in a complete generated report.
+systems and five outside systems, with the saved scene a report would carry
+for it (`visual/saved-scene.mjs`, scene.go's rules). The test host supplies
+records and callbacks to the ordinary bundled canvas: the production code
+builds the model, lays out every level and handles the pointer. No provider
+request or saved layout is involved. This fixture supplements ordinary
+report acceptance; it does not check analysis quality or replace
+source/Back journeys in a complete generated report.
 
-A saved run is too large for the repository's test data, so one spec reaches a
-real report only on request: with `REPOMAP_REAL_RUN` naming a saved run
-directory, the test server renders it once with the built `.bin/repomap render`
-(no provider request) and `visual/real-report.spec.mjs` walks every arrowhead
-and chip of its whole map and of its largest component with a real pointer at
-1440×900 and 1280×800. Without it that spec is skipped. The fixture itself
-reproduces Redis's failing geometry: entering one component opens the other.
+`visual/scene.spec.mjs` checks what a reader does: an arrow pointed at opens
+its card and a click on it reads its connection; "−" leaves one level per
+press down to the whole map; one pinch crosses at most one level boundary
+and a pause lets the next cross one more; "Show whole map" keeps what is
+read and fits every box; a click on an input kind on the whole map reads
+that kind; an arrow keeps its screen width while the camera zooms; and a
+layout worker failing before the first drawing leaves the static map and no
+pending canvas. `visual/stable-labels.spec.mjs` checks that a pan keeps the
+whole map's summaries' line boxes. `visual/geometry.spec.mjs`
+(`visual/geometry.mjs`) checks the drawn fixture: no two texts overlap, no
+text is cut without an ellipsis and a title, every box stands in its frame,
+an arrow ends on the boxes it joins and runs on no other arrow's line, and
+the canvas prints no kind label, plaque or number of its own (a digit in a
+name is a name); on rendered reports named by `REPOMAP_GEOMETRY_REPORTS` it
+prints each finding with its level. With `REPOMAP_REAL_RUN` naming a saved
+run directory, the test server renders it once with `.bin/repomap render`
+(no provider request) and `visual/real-navigation.spec.mjs` walks the
+toolbar's breadcrumb up from a part at 1440×900 and 1280×800; without it
+that spec is skipped.
 
-`visual/geometry.spec.mjs` is the one geometry check of the drawn canvas
-(`visual/geometry.mjs`): at the whole map, the four programs holding most
-areas and their Inputs frames entered by their zoom marks, two areas of each
-and one part's declarations, no two texts overlap, no text is cut without an
-ellipsis and a title, every box stands in its frame, an arrow keeps clear of
-the boxes it does not join, ends on the border of the ones it does and runs
-on no other arrow's line, an arrow's card never draws its heading or rows
-over each other, every name reads at 11px or more below the whole map (a
-part's description at 9px), no arrowhead is as large
-as the box it points into, and the canvas prints no kind label, plaque or
-lone number. It runs on the fixture always,
-and on rendered reports named by `REPOMAP_GEOMETRY_REPORTS` (a comma list of
-HTML files from `repomap render`), printing each finding with its level.
-
-`visual/invariants.spec.mjs` (`visual/invariants.mjs`) is the canvas
-rewrite's invariant table (REPORT, canvas invariants). On each rendered report
-named by `REPOMAP_INVARIANT_REPORTS` (served as `/invariant-<n>.html`) and
-each seeded synthetic graph named by `REPOMAP_INVARIANT_GRAPHS` (`all`, or
-names of `fixtures/synthetic-*.json`: no inputs, 150 outside systems,
-cycles, 40 loose parts; written by `visual/synthetic-graphs.mjs` in the page
-data shape the canvas receives, for node scene tests too), it visits the
-whole map (its rest view, then "Show whole map"), every program and every
-area of the two largest programs, on the old path, on `?scene=1`, or on the
-page as it opens (`REPOMAP_INVARIANT_PATHS` `old`, `scene`, `canvas`). At each level it
-checks the arrows at rest, makes 24 random pans and 50 random pointer moves,
-points at every arrow and measures ports and markers at every camera; it
-writes `<repo>.<path>.json` to `REPOMAP_INVARIANT_OUT`, and
+`visual/invariants.spec.mjs` (`visual/invariants.mjs`) is the canvas's
+invariant table (REPORT, canvas invariants), the acceptance of the scene
+canvas. On each rendered report named by `REPOMAP_INVARIANT_REPORTS`
+(served as `/invariant-<n>.html`) and each seeded synthetic graph named by
+`REPOMAP_INVARIANT_GRAPHS` (`all`, or names of `fixtures/synthetic-*.json`:
+no inputs, 150 outside systems, cycles, 40 loose parts; written by
+`visual/synthetic-graphs.mjs` in the page data shape the canvas receives
+with their saved scene, for node scene tests too), it visits the whole map
+(its rest view, then "Show whole map"), every program and every area of the
+two largest programs. At each level it checks the arrows at rest, makes 24
+random pans and 50 random pointer moves, points at every arrow, marker,
+port and faded chip, and measures markers and ports at every camera; it
+writes `<repo>.canvas.json` to `REPOMAP_INVARIANT_OUT`, and
 `node visual/invariant-table.mjs DIR` writes `table.md` and `table.json`
-(repo × level × invariant, pass or fail with counts). It fails a run only
-with `REPOMAP_INVARIANT_STRICT`. Run it with one browser:
+(repo × level × invariant, pass or fail with counts, each cell marked with
+the commit it ran on). It fails a run only with `REPOMAP_INVARIANT_STRICT`.
+Run it with one browser:
 
     REPOMAP_INVARIANT_REPORTS=a.html,b.html REPOMAP_INVARIANT_OUT=dir \
       npx playwright test invariants --workers=1
 
-`REPOMAP_FIXTURE_TEMPLATES` draws the synthetic graphs with another templates
-directory (a clean `git archive` export) instead of the working tree's.
+`REPOMAP_FIXTURE_TEMPLATES` draws the fixture and the synthetic graphs with
+another templates directory (a clean `git archive` export) instead of the
+working tree's.
 
 `visual/journeys.spec.mjs` (`visual/journeys.mjs`) runs on rendered reports
 named by `REPOMAP_JOURNEY_REPORTS` (a comma list, served as
@@ -238,63 +239,14 @@ every program, Inputs, Outside, destination, area and part and a sample of
 inputs (the journeys' among them) as the explorer reads them, with two
 arrow cards at each frame: no `file:line` in a row of the column or a
 card, no entry twice in one list, no word cut by an ellipsis or the
-browser, no Outside chip naming its own program, no empty card or frame in
-sight, "Parts on this path" naming parts only, each once, and no fold
-holding more than 67 rows of one kind (the 95th percentile of the folded
-lists of the four reports measured on 2026-09-30) under no named fold of
-their own. Each offender is printed with its level.
-
-Each system has one compact input collection outside its component frame on
-the initial map. Its existing input types remain readable; opening the collection
-reveals the original named inputs. Selecting an input retains its exact saved
-input-to-part relation and reading; returning preserves world geometry. An
-individual input promises a path and sources, not another hidden container.
-
-The same prepared input also covers dense area inventories and a separate
-shape with two components of twenty parts each, seventeen external participants
-and six distinct calls per participant. Assertions check actual text ranges
-inside their frames, complete words and separation from zoom controls. Journey
-attachments cover component/external entry and intermediate zoom-out states.
-Zoom-out checks that a root summary does not coexist with its visible interior.
-A restored close view checks that a visible part is not covered by its parent's
-summary when the intermediate area's heading has left the viewport.
-A pan must preserve the text's line boxes even when an input, external or target
-card is mostly clipped by either viewport edge. Hover and selection preserve
-compact title positions and wrapping. Selecting a call with no kind caption
-must not insert a new reading row above its title or move the camera.
-The short-name inventory journey covers both an external API participant and
-an already matched peer with direct input relations and no duplicate external.
-Pinch opens and closes complete hierarchy
-layers together, including offscreen siblings; restoring the camera restores
-that shared state. A requestAnimationFrame probe checks every frame of actual
-Ctrl+wheel transitions: existing outer and between-group routes must never
-vanish, and opening a group cannot extend the latter inside its contents.
-Both layer transitions and clipped-label states appear in the screenshot journey.
-Pinch aimed at the centre of a target must reveal its diagram by the time the
-frame occupies 85% of a canvas dimension, including a dense group inventory
-and one target with twenty external systems. The regression checks complete
-cards actually inside the canvas, not just visible DOM outside the viewport.
-The before/after frames are captured; the same world geometry must survive.
-The first shared reveal is also checked before another zoom step on dense and
-ordinary short-name maps. Every complete onscreen group has painted title text
-within its frame and a thin native outline. A slightly closer view retains the
-same geometry; the assertions distinguish a visible rectangle from a visible
-name and cannot accept a hidden label beside a lone question mark.
-At this first entrance the largest revealed group title reads at least
-12px, the size its layer stays open at; smaller groups keep smaller
-titles. Final participant sizing must fit the existing interior uniformly,
-including its text and routes, rather than leave a miniature in an enlarged
-frame. Initial and slightly closer screenshots are attached for review.
-An area with one existing part is checked at those same two moments: exactly
-one card, no wrapper or child hint, a readable full title, and direct selection
-of the original part. Multi-part areas and one-child input/external participant
-frames keep their actual containment. Unit coverage checks unchanged accepted
-area metadata, native endpoints, source locations and operation membership.
-An additional five-participant fixture uses short component names, seven/five
-area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
-Its complete initial inventories must fit, retain whole words and keep those
-area names within two lines; a screenshot of the resulting reading layout
-is attached.
+browser, no Outside chip naming its own program, no empty card (its words
+and marks filling less than its top 45%) or empty frame (a box holding no
+other box and no title) in sight, "Parts on this path" naming parts only,
+each once, and no fold holding more than 67 rows of one kind (the 95th
+percentile of the folded lists of the four reports measured on 2026-09-30)
+under no named fold of their own. Each offender is printed with its level.
+Leaving an input path and the programs list's clickable rows are checked on
+the same reports.
 
 Install the pinned browser once with `npx playwright install chromium
 --only-shell` from `internal/report/web`. Browser downloads use Playwright's
@@ -303,70 +255,8 @@ active acceptance project covers 1440×900 at DPR 1 on macOS 15 Intel with the
 Chromium version selected by the pinned Playwright dependency. The owner
 excluded narrow-window work on 2026-09-14. No pixel reference is compared: a
 baseline pins incidental layout, so the tests assert what a reader needs,
-readable names inside their frames, nothing overlapping, headings present,
-levels reachable, geometry reused. Bounds, readability and pointer checks
-remain strict.
+readable names inside their frames, nothing overlapping, levels reachable,
+geometry reused. Open the review page with
+`npx playwright show-report --host 127.0.0.1`; images and the viewer are
+ignored build artifacts and no image is committed.
 
-The suite checks readable names, complete area lists, external call focus,
-stable geometry and the successive stages of pointer-anchored zoom. Checks
-at the component threshold require a visible child heading or the retained
-component heading with a real area entrance; empty frame borders and the
-location row alone are insufficient. The level journey (`levels.spec.mjs`)
-checks that "−" leaves exactly one level per press down to the whole map,
-that one pinch crosses one level boundary and a pause lets the next cross
-the next, and that a wheel over the canvas's location row moves the map
-and one past an overflowing inventory's end scrolls neither the page nor
-the map. Without a fixture of its own, `visual/real-navigation.spec.mjs`
-walks the toolbar's breadcrumb up from a part at 1440×900 and 1280×800 and
-reads a caller named in a declaration's reading on the `REPOMAP_REAL_RUN`
-report.
-PNG attachments show the aim and action for each journey step. Open the
-review page with `npx playwright show-report --host 127.0.0.1`; its HTML is
-a viewer for the screenshots. Actual output also
-appears as one scrollable image sequence in `playwright-report/journey.html`.
-Failed sequences are explicitly marked as diagnostic output. The images and
-the viewer are ignored build artifacts; no image is committed. CI publishes
-the review report as `canvas-screenshots`.
-
-The same prepared participants also have a dense inventory variant with forty
-additional areas per system. Its default screenshot must keep all nine root
-headings and zoom controls readable without overlap. Every area stays in the
-scrollable list; the journey scrolls to its last entry, opens that area's actual
-part and returns to the same whole-map geometry. This catches repeated
-height-reservation and fit calculations collapsing a dense world into a strip.
-Both nineteen-root and twenty-one-root journeys instrument real Worker layout
-requests. Pan, wheel, zoom, selection and same-size All perform no native layout;
-a real desktop resize places only the outer frames. Every original item and
-the affine geometry of each interior survive. Outer arrows stop at participant
-frames at every zoom while retaining their original endpoint/source records.
-These structural work assertions have no machine-dependent timing limit.
-Connection-size checks combine actual SVG screen transforms with raster
-samples at different zooms. Frame checks cover the browser’s minimum CSS border
-width as well as the visible corner radius. A partly offscreen input collection
-keeps the same text layout; the viewport clips it without rewrapping its words.
-Scrolling a dense inventory leaves the camera and world unchanged.
-
-A one-target/twenty-destination fixture has twenty parts and six calls per
-destination. Its default screenshot must keep every full heading in its own
-frame, and no native outer segment may intersect any participant interior.
-Trackpad pinch over a scrolling target inventory must change camera scale
-without scrolling the text. A gesture journey opens the twenty-part target
-without using its zoom button or changing world geometry. Numbered-boundary
-checks match an inner part's number to its external arrow endpoint and capture
-the part followed by a pan to the actual boundary badge. Each gesture frame also
-checks that a partly visible child card cannot cover a retained root summary.
-
-A real vertical wheel pan must move the camera without changing zoom or world
-geometry, and must not remeasure text whose visible width is unchanged. This
-checks redundant work directly, without a machine-dependent timing threshold.
-The resize journey enlarges the desktop window while reading an external collection:
-its world remains fixed until the whole map is requested. The fitted result
-must keep every full heading and zoom control inside its own frame. Returning
-to a whole-map camera saved before remeasurement must honor that intent rather
-than restore stale coordinates or retain the detail view.
-
-The canvas regression set also checks compact endpoint numbers inside their
-frame at the native connection, matching the actual inner badge scale; direct
-closed-group to object reveal without a member-list presentation; and actual
-browser text/graphic contrast with a grayscale review. Native relation IDs and
-certainty survive a single displayed arrow per directed visible pair.

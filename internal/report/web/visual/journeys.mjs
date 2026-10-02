@@ -129,14 +129,19 @@ export function lintLevel(level){
   // its title nor anything in it.
   if(canvas){
     const nodes=[...document.querySelectorAll('.react-flow__node')].filter(el=>shown(el)&&inSight(el));
-    const boxes=nodes.map(el=>({el,id:el.dataset.id,rect:el.getBoundingClientRect(),frame:el.classList.contains('react-flow__node-area')}));
+    const boxes=nodes.map(el=>({el,id:el.dataset.id,rect:el.getBoundingClientRect()}));
+    // A frame holds other drawn boxes (an entered program, area or Inputs
+    // frame, a kind's group): its content is them, not its words.
+    const within=(a,b)=>a.left>=b.left-1&&a.right<=b.right+1&&a.top>=b.top-1&&a.bottom<=b.bottom+1&&a.width*a.height<b.width*b.height;
+    for(const box of boxes)box.frame=box.el.classList.contains('react-flow__node-area')||boxes.some(other=>other!==box&&within(other.rect,box.rect));
     for(const box of boxes){
       const {width,height}=box.rect;if(width<40||height<30)continue;
       if(!box.frame){
         // Its words fill less than the top 45% of a card two lines tall or
         // more: litestream's "Not analysed" had stood as its title over an
-        // empty box.
-        const words=[...box.el.querySelectorAll('*')].filter(el=>own(el)&&shown(el)).flatMap(el=>[...el.getClientRects()]);
+        // empty box. Marks and outlines drawn in it count with its words
+        // (an Inputs card's kind marks, a closed area's parts outlined).
+        const words=[...box.el.querySelectorAll('*')].filter(el=>(own(el)||el.matches('svg,img,[data-kind-mark],.scene-ghosts>*,.scene-program-ghosts>*,.scene-bucket-marks>*'))&&shown(el)).flatMap(el=>[...el.getClientRects()]);
         const bottom=Math.max(box.rect.top,...words.map(rect=>rect.bottom));
         if(!text(box.el))add('empty box',box.id);
         else if(height>=40&&bottom-box.rect.top<height*.45)add('empty box',`${box.id} "${text(box.el).slice(0,40)}": its words fill ${Math.round(100*(bottom-box.rect.top)/height)}% of it`);

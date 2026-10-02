@@ -1,13 +1,14 @@
 import * as prepared from './two-systems-five-externals.mjs';
+import {sceneOf} from './saved-scene.mjs';
 
 const options=new URLSearchParams(location.search);
 // A seeded synthetic graph (fixtures/synthetic-*.json, page data as the
 // report hands it to the canvas), named by ?graph=.
 const graph=options.get('graph')?await (await fetch(`/fixtures/${options.get('graph')}.json`)).json():null;
 if(graph)document.querySelector('h1').textContent=graph.title||options.get('graph');
-// Its saved scene, where a report carries it (#rm-scene), before the canvas
-// reads it.
-if(graph?.scene){const saved=document.createElement('script');saved.type='application/json';saved.id='rm-scene';saved.textContent=JSON.stringify(graph.scene);document.body.appendChild(saved);}
+// The saved scene a report carries (#rm-scene) before the canvas reads it:
+// the graph's own, else read off the prepared data by scene.go's rules.
+const saved=document.createElement('script');saved.type='application/json';saved.id='rm-scene';document.body.appendChild(saved);
 const {records,relations,areas,inputOwner}=graph?graph:options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory({matchedPeer:options.has('matched-peer')}):options.has('many-external')
   ?prepared.manyExternalInventory({inputs:!options.has('no-inputs')}):options.has('dense')?prepared.denseInventory():prepared;
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';
@@ -73,6 +74,8 @@ if(options.has('input-path')){
   records.find(n=>n.id==='create').trace=['routes','auth','queue','worker'];
   for(const relation of relations)if([['routes','auth'],['routes','queue'],['queue','worker']].some(([from,to])=>relation.from===from&&relation.to===to))relation.operations=['create'];
 }
+
+saved.textContent=JSON.stringify(graph?.scene||sceneOf({records,relations,inputOwner}));
 
 // Only the host callbacks and prepared English labels are supplied here.
 // Rendering, measurement, layout, zoom, hover and controls are production code.

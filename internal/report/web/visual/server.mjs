@@ -18,6 +18,7 @@ const routes = new Map([
   ['/report-ui.js', ['text/javascript', await readFile(new URL('js/27-report-ui.js',templates))]],
   ['/fixture.mjs', ['text/javascript', await readFile(new URL('fixture.mjs',here))]],
   ['/two-systems-five-externals.mjs', ['text/javascript', await readFile(new URL('two-systems-five-externals.mjs',here))]],
+  ['/saved-scene.mjs', ['text/javascript', await readFile(new URL('saved-scene.mjs',here))]],
 ]);
 // A saved run named by REPOMAP_REAL_RUN, rendered once by the built binary
 // (`repomap render`, no provider call) and served as /real-report.html.
