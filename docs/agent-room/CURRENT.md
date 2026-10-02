@@ -254,11 +254,22 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is
   no program's data; a schema or migration no adapter reads keeps the root
   rule ([EXTRACTORS](../EXTRACTORS.md)).
-- **Known remaining violation:** orientation's request rows (its seeds and
-  each declaration it shows) still send the declaration's docstring as
-  `author_doc` (`internal/orientation/rows.go`). Since 1300d794 no atlas
-  table, key or symbol row and no Jev request carries one
-  (`TestProviderBodiesCarryNoAuthorDocs`); README claims stay claims.
+- **Orientation is code structure only (2026-10-02, closes the known
+  violation):** its overview sends no claims (README lines, docstrings,
+  comments, commit subjects) and its member rows no `author_doc`; the report
+  quotes them as the authors' words only. A role is read from its own
+  target's groups, facts and seeds: another target's refs are ignored, a
+  role citing only another target's evidence is refused, and a target with
+  no fact or seed of its own (a library) keeps a role without refs. Lua
+  5.1.5's etc library (one file) had been described from etc/README as the
+  whole directory's extras. `TestProviderBodiesCarryNoAuthorDocs` now covers
+  the overview. Since 1300d794 no atlas table, key or symbol row and no Jev
+  request carries a docstring.
+- **Known remaining violation:** the atlas still sends README first lines in
+  three rows: a directory's `readme` (`lines.DirectoryRow`), a boundary's
+  `ancestor_directories[].readme_claim` (`lines.BoundarySourceContext`) and
+  a target's `readme` (`lines.TargetRow`). They can colour the group titles
+  and summaries the orientation reads. Removing them re-asks those tables.
 - **Known prompt drift (2026-09-29):** READING says a symbol that runs the
   handed callable in place, wraps or stores it is `binds` `none`;
   `internal/atlas/lines/prompts/entry_options.md`'s `none` names only a

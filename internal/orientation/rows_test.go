@@ -237,7 +237,11 @@ func TestAMemberRowReadsBackEveryCallLosslessly(t *testing.T) {
 			t.Fatalf("call %d reads back differently:\n got %+v\nwant %+v\nrow %s", i, got[i], want[i], raw)
 		}
 	}
-	if row := rows["t1.n1"]; row.Name != "main" || row.Anchor != "main.py:3" || row.Signature != "def main(argv)" || row.AuthorDoc != "Start the bot." || row.Kind != "function" {
+	if row := rows["t1.n1"]; row.Name != "main" || row.Anchor != "main.py:3" || row.Signature != "def main(argv)" || row.Kind != "function" {
 		t.Fatalf("the row lost its declaration: %+v", row)
+	}
+	// Code structure only: the docstring is the author's claim, never sent.
+	if strings.Contains(string(raw), "Start the bot.") || strings.Contains(string(raw), "author_doc") {
+		t.Fatalf("the row carries the author's docstring: %s", raw)
 	}
 }

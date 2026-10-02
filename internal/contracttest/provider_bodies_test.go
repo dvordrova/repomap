@@ -170,19 +170,48 @@ func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
 	for _, index := range []programindex.Index{server, client} {
 		metas = append(metas, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."})
 	}
-	if _, err := reading.Read(t.Context(), reading.Options{
+	read, err := reading.Read(t.Context(), reading.Options{
 		Graph: graph, Repository: "kvd", Revision: "test", NoCaptions: false, Targets: metas,
 		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
 		Provider: preset, Categorizer: categorizer, OwnerRunDir: t.TempDir(),
 		ReadSource: func(path string) ([]byte, error) { return fixture.source(t, path), nil },
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	// The orientation is code structure too: no README line, docstring or
+	// commit subject reaches its overview (Lua 5.1.5's etc library had
+	// been described by etc/README as the whole directory's extras). The
+	// claims stay the report's, quoted as the authors' words.
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{server.Target.ID: server, client.Target.ID: client}, read.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := &capturedOrientation{flowTarget: server.Target.ID}
+	if _, _, err := orientation.Run(t.Context(), llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}}, asked,
+		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: quoted, Groups: indexes, Graph: graph, Categorizer: categorizer}); err != nil {
+		t.Fatal(err)
+	}
+	readme := 0
+	for _, claim := range quoted.Claims {
+		add(claim.Text)
+		if claim.Source == claims.SourceReadme {
+			readme++
+		}
+	}
+	if readme == 0 {
+		t.Fatal("kvd's claims hold no README line: the test no longer covers them")
 	}
 	preset.mu.Lock()
 	bodies := append(slices.Clone(preset.requests), categorizer.Requests()...)
 	preset.mu.Unlock()
-	if len(bodies) == 0 {
-		t.Fatal("the reading sent nothing")
+	overview := asked.bodies(t)
+	if len(bodies) == 0 || len(overview) != 1 {
+		t.Fatalf("the reading sent %d bodies and the orientation %d", len(bodies), len(overview))
+	}
+	bodies = append(bodies, overview...)
+	if strings.Contains(string(overview[0]), `"claims"`) || strings.Contains(string(overview[0]), `"author_doc"`) {
+		t.Fatal("the orientation's overview carries claims or author docs")
 	}
 	for _, body := range bodies {
 		text := string(body)

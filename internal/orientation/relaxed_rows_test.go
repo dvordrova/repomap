@@ -27,11 +27,13 @@ func TestSummaryAndRoleKeepTargetQualifiedSubjects(t *testing.T) {
 		})
 	}}
 	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
-	if err != nil || len(rejected) != 0 || result.Validate() != nil {
+	// A role keeps its own target's member; beta's is another target's
+	// evidence, ignored and recorded.
+	if err != nil || len(rejected) != 1 || string(rejected[0].Raw) != `"`+betaCore+`"` || result.Validate() != nil {
 		t.Fatalf("two targets' equal member ids ended the run: %v, %+v", err, rejected)
 	}
 	want := []string{alphaCore, betaCore}
-	if !reflect.DeepEqual(result.SummaryRefs, want) || len(result.Roles) != 1 || !reflect.DeepEqual(result.Roles[0].SubjectIDs, want) {
+	if !reflect.DeepEqual(result.SummaryRefs, want) || len(result.Roles) != 1 || !reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{alphaCore}) {
 		t.Fatalf("qualified subjects were not kept: summary=%v roles=%+v", result.SummaryRefs, result.Roles)
 	}
 

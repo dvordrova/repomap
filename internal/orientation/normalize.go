@@ -23,7 +23,6 @@ const (
 	sectionRequest   = "request"
 
 	classFact    = 'f'
-	classClaim   = 'c'
 	classSubject = 's'
 )
 
@@ -239,7 +238,7 @@ func (result *normalized) acceptSummary(response modelResponse, cat catalog) {
 		result.reject(sectionSummary, raw, proseRefReason("summary", ref, "summary_refs"))
 		return
 	}
-	refs, ignored, err := cat.resolve(response.SummaryRefs, "", classFact, classClaim, classSubject)
+	refs, ignored, err := cat.resolve(response.SummaryRefs, "", classFact, classSubject)
 	if err != nil {
 		result.reject(sectionSummary, raw, err.Error())
 		return
@@ -284,19 +283,29 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		result.reject(sectionRoles, purpose, proseRefReason("purpose", ref, "refs")+"; the purpose is dropped and the role kept")
 		row.Purpose = ""
 	}
-	refs, ignored, err := cat.resolve(row.Refs, row.Target, classFact, classClaim, classSubject)
-	if err != nil {
-		result.reject(sectionRoles, raw, err.Error())
+	refs, others, ignored := cat.ownRefs(row.Refs, row.Target)
+	switch {
+	case len(refs) == 0 && len(others) > 0:
+		// Every ref it cites is another target's: it describes that one.
+		// Lua 5.1.5's etc library had been described by etc/README.
+		result.reject(sectionRoles, raw, fmt.Sprintf("the role of %q cites only other targets' evidence", row.Target))
+		return
+	case len(refs) == 0 && cat.holdsEvidence(row.Target):
+		result.reject(sectionRoles, raw, fmt.Sprintf("the role of %q cites none of its own facts or seeds", row.Target))
 		return
 	}
+	// A target the request lists no fact or seed of (a library, whose
+	// exports are only counted) keeps a role that cites nothing.
 	result.rejectRefs(sectionRoles, ignored)
+	for _, ref := range others {
+		quoted, _ := json.Marshal(ref)
+		result.reject(sectionRoles, quoted, fmt.Sprintf("another target's evidence ignored for the role of %q; its own is kept", row.Target))
+	}
 	role := Role{TargetID: targetID, Role: row.Role, Purpose: row.Purpose, FactIDs: []string{}}
 	for _, ref := range refs {
 		switch ref.class {
 		case classFact:
 			role.FactIDs = append(role.FactIDs, ref.id)
-		case classClaim:
-			role.ClaimIDs = append(role.ClaimIDs, ref.id)
 		case classSubject:
 			role.SubjectIDs = append(role.SubjectIDs, ref.ref)
 		}
@@ -311,7 +320,6 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		}
 		if accepted.Role == role.Role && samePurpose(accepted.Purpose, role.Purpose) {
 			result.roles[i].FactIDs = unionRefs(accepted.FactIDs, role.FactIDs)
-			result.roles[i].ClaimIDs = unionRefs(accepted.ClaimIDs, role.ClaimIDs)
 			result.roles[i].SubjectIDs = unionRefs(accepted.SubjectIDs, role.SubjectIDs)
 			result.accepted[slot] = true
 			result.roleRows[targetID] = append(result.roleRows[targetID], slot)
@@ -439,6 +447,49 @@ func (cat catalog) resolve(refs []string, targetRef string, allowed ...byte) ([]
 	return resolved, ignored, nil
 }
 
+// ownRefs resolves a role's refs to its own target's evidence: a fact row
+// that target holds (not a row another target holds, which idFor would
+// name), a seed of that target. Another target's refs are returned apart;
+// unknown refs and repository-wide facts are ignored.
+func (cat catalog) ownRefs(refs []string, targetRef string) (own []resolvedRef, others, ignored []string) {
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		entry, err := cat.lookup(ref, targetRef)
+		switch {
+		case err != nil:
+			ignored = append(ignored, ref)
+		case entry.class == classFact && entry.fact.byTarget[targetRef] != "",
+			entry.class == classSubject && entry.subject.targetRef == targetRef:
+			own = append(own, entry)
+		case entry.class == classFact && len(entry.fact.byTarget) == 0:
+			ignored = append(ignored, ref) // a repository-wide fact is no target's own
+		default:
+			others = append(others, ref)
+		}
+	}
+	return own, others, ignored
+}
+
+// holdsEvidence reports whether the request lists a fact or seed of the
+// target: a role must then cite one.
+func (cat catalog) holdsEvidence(targetRef string) bool {
+	for _, entry := range cat.facts {
+		if entry.byTarget[targetRef] != "" {
+			return true
+		}
+	}
+	for _, entry := range cat.subjects {
+		if entry.targetRef == targetRef {
+			return true
+		}
+	}
+	return false
+}
+
 func (result *normalized) rejectRefs(section string, refs []string) {
 	for _, ref := range refs {
 		raw, _ := json.Marshal(ref)
@@ -449,9 +500,6 @@ func (result *normalized) rejectRefs(section string, refs []string) {
 func (cat catalog) lookup(ref, targetRef string) (resolvedRef, error) {
 	if entry, known := cat.facts[ref]; known {
 		return resolvedRef{ref: ref, class: classFact, id: entry.idFor(targetRef), fact: entry}, nil
-	}
-	if id, known := cat.claims[ref]; known {
-		return resolvedRef{ref: ref, class: classClaim, id: id}, nil
 	}
 	if entry, known := cat.subjects[ref]; known {
 		return resolvedRef{ref: ref, class: classSubject, id: entry.id, subject: entry}, nil
@@ -468,8 +516,6 @@ func classNames(classes []byte) string {
 		switch class {
 		case classFact:
 			names += "facts a*"
-		case classClaim:
-			names += "claims h*"
 		case classSubject:
 			names += "qualified members"
 		}
@@ -479,7 +525,7 @@ func classNames(classes []byte) string {
 
 // qualifiedIDs keeps a subject's target-qualified ref: a bare subject id
 // repeats across targets (t1.n3 and t2.n3), and the report resolves the
-// qualified form. Facts and claims keep their own artifact ids.
+// qualified form. Facts keep their own artifact ids.
 func qualifiedIDs(refs []resolvedRef) []string {
 	result := make([]string, 0, len(refs))
 	for _, ref := range refs {
@@ -501,9 +547,9 @@ func ids(refs []resolvedRef) []string {
 }
 
 // refToken is the shape of a request-local ref written as a word: a
-// target (t7), a fact (a12), a claim (h3) or a target-qualified member or
-// group (t1.n22, t1.g3).
-var refToken = regexp.MustCompile(`\b(?:t[0-9]+(?:\.[a-z][0-9]+)?|[ah][0-9]+)\b`)
+// target (t7), a fact (a12) or a target-qualified member or group (t1.n22,
+// t1.g3).
+var refToken = regexp.MustCompile(`\b(?:t[0-9]+(?:\.[a-z][0-9]+)?|a[0-9]+)\b`)
 
 // proseRef is the first request-local ref a prose value writes, or "": a
 // word of the ref shape that the request advertises, or a member or group

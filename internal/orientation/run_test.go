@@ -25,7 +25,7 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 	provider := &presetProvider{respond: func([]byte) []byte {
 		return encodeResponse(t, map[string]any{
 			"summary":      "Alpha serves an items list that Beta fetches over HTTP.",
-			"summary_refs": []string{refs.fact("route"), refs.claim("readme")},
+			"summary_refs": []string{refs.fact("route")},
 			"roles": []any{
 				map[string]any{"target": refs.target("alpha"), "role": "Backend API service",
 					"purpose": "Serves the items list over HTTP.", "refs": []string{refs.fact("entrypoint"), refs.fact("route")}},
@@ -53,7 +53,7 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 	if !reflect.DeepEqual(result.GroupsSHA256s, sortedDigests(groupDigests(fixture.input.Groups))) {
 		t.Fatalf("groups digests = %v", result.GroupsSHA256s)
 	}
-	if !reflect.DeepEqual(result.SummaryRefs, []string{fixture.factID("route"), fixture.claimID("readme")}) {
+	if !reflect.DeepEqual(result.SummaryRefs, []string{fixture.factID("route")}) {
 		t.Fatalf("summary refs = %v", result.SummaryRefs)
 	}
 	if len(result.Roles) != 2 ||
@@ -117,7 +117,7 @@ func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testin
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
 	alpha := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("route")}}
-	alphaWithOtherRefs := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("entrypoint"), refs.claim("readme"), refs.subject("alpha", "inbound"), refs.fact("route")}}
+	alphaWithOtherRefs := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("entrypoint"), refs.subject("alpha", "inbound"), refs.fact("route")}}
 	beta := map[string]any{"target": refs.target("beta"), "role": "Client", "purpose": "Fetches items.", "refs": []string{refs.fact("call")}}
 	for _, conflict := range []bool{false, true} {
 		rows := []any{alpha, alphaWithOtherRefs, beta}
@@ -133,7 +133,7 @@ func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testin
 			t.Fatal("equivalent duplicate lost a valid role")
 		}
 		if !conflict && (!reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("route"), fixture.factID("entrypoint")}) ||
-			!reflect.DeepEqual(result.Roles[0].ClaimIDs, []string{fixture.claimID("readme")}) ||
+			len(result.Roles[0].ClaimIDs) != 0 ||
 			!reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{refs.subject("alpha", "inbound")})) {
 			t.Fatal("equivalent interpretations lost or duplicated their distinct supporting references")
 		}
@@ -281,11 +281,17 @@ func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	}
 	refs := fixture.refs(t)
 	for _, ref := range []string{
-		fixture.targetID("alpha"), fixture.factID("entrypoint"), fixture.claimID("readme"),
+		fixture.targetID("alpha"), fixture.factID("entrypoint"),
 		refs.subject("alpha", "inbound"),
 	} {
 		if ref == "" || !bytes.Contains(first, []byte(`"`+ref+`"`)) {
 			t.Fatalf("request did not preserve canonical compact ref %q", ref)
+		}
+	}
+	// Code structure only: no claim, README line or commit subject.
+	for _, authored := range []string{fixture.claimID("readme"), fixture.claimID("commit"), "This setting is optional.", "Add items route", `"claims"`} {
+		if bytes.Contains(first, []byte(authored)) {
+			t.Fatalf("the request carries the authors' words %q", authored)
 		}
 	}
 	if !bytes.Contains(first, []byte(`"content_trust":"`+contentTrust+`"`)) {
@@ -321,8 +327,8 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	if err := json.Unmarshal(provider.users[0], &sent); err != nil {
 		t.Fatal(err)
 	}
-	if len(sent.Claims) != len(fixture.input.Claims.Claims) || len(sent.Groups) == 0 {
-		t.Fatal("large request lost claims or groups")
+	if len(sent.Groups) == 0 {
+		t.Fatal("large request lost its groups")
 	}
 	// A provider that cannot hold the overview leaves an empty, journaled
 	// orientation.
@@ -447,9 +453,8 @@ func (provider *presetProvider) assertRequestShape(t *testing.T, fixture *fixtur
 	if seen.OmittedFactCounts["import"] != 1 || seen.OmittedFactCounts["todo"] != 1 || len(seen.Facts) != 9 {
 		t.Fatalf("facts = %d rows, omitted %v", len(seen.Facts), seen.OmittedFactCounts)
 	}
-	if len(seen.Claims) != 2 || seen.Claims[1].Source != "readme" ||
-		seen.Claims[1].Text != strings.Repeat("a", 350)+" This setting is optional." {
-		t.Fatalf("claims = %#v", seen.Claims)
+	if raw := string(provider.users[0]); strings.Contains(raw, "This setting is optional.") || strings.Contains(raw, `"claims"`) {
+		t.Fatal("the request carries the README's words")
 	}
 	if len(seen.Groups) != 6 || len(seen.Connections) != 3 || seen.Groups[0].Target != "t1" || seen.Groups[3].Target != "t2" {
 		t.Fatalf("groups = %d, connections = %d", len(seen.Groups), len(seen.Connections))
@@ -539,14 +544,9 @@ func (lookup refLookup) fact(label string) string {
 	return ""
 }
 
-func (lookup refLookup) claim(label string) string {
-	for ref, id := range lookup.cat.claims {
-		if id == lookup.fixture.claimID(label) {
-			return ref
-		}
-	}
-	return ""
-}
+// claim is a claim's id as a model might still write it: the request
+// advertises no claims, so it is no ref.
+func (lookup refLookup) claim(label string) string { return lookup.fixture.claimID(label) }
 
 // subject is a member's target-qualified ref, as either request writes it.
 func (lookup refLookup) subject(target, label string) string {

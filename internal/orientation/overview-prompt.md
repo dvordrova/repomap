@@ -31,9 +31,6 @@ cite a ref of the wrong kind.
   - `dead_module`: a file no entrypoint reaches.
   - `negative`: something the repository lacks.
   - `unanalysed_file`: a file in a language nothing here analyses.
-- `claims`: text people wrote (refs `h*`): README lines, docstrings, commit
-  subjects, each with a source and a date when known. Claims can be stale or
-  wrong; facts win when they disagree.
 - `groups`: model interpretations of responsibilities (refs such as `t1.g3`),
   each with a lane, a title, a summary and `member_count`, the number of code
   symbols it holds. Group refs are context only; do not use them in the
@@ -44,8 +41,7 @@ cite a ref of the wrong kind.
   `sentences`. These interpretations do not prove execution order.
 - `seeds`: where each target starts, one row per start symbol with its
   target-qualified ref (such as `t1.n22`): its `name`, `kind`, `anchor`,
-  `signature`, the author's `author_doc` when there is one, and every call it
-  makes, in the order they are written in it. Each call is a list, or just
+  `signature`, and every call it makes, in the order they are written in it. Each call is a list, or just
   its first item when it has nothing more:
   - `"name@line -> callee | callee"`: the called name, its line, and each
     declaration it may reach: a seed's ref, `name (path:line)`, or
@@ -71,16 +67,22 @@ cite a ref of the wrong kind.
 Rules for each part:
 
 - Refs go only in the ref fields (`summary_refs`, `refs`, `target`,
-  `main_flow_target`). Never write a ref such as `t1`, `a12`, `h3` or
+  `main_flow_target`). Never write a ref such as `t1`, `a12` or
   `t1.n22` inside `summary`, `role`, `purpose` or `note`: name a target by
   its name there, never by its ref. A sentence that writes a ref is refused.
 
-- `summary`: one sentence. `summary_refs` may cite facts (`a*`), claims
-  (`h*`), or seeds (`tN.nN`). Prefer facts over claims.
+- `summary`: one sentence. `summary_refs` may cite facts (`a*`) or seeds
+  (`tN.nN`).
 - `roles`: exactly one row per target. `role` is a short label such as
-  "Backend API service" or "Browser front end". `purpose` is one sentence.
-  `refs` may cite facts, claims, or seeds; cite at least one and prefer
-  facts.
+  "Backend API service" or "Browser front end"; `purpose` is one sentence. A
+  role describes only its own target: what its own groups, facts and seeds
+  show it doing. A fact is a target's own when its `targets` lists that
+  target; a seed is its own when its ref starts with that target's ref and a
+  dot (`t2.` for `t2`). Never describe a target by another target's
+  evidence, by the directory it sits in, or by the repository as a whole;
+  name another target only as a connection shows it. `refs` cite only the
+  target's own facts and seeds, at least one when it has any; leave `refs`
+  empty only when the request lists none of either.
 - `run_recipe`: the commands a newcomer runs to start each target, in order.
   `refs` cite facts only, and every row must cite at least one `manifest` or
   `entrypoint` fact that supports the command. Use `cwd` for the directory the
@@ -92,9 +94,10 @@ Rules for each part:
   from the latter directory the corresponding package path is `.`. A target's
   source directory is not automatically the command's working directory.
   A launch fact identifies the entry point, not a complete usable invocation.
-  Check the seeds' calls and author instructions for required arguments and
-  prerequisites. Preserve known required arguments, using an explicit
-  placeholder when the user must supply a value; never invent that value.
+  Check the seeds' calls, and the literal words those calls are given, for
+  required arguments and prerequisites. Preserve known required arguments,
+  using an explicit placeholder when the user must supply a value; never
+  invent that value.
   When a seed prints a usage line, write the arguments and their placeholders
   exactly as that line writes them. Settings the program reads when it
   starts, such as an environment key (`config_read`) naming its
@@ -106,11 +109,6 @@ Rules for each part:
   read first: the program the repository exists for, not a helper script,
   test or build tool. Its flow is read in a separate step. Leave it empty
   when no target runs anything.
-
-Attribute behavior supported only by a README or other author text in the
-sentence itself. A nested document applies to its own subtree unless it
-explicitly establishes wider scope; dependency or example instructions do not
-automatically describe this repository's application.
 
 Write plain, readable English. One sentence each; no essays, no lists inside
 sentences, no markdown, no line breaks inside a value. Do not add fields. Do

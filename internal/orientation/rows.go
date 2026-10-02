@@ -12,9 +12,9 @@ import (
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
-// memberRow is one declaration a request shows: its own facts and every call
-// it makes, in the order they are written in it, one tuple per call
-// (encodeCall). Nothing is cut: a declaration's row is complete or absent.
+// memberRow is one declaration a request shows: its name, kind, place and
+// signature and every call it makes, in the order they are written in it,
+// one tuple per call (encodeCall); never its docstring. Nothing is cut: a declaration's row is complete or absent.
 // Who calls it is not listed: inside a request's scope a caller's own row
 // already lists the call.
 type memberRow struct {
@@ -23,7 +23,6 @@ type memberRow struct {
 	Kind      string           `json:"kind,omitempty"`
 	Anchor    string           `json:"anchor,omitempty"`
 	Signature string           `json:"signature,omitempty"`
-	AuthorDoc string           `json:"author_doc,omitempty"`
 	Calls     []any            `json:"calls,omitempty"`
 	Evidence  map[string][]any `json:"evidence,omitempty"`
 }
@@ -80,7 +79,9 @@ func (writer *rowWriter) row(ref string, label memberWire, place *atlas.Place) m
 	if decl.Kind != "" {
 		row.Kind = decl.Kind
 	}
-	row.Signature, row.AuthorDoc = decl.Signature, decl.Doc
+	// Code structure only: the declaration's docstring is the author's
+	// claim, never the model's evidence (owner rule).
+	row.Signature = decl.Signature
 	evidence := evidenceRefs{}
 	for _, call := range lines.WrittenOrder(place.Symbol.Calls) {
 		row.Calls = append(row.Calls, writer.call(call, &evidence))

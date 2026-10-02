@@ -178,8 +178,8 @@ never by a docstring, a package doc or a caller's doc; a directory with no
 README is said by what it holds. The places keep the quotes for the
 reader's fallback lines. casdoor's `ApiController` type row had carried
 77 KB of swagger comments in its owned declarations, past the categorizer's
-question envelope (`TestProviderBodiesCarryNoAuthorDocs`). README claims,
-orientation's seed rows and claims are unchanged.
+question envelope (`TestProviderBodiesCarryNoAuthorDocs`). README claims stay
+claims; orientation sends neither them nor docstrings (below).
 
 **The grouping unit is a whole file or a box.** Each target's role split
 (below) runs first; then one `atlas_zones` request per target
@@ -1913,15 +1913,19 @@ failure is still the reported cause and publishes nothing of the report.
 
 ## Orientation
 
-`orientation` is one model-assisted stage over facts, claims and the complete
-matched GroupsIndex set. The overview is asked once, with its embedded prompt
+`orientation` is one model-assisted stage over facts and the complete
+matched GroupsIndex set: code structure only (owner rule). No README line,
+docstring, comment or commit subject reaches it; the report quotes those as
+the authors' claims ("What the people who wrote it said"), never as the
+model's evidence. Lua 5.1.5's etc library, one file (etc/noparser.c), had
+been described from etc/README as the whole directory's extras. The overview is asked once, with its embedded prompt
 and response shape, and returns one repository summary, one role per target,
 a run recipe and a closed-ref `main_flow_target`; that target's Main flow is
 then walked by code (below). No target, or an unknown one (refused), walks no
 flow. The model selects
 request-local refs from the exact advertised artifact identities: `t*`
-targets, `a*` facts, `h*` claims and target-qualified graph subjects such as
-`t1.n22`; groups likewise use qualified IDs such as `t1.g3`. Go allocates no
+targets, `a*` facts and target-qualified graph subjects such as `t1.n22`;
+groups likewise use qualified IDs such as `t1.g3`. Go allocates no
 second numbering scheme before the call.
 
 Validation is a pure function over the response and the advertised catalog.
@@ -1937,7 +1941,7 @@ naming another target's member is rejected with its raw JSON and a reason into
 keeps an empty purpose, never filled in: the label is the decision. An invalid
 optional recipe note is dropped and recorded; its step stays. Refs go only in
 the ref fields (the overview prompt says so, 2026-09-30): a summary or role
-label writing an advertised ref (`t7`, `a12`, `h3`, `t1.n22`, `t1.g3`) as a
+label writing an advertised ref (`t7`, `a12`, `t1.n22`, `t1.g3`) as a
 word is refused, and a purpose or note writing one is dropped and recorded
 while its role or step stays; nothing is rewritten, and a ref-shaped word the
 request does not advertise is prose. freqtrade's summary had read "main
@@ -1953,7 +1957,16 @@ cached; the latter journal each row's reason. Optional terms follow accepted
 sections and rows on live and cached responses. Rejection never aborts the run
 and no replacement is invented.
 
-The overview carries the complete facts, claims and connections, the groups
+A role describes its own target from its own groups, facts and seeds,
+never another target's, its directory's or the repository's. A fact is a
+target's own when the target holds its row, a seed when its ref is the
+target's; a repository-wide fact is no target's own. Another target's refs
+in a role are ignored and recorded; a role citing only another target's
+evidence is refused; a role must cite its target's own facts or seeds when
+the request lists any, and otherwise (a library, whose exports are only
+counted) stands without refs.
+
+The overview carries the complete facts and connections, the groups
 with title, summary and `member_count` but no member lists, and each seed's
 complete row. A member row is that of the declaration place with its
 `groupindex.DeclarationKey` (path, line, column, kind, name), never looked up
@@ -1964,8 +1977,8 @@ kind/invocation/dispatch/resolution words, then receiver, result, values (the
 literal words it is given), arguments, api, detail and evidence refs); the
 call's argument origins stay local (aa5f537d: half of othello's member bytes,
 and a change of their form alone had moved its main flow from 9 steps to 47),
-as do the call's and callee's columns and canonical ids, and no `called_by` is
-sent.
+as do the call's and callee's columns and canonical ids, and no `called_by`
+or docstring (`author_doc`) is sent.
 
 The Main flow is a code walk (orientation `path.go`, design skeptic,
 2026-09-30: a model writing the whole flow had given othello 23 to 107 steps
@@ -2080,8 +2093,7 @@ through the shared executor.
 
 Original declaration kinds, calls, source arguments and owned fields can
 qualify member behavior. A launcher/router, implementation mechanism, callback
-and remote destination remain distinct roles. Parent heading context labels
-the scope of author claims. No prose explanation supplies a missing source
+and remote destination remain distinct roles. No prose explanation supplies a missing source
 relation. A launch fact supports an entry point, not a complete invocation:
 run recipes follow `internal/orientation/overview-prompt.md` for required
 arguments, prerequisites and explicit placeholders, and an unsupported

@@ -24,8 +24,8 @@ const (
 	StageName = "orientation"
 
 	executionContract     = "repomap.orientation.v2"
-	preparationVersion    = 5
-	promptVersion         = 11
+	preparationVersion    = 6
+	promptVersion         = 12
 	responseSchemaVersion = 2
 	// maxOutputTokens is measured: 117 accepted orientation exchanges
 	// answered in at most 1,260 output tokens (median 848). The shared
@@ -238,13 +238,14 @@ func cubeState(input Input, groupDigests []string, part string, wire []byte) []b
 		PromptVersion         int      `json:"prompt_version"`
 		ResponseSchemaVersion int      `json:"response_schema_version"`
 		FactsSHA256           string   `json:"facts_sha256"`
-		ClaimsSHA256          string   `json:"claims_sha256"`
 		GroupsSHA256s         []string `json:"groups_sha256s"`
 		RequestSHA256         string   `json:"request_sha256"`
 	}{
+		// No claims: the request carries none, so an edited README asks
+		// nothing again.
 		Contract: executionContract, Part: part, PreparationVersion: preparationVersion,
 		PromptVersion: promptVersion, ResponseSchemaVersion: responseSchemaVersion,
-		FactsSHA256: input.Facts.SHA256, ClaimsSHA256: input.Claims.SHA256,
+		FactsSHA256:   input.Facts.SHA256,
 		GroupsSHA256s: sortedDigests(groupDigests), RequestSHA256: hex.EncodeToString(requestDigest[:]),
 	})
 	return state
