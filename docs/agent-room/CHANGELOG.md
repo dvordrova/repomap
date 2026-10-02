@@ -1,5 +1,25 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — The Main flow reads in words, never a count (data 1)
+
+- **3e028c23:** a step reached through a value reads "one of the calls call
+  may make" (ru "один из вызовов, которые может сделать call"), else "one of
+  the calls the step before may make".
+  - An undecided fork reads the same, or "one of the calls it may make".
+  - A long way's fold reads "the rest of this way" (ru "остальные шаги
+    этого пути").
+  - Before, these read "one of 94 from call", "one of 94" and "5 more
+    steps".
+  - The saved orientation is unchanged (format 3); there are no reruns.
+- **Render check** with my build on today's runs (no provider request):
+  - redis 123430: Via lines "called", "one of the calls aeProcessEvents
+    may make", "one of the calls call may make".
+  - othello 123811, etcd 123814: Via lines "called" and "handed to …".
+  - etcd's folds read "the rest of this way".
+  - No digit in any Via line, fork or fold.
+  - None of the three ends at an undecided fork; the fork wording is
+    covered by the test in both languages.
+
 ## 2026-10-02 — A Main flow step's registration is read by the walk and saved (data 1)
 
 - **1f6c49e6 + 484640b2 (orientation 3):** where a step's callable is
