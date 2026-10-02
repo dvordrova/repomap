@@ -9,8 +9,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
-import {layoutLevels,cardWords,programWords,units} from './levels.mjs';
-import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable} from './scene.mjs';
+import {layoutLevels,cardWords,programWords,units,chipLines} from './levels.mjs';
+import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable,memberView} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
 import {syntheticPages,realPages,measure} from './scene-pages.mjs';
@@ -74,6 +74,12 @@ function checkScene(name,model,geometry,scene,problems){
   // 2026-10-01: casdoor's card had read "Serves the Casd…"); a card is
   // laid out to hold its title.
   const bare=text=>String(text||'').replace(/\s+/g,'');
+  // A chip's and a bucket's name stands whole in its box, never cut short
+  // (owner, 2026-10-02).
+  for(const node of scene.nodes.filter(node=>['chip','bucket'].includes(node.display)&&finite(node.rect))){
+    const c=units.chip,bucket=node.display==='bucket',lines=chipLines(node.title,c.width-2*c.pad-(bucket?0:c.mark),measure);
+    if((bucket?32:12)+lines*c.line>node.rect.height/node.text+.5)problems.push(['words',`${where}: ${node.id}'s name takes ${lines} lines in ${(node.rect.height/node.text).toFixed(0)}px`]);
+  }
   for(const node of scene.nodes){
     if(!['card','area','program'].includes(node.display)||!finite(node.rect))continue;
     const item=model.nodes.get(node.id)?.item,program=node.display==='program';
@@ -285,6 +291,30 @@ for(const [name,page] of pages){
   for(const [rule,says] of Object.entries(rules))test(`${name}: ${says}`,async()=>{
     const found=(await problemsFor(name,page)).filter(([at])=>at===rule).map(([,text])=>text);
     assert.deepEqual(found.slice(0,12),[],`${found.length} problems`);
+  });
+  // A declaration the reading names out of sight (owner, 2026-09-29): its
+  // part across the canvas at the zoom its tiles read at, the tile in
+  // sight, never deeper than the part's title fits; a part too dense for
+  // that closed in its level, its card in sight.
+  test(`${name}: a declaration named is shown across its part, or in its part's card when the part is too dense`,async()=>{
+    const {model,geometry}=await prepare(name,page),pad=28;
+    const parts=[...model.nodes.values()].filter(node=>node.kind==='part'&&geometry.grids.has(node.id)).slice(0,40);
+    for(const part of parts){
+      const index=Math.floor(part.item.symbols.length/2),view=memberView(model,geometry,part.id,index,canvas),r=geometry.boxes.get(part.id),z=view.camera.zoom;
+      const screen=q=>({l:q.x*z+view.camera.x,t:q.y*z+view.camera.y,r:(q.x+q.width)*z+view.camera.x,b:(q.y+q.height)*z+view.camera.y});
+      const drawn=geometry.grids.get(part.id),need=Math.max(11/13*drawn.grid.divisor*drawn.box.width/r.width,(geometry.enterZoom.get(part.id)||0)*1.02);
+      if(view.dense){
+        assert.deepEqual(view.level,chainOf(model,part.id).slice(0,-1),`${part.id}: closed in its level`);
+        assert.ok((canvas.width-2*pad)/r.width<need,`${part.id}: closed though its tiles read across the canvas`);
+        const s=screen(r);assert.ok(s.l>=-.5&&s.t>=-.5&&s.r<=canvas.width+.5&&s.b<=canvas.height+.5,`${part.id}: its card in sight`);
+        continue;
+      }
+      assert.deepEqual(view.level,chainOf(model,part.id),`${part.id}: entered`);
+      assert.ok(z>=need-1e-9,`${part.id}: its tiles read`);
+      const s=screen(r);assert.ok(s.l>=pad-.5&&s.r<=canvas.width-pad+.5,`${part.id}: across the canvas, its title whole`);
+      const tile=sceneAt(model,geometry,view.level,{}).members.find(member=>member.index===index);
+      if(tile){const t=screen(tile.rect);assert.ok(t.t>=-.5&&t.b<=canvas.height+.5,`${part.id}: the declaration in sight`);}
+    }
   });
   test(`${name}: a pan changes no level, a zoom crosses with hysteresis`,async()=>{
     const {model,geometry}=await prepare(name,page);

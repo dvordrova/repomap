@@ -79,7 +79,7 @@ export const units={
   // A chip names an outside system in one cell of its frame's grid, its
   // name in at most two lines after its kind's mark; a bucket is a cell
   // taller by its systems' marks.
-  chip:{font:'600 12px system-ui',line:15,pad:8,mark:20,width:140,height:46,bucket:62},
+  chip:{font:'600 12px system-ui',line:17,pad:12,mark:20,width:140,height:46,bucket:62},
   // An input's name in its kind's group.
   input:{font:'600 13px system-ui',pad:10,mark:22,min:72,max:320,height:30},
   gap:12,
@@ -183,7 +183,21 @@ async function layered(id,boxes,pairs,{band=units.band(1),spacing=1,ports=[],por
 }
 
 // The box a part's card takes at its level, `k` times its own size.
-const partBox=(node,k=1)=>({id:node.id,width:units.part.width*k,height:(node.item?.height||90)*k});
+// A part's card holds its words (owner, 2026-10-02: litestream's
+// "Replica client backends" had stood its title over four fifths of an
+// empty card): its title, and its description whole in up to four lines
+// (cardWords) in the card cards.mjs measures; a card whose description is
+// left out (none, or longer than four lines) is as tall as its title, with
+// a tile's room under it where it holds declarations (the one chosen
+// stands there while it is closed, scene-canvas.jsx CardNode).
+export function partCardHeight(node,measure){
+  const pad=14,tiles=!!node.item?.symbols?.length,room=tiles?24:0,inner=units.part.width-2*pad-room;
+  const lines=wholeLines(node.item?.summary,inner,'13px system-ui',measure,4).length;
+  if(lines&&node.item?.height)return node.item.height;
+  const title=wrapText(node.name??node.title??'',inner,'700 17px system-ui',measure).length;
+  return Math.ceil(2*pad+title*21.25+(lines?6+lines*18:tiles?26:0)+2);
+}
+const partBox=(node,measure)=>({id:node.id,width:units.part.width,height:partCardHeight(node,measure)});
 
 // A card's words stand whole or not at all (owner, 2026-10-01: a card
 // never cuts its text mid-way; what does not stand is read on pointing and
@@ -233,10 +247,20 @@ export function areaCard(node,inside,measure,k=1){
   const box=boxOf(inside.width/inside.height,units.part.width,content);
   return {id:node.id,width:box.width*k,height:box.height*k};
 }
-// A chip's box: one cell of its frame's grid.
-export function chipBox(node){
-  return {id:node.id,width:units.chip.width,height:units.chip.height};
+// A chip's box: one cell of its frame's grid, as tall as its name's lines
+// (owner, 2026-10-02: a name stands whole, never ellipsized; casdoor's
+// "AWS Identity and Access Management" had been cut after two lines).
+export function chipBox(node,measure){
+  const c=units.chip,lines=chipLines(node.name,c.width-2*c.pad-c.mark,measure);
+  return {id:node.id,width:c.width,height:Math.max(c.height,12+lines*c.line)};
 }
+// A closed bucket's box: its part's name over its systems' marks, as tall
+// as the name's lines.
+export function bucketBox(node,measure){
+  const c=units.chip,lines=chipLines(node.name,c.width-2*c.pad,measure);
+  return {id:node.id,width:c.width,height:Math.max(c.bucket,32+lines*c.line)};
+}
+export const chipLines=(name,width,measure)=>measure?wrapText(name||'',width,units.chip.font,measure).length:2;
 // An input's tile: its kind's mark and its name on one line, or two when long.
 export function inputBox(node,measure){
   const c=units.input,width=Math.min(c.max,Math.max(c.min,Math.ceil(measure(node.name,c.font))+c.mark+2*c.pad));
@@ -266,7 +290,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   for(const area of [...nodes.values()].filter(node=>node.kind==='area')){
     const parts=area.children.map(id=>nodes.get(id)).filter(Boolean);
     const pairs=pairsOf(model,model.edges,childOf(area.id));
-    const laid=await layered(area.id,parts.map(part=>partBox(part)),pairs);
+    const laid=await layered(area.id,parts.map(part=>partBox(part,measure)),pairs);
     local.set(area.id,{...laid,text:1,pairs,kind:'area'});
   }
 
@@ -301,7 +325,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // canvas. Its cards are a part's size: drawn larger, the program grows
     // with them and reads no better where it fits the canvas; one too
     // large to read whole is the camera's job.
-    const boxes=children.map(child=>child.kind==='area'?areaCard(child,local.get(child.id),measure):partBox(child));
+    const boxes=children.map(child=>child.kind==='area'?areaCard(child,local.get(child.id),measure):partBox(child,measure));
     const at=direction=>layered(program.id,boxes,pairs,{ports,portPairs:[...portPairs.values()],options:{...interior,'elk.direction':direction}});
     const down=await at('DOWN'),across=await at('RIGHT');
     const direction=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?'RIGHT':'DOWN';
@@ -319,7 +343,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(tiles.map(tile=>[tile.id,{...laid.at.get(tile.id),width:tile.width,height:tile.height}])),routes:new Map(),ports:[],text:1,kind:'kind'});
     }
     if(node.kind==='bucket'){
-      const chips=node.children.map(id=>chipBox(nodes.get(id)));
+      const chips=node.children.map(id=>chipBox(nodes.get(id),measure));
       const laid=pack(chips,{top:units.band(.8),aspect:1.6});
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(chips.map(chip=>[chip.id,{...laid.at.get(chip.id),width:chip.width,height:chip.height}])),routes:new Map(),ports:[],text:1,kind:'bucket'});
     }
@@ -328,7 +352,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // of a chip of that name, grown to the proportion of its open drawing.
   // A closed bucket: its part's name over its systems' marks, a cell of
   // its frame's grid; entered, its systems stand inside it.
-  const closedBucket=node=>({id:node.id,width:units.chip.width,height:units.chip.bucket});
+  const closedBucket=node=>bucketBox(node,measure);
   for(const node of nodes.values()){
     if(node.kind==='inputs'){
       // Closed, it lists its kinds (canvas: the collection's summary); open,
@@ -344,7 +368,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const packOutside=aspect=>{
     for(const node of nodes.values()){
       if(node.kind!=='outside')continue;
-      const items=node.children.map(id=>nodes.get(id)?.kind==='bucket'?closedBucket(nodes.get(id)):chipBox(nodes.get(id)));
+      const items=node.children.map(id=>nodes.get(id)?.kind==='bucket'?closedBucket(nodes.get(id)):chipBox(nodes.get(id),measure));
       const laid=pack(items,{top:units.band(1),aspect});
       local.set(node.id,{width:laid.width,height:laid.height,children:new Map(items.map(item=>[item.id,{...laid.at.get(item.id),width:item.width,height:item.height}])),routes:new Map(),ports:[],text:1,kind:'outside'});
     }
@@ -370,9 +394,9 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     if(node.kind==='inputs')return {id,...inside.closed};
     if(node.kind==='outside')return {id,width:inside.width*systemText,height:inside.height*systemText};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
-    if(node.kind==='system')return chipBox(node);
+    if(node.kind==='system')return chipBox(node,measure);
     if(node.kind==='input')return inputBox(node,measure);
-    return partBox(node);
+    return partBox(node,measure);
   };
   const rootPairs=model.homePairs;
   let map=null,chosen={aspect:1,direction:'RIGHT'};
@@ -472,7 +496,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // (symbols.mjs tileGrid), laid out once here in the card's own units.
   const grids=new Map();
   for(const node of nodes.values())if(node.kind==='part'&&node.item?.symbols?.length){
-    const box={width:units.part.width,height:node.item?.height||90};
+    const box={width:units.part.width,height:partCardHeight(node,measure)};
     grids.set(node.id,{box,grid:tileGrid(node.item.symbols,node.item.symbolCalls||[],box,measure)});
   }
   // 6. The world's unit (owner, 2026-10-02: etcd's storage parts stood 1.2

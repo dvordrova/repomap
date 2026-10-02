@@ -71,6 +71,9 @@
    meanwhile (scene-canvas.jsx). */
 .scene-root .react-flow__node [data-box-title]{--word:17;--gone:10.5}
 .scene-root .react-flow__node .flow-chip-name{--word:12;--gone:9}
+/* A chip's or a bucket's name stands whole in its lines, its box as tall
+   as they are (levels.mjs chipBox, bucketBox): never ellipsized. */
+.scene-root .react-flow__node .flow-chip-name{display:block;-webkit-line-clamp:none;overflow:visible;line-height:17px}
 .scene-root .react-flow__node .flow-description,.scene-root .react-flow__node .flow-component-role{--word:13;--gone:9}
 .scene-root .react-flow__node .scene-tile>span{--word:13;--gone:9}
 .scene-root .react-flow__node .scene-group-title>strong{--word:13.6;--gone:9}
@@ -105,3 +108,5 @@
    words over it. */
 .scene-program-ghosts{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1)}
 .scene-program-card>.scene-words{background:#f8fafc}
+/* A closed part's chosen declaration, alone as its tile under its title. */
+.scene-chosen-tile{display:block;box-sizing:border-box;min-height:20px;padding:0 8px;border:2px solid #243044;border-radius:6px;background:#fff;color:#243044;font:600 12.5px/16px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}

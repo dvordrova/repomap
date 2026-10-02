@@ -1089,6 +1089,17 @@ post-layout edits are deleted.
   column), its size and its drawing by the same rule. No wrapping, grid, size floor or edit after layout.
   Arrowless collections (chips, inputs' names) are packed in rows. A graph
   ELK throws on is laid out again with ELK's own placement.
+  A part's card holds its words: the card cards.mjs measures where its
+  description stands whole, else as tall as its title, a tile's room under
+  it when it holds declarations. A chip's and a bucket's box is as tall as
+  its name's lines; a name is never ellipsized (owner, 2026-10-02).
+  A declaration the reading names out of sight (`scene.mjs` `memberView`,
+  owner, 2026-09-29) is shown with its part entered across the canvas at
+  the zoom its tiles read at, framed whole when it fits, else with the
+  tile centred down it, never deeper than the part's title fits; a part
+  too dense for that is shown closed in its level at the zoom a part reads
+  at, its card centred holding the declaration alone as its tile under its
+  title. One in sight, or a restored visit, keeps the camera.
 - The whole map at rest (owner, 2026-10-01, on the skeptic's verdict):
   each program's Inputs into it, a program into each Outside frame it
   calls, and one arrow per two programs an operation joins (a program

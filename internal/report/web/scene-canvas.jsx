@@ -11,7 +11,7 @@ import {flushSync} from 'react-dom';
 import {ReactFlow,Handle,Position,useStore} from '@xyflow/react';
 import {buildModel,inputKindTitles} from './model.mjs';
 import {layoutLevels,homeCamera,units,cardWords,programWords} from './levels.mjs';
-import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit} from './scene.mjs';
+import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit,memberView} from './scene.mjs';
 import {project,mark} from './overlay.mjs';
 import {createStore,sceneReducer,initialState,createCamera,zoomAction} from './store.mjs';
 import {kindIcon,kindNames,systemIcons} from './kind-icons.mjs';
@@ -57,6 +57,11 @@ function Ghosts({node,className=''}){
 function CardNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title]);
+  // A closed part holding the declaration chosen shows it alone as its
+  // tile under its title (owner, 2026-09-29), in place of its description.
+  if(data.tile&&words.title.length)return <>{handles}<Scaled node={node} className={`flow-part ${laneClass(node.lane)}`}>
+    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
+      <span className="scene-chosen-tile" title={data.tile.full||data.tile.name}>{data.tile.name}</span></div></Scaled></>;
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     <Ghosts node={node}/>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
@@ -319,7 +324,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     setTimeout(()=>map.explainSource?.({key:symbol.href||symbol.open||'',href:symbol.href,open:symbol.open}),0);
   }
   // The column names a declaration (Find, a link, a restored visit): its
-  // tile is the one chosen, its part entered when out of sight.
+  // tile is the one chosen. A restored visit keeps its camera; one newly
+  // named out of sight is shown as the owner set (scene.mjs memberView): its
+  // part across the canvas with the tile centred down it, or a part too
+  // dense to read there closed, the declaration alone in its card.
   map.addEventListener('repomap:reading',()=>{
     const named=map.explorerMember;if(!named?.owner)return;
     const part=named.owner,symbols=model.nodes.get(part)?.item?.symbols||[];
@@ -328,7 +336,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const chosen=store.getState().member.chosen;
     if(index<0||chosen?.part===part&&chosen.index===index)return;
     store.dispatch({type:'member',member:{chosen:{part,index}}});
-    if(!map.readingRestoring&&!levelKey(store.getState().level).split('/').includes(part))enter(chainOf(model,part),{rect:geometry.boxes.get(part)});
+    if(map.readingRestoring)return;
+    const view=memberView(model,geometry,part,index,size());
+    if(!view)return;
+    const scene=sceneOf(store.getState()),here=levelKey(store.getState().level);
+    const shown=view.dense?here===levelKey(view.level)&&inSight(geometry.boxes.get(part),0)
+      :here===levelKey(view.level)&&inSight(scene.members.find(member=>member.index===index&&member.part===part)?.rect||geometry.boxes.get(part),0);
+    if(shown)return;
+    store.dispatch({type:'enter',level:view.level});
+    moveCamera(view.camera);
   });
   function clickAt(target,event){
     if(!target){
@@ -600,10 +616,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         style:{width:node.rect.width,height:node.rect.height,'--scene-text':node.text},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
         className:`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
-        data:{node,item,groups,lit:lit.has(node.id),keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
+        data:{node,item,groups,lit:lit.has(node.id),tile:node.display==='card'&&state.member.chosen?.part===node.id?item?.symbols?.[state.member.chosen.index]||null:null,keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
-    }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen]);
+    }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen,state.member.chosen]);
     const edges=useMemo(()=>{
       const byID=new Map(scene.edges.map(edge=>[edge.id,edge])),drawn=new Set(scene.nodes.map(node=>node.id));
       return emphasis.order.filter(id=>!emphasis.edgeState.get(id).hidden).map(id=>{
