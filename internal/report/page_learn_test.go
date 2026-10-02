@@ -272,3 +272,47 @@ func TestOneQuestionMenuKeepsUngroupedAnswersAndOpenTopics(t *testing.T) {
 		t.Fatal("the single grouped question list must not add folding or another catalogue")
 	}
 }
+
+// A run that asked no question says so under "About this run", in the
+// report's language, and its search offers no questions to look for (owner,
+// 2026-10-02: the question menu is opt-in, `--learn`, and off by default);
+// a run with a learning plan says nothing of it.
+func TestARunWithNoQuestionsSaysSoAndOffersNoneToFind(t *testing.T) {
+	data := reportProgramShellDataFixture(t, "fixture")
+	for language, line := range map[DisplayLanguage]string{English: "Questions were not generated in this run.", Russian: "Вопросы в этом запуске не создавались."} {
+		options := reportSingleTargetRenderOptionsFixture(t, &data)
+		options.Language, options.NoModel = language, true
+		html, err := RenderHTMLWithOptions(&data, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		notes := string(html[bytes.Index(html, []byte(`<section id="notes"`)):])
+		notes = notes[:strings.Index(notes, "</section>")]
+		if !strings.Contains(notes, `<p class="meta questions-off">`+line+`</p>`) {
+			t.Fatalf("%v: About this run does not say no question was asked: %s", language, notes)
+		}
+	}
+	data.Learning = &atlas.LearningPlan{State: "unavailable"}
+	html, err := RenderHTMLWithOptions(&data, reportSingleTargetRenderOptionsFixture(t, &data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(html, []byte("questions-off")) {
+		t.Fatal("a run with a learning plan says no question was asked")
+	}
+	find := systemJSPiece(t, "40-find.js", "  document.querySelectorAll('.reading-guide')", "  document.querySelectorAll('.learn-concept')")
+	for _, guides := range []int{0, 1} {
+		runSystemJS(t, fmt.Sprintf(`
+const entries=[];function add(entry){entries.push(entry);}
+function rmT(text){return text;}
+const guide={querySelector:()=>({textContent:'How does it start?'}),querySelectorAll:()=>[]};
+const document={querySelectorAll:selector=>selector==='.reading-guide'?Array(%d).fill(guide):[]};
+function sectionsFor(){return [];}
+const options=[{value:'all'},{value:'question'},{value:'term'}];
+options.forEach(option=>{option.remove=()=>options.splice(options.indexOf(option),1);});
+const kind={querySelector:selector=>options.find(option=>selector==='option[value="'+option.value+'"]')||null};
+`, guides)+find+fmt.Sprintf(`
+assert.equal(options.some(option=>option.value==='question'),%v,'the question category stands only where there are questions');
+`, guides == 1))
+	}
+}

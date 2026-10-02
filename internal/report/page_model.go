@@ -29,14 +29,14 @@ type pageView struct {
 	UIVocabularyJSON template.JS
 	TermMentionsJSON template.JS
 	// SceneJSON is the report's saved scene (scene.go) as the page reads it.
-	SceneJSON template.JS
-	RepoName         string
-	Revision         string
-	ShortRevision    string
-	RepositoryURL    string
-	FormatVersion    int
-	ReportSHA256     string
-	Served           bool
+	SceneJSON     template.JS
+	RepoName      string
+	Revision      string
+	ShortRevision string
+	RepositoryURL string
+	FormatVersion int
+	ReportSHA256  string
+	Served        bool
 	// EditorOpens says whether a source link will actually reach an editor on
 	// this machine. Promising one that is not installed is a small lie the
 	// reader discovers only by clicking.
@@ -79,6 +79,10 @@ type pageView struct {
 	Sections         []*pageSection
 	Notes            []string
 	Timing           []string
+	// QuestionsOff says no question was asked: no learning plan and no
+	// question of the reader's (owner, 2026-10-02: the question menu is
+	// opt-in, `--learn`, and off by default).
+	QuestionsOff bool
 }
 
 type pageSentence struct {
@@ -410,6 +414,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		return nil, err
 	}
 	view.Questions = questions
+	view.QuestionsOff = len(questions) == 0 && data.Learning == nil
 	if err := builder.learningReviews(view); err != nil {
 		return nil, err
 	}

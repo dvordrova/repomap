@@ -912,6 +912,9 @@ var russianUI = map[string]string{
 	"one of eight anonymous functions in {0}": "одна из восьми анонимных функций в {0}",
 	"one of nine anonymous functions in {0}":  "одна из девяти анонимных функций в {0}",
 	"one of many anonymous functions in {0}":  "одна из многих анонимных функций в {0}",
+
+	// "About this run" when no question was asked (page.html).
+	"Questions were not generated in this run.": "Вопросы в этом запуске не создавались.",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

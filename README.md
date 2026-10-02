@@ -85,10 +85,12 @@ shows what the model relied on alongside original declarations or documentation
 excerpts and exact source links. Deductions from names and signatures are welcome
 when identifiable and easy to check. The detailed reading route stays under a
 separate disclosure. The answer uses the evidence already
-selected for that route. The ordinary run also adapts eight learning goals to
+selected for that route. With `--learn` (off by default; a `--question` or a
+configured question turns it on), the run also adapts eight learning goals to
 the repository and composes an introductory menu. Each proposed question keeps
 its reason and original sources. There is no question quota; explicit questions
-remain visible independently of the automatic menu.
+remain visible independently of the automatic menu. Without it the report
+says that questions were not generated in this run.
 
 Use `--lang ru` for a Russian report:
 

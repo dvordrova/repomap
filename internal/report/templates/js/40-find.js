@@ -121,6 +121,9 @@
     var summary=Array.from(n.querySelectorAll('.answer-prose')).map(function(p){return p.textContent;}).join('\n\n');
     add({title:n.querySelector('.reading-question').textContent,summary:summary,component:rmT('Repository questions'),section:'questions',sections:sectionsFor(n,'[data-question-map]'),kind:'question',type:rmT('Question'),destination:n});
   });
+  // A report holding no questions offers none to look for (owner,
+  // 2026-10-02: the question menu is opt-in and off by default).
+  if(!entries.some(function(entry){return entry.kind==='question';}))kind.querySelector('option[value="question"]')?.remove();
   document.querySelectorAll('.learn-concept').forEach(function(n){
     add({title:n.querySelector('summary').textContent,summary:modelText(n.querySelector('.model')),component:rmT('Term explanation'),section:'concepts',sections:sectionsFor(n,'a[href^="#"]'),kind:'term',type:rmT('Term'),destination:n});
   });

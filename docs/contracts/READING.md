@@ -1569,12 +1569,14 @@ implementation-body retrieval in ordinary requests.
 ## Questions and Learn
 
 This optional cascade — `atlas_learn`, `atlas_question` and `atlas_answer` —
-runs only with `--learn` or a `--question`. Without it the ordinary atlas
-completes through joints and publishes its full map, orientation and source
-reading without question results. Explicit read-stage development budgets
-remain available throughout; otherwise there is no question quota, row-count
-cap or 64 KiB planning cap, and actual provider preparation/resource refusals
-partition complete input losslessly.
+runs only with `--learn`, a `--question` or a question configured in
+`.repomap.conf`. Without it the ordinary atlas completes through joints and
+publishes its full map, orientation and source reading without question
+results; the report then says under "About this run" that questions were not
+generated in this run, and its search offers no question category. Explicit
+read-stage development budgets remain available throughout; otherwise there is
+no question quota, row-count cap or 64 KiB planning cap, and actual provider
+preparation/resource refusals partition complete input losslessly.
 
 `--question TEXT` is repeatable and supplements local `.repomap.conf`
 questions. Settings are loaded once and passed as a typed value through target
@@ -1637,14 +1639,15 @@ mode. Learn proposals, question retrieval and final answers use the shared
 128,000-token output allowance; a lower configured provider ceiling still
 applies, shared by reasoning and visible output.
 
-**Learn proposals.** The ordinary reading adapts eight base learning intents
-after the atlas with the configured client, then answers its proposals through
-the same question and answer stages. Preparation starts with the complete
-original learning evidence and all eight intents, sized by the actual provider
-request envelope, not a 64 KiB fragment budget. Each proposal request encodes
-repeated component/area context once behind local refs while keeping every
-evidence item's complete original observations; partitions rebuild their own
-context catalogue without a parent or sibling window. Actual
+**Learn proposals.** With Learn on (`--learn`, a `--question` or a configured
+question; off by default, owner 2026-10-02), the reading adapts eight base
+learning intents after the atlas with the configured client, then answers its
+proposals through the same question and answer stages. Preparation starts with
+the complete original learning evidence and all eight intents, sized by the
+actual provider request envelope, not a 64 KiB fragment budget. Each proposal
+request encodes repeated component/area context once behind local refs while
+keeping every evidence item's complete original observations; partitions
+rebuild their own context catalogue without a parent or sibling window. Actual
 context/output/response resource refusals partition complete original evidence
 by encoded byte weight; accepted sibling reviews survive, children keep their
 partial-context scope, and failed parents supply no semantic review.
