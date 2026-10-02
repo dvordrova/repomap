@@ -108,3 +108,47 @@ func TestCallablesOneFunctionWritesAlikeAreToldApart(t *testing.T) {
 		}
 	}
 }
+
+// Callables are counted alike by the function whose lines hold them, never
+// by that function's name: two packages' main functions, each holding one
+// closure, are each "main (inline)", and two types' Start methods, each
+// holding one goroutine, are each "Server.Start (inline)" (review
+// 2026-10-02: one closure in cmd/a's main and one in cmd/b's were each "one
+// of two anonymous functions in main"). Two in one of them are still one
+// of two.
+func TestCallablesOfSameNamedFunctionsAreNotCountedTogether(t *testing.T) {
+	at := func(path string, line int) *programindex.Location {
+		return &programindex.Location{Path: path, Line: line, Column: 2}
+	}
+	object := func(id, name string, kind programindex.ObjectKind, path string, line, end int) programindex.Object {
+		return programindex.Object{ID: id, Name: name, Kind: kind, Location: at(path, line), EndLine: end}
+	}
+	startA := object("startA", "Start", programindex.ObjectMethod, "a/server.go", 10, 30)
+	startA.OwnerID = "serverA"
+	startB := object("startB", "Start", programindex.ObjectMethod, "b/server.go", 10, 30)
+	startB.OwnerID = "serverB"
+	program := programindex.Index{Objects: []programindex.Object{
+		object("a", "main", programindex.ObjectFunction, "cmd/a/main.go", 5, 20),
+		object("ac", "main$1", programindex.ObjectFunction, "cmd/a/main.go", 8, 10),
+		object("b", "main", programindex.ObjectFunction, "cmd/b/main.go", 5, 20),
+		object("bc", "main$1", programindex.ObjectFunction, "cmd/b/main.go", 8, 10),
+		object("serverA", "Server", programindex.ObjectType, "a/server.go", 3, 6),
+		object("serverB", "Server", programindex.ObjectType, "b/server.go", 3, 6),
+		startA,
+		object("ag", "Start$1", programindex.ObjectFunction, "a/server.go", 12, 14),
+		startB,
+		object("bg", "Start$1", programindex.ObjectFunction, "b/server.go", 12, 14),
+		object("bh", "Start$2", programindex.ObjectFunction, "b/server.go", 20, 22),
+	}}
+	want := map[string]string{
+		"ac": "main (inline)", "bc": "main (inline)",
+		"ag": "Server.Start (inline)",
+		"bg": "Server.Start (inline, 2)", "bh": "Server.Start (inline, 2)",
+	}
+	for name, got := range map[string]map[string]string{"names": inlineNames(program), "holders": inlineHolders(program)} {
+		t.Logf("%s: %v", name, got)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s = %v, want %v", name, got, want)
+		}
+	}
+}

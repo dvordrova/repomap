@@ -68,6 +68,11 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 		}
 	}
 	result := make(map[string]string, len(closures))
+	// holderOf is, by closure named after the function whose lines hold it,
+	// that function's ID: closures are counted alike by the function holding
+	// them, never by its name, which two functions (two packages' main, two
+	// types' Start) may share.
+	holderOf := make(map[string]string, len(closures))
 	for _, closure := range closures {
 		if called := callees[closure.ID]; wraps && len(called) == 1 {
 			if callee, known := byID[called[0]]; known && callee.Location != nil && callee.External == nil && callee.Kind.Callable() && !inline(callee) {
@@ -89,6 +94,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 		}
 		if holder != nil {
 			result[closure.ID] = named(*holder) + " (inline)"
+			holderOf[closure.ID] = holder.ID
 		}
 	}
 	// Callables one function writes alike are told apart by the word each
@@ -102,21 +108,21 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 	alike := map[string][]string{}
 	var order []string
 	for _, closure := range closures {
-		name := result[closure.ID]
-		if !strings.HasSuffix(name, " (inline)") {
+		holderID, held := holderOf[closure.ID]
+		if !held {
 			continue
 		}
-		if _, seen := alike[name]; !seen {
-			order = append(order, name)
+		if _, seen := alike[holderID]; !seen {
+			order = append(order, holderID)
 		}
-		alike[name] = append(alike[name], closure.ID)
+		alike[holderID] = append(alike[holderID], closure.ID)
 	}
-	for _, name := range order {
-		ids := alike[name]
+	for _, holderID := range order {
+		ids := alike[holderID]
 		if len(ids) < 2 {
 			continue
 		}
-		holder := strings.TrimSuffix(name, " (inline)")
+		holder := named(byID[holderID])
 		if words := handedWords(program, ids); words != nil {
 			for position, id := range ids {
 				result[id] = holder + " (inline for " + words[position] + ")"
