@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Same-named things told apart where they are named (data 2)
+
+- **37269079:** the reading lints' repeated names on the format-96 renders
+  (journeys96/lints3.log), before → after on clean 37269079 runs (exit 0):
+  othello 20261002-043621, headscale 043625, casdoor 043704, etcd 043838,
+  beets 044056.
+  - Closures one function writes alike: by the word their hand-over gives
+    each (headscale cmd/hi's "anonymous function in main" ×2 → "… in main
+    for doctor", "… for networks"), else each as one of how many, in words
+    (casdoor Start, headscale Headscale.Serve, etcd startPeer and
+    RegisterElectionHandlerServer → "one of two/six/three/five anonymous
+    functions in …"). The latter still stand once per input in a list:
+    nothing in the facts tells them apart.
+  - Inputs: etcd's two "start" keep their handlers as keys (startGateway,
+    startGRPCProxy); proto-annotations' "annotation" ×2 is one input,
+    MarkFlagRequired its alias. othello's "Othello"/"othello" were each
+    one collection's entries named by the sketch title, gone with
+    33f66a12 (data 1). etcd's 88 "POST" stay: grpc-gateway's route is a
+    package variable (`pattern_KV_Range_0 = runtime.MustPattern(…)`), so
+    the registration's words hold only the method.
+  - Declarations: headscale policy.PolicyManager / v2.PolicyManager, etcd
+    etcdserver.Server / version.Server. beets's Item.path was one field
+    read and written, now listed once. beets's BeatportClient.search (two
+    typing.overload stubs and the implementation) and casdoor's two
+    LoginPage.login.loginHandler (one method, one file) stay: nothing where
+    they stand tells them apart.
+  - Lints: othello repeated 2 → 0, headscale 3 → 1, beets 3 → 2; casdoor
+    and etcd hit the lints' 15-minute test timeout (the current lints take
+    headscale's before report 5.2 m, against 1.6 m in lints3).
+
 ## 2026-10-02 — othello's key-pressed and casdoor's own program in Outside (data 1)
 
 - **33f66a12, othello:** no commit dropped key-pressed in code. Every run
