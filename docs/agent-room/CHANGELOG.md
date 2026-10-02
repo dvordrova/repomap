@@ -1,5 +1,26 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — A drag keeps what it points at drawn; a long Entry list folds in the component's reading too (lead, cfddeb7d)
+
+- **Cause of etcd's home `pan-keeps` 1/24:**
+  - It was not a level or hysteresis flip, culling by view, or routes keyed on the camera. The scene still had its 106 arrows; the program's code-use arrows were hidden by emphasis.
+  - Before drag pan 13, the pointer stood on the harness's "empty" spot, and the canvas's own hit test found the program's arrow there. Pointing at it drew the program's code-use arrows: 11 of the t10 arrows, against 5 at rest.
+  - The drag went past the canvas's bottom edge. `pointerleave` cleared the pointing mid-press, and 78 drawn arrows became 60. HEAD failed the same way on another drag and program.
+- **Fix:** a drag carries what is pointed at with it, since the map moves under the pointer. While a press lasts, leaving the canvas clears nothing; pointing changes again on the next move over the canvas.
+- **Checks:**
+  - New `scene.spec` test: a drag out of the canvas keeps every arrow drawn, and dark, as the pointing drew it. It fails without the fix and passes with it; `scene.spec` passes 8 of 8.
+  - Invariants on the second-round runs, rendered by my binary with the fix: every invariant passes at every level. `pan-keeps` has 0 failures:
+
+| Repo | Levels | `pan-keeps` checks |
+|---|---|---|
+| etcd 154056 | 31 | 744 |
+| casdoor 152058 | 10 | 240 |
+| freqtrade 151658 | 14 | 336 |
+
+- **Entry list:** the component's reading now folds a program's entries by part over twelve, as the home's list of programs does (`rmEntriesByPart`). On Lua 165116's liblua.a, both readings fold: Core API · 83, Standard libraries · 24, Auxiliary library · 34, Debugging · 8, Runtime and calls · 7.
+  - Lua 5.1.5 has no owner run to render yet (165212 has only its target directories), so its 159 exports wait for the final re-render. The home list folds only entries whose part the page data names.
+  - Test: the programs table folds fourteen entries by part.
+
 ## 2026-10-02 — Lanes kept apart on the whole map, a closed box's words in sight at the edge, a type's first sentence, one reachability line (lead, 2debbc1c)
 
 From the harness's table and lints on 829626d6, verified on renders of data 1's second-round runs (format 97: etcd 20261002-154056, casdoor 152058, othello 152054, lua 155113) by my own binary (HEAD plus these files; every render exit 0, 0 provider requests). The 829 reports with this canvas swapped in served as before/after where data matched.
