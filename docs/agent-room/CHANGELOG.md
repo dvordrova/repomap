@@ -1,5 +1,40 @@
 # Implementation and acceptance journal
 
+## 2026-10-02 — Review items 1 and 3: etcd's POSTs read apart, freqtrade's commands first (data 2)
+
+- **1da657f8, item 1 (etcd):** "Which entry is Campaign, which is Lock?"
+  Before (served run 20261002-043838 rendered at 7d301df4): server →
+  Incoming requests → Election and lock APIs listed `POST` ×14, and the
+  canvas drew 14 `POST` tiles. Same-named inputs of a program now keep
+  their names and show beside them the first saved word that tells them
+  apart (`page_apart.go`, chosen in Go, past a skeptic): the subcommands
+  they are options of, their catalogue's declaration, their key, a word
+  their handler's own code declares (`Reach.SubArguments` of their kind
+  and declared by the handler, first in source order), the function
+  registering them; those still alike add the next word. The route
+  argument `pattern_Election_Campaign_0` is a package variable that no
+  fact resolves, so it is not used. After (ordinary run
+  20261002-101206-etcd-a9b4748aed12, exit 0): the list, the canvas tiles
+  and the reading heading read "POST /v3electionpb.Election/Campaign ·
+  RegisterElectionHandlerServer", "… · RegisterElectionHandlerClient",
+  "POST /v3lockpb.Lock/Lock · RegisterLockHandlerServer"; the server's
+  Observe, whose handler declares no word, reads "POST
+  RegisterElectionHandlerServer". Picking Campaign or Lock from the list
+  opens that input. The client's Unlock reads "/v3/lock/unlock" because the
+  model made no entry of its gRPC word. Each word's hover says what it is
+  and where. The column no longer chooses, and "Words its handler checks"
+  now reads "Words its handler declares".
+- **Item 3 (freqtrade):** "Where is trade?" Before (served run
+  20261002-002219 rendered): Commands listed `--allow-limit-orders` at line
+  16 and `trade` at line 174 of the reading. In a kind, inputs running a
+  handler now stand before those only declaring a value, catalogued or
+  not. After (same run rendered with the change): backtesting is at 10,
+  download-data 17, trade 41, webserver 43, the AVAILABLE_CLI_OPTIONS
+  catalogue from 50. "--erase convert-trade-data, download-data / install-ui"
+  and "-V --version version / version_main" still read apart.
+- Screenshots: scratchpad eye12-reader/{before,after}/etcd-requests.png,
+  etcd-canvas-requests.png, etcd-Campaign.png, freqtrade-commands.png.
+
 ## 2026-10-02 — Review items 1, 3 and 5: destination refs, closure counts, CURRENT (data 1)
 
 - **604bc0ca:** the model's choice of a destination ref is final. Before,
