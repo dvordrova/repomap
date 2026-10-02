@@ -140,7 +140,7 @@ export function lintLevel(level){
   };
   const texts=[...readings.flatMap(root=>[...root.querySelectorAll('*')]),...(canvas?document.querySelectorAll('.flow-root *'):[])]
     .filter(el=>own(el)&&shown(el)&&(!el.closest('.flow-root')||inSight(el)));
-  for(const el of texts){const why=cut(el);if(why)add('cut',`"${text(el)}" ${why} (${where(el)}${el.closest('.react-flow__node')?` in ${el.closest('.react-flow__node').dataset.id}`:''})`);}
+  for(const el of texts){const why=cut(el);if(why)add('cut',`${el.closest('.react-flow__node')?`${el.closest('.react-flow__node').dataset.id}: `:''}"${text(el)}" ${why} (${where(el)})`);}
   // No empty box in sight: a card with no words, or a frame with neither
   // its title nor anything in it.
   if(canvas){
