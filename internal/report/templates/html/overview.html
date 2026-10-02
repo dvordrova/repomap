@@ -8,7 +8,7 @@
 
 <div class="system-programs" data-programs-table></div>
 {{if .MutedCards}}<h4>{{t "This run could not read these targets"}}</h4>
-{{range .MutedCards}}<article><strong>{{.Name}}</strong><p class="meta">{{.Reason}}</p></article>{{end}}{{end}}
+{{range .MutedCards}}<article><strong>{{.Name}}</strong><p class="meta">{{.Reason}}</p>{{with .Detail}}<p class="unread-why">{{.}}</p>{{end}}</article>{{end}}{{end}}
 <nav class="map-reading-home-links" aria-label="{{t "Repository reference"}}">{{$sep := false}}
 {{if .Questions}}<a href="#questions">{{t "Choose from {0} questions" (len .Questions)}}</a>{{$sep = true}}{{end}}
 {{if $sep}} · {{end}}<a href="{{.LearnRunHref}}">{{t "How do I run it?"}}</a>
@@ -27,7 +27,7 @@
 <details class="target-facts"><summary>{{t "Code and entrypoints"}}</summary><p><code>{{.Name}}</code></p><dl>{{if .Manifest}}<dt>{{t "Source"}}</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>{{t "Entrypoints"}}</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>{{t "Found"}}</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl></details></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
 {{if .MutedCards}}<h4>{{t "This run could not read {0} targets" (len .MutedCards)}}</h4>
-<div class="cards">{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>{{t "Language"}}</dt><dd>{{.Language}}</dd><dt>{{t "Why"}}</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
+<div id="targets-not-read" class="cards">{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>{{t "Language"}}</dt><dd>{{.Language}}</dd><dt>{{t "Why"}}</dt><dd>{{.Reason}} ({{.Stage}}){{with .Detail}}<p class="unread-why">{{.}}</p>{{end}}</dd></dl></div>
 {{end}}</div>{{end}}
 </details>
 </div>

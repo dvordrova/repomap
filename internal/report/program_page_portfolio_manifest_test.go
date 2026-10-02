@@ -22,6 +22,7 @@ func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing
 	}
 	failed, err := targetoutcome.NewNotAnalyzed(
 		failedSelected, targetoutcome.StageProgramAnalysis, targetoutcome.ReasonSourceNotAnalyzable,
+		"example.test/unavailable: module not found",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +46,8 @@ func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing
 	}
 	if bytes.Contains(encoded, []byte(`"run_id"`)) || bytes.Contains(encoded, []byte(`"program_target"`)) ||
 		!bytes.Contains(encoded, []byte(`"state":"not_analyzed"`)) ||
-		!bytes.Contains(encoded, []byte(`"failure_reason":"source_not_analyzable"`)) {
+		!bytes.Contains(encoded, []byte(`"failure_reason":"source_not_analyzable"`)) ||
+		!bytes.Contains(encoded, []byte(`"failure_detail":"example.test/unavailable: module not found"`)) {
 		t.Fatalf("target outcome browser projection = %s", encoded)
 	}
 

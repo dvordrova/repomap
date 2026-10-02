@@ -390,7 +390,7 @@ func (pages targetPageDispatcher) notAnalyzed(
 	reason targetoutcome.Reason,
 	targetErr error,
 ) {
-	outcome, err := targetoutcome.NewNotAnalyzed(slot.selected, stage, reason)
+	outcome, err := targetoutcome.NewNotAnalyzed(slot.selected, stage, reason, failureDetail(targetErr, pages.options.Repo))
 	if err != nil {
 		slot.stop = err
 		return

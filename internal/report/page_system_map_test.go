@@ -67,7 +67,7 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 	if nodes["system-inputs-worker"].Children != "task" || nodes["system-inputs-worker"].Owner != "worker" || strings.Contains(nodes["system-component-worker"].Children, "task") {
 		t.Fatal("input lost its owning catalogue or remained inside the component")
 	}
-	if nodes["system-unread"].FullTitle != "Not analysed" || nodes["system-unread"].Summary != "failed, failed2" {
+	if nodes["system-unread"].FullTitle != "Not analysed" || nodes["system-unread"].Summary != "failed, failed2" || nodes["system-unread"].DetailsID != "targets-not-read" {
 		t.Fatalf("the targets not read are not one note naming them: %+v", nodes["system-unread"])
 	}
 	if view.Sections[0].Map.Edges[0].To != "remote" {

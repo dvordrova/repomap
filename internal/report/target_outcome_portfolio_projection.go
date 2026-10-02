@@ -23,7 +23,8 @@ type TargetOutcomePortfolioView struct {
 
 // TargetOutcomeView carries only the public selected-target identity and the
 // closed outcome union. An analyzed row joins the existing target navigation
-// by ProgramTarget ID; a failed row carries only a sanitized stage and reason.
+// by ProgramTarget ID; a failed row carries its closed stage and reason and
+// the failure's display text, repository paths relative and no host path.
 type TargetOutcomeView struct {
 	SelectedTargetID        string                      `json:"selected_target_id"`
 	Language                targetoutcome.LanguageGroup `json:"language"`
@@ -35,6 +36,7 @@ type TargetOutcomeView struct {
 	ProgramTargetID         string                      `json:"program_target_id,omitempty"`
 	FailureStage            targetoutcome.Stage         `json:"failure_stage,omitempty"`
 	FailureReason           targetoutcome.Reason        `json:"failure_reason,omitempty"`
+	FailureDetail           string                      `json:"failure_detail,omitempty"`
 }
 
 // NewTargetOutcomePortfolioView verifies the exact analyzed-outcome/page
@@ -90,6 +92,7 @@ func NewTargetOutcomePortfolioView(
 		case targetoutcome.StateNotAnalyzed:
 			row.FailureStage = outcome.Failure.Stage
 			row.FailureReason = outcome.Failure.Reason
+			row.FailureDetail = outcome.Failure.Detail
 		}
 		view.Outcomes = append(view.Outcomes, row)
 	}
@@ -137,7 +140,7 @@ func (view TargetOutcomePortfolioView) Validate() error {
 		switch outcome.State {
 		case targetoutcome.StateAnalyzed:
 			if !validTargetNavigationText(outcome.ProgramTargetID) ||
-				outcome.FailureStage != "" || outcome.FailureReason != "" {
+				outcome.FailureStage != "" || outcome.FailureReason != "" || outcome.FailureDetail != "" {
 				return fmt.Errorf("target outcome portfolio view: analyzed outcome %d is invalid", index)
 			}
 			if _, duplicate := programTargetIDs[outcome.ProgramTargetID]; duplicate {
@@ -146,7 +149,7 @@ func (view TargetOutcomePortfolioView) Validate() error {
 			programTargetIDs[outcome.ProgramTargetID] = struct{}{}
 		case targetoutcome.StateNotAnalyzed:
 			if outcome.ProgramTargetID != "" || !outcome.FailureStage.Valid() ||
-				!outcome.FailureReason.Valid() {
+				!outcome.FailureReason.Valid() || !targetoutcome.ValidFailureDetail(outcome.FailureDetail) {
 				return fmt.Errorf("target outcome portfolio view: not-analyzed outcome %d is invalid", index)
 			}
 		}

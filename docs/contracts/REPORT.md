@@ -1211,10 +1211,14 @@ every other reading ends with them (owner, 2026-09-30: at its top they had
 come before anything to read). The
 components, their areas and inputs are on the canvas and are not listed
 again (owner, 2026-09-28); the targets the run could not read are named
-there with why. On the canvas they are one note, "Not analysed", naming
+there with why: the closed reason, then the failure in its own words as the
+outcome saved it (litestream's `src`: "no build line compiles
+src/litestream-vfs.c; parsed with clang's defaults …"), line breaks kept and
+never translated. On the canvas they are one note, "Not analysed", naming
 them, sized with its words as a summary among the programs' and taking
-their connections. The introductory sentence has no model badge or source
-popover;
+their connections; read, the note shows each target's card from Component
+details (`targets-not-read`) with the same words. The introductory sentence
+has no model badge or source popover;
 its saved citations and model attribution live in Repository summary
 sources, reachable from the home reading. The summary and useful links
 remain, with no "Understand this repository" or visible "Starting points"
@@ -1651,7 +1655,8 @@ manifest and the files the JSON names in the run's own target directories:
 the owner run directory and the target run directories beside it named by its
 `program-page-portfolio.json`.
 The common JSON contains the exact selected ProgramIndexes, not a copied
-presentation graph. It is compact JSON (format 96) and writes each
+presentation graph. It is compact JSON (format 97: a failed target's
+`failure_detail`) and writes each
 ProgramIndex in its `program-index.json` encoding. A section byte for byte
 equal to a file of those directories (the owner's `program-index.json`,
 `facts.json`, `claims.json`, `orientation.json`, `glossary.json`; another

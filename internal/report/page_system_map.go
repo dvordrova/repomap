@@ -537,7 +537,9 @@ func (view *pageView) SystemMap() *pageMap {
 			if err != nil {
 				title = "Not analysed"
 			}
-			add(pageMapNode{ID: "system-unread", ItemKind: "Component", FullTitle: title, Summary: strings.Join(unread, ", "), Lane: "dependencies"})
+			// Read, it shows each target's card from Component details with
+			// why it was not read, in the failure's own words.
+			add(pageMapNode{ID: "system-unread", ItemKind: "Component", FullTitle: title, Summary: strings.Join(unread, ", "), Lane: "dependencies", DetailsID: "targets-not-read"})
 		}
 		// A dependency between two programs already drawn between their own
 		// parts or inputs is that arrow: freqtrade's scripts/ws_client.py,

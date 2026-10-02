@@ -111,6 +111,7 @@ func TestPersistTargetOutcomePortfolioForRunDirsKeepsCanonicalBytes(t *testing.T
 		selected,
 		targetoutcome.StageProgramAnalysis,
 		targetoutcome.ReasonSourceNotAnalyzable,
+		"module library: no Go files",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -133,5 +134,25 @@ func TestPersistTargetOutcomePortfolioForRunDirsKeepsCanonicalBytes(t *testing.T
 	}
 	if string(got) != string(want) {
 		t.Fatalf("persisted bytes changed: %q", got)
+	}
+}
+
+// A failed target's saved reason reads with the repository's paths relative,
+// whichever spelling of the repository the error used: macOS resolves a
+// temporary /var path to /private/var. A failure with no text says so.
+func TestFailureDetailReadsTheRepositoryRelative(t *testing.T) {
+	repository := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{repository, resolved} {
+		got := failureDetail(errors.New("clang could not parse "+filepath.Join(root, "src", "a.c")+": "+root+" is read-only"), repository)
+		if got != "clang could not parse src/a.c: . is read-only" {
+			t.Fatalf("failure detail for %s = %q", root, got)
+		}
+	}
+	if got := failureDetail(errors.New("  "), repository); got != "the failure gave no text to show" || !targetoutcome.ValidFailureDetail(got) {
+		t.Fatalf("an error without text reads %q", got)
 	}
 }

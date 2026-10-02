@@ -1,7 +1,8 @@
 // Package targetoutcome owns the sealed, adapter-neutral result inventory for
 // every selected repository target. It records whether each selected target
-// produced a validated ProgramIndex page without persisting adapter-native
-// refs or raw analysis errors.
+// produced a validated ProgramIndex page and, for one that did not, why, as
+// the reader reads it: repository paths relative, no host path, no
+// adapter-native ref.
 package targetoutcome
 
 import (
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	Version          = 3
+	Version          = 4
 	ArtifactFilename = "target-outcome-portfolio.json"
 
 	MaxOutcomes           = 4_096
@@ -32,7 +33,7 @@ const (
 	MaxAllowedProgramLanguages = 16
 )
 
-const digestDomain = "target-outcome-portfolio-v3\x00"
+const digestDomain = "target-outcome-portfolio-v4\x00"
 
 // LanguageGroup is the bounded public adapter family that owns a selected
 // target. The separately persisted AllowedProgramLanguages set is the exact
@@ -102,8 +103,8 @@ func (stage Stage) Valid() bool {
 	}
 }
 
-// Reason is a closed, sanitized explanation of why a target was not analyzed.
-// Raw error text is intentionally not representable in the persisted model.
+// Reason is a closed, sanitized classification of why a target was not
+// analyzed; Failure.Detail says it in the failure's own words.
 type Reason string
 
 const (
@@ -213,11 +214,12 @@ type Analysis struct {
 	RunID         string              `json:"run_id"`
 }
 
-// Failure is the complete persisted failure surface. It has no free-form
-// detail field by design.
+// Failure is the complete persisted failure surface: the closed stage and
+// reason, and Detail, the failure as the reader reads it (FailureDetail).
 type Failure struct {
 	Stage  Stage  `json:"stage"`
 	Reason Reason `json:"reason"`
+	Detail string `json:"detail"`
 }
 
 // Outcome is a strict tagged union. Exactly one of Analysis or Failure is
@@ -243,12 +245,13 @@ func NewAnalyzed(selected SelectedTarget, target programindex.Target, runID stri
 	return outcome, nil
 }
 
-// NewNotAnalyzed builds one failed outcome from closed public classifications.
-func NewNotAnalyzed(selected SelectedTarget, stage Stage, reason Reason) (Outcome, error) {
+// NewNotAnalyzed builds one failed outcome from closed public
+// classifications and the failure's display text (FailureDetail).
+func NewNotAnalyzed(selected SelectedTarget, stage Stage, reason Reason, detail string) (Outcome, error) {
 	outcome := Outcome{
 		SelectedTarget: selected.Snapshot(),
 		State:          StateNotAnalyzed,
-		Failure:        &Failure{Stage: stage, Reason: reason},
+		Failure:        &Failure{Stage: stage, Reason: reason, Detail: detail},
 	}
 	if err := outcome.Validate(); err != nil {
 		return Outcome{}, err
@@ -302,6 +305,9 @@ func (outcome Outcome) Validate() error {
 		if outcome.Analysis != nil || outcome.Failure == nil ||
 			!outcome.Failure.Stage.Valid() || !outcome.Failure.Reason.Valid() {
 			return fmt.Errorf("target outcome portfolio: not-analyzed outcome has invalid failure")
+		}
+		if !ValidFailureDetail(outcome.Failure.Detail) {
+			return fmt.Errorf("target outcome portfolio: not-analyzed outcome has no display detail, or one with a host path")
 		}
 	}
 	return nil

@@ -136,6 +136,9 @@ type pageMutedCard struct {
 	Language string
 	Stage    string
 	Reason   string
+	// Detail is the failure in its own words, as saved with the outcome:
+	// litestream's src says no build line compiles src/litestream-vfs.c.
+	Detail string
 }
 
 type pagePortal struct {
@@ -677,6 +680,7 @@ func (builder *pageBuilder) cards(view *pageView) {
 			Language: string(outcome.Language),
 			Stage:    strings.ReplaceAll(string(outcome.FailureStage), "_", " "),
 			Reason:   strings.ReplaceAll(string(outcome.FailureReason), "_", " "),
+			Detail:   outcome.FailureDetail,
 		})
 	}
 	if len(view.Cards) == 0 && len(view.MutedCards) == 0 {

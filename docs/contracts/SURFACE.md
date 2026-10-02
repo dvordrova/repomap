@@ -89,11 +89,17 @@ not add script entrypoints or sidecar tools.
   or page-validation failure instead of discarding completed sibling pages.
   Persist one exhaustive, adapter-neutral `TargetOutcomePortfolio` for every
   selected target: a row is either bound to one complete ProgramTarget/page or
-  carries only a closed public failure stage and reason. Never persist raw
-  errors or adapter-native refs in that authority and never turn a failed
-  target into a partial page. The picker keeps failed rows visible,
-  red, disabled, and linkless; the repository overview reports analyzed versus
-  selected coverage. Materialize each selected JS/TS compiler project at its
+  carries a closed public failure stage and reason and the failure in its own
+  words (`detail`, version 4). The detail is the error's text as a reader
+  reads it (`targetoutcome.FailureDetail`): the repository's paths relative
+  (the root alone "."), the home directory "~", any other absolute path "…/"
+  and its last element, a control character a space, line breaks kept. It is
+  a display relativization of paths, not a redaction: every other word stays
+  as written. Never persist adapter-native refs in that authority and never
+  turn a failed target into a partial page. A failure whose text cannot be
+  shown says so in words; it never ends the run. The picker keeps failed rows
+  visible, red, disabled, and linkless; the repository overview reports
+  analyzed versus selected coverage and says why each target was not read. Materialize each selected JS/TS compiler project at its
   own target boundary so a missing compiler does not preflight-fail unrelated
   languages or packages. A shared selected-target Go workspace is only an
   optimization: if its union cannot be prepared, retry the current exact target
@@ -117,7 +123,7 @@ not add script entrypoints or sidecar tools.
   `ProgramPagePortfolio` `default_target_id` names that owner page, as it does
   when a selected default fails; it is not a chosen default. No consumer
   picks a default in its place, and the page adds no mark for it.
-  Earlier saves, which always name a default, still read. If every selected target
+  If every selected target
   fails, retain diagnostics but do not invent a targetless or synthetic report.
 
 ## Concurrent target pages
@@ -158,8 +164,8 @@ do not change successful native results, their versions or model cache keys.
 The final publication-failure block preserves the successfully analyzed target
 count and shows the original wrapped failure reason. It links the owner run's
 existing `rejected.jsonl` and semantic exchange directory when available.
-These are console diagnostics, not raw-error fields in TargetOutcomePortfolio;
-the original error still propagates unchanged.
+These are console diagnostics; TargetOutcomePortfolio keeps only a failed
+target's display detail, and the original error still propagates unchanged.
 
 After a failed model exchange is committed, the same journal recorder supplies
 direct absolute request, raw-response and journal paths to the run console.

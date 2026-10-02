@@ -623,3 +623,7 @@ details.map-connections-apart>summary{cursor:pointer;font:600 12px/1.4 system-ui
 @keyframes rm-picked{from{background:var(--core-bg,#fbe9f1)}to{background:transparent}}
 .map-reading-picked{box-shadow:inset 3px 0 0 var(--link);padding-left:8px;animation:rm-picked 1s ease-out 1}
 @media (prefers-reduced-motion:reduce){.map-reading-picked{animation:none}}
+/* The targets not read, shown in the "Not analysed" note's reading: each
+   card stacked in the narrow column, its name over why. */
+[data-map-explorer] .map-inspector .cards .card{display:block;padding:.6rem 0}
+[data-map-explorer] .map-inspector .cards .card dl{grid-template-columns:auto minmax(0,1fr)}

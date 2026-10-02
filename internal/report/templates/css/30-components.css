@@ -11,6 +11,8 @@ h4 .badge{margin-left:.4rem;margin-right:0}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(18rem,1fr));gap:.8rem;margin:.6rem 0}
 .card{border:1px solid var(--line);border-radius:6px;padding:.7rem .9rem;background:var(--bg)}
 .card.muted{background:var(--soft);color:var(--muted)}
+/* A target not read says why in its failure's words, line breaks kept. */
+.unread-why{white-space:pre-line;overflow-wrap:anywhere}
 .card h3{margin:0 0 .3rem}
 .card dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:.1rem .6rem;font-size:.9rem}
 .card dt{color:var(--muted)}

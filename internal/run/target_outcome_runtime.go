@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/dvordrova/repomap/internal/cproject"
 	"github.com/dvordrova/repomap/internal/debugdump"
@@ -56,6 +57,31 @@ func classifyRepositoryTargetFailure(
 		return targetoutcome.StageSemanticAnalysis, targetoutcome.ReasonModelResultRejected
 	}
 	return stage, targetoutcome.ReasonAnalysisFailed
+}
+
+// failureDetail is a failed target's error as its report shows it: the
+// repository's paths relative, home as "~" and no host path
+// (targetoutcome.FailureDetail). An error without text says so rather than
+// leaving the reason blank.
+func failureDetail(err error, repository string) string {
+	var roots []string
+	if absolute, absErr := filepath.Abs(repository); absErr == nil {
+		roots = append(roots, absolute)
+		if resolved, linkErr := filepath.EvalSymlinks(absolute); linkErr == nil {
+			roots = append(roots, resolved)
+		}
+	}
+	home, _ := os.UserHomeDir()
+	detail := ""
+	if err != nil {
+		detail = targetoutcome.FailureDetail(err.Error(), home, roots...)
+	}
+	if !targetoutcome.ValidFailureDetail(detail) {
+		// The outcome needs a reason in words; one target's failure must
+		// never end the run because its text could not be shown.
+		detail = "the failure gave no text to show"
+	}
+	return detail
 }
 
 func persistTargetOutcomePortfolioForRuns(
