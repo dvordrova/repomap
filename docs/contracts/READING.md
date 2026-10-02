@@ -1989,7 +1989,13 @@ split whose lead is under `ClassifierMargin`, each candidate the categorizer
 holds within the margin of its leader is a way of its own, walked on as the
 trunk is, with its own visited set (the trunk, every way's first step and
 its own steps), its later splits parting the same way; the margin bounds how
-many, and a confident split still follows one (`groupindex.WalkPaths`). The
+many, and a confident split still follows one (`groupindex.WalkPaths`). At
+a split the categorizer decided, the candidates the path did not follow are
+kept on the step (`FlowStep.Passed`, orientation version 2; external review,
+2026-10-02: freqtrade's FreqtradeBot.process passes IStrategy, where the
+strategy takes part) and read in words, folded under "also calls:", never
+"one of N": the step does not run one of them, it may run each. No model is
+asked anything new for them, the walk's own split keeping them. The
 candidates no way follows stay the step's folded "one of N" line, and the
 split is journaled under `flow_fork` with its lead and the ways followed. No
 answer at all ends the path at a named fork of every candidate. The report

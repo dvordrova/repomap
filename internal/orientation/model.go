@@ -10,13 +10,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
-	Version          = 1
+	Version          = 2
 	ArtifactFilename = "orientation.json"
 	RejectedFilename = "rejected.jsonl"
 
@@ -57,7 +58,10 @@ type RecipeStep struct {
 // line). On the last step of a flow, or of one of its paths, that ends at an
 // undecided split: Paths, the ways followed from it, each a path of its own
 // (owner, 2026-09-30: several main paths are allowed where the model is torn
-// between them), and Branches, the candidates no way follows.
+// between them), and Branches, the candidates no way follows. At a split the
+// categorizer decided, Passed are the candidates the path did not follow
+// (version 2): the calls of the step it goes on beside (freqtrade's
+// FreqtradeBot.process passes IStrategy).
 type FlowStep struct {
 	TargetID    string       `json:"target_id"`
 	FactID      string       `json:"fact_id,omitempty"`
@@ -66,6 +70,7 @@ type FlowStep struct {
 	Via         string       `json:"via,omitempty"`
 	Site        string       `json:"site,omitempty"`
 	Branches    []FlowBranch `json:"branches,omitempty"`
+	Passed      []FlowBranch `json:"passed,omitempty"`
 	Paths       []FlowPath   `json:"paths,omitempty"`
 }
 
@@ -237,7 +242,7 @@ func validFlowSteps(steps []FlowStep) error {
 		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
-		for _, branch := range step.Branches {
+		for _, branch := range append(slices.Clone(step.Branches), step.Passed...) {
 			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
 			}
@@ -338,6 +343,7 @@ func cloneFlowSteps(steps []FlowStep) []FlowStep {
 	owned := cloneSlice(steps)
 	for position := range owned {
 		owned[position].Branches = cloneSlice(steps[position].Branches)
+		owned[position].Passed = cloneSlice(steps[position].Passed)
 		if steps[position].Paths != nil {
 			owned[position].Paths = make([]FlowPath, len(steps[position].Paths))
 			for at, path := range steps[position].Paths {

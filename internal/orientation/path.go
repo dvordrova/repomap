@@ -135,31 +135,43 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 }
 
 // flowSteps are a walked path's steps: each its declaration, its own line
-// and how the step before reaches it; the last, where the path parts, holds
-// each way followed as a path of its own and the candidates none follows.
+// and how the step before reaches it, and, where the categorizer decided a
+// split, the candidates the path passed; the last, where the path parts,
+// holds each way followed as a path of its own and the candidates none
+// follows.
 func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, graph *flowGraph) []FlowStep {
 	var rows []FlowStep
+	branch := func(candidate groupindex.SpineStep) FlowBranch {
+		reach := walk.met[candidate.Edge].reach
+		return FlowBranch{SubjectID: stepSubject(candidate), Via: reach.via, Site: reach.site}
+	}
 	for position, step := range path.Steps {
 		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
 		if step.Edge >= 0 {
 			row.Via, row.Site = walk.met[step.Edge].reach.via, walk.met[step.Edge].reach.site
 		}
+		for _, candidate := range path.Passed[position] {
+			row.Passed = append(row.Passed, branch(candidate))
+		}
 		// A class step going on through one of its members is that
 		// member's step, reached as the class was; a way that starts at
-		// one of the class's members is reached as its member.
+		// one of the class's members is reached as its member. The class's
+		// other members the path passed are the step before's calls.
 		if strings.HasPrefix(row.Via, "its member ") {
 			if len(rows) > 0 {
 				previous := rows[len(rows)-1]
 				row.Via, row.Site = previous.Via, previous.Site
 				rows = rows[:len(rows)-1]
+				if len(rows) > 0 {
+					rows[len(rows)-1].Passed = append(rows[len(rows)-1].Passed, previous.Passed...)
+				}
 			} else {
 				row.Via = "its member"
 			}
 		}
 		if position == len(path.Steps)-1 {
-			for _, branch := range path.Rest {
-				reach := walk.met[branch.Edge].reach
-				row.Branches = append(row.Branches, FlowBranch{SubjectID: stepSubject(branch), Via: reach.via, Site: reach.site})
+			for _, candidate := range path.Rest {
+				row.Branches = append(row.Branches, branch(candidate))
 			}
 			for _, way := range path.Paths {
 				row.Paths = append(row.Paths, FlowPath{Steps: walk.flowSteps(way, targetID, graph)})

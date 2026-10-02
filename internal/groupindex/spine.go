@@ -200,11 +200,13 @@ func Walk(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep
 
 // SpinePath is a walked path that may part: its steps, then, where its last
 // step's split is followed several ways, each way a path of its own
-// (Paths), and the candidates no way follows (Rest).
+// (Paths), and the candidates no way follows (Rest). Passed holds, by a
+// step's position, the candidates a decided split there did not follow.
 type SpinePath struct {
-	Steps []SpineStep
-	Paths []SpinePath
-	Rest  []SpineStep
+	Steps  []SpineStep
+	Paths  []SpinePath
+	Rest   []SpineStep
+	Passed map[int][]SpineStep
 }
 
 // WalkPaths walks as Walk does, pick naming the candidates to follow at a
@@ -251,6 +253,17 @@ func walkPath(step SpineStep, seen map[string]bool, next func(SpineStep) []Spine
 			result.Rest = candidates
 			return result
 		case 1:
+			// A decided split keeps what it did not follow.
+			if len(candidates) > 1 {
+				if result.Passed == nil {
+					result.Passed = map[int][]SpineStep{}
+				}
+				for position, candidate := range candidates {
+					if position != chosen[0] {
+						result.Passed[len(result.Steps)-1] = append(result.Passed[len(result.Steps)-1], candidate)
+					}
+				}
+			}
 			step = candidates[chosen[0]]
 			visited[step.SubjectID] = true
 			continue

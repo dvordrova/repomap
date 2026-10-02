@@ -133,6 +133,19 @@ func TestAMainFlowIsWalkedByCodeAndAsksOneQuestionPerSplit(t *testing.T) {
 	if walk.flow.Title != "From main to play" || walk.flow.Steps[1].Explanation != "Opens the window and registers its handlers." {
 		t.Fatalf("the flow's title or a step's accepted line is wrong: %+v", walk.flow)
 	}
+	// The decided split keeps the candidate it passed, as the step's own
+	// (version 2): start goes on to on_click, past on_move.
+	if passed := walk.flow.Steps[1].Passed; len(passed) != 1 || passed[0].SubjectID != "on_move" || passed[0].Via != "handed to loop.on.on_move" {
+		t.Fatalf("start passed %+v, want on_move handed to loop.on.on_move", passed)
+	}
+	for position, step := range walk.flow.Steps {
+		if position != 1 && len(step.Passed) > 0 {
+			t.Fatalf("step %s passed %+v with no decided split", step.SubjectID, step.Passed)
+		}
+	}
+	if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {
+		t.Fatalf("a flow with passed calls does not seal: %v", err)
+	}
 }
 
 // A split the categorizer leaves under the margin parts the flow: each

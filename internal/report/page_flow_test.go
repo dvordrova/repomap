@@ -438,6 +438,36 @@ func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
 	}
 }
 
+// Where the walk decided a split, the step keeps the calls the path did not
+// follow, read in words under one folded line, never "one of N" (external
+// review, 2026-10-02: a reader could not see that freqtrade's process also
+// calls the strategy).
+func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called",
+		Passed: []orientation.FlowBranch{{SubjectID: "h1", Via: "called"}, {SubjectID: "h2", Via: "called"}}}, section, &pageStepPath{runners: map[string]bool{}})
+	if step.Passed == nil || step.Fork != nil || len(step.Passed.Names) != 2 {
+		t.Fatalf("passed %+v, fork %+v", step.Passed, step.Fork)
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		label := map[DisplayLanguage]string{English: "also calls:", Russian: "также вызывает:"}[language]
+		at := strings.Index(html, `<details class="flow-fork flow-passed"><summary>`+label+`</summary>`)
+		if at < 0 || !strings.Contains(html[at:], "getCommand") || !strings.Contains(html[at:], "setCommand") || strings.Contains(html, "one of 2") {
+			t.Fatalf("%v: the passed calls do not read folded under %q: %s", language, label, html)
+		}
+	}
+}
+
 // A walked flow says how a step is reached as its code does, and a
 // dispatch site by the function holding it, a name read as a step's is,
 // never a file and line (owner: no line numbers in the column; redis's

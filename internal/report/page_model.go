@@ -1001,6 +1001,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		}
 	}
 	row.Fork = builder.flowFork(step)
+	row.Passed = builder.flowPassed(step)
 	var owner *pageSection
 	switch {
 	case step.FactID != "":
@@ -1075,17 +1076,38 @@ func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
 			}
 		}
 	}
-	// Candidates sharing a name are told apart as the categorizer read
-	// them (groupindex.TellApart): s3.ReplicaClient, gs.ReplicaClient.
+	fork.Names = builder.flowBranchNames(step.TargetID, step.Branches)
+	return fork
+}
+
+// flowPassed is, at a split the walk decided, the candidates the path did
+// not follow, read folded under "also calls:" (never "one of N": the step
+// does not run one of them but may run each).
+func (builder *pageBuilder) flowPassed(step orientation.FlowStep) *pageFlowFork {
+	if len(step.Passed) == 0 {
+		return nil
+	}
+	names := builder.flowBranchNames(step.TargetID, step.Passed)
+	if len(names) == 0 {
+		return nil
+	}
+	return &pageFlowFork{Label: "also calls:", Names: names}
+}
+
+// flowBranchNames are a split's candidates by name; candidates sharing a
+// name are told apart as the categorizer read them (groupindex.TellApart):
+// s3.ReplicaClient, gs.ReplicaClient.
+func (builder *pageBuilder) flowBranchNames(targetID string, branches []orientation.FlowBranch) []pageStepName {
+	var result []pageStepName
 	var names []string
 	var spellings [][]string
-	for _, branch := range step.Branches {
-		name, ok := builder.flowName(step.TargetID, branch.SubjectID)
+	for _, branch := range branches {
+		name, ok := builder.flowName(targetID, branch.SubjectID)
 		if !ok {
 			continue
 		}
 		file, part := "", ""
-		if ref, known := builder.subject(step.TargetID, branch.SubjectID); known && ref.subject.Object != nil && ref.subject.Object.Location != nil {
+		if ref, known := builder.subject(targetID, branch.SubjectID); known && ref.subject.Object != nil && ref.subject.Object.Location != nil {
 			file = ref.subject.Object.Location.Path
 			if index := builder.graphIndex(ref.programTargetID); index != nil {
 				if group := builder.edgesBetweenGroups(*index).groupOf[branch.SubjectID]; group != "" {
@@ -1093,13 +1115,13 @@ func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
 				}
 			}
 		}
-		fork.Names = append(fork.Names, name)
+		result = append(result, name)
 		names, spellings = append(names, name.Name), append(spellings, groupindex.Where(name.Name, file, part))
 	}
 	for position, told := range groupindex.TellApart(names, spellings) {
-		fork.Names[position].Name = told
+		result[position].Name = told
 	}
-	return fork
+	return result
 }
 
 // flowName is a declaration a walked flow names beside a step (a fork's

@@ -359,6 +359,9 @@ type pageFlowStep struct {
 	Via     string
 	ViaFrom *pageStepName
 	Fork    *pageFlowFork
+	// Passed, on a step where the walk decided a split, are the candidates
+	// the path did not follow, read folded under "also calls:".
+	Passed *pageFlowFork
 	// Ways are, on the step where the flow parts, each way it goes on, read
 	// after the step (owner, 2026-09-30: several main paths are allowed
 	// where the model is torn between them).
