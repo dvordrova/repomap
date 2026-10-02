@@ -409,7 +409,7 @@ const d=data.decls;
 d.push(decl('Run','function','#own'),decl('NewReplicateCommand','function','#core'),decl('ReplicateRun','function','#core'),decl('DatabasesRun','function','#core'));
 const run=d.length-4,make=d.length-3,replicate=d.length-2,databases=d.length-1;
 data.own.push({decl:run,flow:[{decl:make,sites:[{at:'main.go:120'}]},{decl:replicate,sites:[{at:'main.go:124'}]},{decl:databases,sites:[{at:'main.go:131'}]}],
-  cases:[{line:119,flow:[{decl:make,sites:[{at:'main.go:120'}]},{decl:replicate,sites:[{at:'main.go:124'}]}]},{line:130,flow:[{decl:databases,sites:[{at:'main.go:131'}]}]}]});
+  cases:[{line:119,flow:[{decl:make,sites:[{at:'main.go:120'}]},{decl:replicate,sites:[{at:'main.go:124'}]}]},{line:130,flow:[{decl:databases,sites:[{at:'main.go:131'}]}]},{line:140,flow:null}]});
 document.getElementById=id=>id==='own'?{dataset:{reading:'1'},rmReading:data}:null;
 ctx.nodeById=id=>id==='n-own'?nodes['#own']:null;
 const does=path=>{const section=rmInputFlowSection(ctx,path,'replicate',()=>null,()=>{});const box=section&&section.children.find(c=>c.has('map-flow-does'));
@@ -419,6 +419,13 @@ assert.deepEqual(does(Object.assign({case:119},path)),['NewReplicateCommand()','
 assert.deepEqual(does(Object.assign({case:130},path)),['DatabasesRun()'],'the databases case\'s');
 assert.deepEqual(does(path),['NewReplicateCommand()','ReplicateRun()','DatabasesRun()'],'an input the whole function handles reads its flow');
 assert.equal(does(Object.assign({case:200},path)),null,'a case with no flow of its own shows none, never the whole handler');
+// A case whose lines call nothing is saved with no flow (null, as for
+// etcd's staleList): it says so and throws nothing, its neighbour keeping
+// its own calls (control review, 2026-10-02).
+const empty=rmInputFlowSection(ctx,Object.assign({case:140},path),'staleList',()=>null,()=>{});
+assert.ok(!empty.children.some(c=>c.has('map-flow-does')),'no calls made up for it');
+assert.equal(empty.children.filter(c=>c.has('map-flow-none')).length,1,'it says no call is read in its case\'s lines');
+assert.deepEqual(does(Object.assign({case:130},path)),['DatabasesRun()'],'the neighbouring case keeps its calls');
 `)
 }
 

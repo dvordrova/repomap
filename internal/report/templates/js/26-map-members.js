@@ -27,7 +27,7 @@ var repomapMembers = (function () {
     var reading = typeof rmGroupReading === 'function' ? rmGroupReading(node) : null;
     if (reading) {
       var explained = new Map((rmPage.data(node,'explained')||[]).map(function (said) { return [sourceKey(said.source), said]; }));
-      (reading.members||[]).forEach(function (kind) { kind.decls.forEach(function (index) {
+      (reading.members||[]).forEach(function (kind) { (kind.decls||[]).forEach(function (index) {
         var decl = reading.decls[index], source = placeSource(decl.href, decl.open, decl.no_source, decl.at || decl.name), said = explained.get(sourceKey(source));
         add({name:decl.name, alias:said ? said.alias || '' : '', key:!!decl.bold, explanation:said ? said.explanation || '' : '', explanation_ref:said ? said.explanation_ref || '' : '', source:source,
           fields:(decl.fields||[]).map(function (field) { return {name:field.name, alias:'', explanation:'', source:placeSource(field.href, field.open, field.no_source, field.at || field.name)}; })});

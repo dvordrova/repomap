@@ -18,7 +18,7 @@ function rmGroupReading(node){
   if(!group.rmReading){
     // A declaration's key is left out where it is its link.
     group.rmReading=rmPage.data(group,'reading');
-    group.rmReading.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
+    (group.rmReading.decls||[]).forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
   }
   return group.rmReading;
 }
@@ -291,7 +291,7 @@ var rmFanWords={request:'calls one of these request handlers',command:'calls one
 function rmCallerLine(ctx,data,line){
   var caller=data.decls[line.caller],row=rmEl(line.fan?'details':'div','map-reading-caller'),head=line.fan?rmEl('summary'):row;
   head.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller)));
-  var runs=rmEndRuns(ctx,data,line.fan?line.ends.map(function(end){return Object.assign({},end,{possible:false});}):line.ends,'out',!line.fan);
+  var runs=rmEndRuns(ctx,data,line.fan?(line.ends||[]).map(function(end){return Object.assign({},end,{possible:false});}):line.ends,'out',!line.fan);
   if(line.fan){
     var fan=line.fan,say=rmEl('span','map-reading-fan'),via=(fan.via||[]).map(function(at){return data.decls[at];}).filter(Boolean);
     // A fan with no dispatch site names none (litestream's r.Client.WriteLTXFile
@@ -317,7 +317,7 @@ function rmNamesByPart(ctx,data,groups){
     var peer=rmEl('div','map-reading-peer');
     if(group.part||group.title){var head=rmEl('div','map-reading-peer-head');head.appendChild(rmPartBox(ctx,group.part,group.title));peer.appendChild(head);}
     var list=rmEl('ul','map-reading-ends');
-    group.decls.forEach(function(at){var decl=data.decls[at],item=rmEl('li');item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));list.appendChild(item);});
+    (group.decls||[]).forEach(function(at){var decl=data.decls[at],item=rmEl('li');item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));list.appendChild(item);});
     peer.appendChild(rmTellApart(list));box.appendChild(peer);
   });
   return box;
@@ -329,7 +329,7 @@ function rmFieldUses(ctx,data,use){
   var box=rmEl('div','map-field-uses');
   [['written','Written by'],['read','Read by']].forEach(function(pair){
     var groups=use[pair[0]]||[];if(!groups.length)return;
-    var count=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=count>12;
+    var count=groups.reduce(function(sum,group){return sum+(group.decls||[]).length;},0),long=count>12;
     var side=rmEl(long?'details':'div','map-field-side');side.appendChild(rmEl(long?'summary':'span','map-field-side-head',rmT(pair[1])));
     side.appendChild(rmNamesByPart(ctx,data,groups));
     box.appendChild(side);
@@ -353,9 +353,9 @@ function rmFieldUses(ctx,data,use){
 // says whether a "Called from" stands.
 function rmReachedFrom(ctx,data){
   if(!data||!((data.groups||[]).length||(data.made||[]).length))return null;
-  data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
+  (data.decls||[]).forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
   function side(groups,label,cls){
-    var total=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=total>12;
+    var total=groups.reduce(function(sum,group){return sum+(group.decls||[]).length;},0),long=total>12;
     var section=rmEl(long?'details':'section','map-reading-side map-reading-in '+cls),heading=rmEl(long?'summary':'h6','',rmT(label));
     section.appendChild(heading);
     groups.forEach(function(group){
@@ -384,17 +384,17 @@ function rmMergeReached(list){
       (data[field]||[]).forEach(function(group){
         var key=(group.program||'')+'\u0000'+(group.part||group.title||''),into=byPart[field].get(key);
         if(!into){into={part:group.part,title:group.title,program:group.program,decls:[]};byPart[field].set(key,into);merged[field].push(into);}
-        group.decls.forEach(function(end){
+        (group.decls||[]).forEach(function(end){
           var decl=data.decls[end.decl];if(!decl)return;
           var id=decl.key||decl.href||decl.open||decl.name;
           if(!at.has(id)){at.set(id,decls.length);decls.push(decl);}
           var position=at.get(id);
-          if(!into.decls.some(function(other){return other.decl===position;}))into.decls.push(Object.assign({},end,{decl:position}));
+          if(!(into.decls||[]).some(function(other){return other.decl===position;}))into.decls.push(Object.assign({},end,{decl:position}));
         });
       });
     });
   });
-  if(!merged.groups.length&&!merged.made.length)return null;
+  if(!(merged.groups||[]).length&&!merged.made.length)return null;
   var result={decls:decls,groups:merged.groups};if(merged.made.length)result.made=merged.made;
   return result;
 }
@@ -469,7 +469,7 @@ function rmPartView(ctx,node,data){
   // outside the part ("Called from": a caller in another part, an input
   // registered at it, a callable handed over) are its ways in.
   var order=[],outside=new Set();
-  (data.members||[]).forEach(function(kind){kind.decls.forEach(function(position,i){order.push(position);if(i<(kind.outside||0))outside.add(position);});});
+  (data.members||[]).forEach(function(kind){(kind.decls||[]).forEach(function(position,i){order.push(position);if(i<(kind.outside||0))outside.add(position);});});
   // The keys stand open; a part with none stands its ways in open instead.
   var keys=order.filter(function(position){return data.decls[position].bold;});
   var shown=keys.length?keys:order.filter(function(position){return outside.has(position);});
@@ -505,7 +505,7 @@ function rmPartView(ctx,node,data){
   if(data.in&&data.in.length){
     // Many callers fold the whole list: Server core state had its own
     // declarations below 2,000 px of them.
-    var lines=data.in.reduce(function(sum,peer){return sum+peer.lines.length;},0),long=lines>12;
+    var lines=data.in.reduce(function(sum,peer){return sum+(peer.lines||[]).length;},0),long=lines>12;
     var incoming=rmEl(long?'details':'section','map-reading-side map-reading-in'),heading=rmEl(long?'summary':'h6','',rmT('Called from'));
     incoming.appendChild(heading);
     data.in.forEach(function(peer){
@@ -520,7 +520,7 @@ function rmPartView(ctx,node,data){
   if(data.out&&data.out.length){
     // Many callees fold as many callers do: Client I/O's calls into other
     // parts had run to 8,500 px, one name to a line.
-    var names=data.out.reduce(function(sum,peer){return sum+peer.lines[0].ends.length;},0),wide=names>12;
+    var names=data.out.reduce(function(sum,peer){return sum+(((peer.lines||[])[0]||{}).ends||[]).length;},0),wide=names>12;
     var outgoing=rmEl(wide?'details':'section','map-reading-side map-reading-out');outgoing.appendChild(rmEl(wide?'summary':'h6','',rmT('Calls into')));
     data.out.forEach(function(peer){
       var box=rmEl(wide?'details':'div','map-reading-peer'),head=rmEl(wide?'summary':'div','map-reading-peer-head');
@@ -566,7 +566,7 @@ function rmPathsList(ctx,data,cls,label,paths){
 // reads; a type's fields and the functions returning or taking it; what it
 // calls, by part.
 function rmDeclView(ctx,node,data,concept){
-  var key=repomapMembers.sourceKey(concept.source),view=rmEl('div','map-decl-reading'),position=data.decls.findIndex(function(decl){return decl.key===key;});
+  var key=repomapMembers.sourceKey(concept.source),view=rmEl('div','map-decl-reading'),position=(data.decls||[]).findIndex(function(decl){return decl.key===key;});
   // A declaration the part's reading does not list (neither a function, a
   // type nor a module's variable) is read by its name and code alone.
   var decl=position>=0?data.decls[position]:{name:concept.name,key:key,href:concept.source.Href,open:concept.source.Open,at:concept.source.Text,file:concept.source.Path};
@@ -577,9 +577,9 @@ function rmDeclView(ctx,node,data,concept){
     var section=rmEl('section','map-reading-side');section.appendChild(rmEl('h6','',rmT(heading)));
     // A variable a hundred functions read folds each larger part to its
     // line: redisServer's server had a reading 32,000 px tall.
-    var total=groups.reduce(function(sum,group){return sum+group.decls.length;},0);
+    var total=groups.reduce(function(sum,group){return sum+(group.decls||[]).length;},0);
     groups.forEach(function(group){
-      var fold=total>30&&group.decls.length>5,box=rmEl(fold?'details':'div','map-reading-peer'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
+      var fold=total>30&&(group.decls||[]).length>5,box=rmEl(fold?'details':'div','map-reading-peer'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
       // Another program's calls into a declaration both hold are named by
       // that program: "redis-cli: [Command line client] cliConnect()".
       if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
@@ -652,7 +652,7 @@ function rmDeclView(ctx,node,data,concept){
     var flow=rmEl('section','map-reading-flow'),headline=rmEl('div','map-flow-headline');headline.append(rmEl('h6','',rmT('Calls')),rmFlowToggle(null));
     flow.append(headline,rmFlowTree(ctx,data,own));view.appendChild(flow);
   }
-  var rest=flowed?(own.callees||[]).map(function(group){return Object.assign({},group,{decls:group.decls.filter(function(end){return !callKinds[end.kind];})});}).filter(function(group){return group.decls.length;}):own.callees;
+  var rest=flowed?(own.callees||[]).map(function(group){return Object.assign({},group,{decls:(group.decls||[]).filter(function(end){return !callKinds[end.kind];})});}).filter(function(group){return (group.decls||[]).length;}):own.callees;
   var callees=side(rest,variable?'Uses':'Calls','out');if(callees)view.appendChild(callees);
   return view;
 }
@@ -676,7 +676,7 @@ function rmCollectionView(ctx,node,collection){
   // litestream's inputs had read "Incoming requests" once per declaring
   // function, eight times); each catalogue of it under a quiet line saying
   // where its inputs are declared, then its inputs.
-  var kinds=[];collection.groups.forEach(function(group){if(kinds.indexOf(group.kind)<0)kinds.push(group.kind);});
+  var kinds=[];(collection.groups||[]).forEach(function(group){if(kinds.indexOf(group.kind)<0)kinds.push(group.kind);});
   // Kinds stand as the canvas stands them (owner, 2026-10-01: the canvas
   // stands inputs by kind), in its order with its marks; within a kind, its
   // inputs by the part where each takes effect, as saved (#rm-scene
@@ -696,7 +696,7 @@ function rmCollectionView(ctx,node,collection){
   // setting save and its command save stand under two headings.
   function ofWhich(input,id){return rmApartWords((collection.apart||{})[id]);}
   kinds.forEach(function(kind){
-    var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
+    var groups=(collection.groups||[]).filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
     var byPart=new Map();
     all.forEach(function(id){var part=ctx.inputPart?ctx.inputPart(id):'';if(!part||!ctx.nodeById(part))return;if(!byPart.has(part))byPart.set(part,[]);if(byPart.get(part).indexOf(id)<0)byPart.get(part).push(id);});
     var inParts=Array.from(byPart).map(function(pair){return {part:pair[0],title:ctx.nodeById(pair[0]).dataset.title||'',inputs:pair[1]};});
@@ -721,7 +721,7 @@ function rmCollectionView(ctx,node,collection){
       // Matched by the model to another program's inputs of the same name:
       // one line, the model's.
       var matched=0,programs=[];
-      group.inputs.forEach(function(id){
+      (group.inputs||[]).forEach(function(id){
         var input=ctx.nodeById(id),path=input?rmPage.data(input,'inputPath'):null;
         if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
       });
@@ -750,13 +750,13 @@ function rmCollectionView(ctx,node,collection){
     // Some inputs of the kind, each catalogue's under its lines.
     function listed(into,among){
       groups.forEach(function(group){
-        var ids=group.inputs.filter(among);if(!ids.length)return;
+        var ids=(group.inputs||[]).filter(among);if(!ids.length)return;
         var box=rmEl('div','map-collection-catalogue');catalogueLines(group,box);box.appendChild(names(ids));
         // A catalogue none of whose inputs has an established handler says
         // so under its own inputs, once (owner, 2026-09-30: the line had
         // closed the whole reading, under serverCron, whose handler is
         // established).
-        if(group.catalogue&&!unsaid.has(group)&&group.inputs.every(function(id){var input=ctx.nodeById(id);return input&&input.dataset.handlerUnknown==='true';})){
+        if(group.catalogue&&!unsaid.has(group)&&(group.inputs||[]).every(function(id){var input=ctx.nodeById(id);return input&&input.dataset.handlerUnknown==='true';})){
           unsaid.add(group);box.appendChild(rmEl('p','meta map-collection-unknown',rmT('Where these take effect is not established.')));
         }
         into.appendChild(box);
@@ -769,10 +769,10 @@ function rmCollectionView(ctx,node,collection){
     // per catalogue).
     inParts.forEach(function(part){
       var holder=ctx.nodeById(part.part),peer=rmEl(fold?'details':'div','map-reading-peer map-collection-part'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
-      head.appendChild(rmPartBox(ctx,holder?holder.getAttribute('href')||'#'+holder.id:'',part.title,fold));rmLights(ctx,head,part.inputs.filter(function(id){return all.indexOf(id)>=0;}));
-      peer.appendChild(head);listed(peer,function(id){return part.inputs.indexOf(id)>=0;});section.appendChild(peer);
+      head.appendChild(rmPartBox(ctx,holder?holder.getAttribute('href')||'#'+holder.id:'',part.title,fold));rmLights(ctx,head,(part.inputs||[]).filter(function(id){return all.indexOf(id)>=0;}));
+      peer.appendChild(head);listed(peer,function(id){return (part.inputs||[]).indexOf(id)>=0;});section.appendChild(peer);
     });
-    listed(section,function(id){return !inParts.some(function(part){return part.inputs.indexOf(id)>=0;});});
+    listed(section,function(id){return !inParts.some(function(part){return (part.inputs||[]).indexOf(id)>=0;});});
     view.appendChild(section);
   });
   rmPendingKind='';
@@ -860,7 +860,7 @@ var rmShortSection=8;
 // function, a path links to where it is written, its place said on hover.
 function rmComponentFiles(ctx,data){
   if(!data||!(data.files||[]).length)return null;
-  data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
+  (data.decls||[]).forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
   function also(term,value){
     if(value.setting){
       term.append(document.createTextNode('; '+rmT('set by the setting')+' '));
@@ -926,10 +926,10 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   });
   // The kinds of its inputs, one to a line, in words.
   var collection=collectionNode?rmPage.data(collectionNode,'collection'):null;
-  if(collection&&collection.kinds.length){
+  if(collection&&(collection.kinds||[]).length){
     var inputs=rmEl('div','map-component-inputs');inputs.appendChild(rmEl('p','map-reading-label',rmT('Inputs')));
     var kinds=rmEl('ul','map-component-input-kinds');
-    collection.kinds.forEach(function(kind){
+    (collection.kinds||[]).forEach(function(kind){
       var item=rmEl('li'),choice=rmEl('button','',rmT(rmInputKindTitles[kind.kind]||'Inputs'));choice.type='button';
       var choiceMark=globalThis.rmKindMark?.(kind.kind);if(choiceMark)choice.prepend(choiceMark);
       rmLights(ctx,choice,kind.inputs);

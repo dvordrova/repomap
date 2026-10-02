@@ -356,7 +356,7 @@ function rmSiteDeclName(ctx,decl){
 // why the site's inputs outnumber its handlers.
 function rmSharedHandlers(site,decls,title){
   return (site.shared||[]).map(function(shared){
-    return rmT('{0} handles {1} of these inputs: {2}',(decls[shared.handler]||{}).name||'',shared.inputs.length,shared.inputs.map(title).join(', '));
+    return rmT('{0} handles {1} of these inputs: {2}',(decls[shared.handler]||{}).name||'',(shared.inputs||[]).length,(shared.inputs||[]).map(title).join(', '));
   });
 }
 // A dispatch site read with its declaration (page_input_path.go): how many
@@ -430,7 +430,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       else head.textContent=entry.part.title;
       section.appendChild(head);
       var list=rmEl('ul','plain');
-      entry.decls.forEach(function(decl){
+      (entry.decls||[]).forEach(function(decl){
         var item=rmEl('li'),words=decl.kind==='calls'||decl.kind==='invokes_external'?decl.name:decl.sentence.trim();
         var name=rmEl(entry.part.own||peer?'button':'span','map-concept-decl',words);
         if(name.tagName==='BUTTON'){name.type='button';name.addEventListener('click',function(){read(entry.part,decl.key);});}
@@ -749,7 +749,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         var view=rmDeclView(map.readingContext(),node,reading,concept);
         view.appendChild(rmSiteReading(map,node,key));
         declHolder.replaceChildren(view);declHolder.hidden=false;partView.hidden=true;
-        var kind=(reading.decls.find(function(decl){return decl.key===key;})||{}).kind;
+        var kind=((reading.decls||[]).find(function(decl){return decl.key===key;})||{}).kind;
         rmHeadingKind(kindHeading,rmT(({function:'Function',type:'Type',variable:'Variable'})[kind]||'Declaration'));
         rmHeadingUp(map,kindHeading,node,true);
         partView.querySelectorAll('.map-reading-name').forEach(function(name){if(name.dataset.declKey===key)name.setAttribute('aria-current','true');});

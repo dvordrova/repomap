@@ -28,7 +28,7 @@ function rmFlowOwner(ctx,data,decl){
   var key=decl.key||decl.href||decl.open;if(!key)return null;
   function find(reading){
     if(!reading)return null;
-    var position=reading.decls.findIndex(function(other){return (other.key||other.href||other.open)===key;});
+    var position=(reading.decls||[]).findIndex(function(other){return (other.key||other.href||other.open)===key;});
     if(position<0)return null;
     var own=(reading.own||[]).find(function(entry){return entry.decl===position&&(entry.flow||[]).length;});
     return own?{data:reading,own:own}:null;
@@ -246,7 +246,7 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
   // A chain in call order, each run in one part under its box.
   function chain(way,last){
     var line=rmEl('div','map-flow-chain'),at=null,run=null;
-    var steps=way.chain.map(function(index,i){return {decl:decls[index]||{name:''},i:i};});
+    var steps=(way.chain||[]).map(function(index,i){return {decl:decls[index]||{name:''},i:i};});
     if(last)steps.push({decl:last,i:-1});
     steps.forEach(function(step){
       var part=step.decl.part||'';
@@ -292,9 +292,13 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
   // the case's lines call, never the rest of its handler.
   if(handler){
     var target=rmFlowOwner(ctx,null,{key:handler.href||handler.open,part:(function(){var node=rmFlowPart(ctx,handler.part);return node?node.getAttribute('href')||'#'+node.id:'';})()});
+    // A case whose lines call nothing the reading holds is saved with no
+    // flow (null): it says so, never a step made up (control review,
+    // 2026-10-02: etcd's staleList, StaleList's case, had thrown here).
     if(target&&path.case){
-      var inCase=(target.own.cases||[]).find(function(c){return c.line===path.case;});
-      target=inCase&&inCase.flow.length?{data:target.data,own:{decl:target.own.decl,flow:inCase.flow}}:null;
+      var inCase=(target.own.cases||[]).find(function(c){return c.line===path.case;}),caseFlow=inCase&&inCase.flow||[];
+      if(inCase&&!caseFlow.length)section.appendChild(rmEl('p','meta map-flow-none',rmT('No call is read in the lines of its case.')));
+      target=caseFlow.length?{data:target.data,own:{decl:target.own.decl,flow:caseFlow}}:null;
     }
     if(target){
       var does=rmEl('div','map-flow-does');

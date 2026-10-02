@@ -918,7 +918,10 @@ single call opening by itself while its calls go one at a time; of an input a
 case of its handler's comparison declares, what the case's lines call alone
 (the reading's `cases`, as GroupsIndex's reach starts from those lines:
 litestream's replicate is `NewReplicateCommand` and the command's
-`ParseFlags`, `Run` and `Close`, never Main.Run's other cases); last, one
+`ParseFlags`, `Run` and `Close`, never Main.Run's other cases), a case
+whose lines call nothing the reading holds, saved with no flow (null, read as
+empty), saying "No call is read in the lines of its case." (control review,
+2026-10-02: etcd's staleList had thrown); last, one
 quiet line names who sends it ("{program} sends {input}."), a model's match.
 Without a known way, the reading shows one box per dispatch site whose
 alternatives hold the handler, the first open: "Dispatched from {site} ·

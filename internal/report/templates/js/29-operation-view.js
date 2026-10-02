@@ -277,7 +277,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   var spine=path.spine;
   if(spine&&(spine.steps||[]).length){
     var flow=rmEl('div','system-path-spine');flow.appendChild(rmEl('p','map-reading-label',rmT('Its flow')));
-    spine.steps.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-step'));});
+    (spine.steps||[]).forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-step'));});
     var branches=(spine.branches||[]).filter(function(entry){return !entry.helper;}),helpers=(spine.branches||[]).filter(function(entry){return entry.helper;});
     if(branches.length){flow.appendChild(rmEl('p','meta',rmT('then into:')));branches.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-branch'));});}
     if(helpers.length){var line=rmEl('p','system-path-spine-helpers');line.appendChild(rmEl('span','meta',rmT('helpers:')+' '));helpers.forEach(function(entry,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(entry.decl));});flow.appendChild(line);}
@@ -466,10 +466,10 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   }
   (launch.found||[]).forEach(function(found){
     var row=rmEl('div','system-path-step');
-    found.chain.forEach(function(index,i){if(i)row.append(document.createTextNode(' → '));row.append(name(index));});
-    row.append(document.createTextNode(' ('+found.inputs.length+') '));
-    found.inputs.slice(0,8).forEach(function(id){var input=inputNode(id);if(!input)return;var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});row.append(b,document.createTextNode(' '));});
-    if(found.inputs.length>8)row.append(document.createTextNode('+'+(found.inputs.length-8)));
+    (found.chain||[]).forEach(function(index,i){if(i)row.append(document.createTextNode(' → '));row.append(name(index));});
+    row.append(document.createTextNode(' ('+(found.inputs||[]).length+') '));
+    (found.inputs||[]).slice(0,8).forEach(function(id){var input=inputNode(id);if(!input)return;var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});row.append(b,document.createTextNode(' '));});
+    if((found.inputs||[]).length>8)row.append(document.createTextNode('+'+((found.inputs||[]).length-8)));
     box.appendChild(row);
   });
   (launch.idioms||[]).forEach(function(idiom){

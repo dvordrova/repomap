@@ -970,6 +970,9 @@ var russianUI = map[string]string{
 	"not from these entries:":        "не из этих точек входа:",
 	"uses the headers or types of":   "использует заголовки или типы:",
 
+	// An input's case whose lines call nothing the reading holds (32-flow.js).
+	"No call is read in the lines of its case.": "В строках этого случая не прочитано ни одного вызова.",
+
 	// A Main flow step reached through a helper (partials.html "through").
 	"through": "через",
 
