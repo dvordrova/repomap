@@ -391,11 +391,10 @@ function value (PYTHON, GO).
   - It is also a loop's body, a `try` or `catch` block, a `switch`'s cases,
     a labeled block a `break` may leave, what follows `?.`, or a default
     value.
-- **A call in another function or file.** This covers a closure, an array's
-  callback and an importer. Such a call runs at another time, eagerly or
-  later, so it knows only a variable whose one store is its initializer:
-  `items.map(() => handler())` written before `handler = acceptClient`
-  stays open.
+- **A call in another function or file.** This covers a closure, a callback
+  and an importer. Such a call runs at a time the index does not know, so
+  any store may be what it finds, as in Python. `callFromClosure`'s returned
+  arrow calls `acceptClient` or `flushReplies`.
 - **Values.** A store's value is followed when it is:
   - a function declaration or a method with a body;
   - for `new`, a class's declared constructor;
@@ -413,7 +412,8 @@ function value (PYTHON, GO).
   is a factory's result, such as `const navigate = useNavigate()`.
 - **What stays open.** The call is unresolved, and each store naming a
   function is its witness, when:
-  - a closure calls a variable with several stores;
+  - a store that may reach the call holds no plain function, except a
+    factory's result kept above (`callFromClosureOverFactory`);
   - the variable is written by a compound or logical assignment, `++`/`--`,
     destructuring, as a `for-in`/`for-of` target, or by a closure;
   - an `eval` or a `with` may write a `let` or `var`;
@@ -423,8 +423,9 @@ function value (PYTHON, GO).
 
 The fixture's `callConstant`, `callChosenLet`, `callTypedLet`,
 `callOverwritten`, `callInLoop`, `callFromClosure`, `callAfterCompound`,
-`callFactory`, `callInMapOfConstant` and `callInMapBeforeStore` hold each
-case (`TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere`).
+`callFactory`, `callInMapOfConstant`, `callInMapBeforeStore` and
+`callFromClosureOverFactory` hold each case
+(`TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere`).
 
 Missing equivalents, recorded rather than fabricated:
 
@@ -464,6 +465,13 @@ Missing equivalents, recorded rather than fabricated:
   (`this.onRead = getCommand`) is only a value read of that function. A call
   through a property is never resolved from its stores. The C adapter makes
   one store exact and several stores alternatives.
+- A callback an array's method runs at once (`items.map(() => handler())`)
+  is a closure of unknown timing like any other. Telling `map` from
+  `setTimeout` would take a list of method names, which the index does not
+  keep, so the callback may find any store of the variable, even one written
+  after the `map` call: `callInMapBeforeStore`'s callback calls
+  `acceptClient`, though it is stored only after `map` has run the callback.
+  Python knows its comprehensions by syntax (PYTHON, Handler tables).
 - No unresolved call through a property names the functions its stores could
   put there, so no such call draws the possible arrows the C, Go and Python
   witnesses draw; an open call through a variable names its stores.

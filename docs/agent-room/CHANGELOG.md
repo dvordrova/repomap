@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A JS/TS closure sees every store of its variable (lead)
+
+- **Ruling (coordinator):** align JS/TS closures with Python. A call in a nested function, a callback or an importer runs at a time the index does not know, so every plain-function store of the variable is an alternative, and one store is exact. e2b5a25b had resolved such a call only for a variable whose one store is its initializer.
+- **Limit, recorded in JSTS.md:** an array's eager callback (`items.map(() => handler())`) cannot be told from a timer's without a list of method names, which the index does not keep. It is treated like any closure, so `callInMapBeforeStore`'s callback calls `acceptClient`, though that store runs only after `map` has run the callback. Python tells its eager comprehensions by syntax (5424a8ac).
+- **Unchanged:** a store of no plain function still leaves the call open (`callFromClosureOverFactory`), and so do writes the index cannot follow.
+- **Fixture:** `stored-callbacks.ts`.
+  - `callFromClosure`'s arrow now gives alternatives {acceptClient, flushReplies}.
+  - `callInMapBeforeStore` is now exact `acceptClient`.
+  - New: `callFromClosureOverFactory` stays open.
+- **casdoor web** (`--no-model --target jsts:web/package.json`): the relations JSON is byte-identical to the HEAD-before-e2b5a25b binary's (27,458 relations, 6,617 objects).
+- **Checks:** jstsproject and the JS contract tests are green.
+
 ## 2026-10-03 — A JS/TS call through a variable calls what its stores put there (lead)
 
 - **Decision:** the coordinator's, applying the owner's rule of 2026-09-30 (one known target exact, several alternatives, no cautious unknowns). It replaces JSTS.md's own rule that `const h = a; h()` calls the constant itself.

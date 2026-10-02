@@ -173,8 +173,10 @@ export function callFactory(): void {
   handler();
 }
 
-// An array's callback runs at its call, before any store written after it:
-// a closure knows only a variable whose one store is its initializer.
+// A closure or a callback runs at a time the index does not know, so any
+// store may be what it finds. An array's `map` runs its callback at once,
+// before a store written after it, but telling it from a timer would take a
+// list of method names the index does not keep: a limit, recorded in JSTS.md.
 export function callInMapOfConstant(items: number[]): void {
   const handler = acceptClient;
   items.map(() => handler());
@@ -184,4 +186,10 @@ export function callInMapBeforeStore(items: number[]): void {
   let handler!: () => void;
   items.map(() => handler());
   handler = acceptClient;
+}
+
+export function callFromClosureOverFactory(readable: boolean): () => void {
+  let handler: () => void = acceptClient;
+  if (readable) handler = makeHandler();
+  return () => handler();
 }

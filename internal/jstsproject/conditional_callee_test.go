@@ -106,15 +106,18 @@ func TestCumulativeJSTSACallThroughAVariableCallsWhatItsStoresPutThere(t *testin
 		148: "callOverwritten -> flushReplies exact ",
 		// A later store reaches the call around the loop.
 		154: "callInLoop -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@152, acceptClient stored in handler under a condition@155",
-		// A closure runs at any time: several stores leave it open.
-		162: "callFromClosure.returned_handler ->  unresolved  | flushReplies stored in handler@160, acceptClient stored in handler under a condition@161",
+		// A closure runs at a time the index does not know: any store.
+		162: "callFromClosure.returned_handler -> acceptClient,flushReplies alternatives function_value | flushReplies stored in handler@160, acceptClient stored in handler under a condition@161",
 		// A logical assignment is a write the index does not follow.
 		168: "callAfterCompound ->  unresolved  | acceptClient stored in handler@166",
 		// A factory's result is no plain function: the call of the constant stays.
 		173: "callFactory -> callFactory.handler exact ",
-		// An array's callback runs at once: a later store may not have run.
-		180: "callInMapOfConstant -> acceptClient exact ",
-		185: "callInMapBeforeStore ->  unresolved  | acceptClient stored in handler@186",
+		// A callback is such a closure, an array's too, though map runs it
+		// before the later store: the limit JSTS.md records.
+		182: "callInMapOfConstant -> acceptClient exact ",
+		187: "callInMapBeforeStore -> acceptClient exact ",
+		// A store of no plain function leaves a closure's call open.
+		194: "callFromClosureOverFactory.returned_handler ->  unresolved  | acceptClient stored in handler@192",
 	}
 	for _, relation := range index.Relations {
 		line := lineOrZero(relation.Location)

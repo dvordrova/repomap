@@ -1345,16 +1345,15 @@ function conditionalWithin(node, scope) {
 // The stores that may reach a site reading the variable (a call, an alias's
 // read): from those ending before it, the last no branch skips and all after
 // it, and a later one only inside the outermost loop of the variable's scope
-// around the site. A site in another function or file runs at another time,
-// eagerly (an array's `map` callback) or later: it knows only a variable
-// whose one store is its initializer, which holds it whenever it can be read;
-// a store written after the site may not have run.
+// around the site. A site in another function or file (a closure, a callback,
+// an importer) runs at a time the index does not know, so any store may be
+// what it finds, as in Python. A callback an array's `map` runs at once is
+// such a closure too: telling it from a timer's would take a list of method
+// names, which the index does not keep.
 function reachingStores(declaration, site) {
   const { open, stores } = variableStores(declaration)
   if (open) return undefined
-  if (ownFunction(site) !== ownFunction(declaration) || site.getSourceFile() !== declaration.getSourceFile()) {
-    return stores.length === 1 && stores[0].declaration ? stores : undefined
-  }
+  if (ownFunction(site) !== ownFunction(declaration) || site.getSourceFile() !== declaration.getSourceFile()) return stores
   const scope = variableScope(declaration), start = site.getStart()
   const before = stores.filter((store) => store.end <= start).sort((a, b) => a.end - b.end)
   let last = 0
