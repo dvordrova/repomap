@@ -467,20 +467,30 @@ func (store *Store) parse(ctx context.Context, env parseEnv, spec UnitSpec) (*Un
 	return unit, nil
 }
 
+// unitFailure is why clang could not parse a unit. A unit no build line
+// compiles says so first: it was parsed with clang's defaults, so a missing
+// header or flag is the build's to give, not a defect of the unit
+// (litestream's src/litestream-vfs.c includes the header `make vfs` has
+// `go build -buildmode=c-archive` write, and no line of the default goal
+// compiles it).
 func unitFailure(spec UnitSpec, waitErr error, lines []string) error {
 	const shown = 8
 	detail := strings.Join(lines[:min(len(lines), shown)], "; ")
 	if len(lines) > shown {
 		detail += fmt.Sprintf("; and %d more", len(lines)-shown)
 	}
+	what := "clang could not parse " + spec.Path
+	if !spec.Built {
+		what = "no build line compiles " + spec.Path + "; parsed with clang's defaults"
+	}
 	if waitErr != nil {
 		var exit *exec.ExitError
 		if errors.As(waitErr, &exit) {
-			return fmt.Errorf("clang could not parse %s (exit status %d): %s", spec.Path, exit.ExitCode(), detail)
+			return fmt.Errorf("%s (exit status %d): %s", what, exit.ExitCode(), detail)
 		}
-		return fmt.Errorf("clang could not parse %s: %v: %s", spec.Path, waitErr, detail)
+		return fmt.Errorf("%s: %v: %s", what, waitErr, detail)
 	}
-	return fmt.Errorf("clang could not parse %s: %s", spec.Path, detail)
+	return fmt.Errorf("%s: %s", what, detail)
 }
 
 // parseIncludeTree separates clang's -H lines (". ./x.h", ".. /usr/include/y.h")

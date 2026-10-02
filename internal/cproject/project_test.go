@@ -405,7 +405,13 @@ func TestDiscoverWithoutBuildDescription(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "need/impl.c") || !strings.Contains(err.Error(), "it may define needed") {
 		t.Fatalf("a closure that needs a unit clang cannot parse: %v", err)
 	}
-	if _, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app/"), store); err == nil || !strings.Contains(err.Error(), "app/win32.c") {
+	// No build line compiles a unit here: its failure says it was parsed
+	// with clang's defaults, a missing header being the build's to give
+	// (litestream's src/litestream-vfs.c includes the header `make vfs`
+	// generates).
+	if _, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app/"), store); err == nil ||
+		!strings.Contains(err.Error(), "no build line compiles app/win32.c; parsed with clang's defaults (exit status 1): ") ||
+		!strings.Contains(err.Error(), "'windows_only_header.h' file not found") {
 		t.Fatalf("a library with a unit clang cannot parse: %v", err)
 	}
 	// Two definitions of a needed name and no build saying which is linked:
@@ -433,10 +439,12 @@ func TestDiscoverWithoutBuildDescription(t *testing.T) {
 		!strings.Contains(call.Witnesses[0].Detail, "call of twice, defined in clash/one.c and clash/two.c; the build does not say which is linked") {
 		t.Fatalf("main's call of twice: %+v", call)
 	}
-	// A unit clang cannot parse fails its program with clang's words.
+	// A unit clang cannot parse fails its program with clang's words, after
+	// saying no build line compiles it.
 	var observed bool
 	for _, observation := range project.Observations {
-		observed = observed || observation.Kind == "c_unit_error" && observation.Path == "broken/main.c"
+		observed = observed || observation.Kind == "c_unit_error" && observation.Path == "broken/main.c" &&
+			strings.HasPrefix(observation.Fields["error"], "no build line compiles broken/main.c; parsed with clang's defaults")
 	}
 	_, err = Parse(t.Context(), root, repository, programBySelector(t, project, "c:broken/main.c"), nil)
 	if !observed || err == nil || !strings.Contains(err.Error(), "broken/main.c") || !strings.Contains(err.Error(), "error:") {

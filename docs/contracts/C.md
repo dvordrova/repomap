@@ -27,7 +27,13 @@ another adapter owns runs no C discovery either.
 
 then from the makefiles of the directories below the root that no dry run
 entered (Nested makefiles, below), and gives clang's defaults to every `.c`
-file no line compiles and no other file includes.
+file no line compiles and no other file includes. Such a unit that clang
+cannot parse says why first: "no build line compiles src/litestream-vfs.c;
+parsed with clang's defaults (exit status 1): src/litestream-vfs.c:1:10:
+fatal error: 'litestream-vfs.h' file not found" (litestream's header is the
+one `make vfs` has `go build -buildmode=c-archive` write, a goal its default
+does not run), never as if the unit itself were broken
+(`TestDiscoverWithoutBuildDescription`).
 
 A failed dry run is recorded (`c_build_error`, naming its makefile) and the
 units it would have compiled keep clang's defaults; a unit that then fails to
