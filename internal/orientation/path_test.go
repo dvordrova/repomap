@@ -309,13 +309,81 @@ func TestAClassStepsPublicCallsAreStepsAndItsHelpersFold(t *testing.T) {
 	}
 	roles := map[string]string{}
 	for _, option := range asked[0].Options {
-		_, role, _ := strings.Cut(option.Meaning, "role: ")
-		role, _, _ = strings.Cut(role, ";")
-		roles[option.Name] = role
+		said := ""
+		if _, role, found := strings.Cut(option.Meaning, "role: "); found {
+			said, _, _ = strings.Cut(role, ";")
+		} else if _, typed, found := strings.Cut(option.Meaning, "; type "); found {
+			said, _, _ = strings.Cut(typed, ";")
+		}
+		roles[option.Name] = said
 	}
-	// _refresh is folded: its call of Strategy is process's own.
-	want := map[string]string{"analyze": "Decides entry and exit signals.", "enter": "", "exit": ""}
+	// _refresh is folded: its call of Strategy is process's own. A member
+	// of another type is said with that type's line, as the type's.
+	want := map[string]string{"analyze": "Strategy: Decides entry and exit signals.", "enter": "", "exit": ""}
 	if !maps.Equal(roles, want) || walk.flow.Steps[1].Explanation != "" {
 		t.Fatalf("options %q, want %q; process reads %q", roles, want, walk.flow.Steps[1].Explanation)
+	}
+}
+
+// An option is what the path enters: a type entered through some of its
+// members is said by those members, each with how the step's work reaches
+// it, never by the type's own line or signature; a member of another type
+// with no line of its own reads its type's line as the type's. etcd's
+// startEtcd had offered "Etcd ... serves peers, clients and metrics",
+// entered only through Close, handed to the interrupt handler, and Err,
+// beside StartEtcd: the walk took the shutdown path 5 of 5, and StartEtcd
+// wins 9 of 10 now (one draw parted both ways).
+func TestAnOptionSaysWhatThePathEnters(t *testing.T) {
+	object := func(id, kind, owner string) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id[strings.LastIndex(id, ".")+1:], Kind: programindex.ObjectKind(kind),
+			OwnerID: owner, Visibility: programindex.VisibilityPublic, Location: &programindex.Location{Path: "server.go", Line: 1, Column: 1}}}
+	}
+	lined := func(subject groupindex.Subject, line string) groupindex.Subject {
+		subject.Interpretation = &groupindex.Interpretation{Line: line}
+		return subject
+	}
+	calls := func(from, to string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
+	}
+	index := groupindex.Index{
+		Target: programindex.Target{ID: "t1", Name: "server", Seeds: []programindex.TargetSeed{{ObjectID: "main", Kind: programindex.SeedCallable}}},
+		Subjects: []groupindex.Subject{
+			object("main", "function", ""), object("StartServer", "function", ""),
+			lined(object("Server", "type", ""), "The server instance: it serves clients and peers."),
+			object("Server.Close", "method", "Server"), object("Server.Err", "method", "Server"),
+			object("store", "function", ""), object("serve", "function", ""), object("flush", "function", ""),
+		},
+		Groups: []groupindex.Group{
+			{ID: "g1", Title: "Startup", MemberSubjectIDs: []string{"main", "StartServer", "Server", "Server.Close", "Server.Err"}},
+			{ID: "g2", Title: "Storage", Core: true, MemberSubjectIDs: []string{"store", "flush"}},
+			{ID: "g3", Title: "Serving", Core: true, MemberSubjectIDs: []string{"serve"}},
+		},
+		StructuralEdges: []groupindex.StructuralEdge{
+			calls("main", "StartServer"), calls("main", "Server.Err"), calls("StartServer", "serve"), calls("serve", "store"),
+			calls("Server.Close", "flush"),
+		},
+	}
+	registration := facts.Fact{Kind: facts.KindRegistration, TargetID: "t1", OwnerID: "main", ObjectID: "Server.Close", Key: "signal.Notify", Text: "signal.Notify"}
+	var asked []llm.Question
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		asked = append(asked, question)
+		return llm.Verdict{Choice: "StartServer", Probabilities: map[string]float64{"StartServer": 0.8, "Server": 0.2}}, true
+	}}
+	if _, err := walkFlow(t.Context(), llm.Executor{}, categorizer, Input{Groups: []groupindex.Index{index}, Facts: facts.Result{Facts: []facts.Fact{registration}}}, "t1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) == 0 {
+		t.Fatal("no split asked at main")
+	}
+	meaning := map[string]string{}
+	for _, option := range asked[0].Options {
+		meaning[option.Name] = option.Meaning
+	}
+	server := meaning["Server"]
+	if want := "Server; enters Server.Close (handed to signal.Notify), Server.Err (called); in part Startup; reached: handed to signal.Notify"; server != want {
+		t.Errorf("the type's option reads %q, want %q", server, want)
+	}
+	if start := meaning["StartServer"]; start != "StartServer; in part Startup; reached: called" {
+		t.Errorf("StartServer's option reads %q", start)
 	}
 }
