@@ -643,6 +643,9 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			var explain func(step *pageFlowStep)
 			explain = func(step *pageFlowStep) {
 				step.ExplanationRef = add("explanation", &step.Explanation)
+				// A type's line is the same prose its part's explained
+				// declarations carry, one entry with it.
+				step.TypeLineRef = add("explanation", &step.TypeLine)
 				for j := range step.Ways {
 					explain(&step.Ways[j].Head)
 					for k := range step.Ways[j].Rest {

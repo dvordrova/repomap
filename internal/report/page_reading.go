@@ -218,11 +218,11 @@ type pageReadingOwner struct {
 	// Flow is what a function calls, in the order its calls are written
 	// (page_flow.go); Cases, for a function handling inputs a case of its
 	// comparison declares, what each case's lines call, by the case's first
-	// line (an input's "What it does").
+	// line (an input's "Its calls:").
 	Flow    []pageFlowCall    `json:"flow,omitempty"`
 	Cases   []pageReadingCase `json:"cases,omitempty"`
-	Returns []int          `json:"returns,omitempty"`
-	Takes   []int          `json:"takes,omitempty"`
+	Returns []int             `json:"returns,omitempty"`
+	Takes   []int             `json:"takes,omitempty"`
 	// Fields are a record type's fields, or a global variable's fields as
 	// the code reaches them through it, each with its writers and readers;
 	// Writes the fields a function writes, and Reads the fields and global

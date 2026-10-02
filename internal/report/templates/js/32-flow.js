@@ -291,7 +291,7 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
     }
     if(target){
       var does=rmEl('div','map-flow-does');
-      var headline=rmEl('div','map-flow-headline');headline.append(rmEl('h5','',rmT('What it does:')),rmFlowToggle(null));does.appendChild(headline);
+      var headline=rmEl('div','map-flow-headline');headline.append(rmEl('h5','',rmT('Its calls:')),rmFlowToggle(null));does.appendChild(headline);
       does.appendChild(rmFlowTree(ctx,target.data,target.own,3));section.appendChild(does);
     }
   }

@@ -931,6 +931,26 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     steps.querySelectorAll('details.flow-fork').forEach(function(fork){fork.open=false;});
     // A long way of a parted flow shows its first step, the rest folded.
     steps.querySelectorAll('details.flow-way-rest[data-folded]').forEach(function(rest){rest.open=false;});
+    // Each run of steps read in one part stands under that part's box, its
+    // title alone, its description on hover, a click reading it (review
+    // 2026-10-02: the steps had read as a list of calls with no place).
+    steps.querySelectorAll('li.flow-part-head').forEach(function(head){
+      var node=ctx.nodeByHref(head.dataset.flowPart);
+      if(!node){head.remove();return;}
+      var box=rmPartBox(ctx,head.dataset.flowPart,'');if(node.dataset.summary)box.title=node.dataset.summary;head.appendChild(box);
+    });
+    // A type's line stands at two lines; a click on it says the rest.
+    steps.querySelectorAll('.flow-type').forEach(function(line){
+      line.addEventListener('click',function(event){event.stopPropagation();line.classList.toggle('flow-type-open');});
+    });
+    // An input a step handles reads that input, its tile lit while pointed
+    // at, named as the map names it.
+    steps.querySelectorAll('code.flow-input[data-input]').forEach(function(code){
+      var input=ctx.nodeById(code.dataset.input);if(!input)return;
+      var name=rmEl('button','system-catalogue-member flow-input',input.dataset.title||code.textContent);name.type='button';
+      name.addEventListener('click',function(event){event.stopPropagation();ctx.light([]);ctx.readNode(input);});
+      rmLights(ctx,name,[code.dataset.input]);code.replaceWith(name);
+    });
     // Each step opens in place to its code flow (32-flow.js), the model's
     // sentence kept in its style above it.
     var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);

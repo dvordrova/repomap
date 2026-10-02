@@ -254,11 +254,24 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     calls(part.entered||[],into);
     if(part.others)into.appendChild(rmEl('p','meta',rmT('{0} more calls into this part come from other code on this path',part.others)));
   }
+  // A class's own line, the model's, under it (review 2026-10-02: what a
+  // Worker or a FreqtradeBot is), from its part's explained declarations,
+  // at two lines until clicked.
+  function typeLine(index){
+    var decl=decls[index]||{},node=partNode(decl.part),key=decl.href||decl.open;
+    if(!node||!key)return null;
+    var said=(rmPage.data(node,'explained')||[]).find(function(item){var source=item.source||{};return item.kind==='type'&&item.explanation&&(source.Href||source.Open)===key;});
+    if(!said)return null;
+    var line=rmModelText('span','flow-type',said.explanation,said.explanation_ref);
+    line.addEventListener('click',function(event){event.stopPropagation();line.classList.toggle('flow-type-open');});
+    return line;
+  }
   function spineLine(entry,cls){
     var line=rmEl('div',cls),node=partNode(entry.part);
     if(node){var box=rmEl('button','system-path-part',node.dataset.title);box.type='button';box.addEventListener('click',function(){choose(node);});line.appendChild(box);}
     line.appendChild(name(entry.decl));
     if((entry.members||[]).length){line.appendChild(document.createTextNode(' ('));entry.members.forEach(function(member,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(member));});line.appendChild(document.createTextNode(')'));}
+    var said=typeLine(entry.decl);if(said)line.appendChild(said);
     return line;
   }
   var spine=path.spine;

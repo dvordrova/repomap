@@ -468,6 +468,108 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 	}
 }
 
+// A Main flow says what its steps are (external review, 2026-10-02: it had
+// named calls and never said what they were for): each run of steps read in
+// one part stands under that part once; a method's type is said with the
+// type's own line once for a run of its methods; a step handling an input
+// names it by kind, several folding; the flow closes saying where its path
+// stops and that each step follows one call the step before may make.
+func TestAMainFlowSaysEachStepsPartTypeAndInputs(t *testing.T) {
+	builder, index := flowFixture()
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "server.c", Line: line, Column: 1}
+	}
+	builder.subjects[subjectKey("t1", "server")] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: "server", Kind: groupindex.SubjectObject,
+		Object: &groupindex.ObjectFacts{Name: "Server", Kind: programindex.ObjectType, Location: at(10)}, Interpretation: &groupindex.Interpretation{Line: "The server's state and its event loop."}}}
+	for id, line := range map[string]int{"process": 20, "serve": 40} {
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Kind: groupindex.SubjectObject,
+			Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectMethod, OwnerID: "server", Location: at(line)}}}
+	}
+	index.Groups[0].MemberSubjectIDs = append(index.Groups[0].MemberSubjectIDs, "server", "process", "serve")
+	index.Operations = []groupindex.Operation{
+		{ID: "o1", Kind: "request", Name: "set", SubjectID: "h2"},
+		{ID: "o2", Kind: "request", Name: "get", SubjectID: "h1"},
+		{ID: "o3", Kind: "request", Name: "mget", SubjectID: "h1"},
+		{ID: "o4", Kind: "setting", Name: "maxmemory", SubjectID: "h1", HandlerUnknown: true},
+	}
+	builder.indexes = []groupindex.Index{index}
+	section := builder.byProgram["t1"]
+	section.programTargetID = "t1"
+	builder.data.Orientation = &orientation.Result{MainFlow: orientation.MainFlow{Steps: []orientation.FlowStep{
+		{TargetID: "t1", SubjectID: "cron"}, {TargetID: "t1", SubjectID: "process", Via: "called"}, {TargetID: "t1", SubjectID: "serve", Via: "called"},
+		{TargetID: "t1", SubjectID: "h2", Via: "called"}, {TargetID: "t1", SubjectID: "h1", Via: "called"},
+	}}}
+	flow, _ := builder.flow(section)
+	if flow == nil || len(flow.Steps) != 5 {
+		t.Fatalf("flow = %+v", flow)
+	}
+	var said []string
+	for _, step := range flow.Steps {
+		line := step.Label + " [" + step.PartHead + "]"
+		if step.TypeLine != "" {
+			line += " " + step.TypeName + " — " + step.TypeLine
+		}
+		for _, handles := range step.Handles {
+			var names []string
+			for _, name := range handles.Names {
+				names = append(names, name.Name+"@"+name.Input)
+			}
+			line += fmt.Sprintf(" %s %s folded=%v", handles.Words, strings.Join(names, ","), handles.Folded)
+		}
+		said = append(said, line)
+	}
+	want := []string{
+		"serverCron [#t1-g1]",
+		"Server.process [] Server — The server's state and its event loop.",
+		"Server.serve []",
+		"setCommand [#t1-g5] handles the request set@t1-o1 folded=false",
+		"getCommand [] handles the requests: get@t1-o2,mget@t1-o3 folded=true",
+	}
+	if !slices.Equal(said, want) {
+		t.Fatalf("the flow reads:\n%s\nwant\n%s", strings.Join(said, "\n"), strings.Join(want, "\n"))
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: flow}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		words := map[DisplayLanguage][]string{
+			English: {"handles the request <code class=\"flow-input\" data-input=\"t1-o1\">set</code>", "<summary>handles the requests:</summary>",
+				"The path stops here. At each step it follows one call the step before may make; open a step for all of its calls."},
+			Russian: {"обрабатывает запрос <code class=\"flow-input\" data-input=\"t1-o1\">set</code>", "<summary>обрабатывает запросы:</summary>",
+				"Путь здесь заканчивается. На каждом шаге он идёт по одному вызову, который может сделать предыдущий шаг; откройте шаг, чтобы увидеть все его вызовы."},
+		}[language]
+		words = append(words, `<li class="flow-part-head" data-flow-part="#t1-g1"></li><li class="flow-step"`, `<li class="flow-part-head" data-flow-part="#t1-g5"></li>`,
+			`<span class="model flow-type"><code>Server</code> — <span data-display-ref="">The server&#39;s state and its event loop.</span></span>`)
+		for _, word := range words {
+			if !strings.Contains(html, word) {
+				t.Fatalf("%v: the flow does not read %q: %s", language, word, html)
+			}
+		}
+		if strings.Count(html, "flow-part-head") != 2 || strings.Count(html, "flow-type") != 1 || strings.Contains(html, "maxmemory") {
+			t.Fatalf("%v: a part, type or input is said twice, or an unhandled input is: %s", language, html)
+		}
+	}
+	// A way goes on from the step where the flow parts: its first step in
+	// that step's part and type says neither again (othello's two ways on
+	// from choose, both in AI search, had each stood under AI search).
+	builder.data.Orientation.MainFlow.Steps = []orientation.FlowStep{{TargetID: "t1", SubjectID: "cron"}, {TargetID: "t1", SubjectID: "process", Via: "called",
+		Paths: []orientation.FlowPath{{Steps: []orientation.FlowStep{{TargetID: "t1", SubjectID: "serve", Via: "called"}}}, {Steps: []orientation.FlowStep{{TargetID: "t1", SubjectID: "h2", Via: "called"}}}}}}
+	parted, _ := builder.flow(section)
+	if len(parted.Steps) != 2 || len(parted.Steps[1].Ways) != 2 {
+		t.Fatalf("parted flow = %+v", parted)
+	}
+	same, other := parted.Steps[1].Ways[0].Head, parted.Steps[1].Ways[1].Head
+	if parted.Steps[1].TypeLine == "" || same.PartHead != "" || same.TypeLine != "" || other.PartHead != "#t1-g5" {
+		t.Fatalf("the ways' heads: same part %q type %q, other part %q", same.PartHead, same.TypeLine, other.PartHead)
+	}
+}
+
 // A walked flow says how a step is reached as its code does, and a
 // dispatch site by the function holding it, a name read as a step's is,
 // never a file and line (owner: no line numbers in the column; redis's

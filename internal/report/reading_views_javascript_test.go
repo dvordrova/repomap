@@ -385,7 +385,7 @@ assert.ok(sent.has('map-flow-sent')&&sent.textContent.includes('redis-cli'),'who
 
 // An input a case of its handler's comparison declares does what the case's
 // lines call (critic, 2026-09-30: litestream's replicate had read all of
-// Main.Run): its "What it does" is that case's flow, never the handler's
+// Main.Run): its "Its calls:" is that case's flow, never the handler's
 // other cases, and an input handled by the whole function reads its flow.
 func TestACaseInputDoesWhatItsCaseCalls(t *testing.T) {
 	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")

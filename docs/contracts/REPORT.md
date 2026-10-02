@@ -807,6 +807,20 @@ runs it"), from the last runner already shown on that run ("{runner} → …
 runs it"). The step's name and every name in
 its registration and runners read that declaration; the words "registers it"
 link the registering call's line; the step prints no line (owner, 2026-09-29).
+What a step is comes from saved data alone (external review, 2026-10-02: the
+flow had named calls and never said what they were for): each run of steps
+read in one part stands under that part's box once, its title alone, its
+description on hover, a click reading it; a method says its type's own atlas
+line once for a run of the type's methods, "{Type} — {line}" in the model's
+style at two lines until clicked (the step's `Explanation` stays its own
+line only, READING); a step whose declaration handles saved inputs names
+each by its kind's words and its name as written ("handles the command
+trade"), the name reading that input and lighting its tile, several of one
+kind folding under the kind's plural words; where the walk decided a split,
+the calls the path did not follow fold under "also calls:" (orientation
+`Passed`), never "one of N". The flow closes with "The path stops here. At
+each step it follows one call the step before may make; open a step for all
+of its calls."
 Each step's twist, opening its calls in place, is always shown. A program no
 model flow passes reads forward from its entry in a start list: each
 entrypoint with its part and key, its name linking to all of its code, then
@@ -858,7 +872,9 @@ hover ("passed as a callback by {a}, which {b} calls"). "Other
 ways in:" follows on one folded line, each way named by the part of the
 declaration where it leaves the first ("from {part}"; another dispatch
 site by its own part), with "+N" for the inputs whose own code runs the site;
-opened, each way is its chain. Then comes what its handler does, its flow, a
+opened, each way is its chain. Then comes what its handler does, its flow
+under "Its calls:" (external review, 2026-10-02: "What it does:" had promised
+a meaning the calls do not say), a
 single call opening by itself while its calls go one at a time; of an input a
 case of its handler's comparison declares, what the case's lines call alone
 (the reading's `cases`, as GroupsIndex's reach starts from those lines:
@@ -897,7 +913,10 @@ with `__init__`, `run`, `exit`), a callable handed over is a registration
 (under "Registers"), no step, and an outside call is no work. Where the work
 splits, "then into:" names each branch with the members of it the step
 calls (`FreqtradeBot` with `process`, `startup`), the helpers among them on
-one line ("helpers: addReply, addReplyBulk"). Then the parts the input
+one line ("helpers: addReply, addReplyBulk"). A class step or branch reads
+its own atlas line under it, the line its part's explained declarations
+carry (page data `explained`), at two lines until clicked: what a `Worker`
+or a `FreqtradeBot` is (external review, 2026-10-02). Then the parts the input
 enters fold under one line naming every one ("Parts on this path: String
 commands, Keyspace, …"), each part, nearest the handler first, with its
 name (a link to its reading when the map draws it), the handler under its

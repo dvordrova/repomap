@@ -899,6 +899,11 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath
 		flow.Steps, subjects = append(flow.Steps, row), append(subjects, names)
 	}
 	builder.qualifySharedLabels(flow.Steps, subjects)
+	steps := make([]*pageFlowStep, len(flow.Steps))
+	for i := range flow.Steps {
+		steps[i] = &flow.Steps[i]
+	}
+	markFlowRuns(steps, nil)
 	if !here {
 		return nil, nil
 	}
@@ -1007,6 +1012,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	}
 	row.Fork = builder.flowFork(step)
 	row.Passed = builder.flowPassed(step)
+	builder.flowStepOwn(&row, step, section)
 	var owner *pageSection
 	switch {
 	case step.FactID != "":
@@ -1061,6 +1067,102 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		}
 	}
 	return row
+}
+
+// flowStepOwn is what a step's declaration of this program is, from saved
+// data: for a method, its type with the type's own atlas line, and the
+// inputs it handles, its saved operations (review 2026-10-02, item 2: the
+// Main flow had named calls and never said what they were for).
+func (builder *pageBuilder) flowStepOwn(row *pageFlowStep, step orientation.FlowStep, section *pageSection) {
+	program, id, found := strings.Cut(builder.flowStepSubject(step), "\x00")
+	if !found || builder.byProgram[program] != section {
+		return
+	}
+	ref, known := builder.subject(program, id)
+	if !known || ref.subject.Object == nil {
+		return
+	}
+	if object := ref.subject.Object; object.Kind == programindex.ObjectMethod && object.OwnerID != "" {
+		if owner, typed := builder.subject(program, object.OwnerID); typed && owner.subject.Object != nil && owner.subject.Object.Kind == programindex.ObjectType {
+			row.typeID = object.OwnerID
+			if line := owner.subject.Interpretation; line != nil && strings.TrimSpace(line.Line) != "" {
+				name, _ := builder.subjectDisplay(owner.subject)
+				row.TypeName, row.TypeLine = strings.TrimPrefix(name, "*"), line.Line
+			}
+		}
+	}
+	row.Handles = builder.flowHandles(section, program, id)
+}
+
+// flowHandleWords are a Main flow step's words for the inputs of a kind its
+// declaration handles: one input's, then several's, which fold.
+var flowHandleWords = map[string][2]string{
+	"request":     {"handles the request", "handles the requests:"},
+	"command":     {"handles the command", "handles the commands:"},
+	"setting":     {"handles the setting", "handles the settings:"},
+	"interaction": {"handles the interaction", "handles the interactions:"},
+	"scheduled":   {"runs as the scheduled task", "runs as the scheduled tasks:"},
+	"continuous":  {"runs as the background work", "runs as the background work:"},
+	"consumer":    {"handles the queue", "handles the queues:"},
+	"extension":   {"implements the extension point", "implements the extension points:"},
+	"entry":       {"handles the input", "handles the inputs:"},
+}
+
+// flowHandles are the inputs a step's declaration handles, by kind in their
+// saved order, each by its name as its registration wrote it and its node
+// on the map; nothing is looked for beyond the saved operations.
+func (builder *pageBuilder) flowHandles(section *pageSection, program, subjectID string) []pageFlowHandles {
+	index := builder.graphIndex(program)
+	if index == nil {
+		return nil
+	}
+	var result []pageFlowHandles
+	var kinds []string
+	for _, operation := range index.Operations {
+		words, worded := flowHandleWords[operation.Kind]
+		if operation.SubjectID != subjectID || operation.HandlerUnknown || operation.Name == "" || !worded {
+			continue
+		}
+		position := slices.Index(kinds, operation.Kind)
+		if position < 0 {
+			position, kinds = len(result), append(kinds, operation.Kind)
+			result = append(result, pageFlowHandles{Words: words[0]})
+		}
+		result[position].Names = append(result[position].Names, pageFlowInput{Name: operation.Name, Input: operationNodeID(section.ID, operation.ID)})
+	}
+	for position := range result {
+		if len(result[position].Names) > 1 {
+			result[position].Words, result[position].Folded = flowHandleWords[kinds[position]][1], true
+		}
+	}
+	return result
+}
+
+// markFlowRuns stands each run of a flow's steps read in one part under
+// that part once, and says a type's line once for a run of its methods
+// (freqtrade's FreqtradeBot.process, process_open_trade_positions and
+// check_and_call_adjust_trade_position: FreqtradeBot's line, once). A way
+// of a parted flow goes on from the step where it parts: its first step in
+// that step's part or type says neither again (othello's two ways on from
+// choose, both in AI search).
+func markFlowRuns(rows []*pageFlowStep, before *pageFlowStep) {
+	previous := before
+	for _, row := range rows {
+		if row.Part != "" && (previous == nil || previous.Part != row.Part) {
+			row.PartHead = row.Part
+		}
+		if previous != nil && row.typeID != "" && previous.typeID == row.typeID {
+			row.TypeName, row.TypeLine = "", ""
+		}
+		for i := range row.Ways {
+			way := []*pageFlowStep{&row.Ways[i].Head}
+			for j := range row.Ways[i].Rest {
+				way = append(way, &row.Ways[i].Rest[j])
+			}
+			markFlowRuns(way, row)
+		}
+		previous = row
+	}
 }
 
 // flowFork is a walked flow's fork, when its last step ends at one: one

@@ -362,6 +362,21 @@ type pageFlowStep struct {
 	// Passed, on a step where the walk decided a split, are the candidates
 	// the path did not follow, read folded under "also calls:".
 	Passed *pageFlowFork
+	// PartHead is, on the first of a run of steps read in one part, that
+	// part ("#…"): the column stands the run under the part's box, its
+	// title alone, its description on hover (review 2026-10-02, item 2).
+	PartHead string
+	// TypeName and TypeLine are, on the first of a run of steps that are
+	// methods of one type, that type and its own atlas line, read "Type —
+	// line" (freqtrade's FreqtradeBot.process: what a FreqtradeBot is). The
+	// step's Explanation stays its own line only.
+	TypeName    string
+	TypeLine    string
+	TypeLineRef string
+	typeID      string
+	// Handles are the inputs the step's declaration handles, its saved
+	// operations, by kind: start_trading handles the command trade.
+	Handles []pageFlowHandles
 	// Ways are, on the step where the flow parts, each way it goes on, read
 	// after the step (owner, 2026-09-30: several main paths are allowed
 	// where the model is torn between them).
@@ -382,6 +397,21 @@ type pageFlowFork struct {
 	Label string
 	From  *pageStepName
 	Names []pageStepName
+}
+
+// pageFlowHandles are the inputs of one kind a Main flow step handles: the
+// kind's words ("handles the command"), each input's name as its
+// registration wrote it and its node on the map. Several fold under the
+// kind's plural words, a step never running on into a wall of names.
+type pageFlowHandles struct {
+	Words  string
+	Names  []pageFlowInput
+	Folded bool
+}
+
+type pageFlowInput struct {
+	Name  string
+	Input string
 }
 
 // pageGroup is one responsibility card. Members are grouped by file so the

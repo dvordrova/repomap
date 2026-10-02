@@ -488,11 +488,22 @@ assert.ok(own&&own.all(e=>e.className==='system-path-step').map(c=>c.textContent
 // one line; the parts it enters fold under one line naming every one.
 func TestAnInputsPathReadsItsSpineAndNamesItsParts(t *testing.T) {
 	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
-		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
+		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration") +
+		systemJSPiece(t, "31-reading-column.js", "function rmModelText(", "// A declaration's name: a link into its code")
 	runSystemJS(t, fakeElements+`
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
 const decls=['start_trading','Worker','run','exit','__init__','FreqtradeBot','process','startup','Configuration','State'].map(name=>({name}));
 `+code+`
+// A class reads with its own line, the model's, from its part's explained
+// declarations (external review, 2026-10-02: what a Worker is); a function
+// step reads none.
+rmPage.data=((n,name)=>name==='explained'&&n.id==='p1'?[{kind:'type',explanation:'Runs the trading bot main loop.',explanation_ref:'t9',source:{Href:'h/Worker'}},{kind:'function',explanation:'Starts trading.',source:{Href:'h/start'}}]:null);
+const typed=rmInputPathSection({decls:[{name:'start_trading',href:'h/start',part:'p0'},{name:'Worker',href:'h/Worker',part:'p1'},{name:'run',href:'h/run',part:'p1'}],
+  spine:{steps:[{decl:0,part:'p0'},{decl:1,part:'p1',members:[2]}]}},'trade',id=>({id,dataset:{title:id}}),()=>null,()=>{},()=>{});
+const lines=typed.all(e=>e.className==='flow-type model');
+assert.deepEqual(lines.map(e=>e.textContent),['Runs the trading bot main loop.'],'a class reads with its own line, a function with none');
+assert.equal(lines[0].dataset.displayRef,'t9','the line keeps its translation');
+
 const section=rmInputPathSection({decls,parts:[{part:'p0',title:'CLI',depth:0,handler:0},{part:'p1',title:'Trading bot core',depth:1,entered:[[0,1,0]]},{part:'p2',title:'Configuration',depth:3,entered:[[1,8,0]]}],
   spine:{steps:[{decl:0,part:'p0'},{decl:1,part:'p1',members:[4,2,3]}],branches:[{decl:5,part:'p1',members:[6,7]},{decl:8,part:'p2'},{decl:9,part:'p3',helper:true}]}},'trade',()=>null,()=>null,()=>{},()=>{});
 const spine=section.find(e=>e.className==='system-path-spine');

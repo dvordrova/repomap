@@ -84,7 +84,7 @@ var russianUI = map[string]string{
 	"Other ways in:":                        "Другие пути:",
 	"passed as a callback by {0}, which {1} calls": "передаётся как обратный вызов из {0}, который вызывает {1}",
 	"passed as a callback by {0}":                  "передаётся как обратный вызов из {0}",
-	"What it does:":                                "Что делает:",
+	"Its calls:":                                   "Его вызовы:",
 	"{0} sends {1}.":                               "{0} отправляет {1}.",
 	"Areas and parts":                              "Области и части",
 	"Built from":                                   "Собрана из",
@@ -915,6 +915,28 @@ var russianUI = map[string]string{
 
 	// "About this run" when no question was asked (page.html).
 	"Questions were not generated in this run.": "Вопросы в этом запуске не создавались.",
+
+	// A Main flow step's inputs, one and several (page_model.go
+	// flowHandleWords), and the line closing the flow.
+	"handles the request":              "обрабатывает запрос",
+	"handles the requests:":            "обрабатывает запросы:",
+	"handles the command":              "обрабатывает команду",
+	"handles the commands:":            "обрабатывает команды:",
+	"handles the setting":              "обрабатывает настройку",
+	"handles the settings:":            "обрабатывает настройки:",
+	"handles the interaction":          "обрабатывает действие пользователя",
+	"handles the interactions:":        "обрабатывает действия пользователя:",
+	"runs as the scheduled task":       "выполняется как задача по расписанию",
+	"runs as the scheduled tasks:":     "выполняется как задачи по расписанию:",
+	"runs as the background work":      "выполняется как фоновая работа",
+	"runs as the background work:":     "выполняется как фоновая работа:",
+	"handles the queue":                "обрабатывает очередь",
+	"handles the queues:":              "обрабатывает очереди:",
+	"implements the extension point":   "реализует точку расширения",
+	"implements the extension points:": "реализует точки расширения:",
+	"handles the input":                "обрабатывает вход",
+	"handles the inputs:":              "обрабатывает входы:",
+	"The path stops here. At each step it follows one call the step before may make; open a step for all of its calls.": "Путь здесь заканчивается. На каждом шаге он идёт по одному вызову, который может сделать предыдущий шаг; откройте шаг, чтобы увидеть все его вызовы.",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

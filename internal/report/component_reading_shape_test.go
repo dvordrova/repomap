@@ -18,6 +18,7 @@ class N{
  insertBefore(c,ref){c=this.adopt(c);const at=this.children.indexOf(ref);if(at<0)this.children.push(c);else this.children.splice(at,0,c);return c;}
  after(...cs){const p=this.parent;let at=p.children.indexOf(this);cs.forEach(c=>{c=p.adopt(c);at=p.children.indexOf(this)+1;p.children.splice(at,0,c);});}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);this.parent=null;}
+ replaceWith(c){const p=this.parent;c=p.adopt(c);p.children[p.children.indexOf(this)]=c;this.parent=null;}
  replaceChildren(...cs){this.children=[];this.append(...cs);}
  get firstChild(){return this.children[0]||null;}
  get childElementCount(){return this.children.filter(c=>c instanceof N).length;}
@@ -100,5 +101,44 @@ assert.ok(flow&&flow.all(c=>c.has('map-component-own')).length===1,'what it runs
 const files=card.all(c=>c.has('map-component-files'))[0];
 assert.equal(files.all(c=>c.has('map-file')).length,1,'a file whose path is not established is not listed');
 assert.equal(card.all(c=>c.has('map-component-page')).length,1,'its whole page leads the line of links');
+`)
+}
+
+// The Main flow in a component's reading says what its steps are (external
+// review, 2026-10-02): each run of steps in one part stands under that
+// part's box, its description on hover and a click reading it; a type's
+// line is clicked open; an input a step handles reads that input, named as
+// the map names it; the line saying where the path stops closes the flow.
+func TestAComponentsMainFlowStandsStepsUnderTheirPartsAndNamesTheirInputs(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading") +
+		systemJSPiece(t, "31-reading-column.js", "// Pointing at inputs in the column lights", "// Where a catalogue's inputs are declared") +
+		systemJSPiece(t, "31-reading-column.js", "var rmPendingKind=", "// The home's table of programs") +
+		systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
+	runSystemJS(t, shapeElements+code+`
+const part={id:'t1-g1',dataset:{title:'Trading bot core',summary:'Runs the trading loop.'},getAttribute:()=>'#t1-g1'};
+const input={id:'t1-o9',dataset:{title:'trade'}};
+const read=[];
+const ctx={nodeByHref:h=>h==='#t1-g1'?part:null,nodeById:id=>id==='t1-o9'?input:null,goDecl:()=>null,readDeclIn(){},readNode(node){read.push(node.id);},light(){}};
+const map={readingContext:()=>ctx};
+const step=(name,kids)=>el('li','flow-step',[el('span','flow-what',[el('code','',[name])])].concat(kids||[]),{dataset:{stepPart:'#t1-g1',stepKey:'h#'+name}});
+const details=el('section','',[el('header','component-intro'),
+ el('section','component-flow',[el('ol','flow',[el('li','flow-part-head',[],{dataset:{flowPart:'#t1-g1'}}),
+  step('start_trading',[el('span','flow-via flow-handles',['handles the command ',el('code','flow-input',['trade'],{dataset:{input:'t1-o9'}})])]),
+  step('FreqtradeBot.process',[el('span','model flow-type',[el('code','',['FreqtradeBot']),' — the main trading bot'])]),
+  el('li','flow-part-head',[],{dataset:{flowPart:'#t1-g7'}}),step('IStrategy.adjust')]),
+  el('p','meta flow-end',['The path stops here.'])])]);
+const card=el('div','map-card',[el('div','map-card-intro',[el('p','model map-card-summary',['Trades.'])])]);
+rmComponentReading(map,{id:'system-component-t1',dataset:{owner:'t1'}},card,details,null,false);
+const flow=card.all(c=>c.tagName==='DETAILS'&&c.children[0]&&c.children[0].textContent==='Main flow')[0];
+const heads=flow.all(c=>c.has('flow-part-head'));
+assert.equal(heads.length,1,'a part the map does not draw stands no head');
+const box=heads[0].children[0];
+assert.ok(box.has('map-part-box')&&box.textContent==='Trading bot core'&&box.title==='Runs the trading loop.','the part by its title, its description on hover');
+const name=flow.all(c=>c.has('flow-input'))[0];
+assert.equal(name.tagName,'BUTTON');assert.equal(name.textContent,'trade');
+name.click();assert.deepEqual(read,['t1-o9'],'the input reads its own reading');
+assert.ok(flow.all(c=>c.has('flow-type'))[0].listeners.click,'a type line opens on a click');
+const order=flow.children.map(c=>c.className);
+assert.ok(order.indexOf('meta flow-end')>order.indexOf('flow'),'the closing line follows the steps: '+order);
 `)
 }

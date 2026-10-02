@@ -55,6 +55,14 @@ ol.flow.flow-way{margin:.25rem 0 0;padding-left:.6rem;border-left:2px solid var(
 .flow-chain{display:block}
 .flow-chain-name{font-weight:400}
 .flow-title{margin-bottom:.2rem}
+/* A run of Main flow steps in one part stands under the part's box; a
+   type's line stands at two lines until clicked; the closing line is quiet. */
+.flow-part-head{margin:.45rem 0 .3rem;padding:0}
+ol.flow>.flow-part-head:first-child{margin-top:0}
+.flow-type{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin-top:.1rem;cursor:pointer}
+.flow-type.flow-type-open{display:block;-webkit-line-clamp:unset}
+.flow-type>code{font-style:normal}
+.flow-end{margin-top:.6rem}
 
 /* Where the program runs code you cannot read is the page's most distinctive
    fact. It should not look like the TODO list. */
