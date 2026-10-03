@@ -50,9 +50,12 @@ type Criteria struct {
 }
 
 // Verdict answers one question: the choice with every option's probability,
-// or a yes/no question's probability of yes.
+// or a yes/no question's probability of yes. Conflict marks a question the
+// response answered more than once, differently: it has no answer, and its
+// owner refuses that question's cell or row alone.
 type Verdict struct {
 	Choice        string
 	Probabilities map[string]float64
 	Yes           *float64
+	Conflict      bool
 }

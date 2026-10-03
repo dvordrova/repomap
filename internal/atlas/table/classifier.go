@@ -544,6 +544,9 @@ func DecodeClassifierAnswers(def Definition, window Window, verdicts map[string]
 // decisions that write no cell.
 func decideClassifierColumn(def Definition, window Window, row Row, column Column, verdicts map[string]llm.Verdict, yesAt float64, answer Answer) (string, bool) {
 	got, ok := verdicts[questionKey(row, column)]
+	if ok && got.Conflict {
+		return fmt.Sprintf("column %s was answered twice differently", column.Name), false
+	}
 	options := columnOptions(column, window.Context, row)
 	if yesOnly(column, options) {
 		if def.Ranked && ok && got.Yes != nil {

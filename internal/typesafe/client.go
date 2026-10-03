@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -147,32 +148,117 @@ func (c *Client) Prompt(task string, context map[string]any, questions map[strin
 
 // Verdicts reads the answers once, each on its own: a malformed one leaves
 // only its question unanswered. A response without answers decided nothing.
+// Every written occurrence of a question counts until its answers are
+// compared: the same answer written twice is one answer, two different ones
+// (a choice and another choice, or one that cannot be read) answer nothing
+// and are marked Conflict, so the owner refuses that question alone. A
+// map decode kept the last copy: n1's open answered yes, then no, read as no
+// (review B2, 2026-10-03).
 func (c *Client) Verdicts(response []byte) (map[string]llm.Verdict, error) {
-	var envelope struct {
-		Answers map[string]json.RawMessage `json:"answers"`
-	}
-	if err := json.Unmarshal(response, &envelope); err != nil || envelope.Answers == nil {
+	occurrences, err := answerOccurrences(response)
+	if err != nil {
 		return nil, fmt.Errorf("response has no answers")
 	}
-	verdicts := make(map[string]llm.Verdict, len(envelope.Answers))
-	for key, raw := range envelope.Answers {
-		var answer struct {
-			Type          string             `json:"type"`
-			Choice        string             `json:"choice"`
-			Probabilities map[string]float64 `json:"probabilities"`
-			Noul          *float64           `json:"noul"`
+	verdicts := make(map[string]llm.Verdict, len(occurrences))
+	for key, written := range occurrences {
+		verdict, readable := readVerdict(written[0])
+		for _, raw := range written[1:] {
+			again, againReadable := readVerdict(raw)
+			if againReadable != readable || !reflect.DeepEqual(again, verdict) {
+				verdict, readable = llm.Verdict{Conflict: true}, true
+				break
+			}
 		}
-		if json.Unmarshal(raw, &answer) != nil {
-			continue
-		}
-		switch answer.Type {
-		case "choice":
-			verdicts[key] = llm.Verdict{Choice: answer.Choice, Probabilities: answer.Probabilities}
-		case "noul":
-			verdicts[key] = llm.Verdict{Yes: answer.Noul}
+		if readable {
+			verdicts[key] = verdict
 		}
 	}
 	return verdicts, nil
+}
+
+// readVerdict reads one written answer; false for one that cannot be read
+// or is of a type no question asks.
+func readVerdict(raw json.RawMessage) (llm.Verdict, bool) {
+	var answer struct {
+		Type          string             `json:"type"`
+		Choice        string             `json:"choice"`
+		Probabilities map[string]float64 `json:"probabilities"`
+		Noul          *float64           `json:"noul"`
+	}
+	if json.Unmarshal(raw, &answer) != nil {
+		return llm.Verdict{}, false
+	}
+	switch answer.Type {
+	case "choice":
+		return llm.Verdict{Choice: answer.Choice, Probabilities: answer.Probabilities}, true
+	case "noul":
+		return llm.Verdict{Yes: answer.Noul}, true
+	}
+	return llm.Verdict{}, false
+}
+
+// answerOccurrences lists, per question key, every answer the response's
+// answers objects write, in order. It fails when the response is not one
+// JSON object or has no answers object.
+func answerOccurrences(response []byte) (map[string][]json.RawMessage, error) {
+	members, err := objectMembers(response)
+	if err != nil {
+		return nil, err
+	}
+	var occurrences map[string][]json.RawMessage
+	for _, member := range members {
+		if member.key != "answers" {
+			continue
+		}
+		answers, err := objectMembers(member.value)
+		if err != nil {
+			continue
+		}
+		if occurrences == nil {
+			occurrences = make(map[string][]json.RawMessage, len(answers))
+		}
+		for _, answer := range answers {
+			occurrences[answer.key] = append(occurrences[answer.key], answer.value)
+		}
+	}
+	if occurrences == nil {
+		return nil, errors.New("no answers object")
+	}
+	return occurrences, nil
+}
+
+type objectMember struct {
+	key   string
+	value json.RawMessage
+}
+
+// objectMembers reads one JSON object's members in order, repeated keys
+// included.
+func objectMembers(raw []byte) ([]objectMember, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if open, err := decoder.Token(); err != nil || open != json.Delim('{') {
+		return nil, errors.New("not a JSON object")
+	}
+	var members []objectMember
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, _ := token.(string)
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		members = append(members, objectMember{key: key, value: value})
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, errors.New("more than one JSON value")
+	}
+	return members, nil
 }
 
 // Prepare takes the evaluation body Prompt wrote and adds the model.

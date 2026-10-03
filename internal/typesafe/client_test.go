@@ -117,3 +117,32 @@ func TestPromptNamesTheItemAndWritesEachOptionsCriteria(t *testing.T) {
 		t.Fatal("an item named like the question was accepted")
 	}
 }
+
+// Every written copy of a question's answer counts until they are compared:
+// the same answer twice is one answer, two different ones answer nothing and
+// are marked a conflict, and the neighbours keep theirs (review B2: n1's
+// open answered yes, then no, was read as no).
+func TestVerdictsKeepEveryCopyOfAnAnswerUntilTheyAgree(t *testing.T) {
+	yes := `{"type":"choice","choice":"yes","probabilities":{"yes":0.99,"no":0.01}}`
+	no := `{"type":"choice","choice":"no","probabilities":{"no":0.99,"yes":0.01}}`
+	sameYes := `{"probabilities":{"no":0.01,"yes":0.99},"choice":"yes","type":"choice"}`
+	verdicts, err := (&Client{}).Verdicts([]byte(`{"answers":{
+		"n1|open":` + yes + `,"n1|open":` + no + `,
+		"n2|open":` + yes + `,"n2|open":` + sameYes + `,
+		"n3|open":` + yes + `,"n3|open":"unreadable",
+		"n4|open":` + yes + `}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verdicts["n1|open"].Conflict || !verdicts["n3|open"].Conflict {
+		t.Fatalf("different copies were read as one answer: %+v", verdicts)
+	}
+	if got := verdicts["n2|open"]; got.Conflict || got.Choice != "yes" || verdicts["n4|open"].Choice != "yes" {
+		t.Fatalf("an identical repeat or a neighbour lost its answer: %+v", verdicts)
+	}
+	// An answers object written twice is read as all of its copies.
+	verdicts, err = (&Client{}).Verdicts([]byte(`{"answers":{"n1|open":` + yes + `},"answers":{"n1|open":` + no + `,"n2|open":` + yes + `}}`))
+	if err != nil || !verdicts["n1|open"].Conflict || verdicts["n2|open"].Choice != "yes" {
+		t.Fatalf("a repeated answers object: %+v / %v", verdicts, err)
+	}
+}

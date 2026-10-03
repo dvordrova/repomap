@@ -73,3 +73,24 @@ func (provider *fixedClassifierProvider) Complete(context.Context, llm.Prepared)
 	provider.calls++
 	return llm.Completion{Response: provider.response, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, nil
 }
+
+// A question Jev answered twice differently refuses only its cell, or its
+// row when the cell is not alone; an identical repeat is one answer and the
+// neighbours keep their decisions (review B2).
+func TestAConflictingVerdictRefusesOnlyItsQuestion(t *testing.T) {
+	def, window := closedDefinition(), closedWindow()
+	response := []byte(`{"answers":{
+		"s1|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.9,"none":0.1}},
+		"s1|part":{"type":"choice","choice":"none","probabilities":{"Serving":0.1,"none":0.9}},
+		"s2|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.9,"none":0.1}},
+		"s2|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.9,"none":0.1}}}}`)
+	verdicts, err := (&typesafe.Client{}).Verdicts(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := DecodeClassifierAnswers(def, window, verdicts)
+	if err != nil || result.Answers[0] != nil || result.Answers[1]["part"] != "c1" || len(result.Rejections) != 1 ||
+		!strings.Contains(result.Rejections[0].Reason, "answered twice differently") {
+		t.Fatalf("a conflicting answer: %+v / %v", result, err)
+	}
+}

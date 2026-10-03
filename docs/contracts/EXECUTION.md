@@ -309,7 +309,9 @@ The display-translation cube behind `--lang`
   an `llm.Provider` with `Prompt` (the exact request for keyed questions over
   one task and shared context) and `Verdicts` (the response read by question
   key; an unreadable verdict is absent, a response without verdicts is an
-  error). The executor caches, journals and gates it like any provider, so
+  error; every written copy of a question's answer is kept until compared,
+  so an identical repeat is one answer and two different ones are a
+  conflict that refuses that question's cell or row alone, review B2). The executor caches, journals and gates it like any provider, so
   its exact-cache keys are its `State` and the prepared bytes; the decision
   rule below, the question texts (which name Jev's `task`, `context.<field>`
   and `row`), request packing, concurrency and the one-token output limit
