@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -93,7 +94,7 @@ func Translate(
 	if len(catalog.Entries) == 0 {
 		return result, nil, result.Validate(catalog)
 	}
-	windows, err := planWindows(ctx, provider, catalog.Entries, language)
+	windows, indivisible, err := planWindows(ctx, provider, catalog.Entries, language)
 	if err != nil {
 		return report.DisplayTranslations{}, nil, err
 	}
@@ -101,6 +102,11 @@ func Translate(
 	keep := func(entry report.DisplayTextEntry, reason string) {
 		result.Entries = append(result.Entries, report.DisplayTranslationEntry{Ref: entry.Ref, Text: entry.Text})
 		untranslated = append(untranslated, Untranslated{Ref: entry.Ref, Reason: reason})
+	}
+	// A text whose request alone does not fit the provider keeps its source
+	// language and is named; its neighbours are still asked.
+	for _, oversized := range indivisible {
+		keep(oversized.entry, oversized.reason)
 	}
 	var followUps []translationWindow
 	accept := func(window translationWindow, value windowTranslation) {
@@ -259,18 +265,31 @@ func parallelWindows(windows []translationWindow, count int) []translationWindow
 	return windows
 }
 
+// indivisibleText is a text whose request alone does not fit the provider,
+// with the preparation's refusal.
+type indivisibleText struct {
+	entry  report.DisplayTextEntry
+	reason string
+}
+
 // planWindows grows each consecutive prefix until the actual prepared request
 // stops fitting, then locates the last fitting prefix. There is no row ceiling;
 // exponential growth avoids preparing every intermediate catalogue prefix.
 // Every accepted prefix is checked through the same language policy and
-// provider preparation that execution uses.
+// provider preparation that execution uses. Either preparation limit, the
+// request's bytes or the provider's context window, means "smaller": with the
+// real DeepSeek preparation one or two texts fit where four did not, and the
+// context refusal had ended the stage with none of seven translated (control
+// review B3, 2026-10-03). A text that does not fit alone is indivisible and
+// returned as such; each text is in exactly one window or indivisible.
 func planWindows(
 	ctx context.Context,
 	provider llm.Provider,
 	entries []report.DisplayTextEntry,
 	language report.DisplayLanguage,
-) ([]translationWindow, error) {
+) ([]translationWindow, []indivisibleText, error) {
 	var windows []translationWindow
+	var indivisible []indivisibleText
 	for start := 0; start < len(entries); {
 		remaining := len(entries) - start
 		fits := func(count int) error {
@@ -294,7 +313,12 @@ func planWindows(
 			return nil
 		}
 		if err := fits(1); err != nil {
-			return nil, fmt.Errorf("report translation: prepare %s: %w", entries[start].Ref, err)
+			if !requestTooLarge(err) {
+				return nil, nil, fmt.Errorf("report translation: prepare %s: %w", entries[start].Ref, err)
+			}
+			indivisible = append(indivisible, indivisibleText{entry: entries[start], reason: fmt.Sprintf("report translation: %s does not fit one request: %v", entries[start].Ref, err)})
+			start++
+			continue
 		}
 		good, bad := 1, remaining+1
 		for good < remaining {
@@ -304,7 +328,7 @@ func planWindows(
 			}
 			if err := fits(next); err != nil {
 				if !requestTooLarge(err) {
-					return nil, fmt.Errorf("report translation: prepare window: %w", err)
+					return nil, nil, fmt.Errorf("report translation: prepare window: %w", err)
 				}
 				bad = next
 				break
@@ -315,7 +339,7 @@ func planWindows(
 			middle := good + (bad-good)/2
 			if err := fits(middle); err != nil {
 				if !requestTooLarge(err) {
-					return nil, fmt.Errorf("report translation: prepare window: %w", err)
+					return nil, nil, fmt.Errorf("report translation: prepare window: %w", err)
 				}
 				bad = middle
 			} else {
@@ -325,12 +349,14 @@ func planWindows(
 		windows = append(windows, translationWindow(entries[start:start+good]))
 		start += good
 	}
-	return windows, nil
+	return windows, indivisible, nil
 }
 
+// requestTooLarge says a preparation refused a request for its size: its
+// bytes or the provider's context window.
 func requestTooLarge(err error) bool {
 	var resourceErr *llm.ResourceLimitError
-	return errors.As(err, &resourceErr) && resourceErr.Kind == llm.ResourceLimitRequestBytes
+	return errors.As(err, &resourceErr) && (resourceErr.Kind == llm.ResourceLimitRequestBytes || resourceErr.Kind == llm.ResourceLimitContextTokens)
 }
 
 func translationCall(
@@ -459,12 +485,16 @@ func decodeWindowTranslation(raw []byte, window translationWindow) (windowTransl
 // {ref, text} objects (including the echoed entries shape), at the root or under
 // one member, carries the same ref identity. Only refs of the window count.
 func translationCandidates(raw []byte, known map[string]bool) (map[string][]json.RawMessage, error) {
-	var object map[string]json.RawMessage
-	if json.Unmarshal(raw, &object) == nil && object != nil {
-		// Decoding a map keeps only the last value of a repeated key; a
-		// shadowed value has no translation authority.
-		if keyed := keyedCandidates(object, known); len(keyed) > 0 {
+	if members, err := objectMembers(raw); err == nil {
+		// Every copy of a repeated key is kept: an identical repeat is one
+		// answer, two different ones answer the text twice differently and
+		// refuse it alone (candidateText), never the last one winning.
+		if keyed := keyedCandidates(members, known); len(keyed) > 0 {
 			return keyed, nil
+		}
+		object := make(map[string]json.RawMessage, len(members))
+		for _, member := range members {
+			object[member.key] = member.value
 		}
 		names := make([]string, 0, len(object))
 		for name := range object {
@@ -491,20 +521,19 @@ func translationCandidates(raw []byte, known map[string]bool) (map[string][]json
 	return nil, fmt.Errorf("report translation: expected a JSON object keyed by text refs")
 }
 
-func keyedCandidates(object map[string]json.RawMessage, known map[string]bool) map[string][]json.RawMessage {
+func keyedCandidates(members []objectMember, known map[string]bool) map[string][]json.RawMessage {
 	candidates := make(map[string][]json.RawMessage)
-	for name, value := range object {
-		if known[name] {
-			candidates[name] = []json.RawMessage{value}
+	for _, member := range members {
+		if known[member.key] {
+			candidates[member.key] = append(candidates[member.key], member.value)
 		}
 	}
 	return candidates
 }
 
 func wrappedCandidates(raw json.RawMessage, known map[string]bool) map[string][]json.RawMessage {
-	var object map[string]json.RawMessage
-	if json.Unmarshal(raw, &object) == nil && object != nil {
-		return keyedCandidates(object, known)
+	if members, err := objectMembers(raw); err == nil {
+		return keyedCandidates(members, known)
 	}
 	var list []json.RawMessage
 	if json.Unmarshal(raw, &list) == nil {
@@ -558,19 +587,67 @@ func oneCandidateText(raw json.RawMessage, ref string) (string, string) {
 			return text, ""
 		}
 	case len(trimmed) > 0 && trimmed[0] == '{':
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(trimmed, &fields) != nil {
+		members, err := objectMembers(trimmed)
+		if err != nil {
 			break
 		}
-		value, present := fields["text"]
-		if !present {
+		// Every "text" member counts: two different ones answer the text
+		// twice differently, an identical repeat is one answer.
+		var texts []json.RawMessage
+		for _, member := range members {
+			if member.key == "text" {
+				texts = append(texts, member.value)
+			}
+		}
+		if len(texts) == 0 {
 			return "", fmt.Sprintf("report translation: missing text for %s", ref)
 		}
-		var text *string
-		if json.Unmarshal(value, &text) != nil || text == nil {
-			return "", fmt.Sprintf("report translation: text for %s must be a string", ref)
+		said := ""
+		for i, value := range texts {
+			var text *string
+			if json.Unmarshal(value, &text) != nil || text == nil {
+				return "", fmt.Sprintf("report translation: text for %s must be a string", ref)
+			}
+			if i > 0 && *text != said {
+				return "", fmt.Sprintf("report translation: %s was translated twice differently", ref)
+			}
+			said = *text
 		}
-		return *text, ""
+		return said, ""
 	}
 	return "", fmt.Sprintf("report translation: translation for %s must be text or an object with text", ref)
+}
+
+type objectMember struct {
+	key   string
+	value json.RawMessage
+}
+
+// objectMembers reads one JSON object's members in order, a repeated key's
+// every copy included; it fails on anything but one object.
+func objectMembers(raw []byte) ([]objectMember, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if open, err := decoder.Token(); err != nil || open != json.Delim('{') {
+		return nil, errors.New("not a JSON object")
+	}
+	var members []objectMember
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, _ := token.(string)
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		members = append(members, objectMember{key: key, value: value})
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, errors.New("more than one JSON value")
+	}
+	return members, nil
 }

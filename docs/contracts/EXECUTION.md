@@ -157,6 +157,13 @@ The display-translation cube behind `--lang`
   [term lookup](TERMINOLOGY.md#term-lookup). Equal spellings with different
   definitions stay separate. Every partition and child window rebuilds its
   complete dictionary and builds only from its own complete original entries.
+  Windows are planned by the actual preparation: either of its size limits,
+  the request's bytes or the provider's context window (DeepSeek's
+  `context_tokens` refusal before any call), makes the window smaller, each
+  text in exactly one window; a text whose request alone does not fit is
+  indivisible, keeps its source language and is named with that refusal
+  beside its translated neighbours (control review B3: the context refusal
+  had ended the stage with none of seven texts translated).
   `llm.Prepare` adds one shared response-language system fragment before
   provider encoding, execution, fit checks and memo identity. Empty
   ResponseLanguage means English; the final translator supplies its language.
@@ -168,10 +175,12 @@ The display-translation cube behind `--lang`
   echoed `terms` are ignored; the required `text` and original placeholders
   (protected spans) still validate, and unused metadata neither authorizes a
   changed translation nor triggers a provider call. A missing or malformed
-  text, a ref listed twice with different texts, or an invalid text
-  (placeholder mismatch) is refused alone and journaled; its neighbours are
-  published and the answer is cached. A repeated object key keeps its last
-  value. Each window's refused texts are asked once more, in a request of only
+  text, a ref listed or keyed twice with different texts (a repeated
+  object key, or a repeated `text` member, counts every copy; an identical
+  repeat is one answer; control review B3, 2026-10-03, where the last copy
+  had won), or an invalid text (placeholder mismatch) is refused alone and
+  journaled; its neighbours are published and the answer is cached. Each
+  window's refused texts are asked once more, in a request of only
   those texts. A text refused again, or a singleton the provider answered but
   refused (missing entry, placeholder mismatch, validation or envelope
   failure, resource refusal), keeps its source-language text: the entry is

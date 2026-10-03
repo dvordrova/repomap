@@ -62,6 +62,10 @@ type testProvider struct {
 	requestBytes   int
 	responseRows   int
 	resourceKind   llm.ResourceLimitKind
+	// contextWindow refuses a request over requestBytes as DeepSeek's
+	// preparation does with its context window (context_tokens), not by
+	// its bytes.
+	contextWindow  bool
 	prepareFailure error
 	requests       []testWire
 	respond        func(modelRequest) modelResponse
@@ -82,8 +86,12 @@ func (provider *testProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm
 		return llm.Prepared{}, err
 	}
 	if provider.requestBytes > 0 && len(wire) > provider.requestBytes {
+		kind := llm.ResourceLimitRequestBytes
+		if provider.contextWindow {
+			kind = llm.ResourceLimitContextTokens
+		}
 		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{
-			Kind: llm.ResourceLimitRequestBytes, Limit: provider.requestBytes,
+			Kind: kind, Limit: provider.requestBytes,
 			Observed: len(wire), ObservedKnown: true,
 		})
 	}
@@ -608,11 +616,11 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider.requestBytes = prepared.Len()
-	windows, err := planWindows(t.Context(), provider, catalog.Entries, report.Russian)
+	windows, indivisible, err := planWindows(t.Context(), provider, catalog.Entries, report.Russian)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(windows) != 3 || len(windows[0]) != 3 || len(windows[1]) != 3 || len(windows[2]) != 1 {
+	if len(windows) != 3 || len(windows[0]) != 3 || len(windows[1]) != 3 || len(windows[2]) != 1 || len(indivisible) != 0 {
 		t.Fatalf("provider envelope did not pack complete entries as 3+3+1: %v", windows)
 	}
 	result, _, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
@@ -668,14 +676,90 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 	if kept.Entries[4].Text != catalog.Entries[4].Text || kept.Entries[3].Text != "Перевод: "+catalog.Entries[3].Text {
 		t.Fatalf("kept text or its neighbour changed: %#v", kept.Entries)
 	}
+	// A text whose request alone does not fit is indivisible: it keeps its
+	// source language, named with the refusal, and is never sent.
 	provider.respond = nil
 	provider.requests = nil
 	provider.requestBytes = 1
-	result, _, err = Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
-	var resourceErr *llm.ResourceLimitError
-	if !errors.As(err, &resourceErr) || resourceErr.Kind != llm.ResourceLimitRequestBytes ||
-		len(provider.requests) != 0 || !reflect.DeepEqual(result, report.DisplayTranslations{}) {
-		t.Fatalf("oversized complete entry was not a preparation failure: %#v, %v", result, err)
+	result, untranslated, err = Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
+	if err != nil || result.Validate(catalog) != nil || len(provider.requests) != 0 || len(untranslated) != len(catalog.Entries) ||
+		!strings.Contains(untranslated[0].Reason, "does not fit one request") || result.Entries[0].Text != catalog.Entries[0].Text {
+		t.Fatalf("oversized complete entries were not kept and named: %#v, %+v, %v", result, untranslated, err)
+	}
+}
+
+// DeepSeek's preparation refuses a request over its context window
+// (context_tokens) before its bytes: one or two of seven texts fit, four
+// do not. That limit splits as the request's bytes do, every text in
+// exactly one window with its own complete dictionary, and a text that
+// does not fit alone is kept and named while its neighbours are translated
+// (control review B3, 2026-10-03: the stage had ended with none of seven).
+func TestTranslateSplitsAtTheContextWindowAsAtItsBytes(t *testing.T) {
+	entries := plainEntries(7)
+	for i := range entries {
+		entries[i].Terms = termEntry().Terms
+	}
+	catalog := testCatalog(t, entries)
+	probe := &testProvider{}
+	call, err := translationCall(catalog.Entries[:2], report.Russian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := llm.Prepare(probe, call.Prompt, call.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &testProvider{contextWindow: true, requestBytes: prepared.Len()}
+	windows, indivisible, err := planWindows(t.Context(), provider, catalog.Entries, report.Russian)
+	if err != nil || len(indivisible) != 0 || len(windows) != 4 || len(windows[3]) != 1 {
+		t.Fatalf("the context window did not split 2+2+2+1: %v %v %v", windows, indivisible, err)
+	}
+	result, untranslated, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
+	if err != nil || len(untranslated) != 0 || result.Validate(catalog) != nil {
+		t.Fatalf("translation split at the context window: %+v, %+v, %v", result, untranslated, err)
+	}
+	seen := map[string]int{}
+	for _, wire := range provider.requests {
+		var request modelRequest
+		if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
+			t.Fatal(err)
+		}
+		assertRequestTerms(t, request, catalog.Entries)
+		for _, entry := range request.Entries {
+			seen[entry.Ref]++
+		}
+	}
+	for _, entry := range catalog.Entries {
+		if seen[entry.Ref] != 1 {
+			t.Fatalf("%s was sent %d times: %v", entry.Ref, seen[entry.Ref], seen)
+		}
+	}
+	for i, entry := range result.Entries {
+		if entry.Text != "Перевод: "+catalog.Entries[i].Text {
+			t.Fatalf("%s was not translated: %q", entry.Ref, entry.Text)
+		}
+	}
+
+	// One text too long for any request alone: kept, named, never sent;
+	// its neighbours are translated.
+	long := plainEntries(5)
+	long[2].Text = strings.Repeat("A long paragraph of the answer. ", 400)
+	longCatalog := testCatalog(t, long)
+	provider = &testProvider{contextWindow: true, requestBytes: prepared.Len()}
+	result, untranslated, err = Translate(t.Context(), llm.Executor{}, provider, longCatalog, report.Russian)
+	if err != nil || result.Validate(longCatalog) != nil || len(untranslated) != 1 || untranslated[0].Ref != "t3" ||
+		!strings.Contains(untranslated[0].Reason, "context_tokens") || result.Entries[2].Text != longCatalog.Entries[2].Text {
+		t.Fatalf("an indivisible text was not kept and named: %+v, %+v, %v", result.Entries, untranslated, err)
+	}
+	for _, wire := range provider.requests {
+		if strings.Contains(wire.Prompt.User, "A long paragraph") {
+			t.Fatal("an indivisible text was sent")
+		}
+	}
+	for _, i := range []int{0, 1, 3, 4} {
+		if result.Entries[i].Text != "Перевод: "+longCatalog.Entries[i].Text {
+			t.Fatalf("a neighbour of the indivisible text was not translated: %+v", result.Entries)
+		}
 	}
 }
 
