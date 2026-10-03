@@ -61,8 +61,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   failed", "cache write failed", "cache eviction failed"), with the same
   `llm.Issue.Recoverable` line the atlas reading draws (review A7, 2026-10-03:
   such an issue once stopped the report before translation and HTML). A split
-  memo that cannot be read or saved is still an error here, as in every other
-  adaptive owner. This does not change the shared transport timeout or retries
+  memo that cannot be read is a miss in every adaptive owner
+  ([Execution](EXECUTION.md#parallelism-and-provider-failures)); one that
+  cannot be saved is still an error. This does not change the shared transport timeout or retries
   and does not add a glossary attempt deadline. Native code
   concepts keep their existing definitions, exact anchors and destinations and
   enter the final glossary directly; they do not round-trip through the reducer.

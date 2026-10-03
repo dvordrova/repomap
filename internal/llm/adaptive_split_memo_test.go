@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -310,7 +311,11 @@ func TestAdaptiveSplitMemoStillUsesCurrentOwnerSplit(t *testing.T) {
 	}
 }
 
-func TestAdaptiveSplitMemoReadErrorIsVisibleButAcceptedParentStillWins(t *testing.T) {
+// A split memo this build's validator refuses is a miss, as on a cold run:
+// the parent is asked once, its refusal writes a fresh memo over the old
+// one, and the next run splits without asking it. It used to stop the stage
+// on every run until cache clear. An accepted parent replay still wins.
+func TestAdaptiveSplitMemoTheValidatorRefusesIsAMissAndAcceptedParentStillWins(t *testing.T) {
 	p := &adaptiveSplitTestProvider{}
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
 	items := [][]string{{"a", "b"}}
@@ -322,9 +327,20 @@ func TestAdaptiveSplitMemoReadErrorIsVisibleButAcceptedParentStillWins(t *testin
 	if err := SaveMemo(executor, key, []byte(`{"version":99,"resource_kind":"response_bytes"}`)); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
-	if err == nil || len(p.calls) != 0 {
-		t.Fatalf("corrupt hint silently retried the costly parent: calls=%v err=%v", p.calls, err)
+	var misses []Event
+	executor.Observer = ObserverFunc(func(event Event) error {
+		if event.Failure == FailureCache {
+			misses = append(misses, event)
+		}
+		return nil
+	})
+	if _, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit); err != nil ||
+		!reflect.DeepEqual(p.calls, [][]string{{"a", "b"}, {"a"}, {"b"}}) || len(misses) != 1 || misses[0].CacheKey != key {
+		t.Fatalf("unreadable hint: calls=%v misses=%d err=%v", p.calls, len(misses), err)
+	}
+	p.calls = nil
+	if _, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit); err != nil || len(p.calls) != 0 {
+		t.Fatalf("the fresh memo was not used: calls=%v err=%v", p.calls, err)
 	}
 	p.response = func([]string) ([]byte, error, bool) { return []byte(`{"value":"whole"}`), nil, true }
 	if _, err := ReplayJSON(t.Context(), executor, p, prepared); err != nil {
@@ -333,8 +349,165 @@ func TestAdaptiveSplitMemoReadErrorIsVisibleButAcceptedParentStillWins(t *testin
 	p.calls = nil
 	plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
 	if err != nil || len(plan) != 1 || len(outcomes) != 1 || !outcomes[0].Cached || outcomes[0].Value.Value != "whole" || len(p.calls) != 0 {
-		t.Fatalf("corrupt hint hid valid parent replay: %#v / %#v / %v", plan, outcomes, err)
+		t.Fatalf("the hint hid a valid parent replay: %#v / %#v / %v", plan, outcomes, err)
 	}
+}
+
+// A damaged split memo is evicted and recomputed through the production
+// adaptive path: the stage never fails on it. A record that is not the one
+// SaveMemo wrote, a directory or a link in its place are removed (a link
+// alone, never its target); an unreadable or oversized file is a miss that
+// stays until a repeated refusal writes over it. An observer that cannot
+// record the miss is the one error.
+func TestADamagedSplitMemoIsEvictedAndRecomputed(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		damage  func(t *testing.T, path string)
+		evicted bool
+	}{
+		{name: "not a memo record", evicted: true, damage: func(t *testing.T, path string) {
+			if err := os.WriteFile(path, []byte(`{"broken"`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "a record of another key", evicted: true, damage: func(t *testing.T, path string) {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record memoRecord
+			if err := json.Unmarshal(raw, &record); err != nil {
+				t.Fatal(err)
+			}
+			record.Key = strings.Repeat("0", 64)
+			raw, _ = json.Marshal(record)
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "a directory", evicted: true, damage: func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(path, "child"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "a link", evicted: true, damage: func(t *testing.T, path string) {
+			target := filepath.Join(t.TempDir(), "outside.json")
+			if err := os.WriteFile(target, []byte(`{"outside":true}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if raw, err := os.ReadFile(target); err != nil || string(raw) != `{"outside":true}` {
+					t.Errorf("evicting the link touched its target: %q, %v", raw, err)
+				}
+			})
+		}},
+		{name: "unreadable", damage: func(t *testing.T, path string) {
+			if err := os.Chmod(path, 0); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+			if _, err := os.ReadFile(path); err == nil {
+				t.Skip("current user can read files without read permissions")
+			}
+		}},
+		{name: "oversized", damage: func(t *testing.T, path string) {
+			if err := os.Truncate(path, int64(maxCacheRecordBytes+1)); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &adaptiveSplitTestProvider{}
+			executor := Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 2}
+			run := func() []AdaptiveEachResult[[]string, testValue] {
+				t.Helper()
+				p.calls = nil
+				results, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit)
+				if err != nil || len(results) != 2 || results[0].Outcome.Value.Value != "a" || results[1].Outcome.Value.Value != "b" {
+					t.Fatalf("results %+v, err %v", results, err)
+				}
+				return results
+			}
+			run()
+			paths, err := filepath.Glob(filepath.Join(executor.RootDir, CacheDirectoryName, "memo-*.json"))
+			if err != nil || len(paths) != 1 || len(p.calls) != 3 {
+				t.Fatalf("cold run: memos %v, calls %v, %v", paths, p.calls, err)
+			}
+			path := paths[0]
+			test.damage(t, path)
+
+			// The parent alone answers now: what happened to the memo is
+			// what the miss itself did, not a later save's rename.
+			p.response = func(values []string) ([]byte, error, bool) {
+				return []byte(`{"value":"whole"}`), nil, len(values) > 1
+			}
+			var misses int
+			executor.Observer = ObserverFunc(func(event Event) error {
+				if event.Failure == FailureCache {
+					misses++
+				}
+				return nil
+			})
+			p.calls = nil
+			results, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit)
+			if err != nil || len(results) != 1 || results[0].Outcome.Value.Value != "whole" || !reflect.DeepEqual(p.calls, [][]string{{"a", "b"}}) || misses != 1 {
+				t.Fatalf("damaged memo: results %+v, calls %v, misses %d, err %v", results, p.calls, misses, err)
+			}
+			_, statErr := os.Lstat(path)
+			if test.evicted != os.IsNotExist(statErr) {
+				t.Fatalf("evicted=%v, want %v (%v)", os.IsNotExist(statErr), test.evicted, statErr)
+			}
+		})
+	}
+	t.Run("a refused parent writes a fresh memo over a kept one", func(t *testing.T) {
+		p := &adaptiveSplitTestProvider{}
+		executor := Executor{Enabled: true, RootDir: t.TempDir()}
+		if _, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil {
+			t.Fatal(err)
+		}
+		paths, _ := filepath.Glob(filepath.Join(executor.RootDir, CacheDirectoryName, "memo-*.json"))
+		if len(paths) != 1 || os.Truncate(paths[0], int64(maxCacheRecordBytes+1)) != nil {
+			t.Fatalf("memos %v", paths)
+		}
+		p.calls = nil
+		if _, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil || len(p.calls) != 1 {
+			t.Fatalf("the parent was not asked once: calls %v, err %v", p.calls, err)
+		}
+		p.calls = nil
+		if _, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil || len(p.calls) != 0 {
+			t.Fatalf("the rewritten memo was not used: calls %v, err %v", p.calls, err)
+		}
+	})
+	t.Run("an observer that cannot record the miss", func(t *testing.T) {
+		p := &adaptiveSplitTestProvider{}
+		executor := Executor{Enabled: true, RootDir: t.TempDir()}
+		if _, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil {
+			t.Fatal(err)
+		}
+		paths, _ := filepath.Glob(filepath.Join(executor.RootDir, CacheDirectoryName, "memo-*.json"))
+		if len(paths) != 1 || os.WriteFile(paths[0], []byte("torn"), 0o600) != nil {
+			t.Fatalf("memos %v", paths)
+		}
+		cause := errors.New("journal unavailable")
+		executor.Observer = ObserverFunc(func(event Event) error {
+			if event.Failure == FailureCache {
+				return cause
+			}
+			return nil
+		})
+		if _, err := ExecuteAdaptiveJSONEachResults(t.Context(), executor, p, [][]string{{"a", "b"}}, adaptiveEachBuild, adaptiveBatchTestSplit); !errors.Is(err, cause) {
+			t.Fatalf("an unrecorded miss was not an error: %v", err)
+		}
+	})
 }
 
 func TestAdaptiveRejectedResponseMemoRequiresOwnerOptInAndParentReplayWins(t *testing.T) {

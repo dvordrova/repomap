@@ -66,10 +66,27 @@ func LoadMemo[T any](executor Executor, key string, validate DecodeValidate[T]) 
 		return nil
 	})
 	if err != nil {
-		return zero, false, err
+		// Not the record SaveMemo wrote for this key: proven corruption. The
+		// owner's validator refusing a well-formed value below is not: a
+		// later build may read it.
+		return zero, false, corruptCache(err)
 	}
 	value, err := validate(record.Value)
 	return value, err == nil, err
+}
+
+// removeMemo evicts the memo file of key. RemoveAll removes a link itself,
+// never its target, and a directory in the memo's place, which would
+// otherwise make the next save fail.
+func removeMemo(rootDir, key string) error {
+	dir, found, err := existingCacheDirectory(rootDir)
+	if err != nil || !found {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "memo-"+key+".json")); err != nil {
+		return fmt.Errorf("llm: remove invalid memo: %w", err)
+	}
+	return nil
 }
 
 // SaveMemo persists an already accepted, cube-owned value in the executor's

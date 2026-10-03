@@ -100,7 +100,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   whole-parent answer or replay that the current decoder accepts takes
   precedence. A semantic refusal creates this
   memo only for an owner that opts into `SplitRejectedResponse` (display
-  translation). NoCache bypasses it and cache clear removes it. Existing run journals
+  translation). NoCache bypasses it and cache clear removes it. A memo that
+  cannot be used is a miss, as on a cold run: the owner asks the whole parent
+  once and a repeated refusal writes a fresh memo over it (2026-10-03; a
+  damaged memo used to stop every adaptive stage on every run until cache
+  clear). A memo file that is not the record SaveMemo wrote for its key, or a
+  directory or link in its place, is evicted; an I/O failure, an oversized or
+  replaced file and a value this build's validator refuses stay. The miss is
+  an observer cache failure like ExecuteJSON's, with no journal entry; only
+  an observer that fails is an error. A split memo that cannot be saved is
+  still an error. Existing run journals
   are not migrated into split memos.
   Failed model exchanges show their committed request/response/journal paths
   beside the error, with an explicit unavailable-body marker when necessary.

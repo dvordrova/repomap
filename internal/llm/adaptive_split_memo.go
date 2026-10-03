@@ -77,9 +77,36 @@ func loadAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("llm: read adaptive split memo: %w", err)
+		return false, splitMemoMiss(executor, key, request, err)
 	}
 	return found, nil
+}
+
+// splitMemoMiss diagnoses a split memo that could not be used: it is a miss,
+// as on a cold run, so the owner asks the whole parent again and a repeated
+// refusal writes a fresh memo over whatever is there. A record that is not
+// the one SaveMemo wrote is evicted; an I/O failure, an oversized or
+// replaced file and a value this build's validator refuses are kept, as for
+// accepted answers. The miss goes to the observer like ExecuteJSON's cache
+// read failure; only an observer that fails, a required run artifact, is an
+// error.
+func splitMemoMiss(executor Executor, key string, request []byte, readErr error) error {
+	issues := []Issue{{Kind: IssueCacheRead, Err: fmt.Errorf("llm: read adaptive split memo: %w", readErr)}}
+	if isCacheCorruption(readErr) {
+		if err := removeMemo(executor.RootDir, key); err != nil {
+			issues = append(issues, Issue{Kind: IssueCacheEvict, Err: err})
+		}
+	}
+	issues = observe(executor.Observer, Event{
+		Kind: EventFailure, Source: SourceCache, Failure: FailureCache, CacheKey: key,
+		Request: request, RequestSHA256: sha256Hex(request), RequestBytes: len(request),
+	}, issues)
+	for _, issue := range issues {
+		if !issue.Recoverable() {
+			return issue
+		}
+	}
+	return nil
 }
 
 func saveAdaptiveSplit(executor Executor, provider Provider, request []byte, limits Limits, memo adaptiveSplitMemo) error {
