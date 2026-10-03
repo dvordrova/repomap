@@ -52,7 +52,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   owning run context is alive: generation supplies no definitions for that
   window, and reduction keeps its original entries separately. Actual run
   cancellation/deadline, local input, configuration and persistence failures
-  remain errors. This does not change the shared transport timeout or retries
+  remain errors. Persistence means the glossary's required artifacts
+  (`terminology.json`, `glossary_names.json`, `glossary.json` and the run's
+  `rejected.jsonl`, whose failed append is the executor's observer issue). The
+  response cache and the term-decision memos are not among them: a cache read,
+  write or eviction that failed, or a memo that could not be saved, leaves the
+  executor's answer as it is and is printed as a Glossary notice ("cache read
+  failed", "cache write failed", "cache eviction failed"), with the same
+  `llm.Issue.Recoverable` line the atlas reading draws (review A7, 2026-10-03:
+  such an issue once stopped the report before translation and HTML). A split
+  memo that cannot be read or saved is still an error here, as in every other
+  adaptive owner. This does not change the shared transport timeout or retries
   and does not add a glossary attempt deadline. Native code
   concepts keep their existing definitions, exact anchors and destinations and
   enter the final glossary directly; they do not round-trip through the reducer.
@@ -162,7 +172,8 @@ or aliases of one concept. Complete groups partition only
 when the provider envelope requires it; a nonshrinking round records partial
 comparison. A refused model window leaves its already accepted input definitions
 separate and stops retrying them in that reduction. Cancellation, invalid local
-inputs/configuration and persistence failures remain terminal. Existing native
+inputs/configuration and persistence failures of required artifacts remain
+terminal; cache diagnostics are notices (above). Existing native
 code concepts enter the final glossary directly, with whole source anchors and
 map/question destinations. There is no native-to-candidate-to-native conversion.
 Distinct declarations on one line keep their columns and identities; the same

@@ -125,10 +125,8 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 			}
 			var pending [][]Entry
 			for i, outcome := range outcomes {
-				for _, issue := range outcome.Outcome.Issues {
-					if issue.Kind != llm.IssueCacheValidate && issue.Kind != llm.IssueMetrics {
-						return Catalog{}, fmt.Errorf("glossary: %w", issue)
-					}
+				if err := cacheNotices(outcome.Outcome.Issues, notify); err != nil {
+					return Catalog{}, err
 				}
 				if outcome.Err == nil {
 					// Groups whose own choice was refused keep their original

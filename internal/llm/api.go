@@ -324,6 +324,20 @@ type Issue struct {
 	Err  error
 }
 
+// Recoverable reports a diagnostic that leaves the call's result what it
+// would be without the cache: a cache read, validation, eviction or write
+// that failed (the executor already answered live or kept the answer) and
+// clamped measurements. A caller reports it and goes on. An observer issue is
+// not recoverable: a required run artifact, the run's rejected.jsonl, was not
+// written. Neither is a kind this build does not know.
+func (issue Issue) Recoverable() bool {
+	switch issue.Kind {
+	case IssueCacheRead, IssueCacheValidate, IssueCacheEvict, IssueCacheWrite, IssueMetrics:
+		return true
+	}
+	return false
+}
+
 func (issue Issue) Error() string {
 	if issue.Err == nil {
 		return string(issue.Kind)

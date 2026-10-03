@@ -534,14 +534,18 @@ func TestReduceStageRefusalDoesNotSwallowLocalOrPersistenceFailures(t *testing.T
 			t.Fatalf("journal failure = %+v %v", got, err)
 		}
 	})
-	t.Run("cache persistence failure", func(t *testing.T) {
+	// The response cache is not a required artifact: one that cannot be read
+	// or written is a notice, and the accepted reduction stands (review A7).
+	t.Run("cache persistence failure is a notice", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "file-blocks-cache-directory")
 		if err := os.WriteFile(root, []byte("occupied"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		got, err := Reduce(t.Context(), llm.Executor{RootDir: root, Enabled: true}, &reductionProvider{}, items)
-		if err == nil || len(got.Entries) != 0 {
-			t.Fatalf("cache failure = %+v %v", got, err)
+		var notices []string
+		got, err := Reduce(t.Context(), llm.Executor{RootDir: root, Enabled: true}, &reductionProvider{}, items,
+			func(state, _ string) { notices = append(notices, state) })
+		if err != nil || len(got.Entries) != 2 || got.PartialComparison || !reflect.DeepEqual(notices, []string{"cache read failed", "cache write failed"}) {
+			t.Fatalf("cache failure = %+v %v, notices %q", got, err, notices)
 		}
 	})
 }

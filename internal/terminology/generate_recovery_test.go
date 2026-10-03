@@ -2,7 +2,12 @@ package terminology
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -142,4 +147,137 @@ func TestGenerationIndivisibleResourceRefusalIsOptionalAndNotMemoized(t *testing
 	if provider.calls != 2 {
 		t.Fatalf("unsplittable request was memoized as splittable: calls=%d", provider.calls)
 	}
+}
+
+// glossaryAnswers answers the names step with every name it is asked about
+// that the prose writes, and the explanation step with one line per term.
+func glossaryAnswers(t *testing.T) *testProvider {
+	return &testProvider{complete: func(prepared llm.Prepared) (llm.Completion, error) {
+		var request struct {
+			Prose []struct {
+				Text []string `json:"text"`
+			} `json:"prose"`
+			Terms []struct {
+				Ref string `json:"ref"`
+			} `json:"terms"`
+		}
+		if err := json.Unmarshal([]byte(inputUser(t, prepared)), &request); err != nil {
+			return llm.Completion{}, err
+		}
+		if request.Terms == nil {
+			names := []string{}
+			for _, row := range request.Prose {
+				for _, name := range []string{"Alpha", "Beta"} {
+					if strings.Contains(strings.Join(row.Text, " "), name) {
+						names = append(names, name)
+					}
+				}
+			}
+			raw, err := json.Marshal(map[string]any{"names": names})
+			if err != nil {
+				return llm.Completion{}, err
+			}
+			return completed(string(raw))
+		}
+		terms := []map[string]string{}
+		for _, term := range request.Terms {
+			terms = append(terms, map[string]string{"ref": term.Ref, "explanation": "The concept the prose names."})
+		}
+		raw, err := json.Marshal(map[string]any{"terms": terms})
+		if err != nil {
+			return llm.Completion{}, err
+		}
+		return completed(string(raw))
+	}}
+}
+
+// A cache that cannot be written or read back is a notice on the run output,
+// not a glossary failure: the executor already answered live, so the
+// definitions are the same as with a working cache (review A7: a recovered
+// cache issue in this optional stage once stopped the report before its
+// HTML). A required run artifact that was not written still stops it.
+func TestRecoverableCacheIssuesLeaveTheGlossaryItsDefinitions(t *testing.T) {
+	generate := func(t *testing.T, executor llm.Executor, provider llm.Provider) ([]Candidate, []string, error) {
+		t.Helper()
+		var notices []string
+		collector := recoveryCollector(recoveryProse())
+		collector.Progress = func(state, detail string) { notices = append(notices, state+": "+detail) }
+		err := collector.Generate(t.Context(), executor, provider, everyConcept(), "")
+		return collector.Snapshot(), notices, err
+	}
+	noticed := func(notices []string, state string) bool {
+		for _, notice := range notices {
+			if strings.HasPrefix(notice, state+": ") {
+				return true
+			}
+		}
+		return false
+	}
+	reference, _, err := generate(t, llm.Executor{}, glossaryAnswers(t))
+	if err != nil || len(reference) != 2 {
+		t.Fatalf("reference glossary: %+v / %v", reference, err)
+	}
+
+	t.Run("a cache that cannot be written", func(t *testing.T) {
+		root := t.TempDir()
+		cache := filepath.Join(root, llm.CacheDirectoryName)
+		if err := os.Mkdir(cache, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(cache, 0o700) })
+		if file, err := os.CreateTemp(cache, "probe-*"); err == nil {
+			file.Close()
+			t.Skip("current user can write into a read-only directory")
+		}
+		executor := llm.Executor{RootDir: root, Enabled: true}
+		got, notices, err := generate(t, executor, glossaryAnswers(t))
+		if err != nil || !reflect.DeepEqual(got, reference) {
+			t.Fatalf("an unwritable cache changed the glossary: %+v / %v", got, err)
+		}
+		// The answers' records and the term decisions' memos both failed.
+		if !noticed(notices, "cache write failed") || !slices.ContainsFunc(notices, func(notice string) bool {
+			return strings.Contains(notice, "remember term decision")
+		}) {
+			t.Fatalf("the run output did not say the cache was not written: %q", notices)
+		}
+		catalog, err := Reduce(t.Context(), executor, &reductionProvider{merge: true}, []Candidate{
+			termCandidate("Alpha", "Alpha meaning.", "a.py"), termCandidate("alpha", "The same name in lower case.", "b.py"),
+		}, func(state, detail string) { notices = append(notices, state+": "+detail) })
+		if err != nil || len(catalog.Entries) != 1 || catalog.PartialComparison {
+			t.Fatalf("an unwritable cache changed the reduction: %+v / %v", catalog, err)
+		}
+	})
+
+	t.Run("a damaged cache read back", func(t *testing.T) {
+		executor := llm.Executor{RootDir: t.TempDir(), Enabled: true}
+		provider := glossaryAnswers(t)
+		if got, _, err := generate(t, executor, provider); err != nil || !reflect.DeepEqual(got, reference) {
+			t.Fatalf("cold glossary: %+v / %v", got, err)
+		}
+		records, err := filepath.Glob(filepath.Join(executor.RootDir, llm.CacheDirectoryName, "*.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range records {
+			if strings.HasPrefix(filepath.Base(record), "memo-") {
+				continue
+			}
+			if err := os.WriteFile(record, []byte(`{"damaged"`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		calls := provider.calls
+		got, notices, err := generate(t, executor, provider)
+		if err != nil || !reflect.DeepEqual(got, reference) || provider.calls == calls || !noticed(notices, "cache read failed") {
+			t.Fatalf("a damaged cache stopped the glossary: %+v / %v, notices %q", got, err, notices)
+		}
+	})
+
+	t.Run("a required artifact that was not written", func(t *testing.T) {
+		cause := errors.New("rejected.jsonl unavailable")
+		executor := llm.Executor{Observer: llm.ObserverFunc(func(llm.Event) error { return cause })}
+		if _, _, err := generate(t, executor, glossaryAnswers(t)); !errors.Is(err, cause) {
+			t.Fatalf("an unwritten required artifact did not stop the glossary: %v", err)
+		}
+	})
 }

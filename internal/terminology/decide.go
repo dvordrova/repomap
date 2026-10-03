@@ -248,6 +248,9 @@ func decideNames(ctx context.Context, executor llm.Executor, c llm.Categorizer, 
 		return nil, err
 	}
 	for _, outcome := range outcomes {
+		if err := cacheNotices(outcome.Outcome.Issues, progress); err != nil {
+			return nil, err
+		}
 		if outcome.Err != nil {
 			// The window stays unanswered; the executor journaled the refusal.
 			continue
@@ -269,8 +272,9 @@ func decideNames(ctx context.Context, executor llm.Executor, c llm.Categorizer, 
 			if err != nil {
 				return nil, err
 			}
-			if err := llm.SaveMemo(executor, bases[i], raw); err != nil {
-				return nil, fmt.Errorf("glossary: remember term decision: %w", err)
+			// The decision stands without its memo: a warm run asks again.
+			if err := llm.SaveMemo(executor, bases[i], raw); err != nil && progress != nil {
+				progress("cache write failed", fmt.Sprintf("remember term decision: %v", err))
 			}
 		}
 	}

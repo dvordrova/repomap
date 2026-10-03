@@ -256,10 +256,8 @@ func runWindows[U any, T any](ctx context.Context, executor llm.Executor, provid
 		}
 		var pending [][]U
 		for i, outcome := range outcomes {
-			for _, issue := range outcome.Outcome.Issues {
-				if issue.Kind != llm.IssueCacheValidate && issue.Kind != llm.IssueMetrics {
-					return fmt.Errorf("glossary: %w", issue)
-				}
+			if err := cacheNotices(outcome.Outcome.Issues, progress); err != nil {
+				return err
 			}
 			if outcome.Err == nil {
 				spec.accept(windows[i], outcome.Outcome.Value)
@@ -298,6 +296,33 @@ func runWindows[U any, T any](ctx context.Context, executor llm.Executor, provid
 			// supplies nothing and never revokes an analysis result.
 		}
 		windows = pending
+	}
+	return nil
+}
+
+// cacheNotices reports an outcome's recoverable cache diagnostics on the run
+// output and goes on, as the atlas reading does: the executor already
+// answered live or kept its answer, so a cache that could not be read, written
+// or evicted changes no glossary result (review A7: a recovered cache_read
+// once stopped the report before its HTML). An issue that is not recoverable,
+// a required run artifact that was not written, stays an error.
+func cacheNotices(issues []llm.Issue, progress func(state, detail string)) error {
+	for _, issue := range issues {
+		if !issue.Recoverable() {
+			return fmt.Errorf("glossary: %w", issue)
+		}
+		state := ""
+		switch issue.Kind {
+		case llm.IssueCacheRead:
+			state = "cache read failed"
+		case llm.IssueCacheWrite:
+			state = "cache write failed"
+		case llm.IssueCacheEvict:
+			state = "cache eviction failed"
+		}
+		if state != "" && progress != nil {
+			progress(state, issue.Error())
+		}
 	}
 	return nil
 }
