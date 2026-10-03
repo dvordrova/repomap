@@ -1,10 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Same-named declarations of one scope read apart by what only each uses (data 2)
+
+- **Rule (coordinator, option b):** a reading's declarations still named alike after where they stand (`tellDeclsApart`) carry, saved in the page data, the first thing only each of them calls or reads, in source order. A repository declaration comes before an outside one (`groupindex.OwnUses`, the rung the closures took in e4a6c1fc). The column shows the word quiet after the name, with what it is and where it is written on its hover (en and ru vocabulary). Outside callees read by their own name: the platform's bare (`URL`, `ListenAndServe`), a package's with its last element (`status.Error`).
+- **casdoor:** the two `LoginPage.login.loginHandler` arrows read "URL" and "goToLink".
+- **Fixtures:** JS/TS `loginEither` (two `loginHandler` arrows in two `.then` callbacks) and Python `login_either` (a `login_handler` def in each `if` branch). `TestSameNamedDeclarationsOfOneScopeReadApartByWhatOnlyEachCalls` and `TestAReadingTellsSameNamedDeclarationsApartByWhatOnlyEachUses`. Go, C and Clojure have no equivalent: one name per scope, one function per file, and one var.
+
 ## 2026-10-03 — Closures one function writes alike read apart by what only each uses (data 2)
 
 - **Rule (on dbd3efbd's saved InlineName fields):** when no hand-over word tells a holder's alike closures apart, each is said by the first thing only it of them uses, in its source order. A repository declaration comes before an outside one: what it calls (`Calls`, an outside callee written as code writes it, `Config.GetCertificate`, `http.ListenAndServe`) or reads (`Reads`). Page words, en and ru: "anonymous function in {0} calling {1}" / "…, вызывающая {1}", and "anonymous function in {0} reading {1}" / "…, читающая {1}". One using only what the others use stays "one of how many".
 - **Replayed on saved data:**
-  - casdoor's proxy Start: "calling http.ListenAndServe", "calling Config.GetCertificate".
+  - casdoor's proxy Start: "calling ListenAndServe" (net/http is the platform), "calling Config.GetCertificate".
   - etcd's startPeer: "calling String", "reading recvc", "reading propc".
   - etcd's RegisterElectionHandlerServer: each calls its own `local_request_Election_*_0`, and Observe "calling status.Error".
 - **Tests:** `TestCallablesWrittenAlikeReadApartByWhatOnlyEachUses` and `TestAnInlineCallableIsNamedInWordsOfThePagesLanguage`. groupindex and report pass, and the six contract groups pass.

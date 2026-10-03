@@ -184,35 +184,48 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName
 		uses := ownUses(program, ids, byID, named, inline)
 		for position, id := range ids {
 			switch use := uses[position]; {
-			case use.word == "":
+			case use.Word == "":
 				result[id] = InlineName{In: holder, Of: len(ids)}
-			case use.reads:
-				result[id] = InlineName{In: holder, Reads: use.word}
+			case use.Reads:
+				result[id] = InlineName{In: holder, Reads: use.Word}
 			default:
-				result[id] = InlineName{In: holder, Calls: use.word}
+				result[id] = InlineName{In: holder, Calls: use.Word}
 			}
 		}
 	}
 	return result
 }
 
-// ownUse is the first thing one callable of several written alike uses
-// that none of the others does: a callee's name, or a read declaration's
-// with reads set.
-type ownUse struct {
-	word  string
-	reads bool
+// OwnUse is the first thing one declaration of several a reader would name
+// alike uses that none of the others does: a callee's name, or a read
+// declaration's with Reads set, and where that use is written.
+type OwnUse struct {
+	Word  string
+	Reads bool
+	At    programindex.Location
 }
 
-// ownUses tells callables one function writes alike apart by what only
-// each of them uses, in its own source order, a repository declaration
-// before an outside one: etcd's startPeer goroutines read recvc and propc,
-// casdoor's Start goroutines call http.ListenAndServe and
-// Config.GetCertificate, the gateway's handlers in
-// RegisterElectionHandlerServer each call their own local_request_. A
-// callable using nothing the others do keeps no word (they stay one of how
-// many).
-func ownUses(program programindex.Index, ids []string, byID map[string]programindex.Object, named func(programindex.Object) string, inline func(programindex.Object) bool) []ownUse {
+// OwnUses tells declarations a reader names alike apart by what only each
+// of them uses, in its own source order, a repository declaration before
+// an outside one: etcd's startPeer goroutines read recvc and propc,
+// casdoor's Start goroutines call ListenAndServe and
+// Config.GetCertificate, its two LoginPage.login.loginHandler arrows call
+// URL and goToLink. One using nothing the others do keeps no word.
+func OwnUses(program programindex.Index, ids []string) []OwnUse {
+	byID := make(map[string]programindex.Object, len(program.Objects))
+	for _, object := range program.Objects {
+		byID[object.ID] = object
+	}
+	named := func(object programindex.Object) string {
+		if owner, ok := byID[object.OwnerID]; ok && object.Kind == programindex.ObjectMethod && owner.Kind == programindex.ObjectType && owner.Name != "" && !strings.Contains(object.Name, ".") {
+			return strings.TrimPrefix(owner.Name, "*") + "." + object.Name
+		}
+		return object.Name
+	}
+	return ownUses(program, ids, byID, named, writtenInline)
+}
+
+func ownUses(program programindex.Index, ids []string, byID map[string]programindex.Object, named func(programindex.Object) string, inline func(programindex.Object) bool) []OwnUse {
 	type use struct {
 		to    string
 		reads bool
@@ -247,22 +260,23 @@ func ownUses(program programindex.Index, ids []string, byID map[string]programin
 			users[used.to][at] = true
 		}
 	}
-	// An outside callee reads as its code writes it: a method with its
-	// type (Config.GetCertificate), a function with its package's last
-	// element (http.ListenAndServe, status.Error).
+	// An outside callee reads by its own name: a method with its type
+	// (Config.GetCertificate), the platform's function alone (URL,
+	// ListenAndServe), a package's function with the package's last element
+	// (status.Error).
 	word := func(object programindex.Object) string {
 		if external := object.External; external != nil {
 			if receiver := strings.TrimPrefix(external.Receiver, "*"); receiver != "" {
 				return receiver + "." + external.Name
 			}
-			if external.PackagePath != "" {
+			if external.PackagePath != "" && external.AuthorityKind != programindex.ExternalAuthorityPlatform {
 				return path.Base(external.PackagePath) + "." + external.Name
 			}
 			return external.Name
 		}
 		return named(object)
 	}
-	result := make([]ownUse, len(ids))
+	result := make([]OwnUse, len(ids))
 	for at, list := range uses {
 		sort.SliceStable(list, func(i, j int) bool {
 			a, b := list[i].at, list[j].at
@@ -275,11 +289,11 @@ func ownUses(program programindex.Index, ids []string, byID map[string]programin
 					continue
 				}
 				if said := word(object); said != "" && !strings.ContainsAny(said, " \t\r\n()") && validText(said) {
-					result[at] = ownUse{word: said, reads: used.reads}
+					result[at] = OwnUse{Word: said, Reads: used.reads, At: used.at}
 					break
 				}
 			}
-			if result[at].word != "" {
+			if result[at].Word != "" {
 				break
 			}
 		}

@@ -307,3 +307,17 @@ export function startSession(): void {
   acceptClient();
   runSession();
 }
+
+// Two arrows one function binds to one name in two callbacks: nothing where
+// they stand tells them apart (casdoor's LoginPage.login.loginHandler), so a
+// reader names each by the first thing only it calls.
+export function loginEither(cas: boolean): void {
+  Promise.resolve(cas).then(() => {
+    const loginHandler = () => acceptClient();
+    loginHandler();
+  });
+  Promise.resolve(cas).then(() => {
+    const loginHandler = () => flushReplies();
+    loginHandler();
+  });
+}

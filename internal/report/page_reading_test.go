@@ -512,6 +512,40 @@ func TestAReadingTellsItsSameNamedDeclarationsApart(t *testing.T) {
 	}
 }
 
+// Two declarations of one file and scope the reading still names alike
+// (casdoor's two LoginPage.login.loginHandler) carry, saved, the first thing
+// only each of them calls or reads, with what it is and where it is written
+// for its hover; names it can tell apart by where they stand, and one using
+// only what the other uses, carry none.
+func TestAReadingTellsSameNamedDeclarationsApartByWhatOnlyEachUses(t *testing.T) {
+	at := func(line, column int) *programindex.Location {
+		return &programindex.Location{Path: "web/src/auth/LoginPage.js", Line: line, Column: column}
+	}
+	objects := []programindex.Object{
+		{ID: "n1", Kind: programindex.ObjectFunction, Name: "loginHandler", Location: at(520, 15)},
+		{ID: "n2", Kind: programindex.ObjectFunction, Name: "loginHandler", Location: at(553, 17)},
+		{ID: "n3", Kind: programindex.ObjectFunction, Name: "goToLink", Location: &programindex.Location{Path: "web/src/Setting.js", Line: 40, Column: 17}},
+		{ID: "n4", Kind: programindex.ObjectExternalSymbol, Name: "URL", External: &programindex.ExternalSymbol{AuthorityKind: programindex.ExternalAuthorityPlatform, PackagePath: "javascript", Name: "URL"}},
+		{ID: "n5", Kind: programindex.ObjectFunction, Name: "showMessage", Location: &programindex.Location{Path: "web/src/Setting.js", Line: 10, Column: 17}},
+	}
+	call := func(from, to string, line int) programindex.Relation {
+		return programindex.Relation{Kind: programindex.RelationCalls, FromID: from, ToIDs: []string{to}, Resolution: programindex.ResolutionExact, Location: at(line, 9)}
+	}
+	builder := &pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "t2"}, Objects: objects,
+		Relations: []programindex.Relation{call("n1", "n5", 526), call("n1", "n4", 531), call("n2", "n5", 560), call("n2", "n3", 562)}}}}}}
+	decls := []pageReadingDecl{
+		{Name: "LoginPage.login.loginHandler", File: "web/src/auth/LoginPage.js"},
+		{Name: "LoginPage.login.loginHandler", File: "web/src/auth/LoginPage.js"},
+		{Name: "goToLink", File: "web/src/Setting.js"},
+	}
+	tellDeclsApart(decls)
+	builder.tellDeclsApartByUse(decls, map[int][2]string{0: {"t2", "n1"}, 1: {"t2", "n2"}, 2: {"t2", "n3"}})
+	if len(decls[0].Apart) != 1 || decls[0].Apart[0] != (pageApartWord{Word: "URL", Of: apartCalls, At: "web/src/auth/LoginPage.js:531"}) ||
+		len(decls[1].Apart) != 1 || decls[1].Apart[0] != (pageApartWord{Word: "goToLink", Of: apartCalls, At: "web/src/auth/LoginPage.js:562"}) || decls[2].Apart != nil {
+		t.Fatalf("apart words %+v / %+v / %+v", decls[0].Apart, decls[1].Apart, decls[2].Apart)
+	}
+}
+
 // In an Inputs collection a kind's inputs running a handler come before
 // those only declaring a value, catalogued or not (reviewer, 2026-10-02:
 // freqtrade's trade, backtesting and webserver had stood after every option

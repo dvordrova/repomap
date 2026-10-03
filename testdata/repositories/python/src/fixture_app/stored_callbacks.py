@@ -264,3 +264,16 @@ def run_session():
 def start_session():
     accept_client()
     run_session()
+
+
+# Two defs one function binds to one name in two branches: nothing where
+# they stand tells them apart, so a reader names each by the first thing
+# only it calls (as JS/TS's loginEither).
+def login_either(cas):
+    if cas:
+        def login_handler():
+            accept_client()
+    else:
+        def login_handler():
+            flush_replies()
+    login_handler()

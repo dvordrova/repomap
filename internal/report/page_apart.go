@@ -46,6 +46,11 @@ const (
 	// apartRegistered: the function its registration is written in
 	// (RegisterElectionHandlerServer, RegisterElectionHandlerClient).
 	apartRegistered = "registered"
+	// apartCalls and apartReads: for a declaration named as another of a
+	// reading, nothing where it stands telling them apart, what only it of
+	// them calls or reads first (casdoor's loginHandler calling URL).
+	apartCalls = "calls"
+	apartReads = "reads"
 )
 
 // pageApartFacts are an input's facts a word beside its name may come

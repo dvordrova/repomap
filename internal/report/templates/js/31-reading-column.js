@@ -82,6 +82,9 @@ function rmTellApart(list){
     var text=name.textContent;if(!byText.has(text))byText.set(text,[]);byText.get(text).push(name);
   });
   byText.forEach(function(names){
+    // A declaration nothing where it stands tells apart carries, saved, what
+    // only it of those named alike uses (tellDeclsApartByUse).
+    if(names.length>1)names.forEach(function(name){var words=rmApartWords(name.rmDecl.apart);if(words)name.after(words);});
     var files=names.map(function(name){return name.rmDecl.file||'';});
     if(names.length<2||new Set(files).size<2)return;
     var folders=files.map(function(file){var at=file.lastIndexOf('/');return at>0?file.slice(0,at):'';}),apart=new Set(folders).size===names.length;
@@ -131,7 +134,8 @@ function rmEndTitle(ctx,decl){
 var rmLongPiece=24;
 // The words saved beside a same-named input's name (page_apart.go), quiet
 // after it, each saying on its hover what it is and where it is written.
-var rmApartSays={options:'the commands it is an option of',declared:'the declaration declaring it',key:'its registration\'s own word',handler:'a word its handler declares, at {0}',registered:'the function registering it, at {0}'};
+var rmApartSays={options:'the commands it is an option of',declared:'the declaration declaring it',key:'its registration\'s own word',handler:'a word its handler declares, at {0}',registered:'the function registering it, at {0}',
+  calls:'what only it of those named alike calls, at {0}',reads:'what only it of those named alike reads, at {0}'};
 function rmApartTitle(words){
   return words.map(function(word){var says=rmApartSays[word.of];return says?word.word+' — '+(says.indexOf('{0}')>=0?rmT(says,word.at||''):rmT(says)):word.word;}).join('\n');
 }

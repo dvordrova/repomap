@@ -79,6 +79,11 @@ type pageReadingDecl struct {
 	// author's claim, never the model's.
 	Doc    string             `json:"doc,omitempty"`
 	Fields []pageReadingField `json:"fields,omitempty"`
+	// Apart is, for a declaration the reading names as another, nothing
+	// where it stands telling them apart, the first thing only it of them
+	// calls or reads (tellDeclsApartByUse): casdoor's two
+	// LoginPage.login.loginHandler, one calling URL, the other goToLink.
+	Apart []pageApartWord `json:"apart,omitempty"`
 }
 
 // MarshalJSON leaves the key out when it is the declaration's link, as it
@@ -347,6 +352,15 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		return declare(pageReadingDecl{Name: label, Key: declarationKey(anchor), Anonymous: anchor.words, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code,
 			At: anchor.Text, File: anchor.Path, Kind: kind, Part: part})
 	}
+	// subjectOf is, by declaration, the program and subject it is, where
+	// the reading knows them (tellDeclsApartByUse).
+	subjectOf := map[int][2]string{}
+	knownAs := func(position int, programTargetID, subjectID string) int {
+		if position >= 0 && subjectID != "" {
+			subjectOf[position] = [2]string{programTargetID, subjectID}
+		}
+		return position
+	}
 
 	// The members: the declarations a reader looks for, as the part's tiles
 	// draw them, each type with every one of its fields.
@@ -385,7 +399,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		// A declaration with no link and no place the page can key it by
 		// is not one the script can read.
-		position := fromAnchor(label, anchor, kind, own)
+		position := knownAs(fromAnchor(label, anchor, kind, own), targetID, id)
 		if position < 0 {
 			continue
 		}
@@ -481,8 +495,8 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		fromPart, fromTitle := partOf(row.fromTarget, row.fromSubject)
 		toPart, toTitle := partOf(row.toTarget, row.toSubject)
-		from := fromAnchor(qualified(row.fromTarget, row.fromSubject, row.FromName), row.FromDecl, kindOf(row.fromTarget, row.fromSubject), fromPart)
-		to := fromAnchor(qualified(row.toTarget, row.toSubject, row.ToName), row.ToDecl, kindOf(row.toTarget, row.toSubject), toPart)
+		from := knownAs(fromAnchor(qualified(row.fromTarget, row.fromSubject, row.FromName), row.FromDecl, kindOf(row.fromTarget, row.fromSubject), fromPart), row.fromTarget, row.fromSubject)
+		to := knownAs(fromAnchor(qualified(row.toTarget, row.toSubject, row.ToName), row.ToDecl, kindOf(row.toTarget, row.toSubject), toPart), row.toTarget, row.toSubject)
 		if from < 0 || to < 0 {
 			continue
 		}
@@ -692,7 +706,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			}
 			label, anchor := builder.subjectDisplay(ref.subject)
 			part, title := partOf(call.targetID, call.caller)
-			caller := fromAnchor(qualified(call.targetID, call.caller, label), anchor, kindOf(call.targetID, call.caller), part)
+			caller := knownAs(fromAnchor(qualified(call.targetID, call.caller, label), anchor, kindOf(call.targetID, call.caller), part), call.targetID, call.caller)
 			if caller < 0 {
 				continue
 			}
@@ -729,7 +743,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		label, anchor := builder.subjectDisplay(ref.subject)
 		part, _ := partOf(targetID, id)
-		position := fromAnchor(qualified(targetID, id, label), anchor, kindOf(targetID, id), part)
+		position := knownAs(fromAnchor(qualified(targetID, id, label), anchor, kindOf(targetID, id), part), targetID, id)
 		if position >= 0 {
 			subjectAt[position] = id
 		}
@@ -793,6 +807,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		return ""
 	}
 	tellDeclsApart(reading.Decls)
+	builder.tellDeclsApartByUse(reading.Decls, subjectOf)
 	raw, err := json.Marshal(reading)
 	if err != nil {
 		return ""
@@ -815,6 +830,69 @@ func tellDeclsApart(decls []pageReadingDecl) {
 	for position, told := range groupindex.TellApart(names, spellings) {
 		decls[position].Name = told
 	}
+}
+
+// tellDeclsApartByUse gives the declarations a reading still names alike
+// after where they stand (tellDeclsApart), each of one program, the first
+// thing only it of them calls or reads, in its source order, a repository
+// declaration before an outside one (groupindex.OwnUses, the rung callables
+// written alike are named by): casdoor's two LoginPage.login.loginHandler,
+// arrows in two `.then` callbacks of login, read "loginHandler URL" and
+// "loginHandler goToLink", each word saying on its hover what it is and
+// where it is written. Nothing tells apart one using only what the others
+// use, and no line or number is said.
+func (builder *pageBuilder) tellDeclsApartByUse(decls []pageReadingDecl, subjectOf map[int][2]string) {
+	alike := map[string][]int{}
+	var order []string
+	for position, decl := range decls {
+		if _, seen := alike[decl.Name]; !seen {
+			order = append(order, decl.Name)
+		}
+		alike[decl.Name] = append(alike[decl.Name], position)
+	}
+	for _, name := range order {
+		positions := alike[name]
+		if len(positions) < 2 {
+			continue
+		}
+		program, ids := "", make([]string, 0, len(positions))
+		for _, position := range positions {
+			subject, known := subjectOf[position]
+			if !known || program != "" && subject[0] != program {
+				ids = nil
+				break
+			}
+			program = subject[0]
+			ids = append(ids, subject[1])
+		}
+		index, found := builder.programIndex(program)
+		if len(ids) < 2 || !found {
+			continue
+		}
+		for at, use := range groupindex.OwnUses(index, ids) {
+			if use.Word == "" {
+				continue
+			}
+			of := apartCalls
+			if use.Reads {
+				of = apartReads
+			}
+			decls[positions[at]].Apart = []pageApartWord{{Word: use.Word, Of: of, At: placeText(use.At.Path, use.At.Line)}}
+		}
+	}
+}
+
+// programIndex is a program's saved ProgramIndex.
+func (builder *pageBuilder) programIndex(programTargetID string) (programindex.Index, bool) {
+	if builder.data == nil || builder.data.ProgramPortfolio == nil || programTargetID == "" {
+		return programindex.Index{}, false
+	}
+	for _, entry := range builder.data.ProgramPortfolio.Entries {
+		if entry.Target.ID == programTargetID {
+			return entry, true
+		}
+	}
+	return programindex.Index{}, false
 }
 
 // readingFan says a caller's dispatch into a part: how many its site can

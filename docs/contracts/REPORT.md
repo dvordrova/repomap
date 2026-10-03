@@ -696,7 +696,18 @@ alike are named apart where the reading is made (`tellDeclsApart`,
 (headscale's policy.PolicyManager and v2.PolicyManager, beets's
 library.Item.path and plugins.Item.path), and the column tells two one list
 still names alike apart the same way, quiet after the name (litestream's
-ReplicaClient, one per package). Inputs of one kind a program names
+ReplicaClient, one per package). Two of one file nothing where they stand
+tells apart carry, saved, the first thing only each of them calls or reads,
+a repository declaration before an outside one (`tellDeclsApartByUse`,
+`groupindex.OwnUses`, the rung callables written alike are named by),
+quiet after the name, saying on its hover what it is and where it is
+written: casdoor's two LoginPage.login.loginHandler arrows read
+"loginHandler URL" and "loginHandler goToLink"
+(`TestAReadingTellsSameNamedDeclarationsApartByWhatOnlyEachUses`;
+`TestSameNamedDeclarationsOfOneScopeReadApartByWhatOnlyEachCalls` on the JS/TS
+and Python fixtures; Go declares a name once per scope, C a function once
+per file, and a Clojure namespace's second `defn` of a name is the same
+var). Inputs of one kind a program names
 alike keep their names as registered and read apart by the words saved
 beside each (`page_apart.go`, chosen when the page is assembled, never by
 the browser), in the Inputs list (the whole told-apart name its link), on

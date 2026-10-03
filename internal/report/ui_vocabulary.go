@@ -908,11 +908,13 @@ var russianUI = map[string]string{
 	"by {0}":                                          "меняет: {0}",
 
 	// Words beside a same-named input's name (page_apart.go).
-	"the commands it is an option of":     "команды, у которых это опция",
-	"the declaration declaring it":        "объявление, которое его объявляет",
-	"its registration's own word":         "собственное слово его регистрации",
-	"a word its handler declares, at {0}": "слово, которое объявляет его обработчик, в {0}",
-	"the function registering it, at {0}": "функция, которая его регистрирует, в {0}",
+	"the commands it is an option of":                 "команды, у которых это опция",
+	"the declaration declaring it":                    "объявление, которое его объявляет",
+	"its registration's own word":                     "собственное слово его регистрации",
+	"a word its handler declares, at {0}":             "слово, которое объявляет его обработчик, в {0}",
+	"the function registering it, at {0}":             "функция, которая его регистрирует, в {0}",
+	"what only it of those named alike calls, at {0}": "то, что из одноимённых вызывает только оно, в {0}",
+	"what only it of those named alike reads, at {0}": "то, что из одноимённых читает только оно, в {0}",
 
 	// Callables one function writes alike (31-reading-column.js rmInlineText).
 	"anonymous function in {0} for {1}":       "анонимная функция в {0} для {1}",

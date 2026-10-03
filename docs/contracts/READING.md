@@ -629,7 +629,7 @@ commands, `Name = "doctor"`: "main (inline for doctor)", read "anonymous
 function in main for doctor"); when no field tells them all apart, each
 is said by the first thing only it of them uses, in its source order, a
 repository declaration before an outside one: what it calls ("anonymous
-function in Start calling http.ListenAndServe", casdoor's two goroutines of
+function in Start calling ListenAndServe", casdoor's two goroutines of
 proxy `Start`, the other "calling Config.GetCertificate"; the gateway's
 handlers in etcd's `RegisterElectionHandlerServer` each calling its own
 `local_request_`) or reads ("anonymous function in startPeer reading
