@@ -94,3 +94,37 @@ func TestAConflictingVerdictRefusesOnlyItsQuestion(t *testing.T) {
 		t.Fatalf("a conflicting answer: %+v / %v", result, err)
 	}
 }
+
+// Copies of an answer that differ only in letter case and whitespace (yes
+// and " YES ", identical probabilities, in either order) are one answer:
+// the row is decided, not refused as answered twice differently (review
+// B2's residual). Both the YesAt cutoff and the margin rule read the form.
+func TestCopiesDifferingInFormAreOneAnswer(t *testing.T) {
+	yes := `{"type":"choice","choice":"yes","probabilities":{"yes":0.99,"no":0.01}}`
+	spaced := `{"type":"choice","choice":" YES ","probabilities":{"yes":0.99,"no":0.01}}`
+	neighbour := `{"type":"choice","choice":"no","probabilities":{"no":0.95,"yes":0.05}}`
+	window := Window{Rows: []Row{{ID: "n1", Fields: []Field{{Name: "name", Value: "a"}}}, {ID: "n2", Fields: []Field{{Name: "name", Value: "b"}}}}}
+	for _, yesAt := range []float64{0, 0.8} {
+		def := Definition{Stage: "atlas_open", Contract: "b2-form", System: "open?", Classifier: true, YesAt: yesAt,
+			Columns: []Column{{Name: "open", Kind: Choice, Options: []string{"yes", "no"}}}}
+		for _, order := range [][2]string{{yes, spaced}, {spaced, yes}} {
+			response := `{"answers":{"n1|open":` + order[0] + `,"n1|open":` + order[1] + `,"n2|open":` + neighbour + `}}`
+			verdicts, err := (&typesafe.Client{}).Verdicts([]byte(response))
+			if err != nil || verdicts["n1|open"].Conflict {
+				t.Fatalf("yes at %v: copies differing in form were a conflict: %+v / %v", yesAt, verdicts, err)
+			}
+			result, err := DecodeClassifierAnswers(def, window, verdicts)
+			if err != nil || result.Answers[0]["open"] != "yes" || len(result.Rejections) != 0 {
+				t.Fatalf("yes at %v, order %q first: %+v / %v", yesAt, order[0], result, err)
+			}
+			if got := result.Answers[1]["open"]; got != "no" {
+				t.Fatalf("yes at %v: the neighbour lost its answer: %+v", yesAt, result.Answers[1])
+			}
+		}
+	}
+	// A different decision written in another form is still a conflict.
+	verdicts, _ := (&typesafe.Client{}).Verdicts([]byte(`{"answers":{"n1|open":` + yes + `,"n1|open":{"type":"choice","choice":" NO ","probabilities":{"yes":0.01,"no":0.99}}}}`))
+	if !verdicts["n1|open"].Conflict {
+		t.Fatalf("a different decision in another form was one answer: %+v", verdicts)
+	}
+}

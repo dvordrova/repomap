@@ -318,7 +318,10 @@ The display-translation cube behind `--lang`
   key; an unreadable verdict is absent, a response without verdicts is an
   error; every written copy of a question's answer is kept until compared,
   so an identical repeat is one answer and two different ones are a
-  conflict that refuses that question's cell or row alone, review B2). The executor caches, journals and gates it like any provider, so
+  conflict that refuses that question's cell or row alone, review B2; a
+  choice or probability key in another letter case or with surrounding
+  whitespace, `yes` and `" YES "`, is the same decision, both when copies are
+  compared and when the choice is read against its labels). The executor caches, journals and gates it like any provider, so
   its exact-cache keys are its `State` and the prepared bytes; the decision
   rule below, the question texts (which name Jev's `task`, `context.<field>`
   and `row`), request packing, concurrency and the one-token output limit

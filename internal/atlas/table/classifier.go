@@ -569,6 +569,7 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 		}
 	}
 	if def.YesAt > 0 && len(options) == 2 && slices.Contains(options, "yes") && slices.Contains(options, "no") {
+		got = LabelForm(got, options)
 		if !ok || got.Probabilities == nil {
 			return fmt.Sprintf("column %s was not answered", column.Name), false
 		}
@@ -586,6 +587,7 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 	if column.Optional {
 		labels = append(labels, classifierAbsent)
 	}
+	got = LabelForm(got, labels)
 	probability := got.Probabilities[got.Choice]
 	rival, rivalAt := runnerUp(got, labels)
 	switch {
@@ -603,6 +605,36 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 		answer[column.Name] = names.ref[got.Choice]
 		return "", false
 	}
+}
+
+// LabelForm writes a verdict's choice and probability keys as the listed
+// labels they spell in another letter case or with surrounding whitespace:
+// " YES " is the label yes. That is the answer's form, not another decision
+// (review B2's residual). A key that spells no label stays as written, and
+// an exact key wins over one that only spells the same label.
+func LabelForm(got llm.Verdict, labels []string) llm.Verdict {
+	label := func(written string) string {
+		trimmed := strings.TrimSpace(written)
+		for _, candidate := range labels {
+			if candidate == trimmed || strings.EqualFold(candidate, trimmed) {
+				return candidate
+			}
+		}
+		return written
+	}
+	got.Choice = label(got.Choice)
+	if got.Probabilities != nil {
+		probabilities := make(map[string]float64, len(got.Probabilities))
+		for written, at := range got.Probabilities {
+			key := label(written)
+			if _, exact := got.Probabilities[key]; exact && key != written {
+				continue
+			}
+			probabilities[key] = at
+		}
+		got.Probabilities = probabilities
+	}
+	return got
 }
 
 // runnerUp is the listed option, other than the chosen one, that the answer

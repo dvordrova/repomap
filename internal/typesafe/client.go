@@ -164,7 +164,7 @@ func (c *Client) Verdicts(response []byte) (map[string]llm.Verdict, error) {
 		verdict, readable := readVerdict(written[0])
 		for _, raw := range written[1:] {
 			again, againReadable := readVerdict(raw)
-			if againReadable != readable || !reflect.DeepEqual(again, verdict) {
+			if againReadable != readable || !sameDecision(again, verdict) {
 				verdict, readable = llm.Verdict{Conflict: true}, true
 				break
 			}
@@ -174,6 +174,26 @@ func (c *Client) Verdicts(response []byte) (map[string]llm.Verdict, error) {
 		}
 	}
 	return verdicts, nil
+}
+
+// sameDecision compares two copies of an answer by what they decide: a
+// choice or probability key in another letter case or with surrounding
+// whitespace (yes and " YES ") is the same choice.
+func sameDecision(a, b llm.Verdict) bool {
+	return reflect.DeepEqual(decisionForm(a), decisionForm(b))
+}
+
+func decisionForm(verdict llm.Verdict) llm.Verdict {
+	fold := func(text string) string { return strings.ToLower(strings.TrimSpace(text)) }
+	verdict.Choice = fold(verdict.Choice)
+	if verdict.Probabilities != nil {
+		probabilities := make(map[string]float64, len(verdict.Probabilities))
+		for key, at := range verdict.Probabilities {
+			probabilities[fold(key)] = at
+		}
+		verdict.Probabilities = probabilities
+	}
+	return verdict
 }
 
 // readVerdict reads one written answer; false for one that cannot be read
