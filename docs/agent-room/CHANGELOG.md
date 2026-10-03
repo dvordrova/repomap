@@ -1,5 +1,12 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A callable a step hands over reads as handed, not called (data 2)
+
+- **Control review:** Lua 5.1.5's handle_script listed laction under "also calls:", although docall hands it to signal(). The walk had saved it as handed (`FlowBranch.Via` "handed to signal.h.signal", through docall), and the page dropped that word.
+- **Change:** a step's passed candidates split by their saved `Via`. Calls stay under "also calls:"; hand-overs read under "also hands over:" (ru "также передаёт:") with what each is handed to ("laction to signal.h.signal through docall", ru "в"), their helpers and guards kept. Display only; nothing is asked or computed anew.
+- **Expectations:** `TestAStepsPassedHandOverReadsAsHanded` (en, ru). In each language's flow test, `assertPassedHanded` checks that start_once, StartOnce and startOnce go on through their runner and keep the callable as "handed to" it. kvd's main keeps acceptHandler "handed to loopCreateFileEvent". Clojure has no equivalent: a call of a function's own parameter joins nothing (CLOJURE).
+- **Checks:** report tests pass on HEAD plus this change (the report agent's in-flight `notePlace` hunk in page_model.go is left out of the build and the commit). The fixture flow tests pass.
+
 ## 2026-10-03 — The Main flow is titled by its parts alone (data 2)
 
 - **Skeptic:** neither restate the end in plain words (A) nor keep the code title where no parts line exists (B). "From main to propagatemark or lua_getfenv" named where the walk stopped (a leaf, a revisit, a failure path) as if the program went there. The first and last steps are already the list's rows, and each end prints its stop reason. Its Russian was written by the translator, since localization sent it as a label.
