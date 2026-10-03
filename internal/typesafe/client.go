@@ -202,21 +202,35 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 // and HTTP 5xx are transport failures and are sent again, at most
 // maxAttempts in all, with the same bytes: after a 429 every new attempt
 // through the gate waits the shared cooldown (llm.RateLimitCooldown), after
-// another failure the short backoff. Nothing else is sent again: a refusal
-// of the input's size, another HTTP status and an answer without answers
-// end the call. A failed call returns the last attempt's HTTP diagnostics
-// and body with a typed failure (llm.ProviderFailureSource), so the executor
-// names its class and status and the run can stop on a refused key or
-// balance. Cancellation interrupts every wait.
+// another failure the short backoff. An HTTP 200 that carries no answers
+// (none, null or empty) is the provider's fault, as the text model's empty
+// answer is (owner, 2026-09-26), and is sent once more after the short
+// backoff; a second one is refused. Nothing else is sent again: a refusal of
+// the input's size, another HTTP status, an unreadable envelope and answers
+// the decoder refuses, wholly or in part, end the call. Usage is that of
+// every answer, since each is billed. A failed call returns the last
+// attempt's HTTP diagnostics and body with a typed failure
+// (llm.ProviderFailureSource), so the executor names its class and status and
+// the run can stop on a refused key or balance. Cancellation interrupts every
+// wait.
 func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	started := time.Now()
 	body := prepared.Bytes()
 	digest := fmt.Sprintf("%x", sha256.Sum256(body))
 	var (
-		last     attempt
-		received int
-		wait     time.Duration
+		last                      attempt
+		received                  int
+		inputTokens, outputTokens int
+		usageReported             bool
+		noAnswerRetried           bool
+		wait                      time.Duration
 	)
+	metrics := func(attempts int) llm.Metrics {
+		return llm.Metrics{
+			InputTokens: inputTokens, OutputTokens: outputTokens, UsageReported: usageReported,
+			ProviderResponseBytes: received, Latency: time.Since(started), Attempts: attempts,
+		}
+	}
 	failed := func(attempts int, err error) (llm.Completion, error) {
 		response := last.body
 		// A provider that echoes the key in its error must not put it in
@@ -224,10 +238,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		if c.APIKey != "" && bytes.Contains(response, []byte(c.APIKey)) {
 			response = nil
 		}
-		return llm.Completion{
-			Response: response, HTTPResponse: last.http.Clone(),
-			Metrics: llm.Metrics{ProviderResponseBytes: received, Latency: time.Since(started), Attempts: attempts},
-		}, err
+		return llm.Completion{Response: response, HTTPResponse: last.http.Clone(), Metrics: metrics(attempts)}, err
 	}
 	for n := 1; n <= maxAttempts; n++ {
 		if n > 1 && !sleep(ctx, wait) {
@@ -242,6 +253,12 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		}
 		last = c.send(ctx, body)
 		received += len(last.body)
+		inputTokens, outputTokens = inputTokens+last.inputTokens, outputTokens+last.outputTokens
+		usageReported = usageReported || last.usageReported
+		if last.noAnswers {
+			last.retryable = !noAnswerRetried
+			noAnswerRetried = true
+		}
 		if last.status == http.StatusTooManyRequests {
 			wait = llm.RateLimitCooldown(last.retryAfter, last.body, time.Now())
 			llm.BackoffProviderAttempts(ctx, wait)
@@ -250,13 +267,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		}
 		release()
 		if last.err == nil {
-			return llm.Completion{
-				Response: last.answers, FinishReason: llm.FinishStop, ChoiceCount: 1,
-				Metrics: llm.Metrics{
-					InputTokens: last.inputTokens, OutputTokens: last.outputTokens, UsageReported: true,
-					ProviderResponseBytes: received, Latency: time.Since(started), Attempts: n,
-				},
-			}, nil
+			return llm.Completion{Response: last.answers, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: metrics(n)}, nil
 		}
 		if err := ctx.Err(); err != nil {
 			return failed(n, err)
@@ -283,8 +294,9 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 	return failed(maxAttempts, last.err)
 }
 
-// attempt is one HTTP exchange: its diagnostics and body, and either Jev's
-// answers or the failure and whether it is a transport failure.
+// attempt is one HTTP exchange: its diagnostics, body and reported usage,
+// and either Jev's answers or the failure and whether it is a transport
+// failure. noAnswers marks an HTTP 200 that answered nothing.
 type attempt struct {
 	http       *llm.HTTPResponse
 	body       []byte
@@ -292,9 +304,11 @@ type attempt struct {
 	retryAfter string
 	err        error
 	retryable  bool
+	noAnswers  bool
 
 	answers                   []byte
 	inputTokens, outputTokens int
+	usageReported             bool
 }
 
 func (c *Client) send(ctx context.Context, body []byte) attempt {
@@ -342,18 +356,43 @@ func (c *Client) send(ctx context.Context, body []byte) attempt {
 	}
 	var envelope struct {
 		Answers json.RawMessage `json:"answers"`
-		Usage   struct {
+		Usage   *struct {
 			InputTokens  int `json:"input_tokens"`
 			OutputTokens int `json:"output_tokens"`
 		} `json:"usage"`
 	}
-	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Answers) == 0 {
+	if err := json.Unmarshal(raw, &envelope); err != nil {
 		result.err = &failure{kind: llm.ProviderFailureResponse}
 		return result
 	}
+	if envelope.Usage != nil {
+		result.inputTokens, result.outputTokens, result.usageReported = envelope.Usage.InputTokens, envelope.Usage.OutputTokens, true
+	}
+	if answeredNothing(envelope.Answers) {
+		result.err, result.noAnswers = &failure{kind: llm.ProviderFailureResponse}, true
+		return result
+	}
 	result.answers, _ = json.Marshal(map[string]json.RawMessage{"answers": envelope.Answers})
-	result.inputTokens, result.outputTokens = envelope.Usage.InputTokens, envelope.Usage.OutputTokens
 	return result
+}
+
+// answeredNothing reports answers that are absent, null, or an empty object
+// or list. Any other value goes to the owner's decoder, which keeps each
+// answer it can read and refuses the rest.
+func answeredNothing(answers json.RawMessage) bool {
+	var value any
+	if len(answers) == 0 || json.Unmarshal(answers, &value) != nil {
+		return len(answers) == 0
+	}
+	switch value := value.(type) {
+	case nil:
+		return true
+	case map[string]any:
+		return len(value) == 0
+	case []any:
+		return len(value) == 0
+	}
+	return false
 }
 
 // failure is a closed transport fact about a failed call: its class, HTTP

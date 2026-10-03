@@ -304,3 +304,59 @@ func TestExhaustedRetriesKeepTheLastAttempt(t *testing.T) {
 		}
 	})
 }
+
+// An HTTP 200 that answers nothing is the provider's fault, as the text
+// model's empty answer is: the same bytes go once more, through the gate,
+// after the short backoff, and the call is billed for both answers. A second
+// one is refused. Answers the decoder refuses, wholly or in part, and an
+// unreadable envelope are never sent again.
+func TestAnAnswerWithoutAnswersIsSentOnceMore(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		replies  []string
+		attempts int
+		accepted bool
+		input    int
+	}{
+		{name: "empty answers, then answers", replies: []string{`{"answers":{},"usage":{"input_tokens":5}}`, `{"answers":{"q":{"type":"noul","noul":0.9}},"usage":{"input_tokens":5,"output_tokens":1}}`}, attempts: 2, accepted: true, input: 10},
+		{name: "null answers, then answers", replies: []string{`{"answers":null}`, `{"answers":{"q":{"type":"noul","noul":0.9}},"usage":{"input_tokens":5,"output_tokens":1}}`}, attempts: 2, accepted: true, input: 5},
+		{name: "no answers field, then answers", replies: []string{`{"model":"jev-test"}`, `{"answers":{"q":{"type":"noul","noul":0.9}},"usage":{"input_tokens":5,"output_tokens":1}}`}, attempts: 2, accepted: true, input: 5},
+		{name: "twice without answers", replies: []string{`{"answers":{}}`, `{"answers":[]}`, `{"answers":{"q":{"type":"noul","noul":0.9}}}`}, attempts: 2},
+		{name: "an answer the decoder refuses", replies: []string{`{"answers":{"q":"unreadable"}}`, `{"answers":{"q":{"type":"noul","noul":0.9}}}`}, attempts: 1},
+		{name: "an unreadable envelope", replies: []string{`not json`, `{"answers":{"q":{"type":"noul","noul":0.9}}}`}, attempts: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var starts []time.Time
+				client := handlerClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					starts = append(starts, time.Now())
+					_, _ = io.WriteString(w, test.replies[min(len(starts), len(test.replies))-1])
+				}))
+				client.Controller = llm.NewBatchController(4)
+				call := questionCall(t, client, "q")
+				call.DecodeValidate = func(raw []byte) (map[string]any, error) {
+					verdicts, err := client.Verdicts(raw)
+					if err != nil || verdicts["q"].Yes == nil {
+						return nil, errors.New("question q is unanswered")
+					}
+					return map[string]any{"q": *verdicts["q"].Yes}, nil
+				}
+				outcome, err := llm.ExecuteJSON(t.Context(), llm.Executor{}, client, call)
+				if len(starts) != test.attempts || outcome.Metrics.Attempts != test.attempts || (err == nil) != test.accepted {
+					t.Fatalf("attempts %d (metrics %d), err %v", len(starts), outcome.Metrics.Attempts, err)
+				}
+				if test.attempts == 2 && starts[1].Sub(starts[0]) != 2*time.Second {
+					t.Fatalf("the second answer was asked after %v, not the short backoff", starts[1].Sub(starts[0]))
+				}
+				// Every answer is billed, the empty one too.
+				if test.accepted && outcome.Metrics.InputTokens != test.input {
+					t.Fatalf("usage %+v, want %d input tokens", outcome.Metrics, test.input)
+				}
+				var source llm.ProviderFailureSource
+				if !test.accepted && test.attempts == 2 && (!errors.As(err, &source) || source.ProviderFailure().Kind != llm.ProviderFailureResponse) {
+					t.Fatalf("a second empty answer was not refused as a response failure: %v", err)
+				}
+			})
+		})
+	}
+}

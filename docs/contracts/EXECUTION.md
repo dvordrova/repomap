@@ -69,9 +69,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   returns a typed failure (class, status, attempts, exhausted) with the last
   attempt's diagnostic headers and body and `HTTPResponse.Provider` "Jev", so
   its receipt and the run's stop on HTTP 401, 403 or 402 name Jev's key or
-  account; a body that echoes the key is not kept. A Jev HTTP 200 without
-  answers is a response failure and is not sent again (the empty-answer retry
-  below was decided for the text model's empty content). An HTTP 200 answer with empty content, or with finish reason
+  account; a body that echoes the key is not kept. A Jev HTTP 200 whose
+  `answers` are absent, null or empty gets the empty-answer retry below, the
+  same one transport retry through its gate (owner, 2026-10-03); answers the
+  decoder refuses, wholly or in part, and an unreadable envelope get none.
+  An HTTP 200 answer with empty content, or with finish reason
   `insufficient_system_resource`, is the provider's fault and gets one
   transport retry of the same bytes (owner decision 2026-09-26). It counts as
   a transport attempt and in the call's token usage, keeps the short backoff
