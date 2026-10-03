@@ -88,8 +88,8 @@ func TestAJevRefusalIsAReadableReceiptAndStopsTheRun(t *testing.T) {
 			if stopped == nil || !strings.Contains(stopped.Error(), test.cause) {
 				t.Fatalf("the run was not stopped by the refusal: %v", stopped)
 			}
-			if test.echo != strings.Contains(text, "raw response (last attempt): unavailable") {
-				t.Fatalf("a response echoing the key was kept, or another was dropped:\n%s", text)
+			if strings.Contains(text, "raw response (last attempt): unavailable") {
+				t.Fatalf("the refusal's response was dropped:\n%s", text)
 			}
 			if strings.Contains(text, "private-cookie") || strings.Contains(text, key) {
 				t.Fatalf("the console shows a cookie or the key:\n%s", text)

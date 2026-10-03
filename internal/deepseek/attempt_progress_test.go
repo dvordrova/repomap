@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -133,4 +134,36 @@ func TestRetryProgressAnnouncesFailuresBeforeWaitAndActualStarts(t *testing.T) {
 			})
 		})
 	}
+}
+
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+func (failingBody) Close() error             { return nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
+
+// A 429 whose body fails to arrive is still the rate limit: its Retry-After
+// sets the shared cooldown (the review's A8 note: it was lost with the body).
+func TestARateLimitWhoseBodyFailsKeepsItsRetryAfter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var starts []time.Time
+		client := llmProviderHandlerClient(nil)
+		client.HTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			starts = append(starts, time.Now())
+			if len(starts) == 1 {
+				header := http.Header{"Retry-After": []string{"90"}}
+				return &http.Response{StatusCode: http.StatusTooManyRequests, Header: header, Body: failingBody{}, Request: request}, nil
+			}
+			recorder := httptest.NewRecorder()
+			_, _ = recorder.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
+			return recorder.Result(), nil
+		})}
+		outcome, err := llm.ExecuteJSON[map[string]any](t.Context(), llm.Executor{}, client, llmProviderFailureCall())
+		if err != nil || len(starts) != 2 || starts[1].Sub(starts[0]) != 90*time.Second || outcome.Metrics.Attempts != 2 {
+			t.Fatalf("starts %v, err %v", starts, err)
+		}
+	})
 }

@@ -504,17 +504,26 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		)
 	}
 	defer resp.Body.Close()
-	httpResponse := llm.DiagnosticHTTPResponse(resp)
+	// A server that writes the configured key back puts it nowhere: not in
+	// the diagnostics, the error, the completion, a cache or a journal.
+	httpResponse := llm.DiagnosticHTTPResponse(resp).WithoutCredential(apiKey)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
 		// A body that arrives too slowly hits the same per-attempt bound as a
 		// request that never answered, and is worth the same second attempt.
 		retry := isRetryableNetworkError(err) || retryableTimeout(ctx, err)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			// The 429 and its Retry-After arrived before the body failed:
+			// still the provider's rate limit and its requested wait.
+			return chatCompletion{HTTPResponse: httpResponse, retryAfter: llm.RateLimitCooldown(resp.Header.Get("Retry-After"), nil, time.Now())},
+				retry, newProviderTransportError(llm.ProviderFailureHTTPStatus, resp.StatusCode, fmt.Errorf("read llm response: %w", err))
+		}
 		return chatCompletion{HTTPResponse: httpResponse}, retry, newProviderTransportError(
 			providerNetworkFailureKind(err), 0, fmt.Errorf("read llm response: %w", err),
 		)
 	}
+	respBody = llm.WithoutCredential(respBody, apiKey)
 	if len(respBody) > maxProviderResponseBytes {
 		resourceErr := &ResourceLimitError{
 			Kind:            ResourceLimitResponseBytes,

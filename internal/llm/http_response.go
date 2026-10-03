@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bytes"
 	"net/http"
 	"strings"
 )
@@ -64,4 +65,36 @@ func diagnosticResponseHeader(name string) bool {
 	return strings.HasPrefix(name, "ratelimit-") || strings.HasPrefix(name, "x-ratelimit-") ||
 		strings.HasSuffix(name, "-request-id") || strings.HasSuffix(name, "-trace-id") ||
 		strings.HasSuffix(name, "-correlation-id")
+}
+
+// CredentialMarker stands in a provider's response where it wrote the
+// client's own configured credential back.
+const CredentialMarker = "[configured API key]"
+
+// WithoutCredential returns raw with every occurrence of the client's own
+// configured credential replaced by CredentialMarker, and raw itself when it
+// holds none. A provider client applies it to each response body as it is
+// read, before the bytes reach an error, a completion, a cache or a journal:
+// a server that echoes the key in a refusal must not put it in the run's
+// files (review B5). It looks only for that one configured value; it is not
+// a scan of the repository or of anything else.
+func WithoutCredential(raw []byte, credential string) []byte {
+	if credential == "" || !bytes.Contains(raw, []byte(credential)) {
+		return raw
+	}
+	return bytes.ReplaceAll(raw, []byte(credential), []byte(CredentialMarker))
+}
+
+// WithoutCredential is the diagnostics with the configured credential
+// replaced in every kept header value.
+func (response *HTTPResponse) WithoutCredential(credential string) *HTTPResponse {
+	if response == nil || credential == "" {
+		return response
+	}
+	for name, values := range response.Headers {
+		for i, value := range values {
+			response.Headers[name][i] = strings.ReplaceAll(value, credential, CredentialMarker)
+		}
+	}
+	return response
 }

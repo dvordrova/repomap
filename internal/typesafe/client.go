@@ -318,13 +318,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		}
 	}
 	failed := func(attempts int, err error) (llm.Completion, error) {
-		response := last.body
-		// A provider that echoes the key in its error must not put it in
-		// the run's journal: the response is then unavailable.
-		if c.APIKey != "" && bytes.Contains(response, []byte(c.APIKey)) {
-			response = nil
-		}
-		return llm.Completion{Response: response, HTTPResponse: last.http.Clone(), Metrics: metrics(attempts)}, err
+		return llm.Completion{Response: last.body, HTTPResponse: last.http.Clone(), Metrics: metrics(attempts)}, err
 	}
 	for n := 1; n <= maxAttempts; n++ {
 		if n > 1 && !sleep(ctx, wait) {
@@ -409,13 +403,21 @@ func (c *Client) send(ctx context.Context, body []byte) attempt {
 		return attempt{err: transportFailure(err), retryable: true}
 	}
 	defer response.Body.Close()
-	result := attempt{http: llm.DiagnosticHTTPResponse(response), status: response.StatusCode}
+	// A server that writes the configured key back puts it nowhere: not in
+	// the diagnostics, the completion, a cache or a journal.
+	result := attempt{http: llm.DiagnosticHTTPResponse(response).WithoutCredential(c.APIKey), status: response.StatusCode}
 	result.http.Provider = providerName
+	// Read before the body: a 429 whose body then fails still asks its wait.
+	result.retryAfter = response.Header.Get("Retry-After")
 	raw, err := io.ReadAll(io.LimitReader(response.Body, llm.ProviderResponseByteLimit+1))
 	if err != nil {
 		result.err, result.retryable = transportFailure(err), true
+		if response.StatusCode == http.StatusTooManyRequests {
+			result.err = &failure{kind: llm.ProviderFailureHTTPStatus, status: response.StatusCode, cause: err}
+		}
 		return result
 	}
+	raw = llm.WithoutCredential(raw, c.APIKey)
 	if len(raw) > llm.ProviderResponseByteLimit {
 		limit := &llm.ResourceLimitError{Kind: llm.ResourceLimitResponseBytes, Limit: llm.ProviderResponseByteLimit,
 			Observed: len(raw), ObservedKnown: true, ObservedAtLeast: true}
@@ -428,7 +430,6 @@ func (c *Client) send(ctx context.Context, body []byte) attempt {
 	result.body = raw
 	switch {
 	case response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500:
-		result.retryAfter = response.Header.Get("Retry-After")
 		result.err, result.retryable = &failure{kind: llm.ProviderFailureHTTPStatus, status: response.StatusCode}, true
 		return result
 	case response.StatusCode == http.StatusBadRequest && bytes.Contains(raw, []byte("max_tokens_exceeded")):

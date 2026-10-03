@@ -269,15 +269,17 @@ func TestARefusalIsTypedWithItsHTTPDiagnostics(t *testing.T) {
 			}
 		})
 	}
-	t.Run("a body echoing the key", func(t *testing.T) {
+	t.Run("a body and a header echoing the key", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Request-Id", "for secret")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"detail":"invalid key secret"}`))
 		}))
 		defer server.Close()
 		client := &Client{HTTPClient: server.Client(), Endpoint: server.URL, Model: "jev-test", APIKey: "secret"}
 		outcome, err := llm.ExecuteJSON(t.Context(), llm.Executor{}, client, questionCall(t, client, "q"))
-		if err == nil || outcome.Response != nil || outcome.HTTPResponse == nil || outcome.HTTPResponse.StatusCode != http.StatusUnauthorized {
+		if err == nil || string(outcome.Response) != `{"detail":"invalid key `+llm.CredentialMarker+`"}` || outcome.HTTPResponse == nil ||
+			outcome.HTTPResponse.StatusCode != http.StatusUnauthorized || outcome.HTTPResponse.Headers["X-Request-Id"][0] != "for "+llm.CredentialMarker {
 			t.Fatalf("echoed key: response %q, %+v, %v", outcome.Response, outcome.HTTPResponse, err)
 		}
 	})
@@ -359,4 +361,37 @@ func TestAnAnswerWithoutAnswersIsSentOnceMore(t *testing.T) {
 			})
 		})
 	}
+}
+
+// failingBody is a response body that fails after the status and headers.
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+func (failingBody) Close() error             { return nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
+
+// A 429 whose body fails to arrive is still the rate limit: its Retry-After
+// sets the shared cooldown (the review's A8 note: it was lost with the body).
+func TestARateLimitWhoseBodyFailsKeepsItsRetryAfter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var starts []time.Time
+		client := handlerClient(nil)
+		client.HTTPClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			starts = append(starts, time.Now())
+			if len(starts) == 1 {
+				header := http.Header{"Retry-After": []string{"90"}}
+				return &http.Response{StatusCode: http.StatusTooManyRequests, Header: header, Body: failingBody{}, Request: request}, nil
+			}
+			recorder := httptest.NewRecorder()
+			answer(recorder, "q")
+			return recorder.Result(), nil
+		})}
+		outcome, err := llm.ExecuteJSON(t.Context(), llm.Executor{}, client, questionCall(t, client, "q"))
+		if err != nil || len(starts) != 2 || starts[1].Sub(starts[0]) != 90*time.Second || outcome.Metrics.Attempts != 2 {
+			t.Fatalf("starts %v, err %v", starts, err)
+		}
+	})
 }

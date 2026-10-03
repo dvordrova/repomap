@@ -115,7 +115,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   beside the error, with an explicit unavailable-body marker when necessary.
   The last attempt's HTTP status and diagnostic response IDs/retry/rate-limit
   headers accompany those diagnostics. Request authorization and cookies never
-  enter that metadata, which has no role in semantic or cache identity.
+  enter that metadata, which has no role in semantic or cache identity. A
+  provider that writes the client's own configured key back, in a body or a
+  kept header, of a refusal or an answer, has it replaced by
+  `[configured API key]` as the client reads the response
+  (`llm.WithoutCredential`), before any error, completion, cache record or
+  journal holds it; the status and the rest stay (review B5, 2026-10-03).
+  This looks for that one configured value only; it is no scan of the
+  repository. A 429 whose body fails to arrive keeps its Retry-After.
 - One exact request in the air is asked once. With the cache enabled, a call
   whose exact cache key (provider state and prepared bytes) another call on
   the same `BatchController` is already answering waits for that answer
