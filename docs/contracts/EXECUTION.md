@@ -591,8 +591,10 @@ deleted and no owner's link changes: a damaged payload costs its request one
 live answer, whose save restores the file, and the next run is a cache hit
 for that request and for every other record sharing the file. An entry that
 cannot be inspected, or a directory in its place, fails the save (a
-`cache_write` issue; the answer stays accepted). Shared-store payloads are
-synced before the record that names them is written.
+`cache_write` issue; the answer stays accepted). Payloads are not synced
+(records are): a payload torn by a power loss is restored by its request's
+one answer, while syncing every new payload measured 23 ms a file and took
+the atlas reading tests from 131 s to 349 s.
 
 - Persistent caches remain part of the ordinary path. Cache hits must be
   identity-bound and fully validated before use; `--no-cache` is the explicit

@@ -16,14 +16,16 @@ const RunPayloadDirectoryName = "payloads"
 
 // SavePayload stores exact request or response bytes once in the shared cache.
 // Accepted records and the run journals of accepted exchanges reference them.
-// The bytes reach the disk before the caller writes a record that names them,
-// so a power loss cannot leave a synced record over a torn payload.
+// A payload is not synced: a torn one after a power loss costs its request
+// one answer, which restores it (savePayloadIn), while syncing every new
+// payload cost 23 ms a file on the owner's laptop and took the atlas reading
+// tests from 131 s to 349 s.
 func SavePayload(rootDir string, raw []byte) (string, error) {
 	cacheDir, err := ensureCacheDirectory(rootDir)
 	if err != nil {
 		return "", err
 	}
-	return savePayloadIn(filepath.Join(cacheDir, "payloads"), raw, true)
+	return savePayloadIn(filepath.Join(cacheDir, "payloads"), raw)
 }
 
 // SaveRunPayload stores the exact bytes of a refused or failed exchange once
@@ -34,7 +36,7 @@ func SaveRunPayload(runDir string, raw []byte) (string, error) {
 	if runDir == "" {
 		return "", errors.New("llm: run directory is empty")
 	}
-	return savePayloadIn(filepath.Join(runDir, RunPayloadDirectoryName), raw, false)
+	return savePayloadIn(filepath.Join(runDir, RunPayloadDirectoryName), raw)
 }
 
 // savePayloadIn returns the file named by raw's hash once it holds exactly
@@ -46,7 +48,7 @@ func SaveRunPayload(runDir string, raw []byte) (string, error) {
 // run: the record was evicted and rewritten over the same corrupt file).
 // Nothing is deleted and no owner's link changes. Only an entry that cannot
 // be inspected, or a directory in its place, is an error.
-func savePayloadIn(dir string, raw []byte, durable bool) (string, error) {
+func savePayloadIn(dir string, raw []byte) (string, error) {
 	extension := ".txt"
 	if json.Valid(raw) {
 		extension = ".json"
@@ -70,12 +72,6 @@ func savePayloadIn(dir string, raw []byte, durable bool) (string, error) {
 	if _, err := file.Write(raw); err != nil {
 		file.Close()
 		return "", err
-	}
-	if durable {
-		if err := file.Sync(); err != nil {
-			file.Close()
-			return "", err
-		}
 	}
 	if err := file.Close(); err != nil {
 		return "", err
