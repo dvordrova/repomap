@@ -169,7 +169,7 @@ func TestBoundaryWindowSharesOwnerOnce(t *testing.T) {
 // and a free name keeps its text; free text without the prefix loses only
 // its own row.
 func TestDestinationWindowSharesItsCatalogueAndDecodesClosedAndFreeNames(t *testing.T) {
-	catalog := Destinations(map[string]string{"github.com/rabbitmq/amqp091-go": "RabbitMQ", "net/http": ""})
+	catalog := Destinations(map[string][]string{"github.com/rabbitmq/amqp091-go": {"RabbitMQ"}, "net/http": nil})
 	rows := []table.Row{
 		DestinationRow("g1", []DestinationEnd{{Address: "amqp://broker:5672"}}, []DestinationCall{{Call: `ch.Publish("morfeu.events", msg)`, Kind: "queue_producer", Package: "github.com/rabbitmq/amqp091-go", Values: []string{"morfeu.events"}}}, []DestinationCaller{{Name: "publish", Path: "client.go"}}, nil),
 		DestinationRow("g2", []DestinationEnd{{Unresolved: "cfg.SMSURL", Written: "cfg.SMSURL"}}, []DestinationCall{{Call: "client.Post(cfg.SMSURL, body)", Kind: "client_request", Package: "net/http"}}, []DestinationCaller{{Name: "notify", Path: "notify.go"}}, []string{"main"}),

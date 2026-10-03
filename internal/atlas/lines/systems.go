@@ -3,6 +3,7 @@ package lines
 import (
 	_ "embed"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -23,26 +24,32 @@ const (
 var systemsPrompt string
 
 // Systems asks, of each outside package the outgoing boundaries call
-// through, which outside system its calls reach (repomap.atlas.systems.v1).
+// through, which outside systems its calls reach (repomap.atlas.systems.v2).
 // A name is text, so the text model answers; each package is its own row,
-// remembered on its own. The boundaries table then chooses among these
-// names; no list of known systems is kept in code.
+// remembered on its own, with every distinct call of it, so a package whose
+// calls choose several systems (a driver name or a URL given to them) is
+// named by each, never by its first call. The boundaries table then chooses
+// among these names; no list of known systems is kept in code.
 func Systems() table.Definition {
-	return table.Definition{Stage: StageSystems, Contract: "repomap.atlas.systems.v1", System: systemsPrompt, Memoize: true,
-		Columns: []table.Column{{Name: SystemColumn, Kind: table.Text, MaxRunes: LabelRunes,
-			Note: "the outside system calls through this package reach, as a newcomer would name it, or none"}}}
+	return table.Definition{Stage: StageSystems, Contract: "repomap.atlas.systems.v2", System: systemsPrompt, Memoize: true,
+		Columns: []table.Column{{Name: SystemColumn, Kind: table.Text, MaxRunes: SystemsRunes,
+			Note: "every outside system calls through this package reach, each as a newcomer would name it, separated by \"; \", or none"}}}
 }
 
+// SystemsRunes bounds the systems cell: a few systems' names.
+const SystemsRunes = 3 * LabelRunes
+
 // PackageCall is one symbol of an outside package the program calls, with
-// one call of it as the repository wrote it.
+// each distinct call of it as the repository wrote it: calls written alike
+// are one, any difference in what they are given is another.
 type PackageCall struct {
-	Symbol string `json:"symbol"`
-	Call   string `json:"call,omitempty"`
+	Symbol string   `json:"symbol"`
+	Calls  []string `json:"calls,omitempty"`
 }
 
 // SystemRow is one outside package: its path as the code names it, the
 // dependency lines the manifest records for it ("module version"), and
-// every symbol of it the program calls, one call of each.
+// every symbol of it the program calls, with every distinct call of each.
 func SystemRow(id, pkg string, dependency []string, calls []PackageCall) table.Row {
 	fields := []table.Field{{Name: "package", Value: pkg}}
 	if len(dependency) > 0 {
@@ -52,14 +59,21 @@ func SystemRow(id, pkg string, dependency []string, calls []PackageCall) table.R
 	return table.Row{ID: id, Fields: fields}
 }
 
-// SystemName reads an accepted system cell: the name as written, or empty
-// when the package reaches no outside system.
-func SystemName(cell string) string {
-	name := strings.TrimSpace(cell)
-	if strings.EqualFold(strings.TrimSuffix(name, "."), SystemNone) {
-		return ""
+// SystemNames reads an accepted system cell: each name as written, once
+// whatever its case, in the order written; none when the package reaches no
+// outside system. A "none" beside names adds nothing.
+func SystemNames(cell string) []string {
+	var names []string
+	for _, part := range strings.Split(cell, ";") {
+		name := strings.TrimSpace(part)
+		if name == "" || strings.EqualFold(strings.TrimSuffix(name, "."), SystemNone) {
+			continue
+		}
+		if !slices.ContainsFunc(names, func(known string) bool { return strings.EqualFold(known, name) }) {
+			names = append(names, name)
+		}
 	}
-	return name
+	return names
 }
 
 // Destination is one entry of a boundary row's closed catalogue: a system
@@ -130,26 +144,31 @@ func DestinationTarget(catalog []Destination, ref, name string) (string, string)
 
 // Destinations is the closed catalogue of the named packages: one entry per
 // system, names equal but for case being one, in name order, refs d1, d2,
-// ... It depends only on the names given, so rows of the same programs are
-// offered the same catalogue in every window.
-func Destinations(names map[string]string) []Destination {
+// ...; a package reaching several systems is listed under each. It depends
+// only on the names given, so rows of the same programs are offered the same
+// catalogue in every window.
+func Destinations(names map[string][]string) []Destination {
 	byName := make(map[string]*Destination)
-	for pkg, name := range names {
-		if name == "" {
-			continue
+	for pkg, systems := range names {
+		for _, name := range systems {
+			if name == "" {
+				continue
+			}
+			key := strings.ToLower(name)
+			entry := byName[key]
+			if entry == nil {
+				entry = &Destination{Value: name}
+				byName[key] = entry
+			}
+			// The spelling kept is the least in byte order, whatever map
+			// order visits the packages in.
+			if name < entry.Value {
+				entry.Value = name
+			}
+			if !slices.Contains(entry.Packages, pkg) {
+				entry.Packages = append(entry.Packages, pkg)
+			}
 		}
-		key := strings.ToLower(name)
-		entry := byName[key]
-		if entry == nil {
-			entry = &Destination{Value: name}
-			byName[key] = entry
-		}
-		// The spelling kept is the least in byte order, whatever map order
-		// visits the packages in.
-		if name < entry.Value {
-			entry.Value = name
-		}
-		entry.Packages = append(entry.Packages, pkg)
 	}
 	keys := make([]string, 0, len(byName))
 	for key := range byName {

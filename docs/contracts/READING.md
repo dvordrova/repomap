@@ -1175,7 +1175,7 @@ SQL facts, and 2 `func.count` whose `.label`, handed to `select`, had no
 ### Outside systems
 
 Which outside system an outgoing call reaches is asked once per outside
-package, never of a list in code (`repomap.atlas.systems.v1`, stage
+package, never of a list in code (`repomap.atlas.systems.v2`, stage
 `atlas_systems`, the text model). Code groups the boundaries table's outgoing
 rows by the outside package their own call goes through, as the facts record
 it at the site (a Go import path, a Python or JavaScript module, a C header, a
@@ -1187,12 +1187,24 @@ outgoing kind; the fact claimed that call's boundary, as an SQL text on
 no package and no reaching call. One row per package for the
 whole run: `package`, `dependency` (each module and version its targets'
 dependency catalogues record) and `calls`, each package symbol the program
-calls with one call as written (the first outside tests given a literal, else
-the first outside tests). The one cell, `system`, is a short name as a
-newcomer would say it, or `none` when calls through the package reach no one
-outside system (criteria in `prompts/systems.md`). Each package is remembered
-on its own (`Memoize`); the cell is a decision, kept without captions. An
-undecided package has no name.
+calls with each of its calls given different values, as written (outside
+tests, else in tests): calls given the same are one, the first standing for
+them, where what a call is given is what the code knows of it
+(`callEvidence`): the literals written at it, and the literals, supplying
+calls and fields its arguments' source values hold; a variable's or a
+parameter's name chooses nothing (control review B7, 2026-10-03: casdoor's
+three `xorm.NewEngine` and two `sql.Open` calls, given different drivers and
+data sources, had reached the question as one call of each; its saved run's
+48 rows now carry 1,642 calls where they carried 496, the row too big for its
+window going alone). The one cell, `system`, names every outside system the
+calls reach, each as a newcomer would say it, separated by `; `, or `none`
+when calls through the package reach no one outside system (criteria in
+`prompts/systems.md`). Each package is remembered on its own (`Memoize`); the
+cell is a decision, kept without captions. An undecided package has no name.
+A package named by several systems is listed under each in the destination
+catalogue, and a row through it takes no system in code: the destination
+question names it by its own call, never by the package's first system
+(`packageSystem`, `TestAPackageWhoseCallsChooseSeveralSystemsIsNamedByEach`).
 
 **One destination, one name** (F3, 2026-09-29; skeptic-reviewed). What an
 outgoing call reaches is decided once per destination, never per call

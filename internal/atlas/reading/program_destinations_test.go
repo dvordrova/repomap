@@ -213,7 +213,7 @@ func TestAProgramIsOfferedByItsExecutablesName(t *testing.T) {
 		// A program its build names twice keeps its target name.
 		{ID: "t12", Name: "example.com/multi", Executables: []string{"a", "b"}},
 	}
-	got := programNames(targets, map[string]string{"github.com/stripe/stripe-go": "Stripe", "database/sql": ""})
+	got := programNames(targets, map[string][]string{"github.com/stripe/stripe-go": {"Stripe"}, "database/sql": nil})
 	want := map[string]string{
 		"t1": "casdoor", "t2": "web", "t3": "server", "t4": "etcdctl", "t5": "freqtrade", "t6": "freqtrade-client",
 		"t7": "example.com/a/cmd/worker", "t8": "example.com/b/cmd/worker",

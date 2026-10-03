@@ -111,11 +111,13 @@ func (r *reader) programDestinations(target string, members []destinationMember)
 // question gave any package of the run (names, case aside): two things the
 // question offers, and the destinations the page joins by name, are never
 // spelled alike. Facts only: no name is composed or shortened.
-func programNames(targets []TargetMeta, names map[string]string) map[string]string {
+func programNames(targets []TargetMeta, names map[string][]string) map[string]string {
 	systems := make(map[string]bool, len(names))
-	for _, name := range names {
-		if name != "" {
-			systems[strings.ToLower(name)] = true
+	for _, named := range names {
+		for _, name := range named {
+			if name != "" {
+				systems[strings.ToLower(name)] = true
+			}
 		}
 	}
 	executable := func(meta TargetMeta) string {

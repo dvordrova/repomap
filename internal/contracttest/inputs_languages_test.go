@@ -172,9 +172,14 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	if !slices.Contains(programs, "git") {
 		t.Fatalf("programs started: %v", programs)
 	}
-	// net/http is asked once for the whole run, with each symbol called.
+	// net/http is asked once for the whole run, with each call of each
+	// symbol given different values (B7): Get's literal path, a field's
+	// value and a concatenation are three observations, and Client.Do's
+	// request req.WithContext makes is another than the variable req.
 	systems := preset.items("atlas_systems.system")
-	if len(systems) != 1 || !strings.Contains(systems[0], `"package":"net/http"`) || !strings.Contains(systems[0], `{"call":"http.DefaultClient.Do(req)","symbol":"Client.Do"}`) || !strings.Contains(systems[0], `"symbol":"Get"`) {
+	if len(systems) != 1 || !strings.Contains(systems[0], `"package":"net/http"`) ||
+		!strings.Contains(systems[0], `{"calls":["http.DefaultClient.Do(req)","http.DefaultClient.Do(req.WithContext(ctx))"],"symbol":"Client.Do"}`) ||
+		!strings.Contains(systems[0], `{"calls":["http.Get(\"/api/levels\")","http.Get(client.Base)","http.Get(base + \"/items\")"],"symbol":"Get"}`) {
 		t.Fatalf("systems asked: %v", systems)
 	}
 }

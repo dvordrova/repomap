@@ -1176,8 +1176,8 @@ func (packages targetPackages) all() []string {
 // systems the outside packages of that program reach (lines.Destinations).
 // It depends on nothing a window's other rows bring, so two calls through
 // one package are offered the same choices wherever they are packed.
-func (packages targetPackages) catalog(target string, names map[string]string) []lines.Destination {
-	named := make(map[string]string)
+func (packages targetPackages) catalog(target string, names map[string][]string) []lines.Destination {
+	named := make(map[string][]string)
 	for pkg := range packages[target] {
 		named[pkg] = names[pkg]
 	}

@@ -121,18 +121,25 @@ func urlScheme(text string) bool {
 
 // packageSystem is the system the row's own outside package reaches, as
 // its catalogue spells it: atlas_systems decided it once for the package,
-// so no row asks it again. Empty when the row names no package or its
-// package reaches no one system.
+// so no row asks it again. Empty when the row names no package, its
+// package reaches no system, or it reaches several (listed under each):
+// which one this row's call reaches is the destination question's, never
+// the package's first name (control review B7).
 func packageSystem(state *boundaryState, catalog []lines.Destination) string {
 	if state.outside == "" {
 		return ""
 	}
+	system := ""
 	for _, entry := range catalog {
-		if slices.Contains(entry.Packages, state.outside) {
-			return entry.Value
+		if !slices.Contains(entry.Packages, state.outside) {
+			continue
 		}
+		if system != "" {
+			return ""
+		}
+		system = entry.Value
 	}
-	return ""
+	return system
 }
 
 // nameDestinations gives every outgoing row its destination in each of its
@@ -144,7 +151,7 @@ func packageSystem(state *boundaryState, catalog []lines.Destination) string {
 // shown by the facts not to be one destination: each row keeps its
 // package's, and each row without one is asked alone. A refused answer
 // names none.
-func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, packages targetPackages, names map[string]string, owners map[string]atlas.Place) error {
+func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, packages targetPackages, names map[string][]string, owners map[string]atlas.Place) error {
 	r.programNamesOf = programNames(r.opts.Targets, names)
 	byKey := make(map[string][]destinationMember)
 	var keys []string

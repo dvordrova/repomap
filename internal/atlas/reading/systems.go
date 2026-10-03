@@ -7,29 +7,75 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // packageSymbol is one symbol of an outside package the program calls and
-// the call of it a reader would look at: the first outside tests that is
-// given a literal, else the first outside tests, else the first.
+// every call of it outside tests, or every call in tests when the program
+// calls it nowhere else.
 type packageSymbol struct {
-	site             sourceSite
-	literals, inTest bool
+	calls, testCalls []packageCall
 }
 
-// readSystems asks which outside system each of the packages reaches
+// packageCall is one call of an outside symbol where it is written.
+type packageCall struct {
+	site sourceSite
+	call atlas.SymbolCall
+}
+
+// callEvidence is what the code knows a call is given, the evidence that may
+// choose a system: the literals written at it and, by position, what its
+// arguments' source values hold: literals (a driver name a config default
+// supplies, a URL a constant concatenates), and the calls and fields that
+// supply a value (casdoor's DSN from refineDataSourceNameForPostgres beside
+// one handed in). Calls of one symbol with equal evidence are one
+// observation; a variable's or a parameter's name chooses nothing, so
+// session.Find(&users) and session.Find(&orgs) are one.
+func callEvidence(call atlas.SymbolCall) string {
+	parts := []string{strings.Join(call.Values, "\x00")}
+	var literals func(value *sourcevalue.Value, into *[]string)
+	literals = func(value *sourcevalue.Value, into *[]string) {
+		if value == nil {
+			return
+		}
+		switch value.Kind {
+		case "literal", "call_result", "field":
+			*into = append(*into, value.Kind+":"+value.Text)
+		}
+		literals(value.Initializer, into)
+		for i := range value.Parts {
+			literals(&value.Parts[i], into)
+		}
+	}
+	for _, argument := range call.SourceArguments {
+		var held []string
+		literals(argument.Origin, &held)
+		if len(held) > 0 {
+			parts = append(parts, fmt.Sprintf("%d=%s", argument.Position, strings.Join(held, "\x00")))
+		}
+	}
+	return strings.Join(parts, "\x01")
+}
+
+// readSystems asks which outside systems each of the packages reaches
 // (lines.Systems), once per package for the whole run, and returns the
-// name of each package that reaches one. The item is the package, the
+// names of each package that reaches some. The item is the package, the
 // dependency its targets' manifests record for it and every symbol of it
-// the program calls, with one call of each as written; each package is
-// remembered on its own. A package answered none, or not decided, has no
-// name, and no catalogue offers anything for it. packages are sorted, each
-// once (targetPackages.all).
-func (r *reader) readSystems(ctx context.Context, packages []string) (map[string]string, error) {
-	names := make(map[string]string)
+// the program calls, with each of its calls given different values as
+// written: calls given the same values are one (callEvidence), and a call
+// given another driver or URL is another, so a package whose calls choose
+// several systems is named by each, never by the first it calls (control
+// review B7: casdoor's three xorm.NewEngine and two sql.Open calls had
+// reached the question as one of each). Each package is remembered on its
+// own. A package answered none, or not
+// decided, has no name, and no catalogue offers anything for it. packages
+// are sorted, each once (targetPackages.all).
+func (r *reader) readSystems(ctx context.Context, packages []string) (map[string][]string, error) {
+	names := make(map[string][]string)
 	if len(packages) == 0 {
 		return names, nil
 	}
@@ -54,10 +100,16 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 			if symbols[call.API.Package] == nil {
 				symbols[call.API.Package] = make(map[string]*packageSymbol)
 			}
-			seen := symbols[call.API.Package][name]
-			found := &packageSymbol{site: sourceSite{place.Path, call.Line, call.Column}, literals: len(call.Values) > 0, inTest: inTest}
-			if seen == nil || seen.inTest && !inTest || seen.inTest == inTest && !seen.literals && found.literals {
-				symbols[call.API.Package][name] = found
+			symbol := symbols[call.API.Package][name]
+			if symbol == nil {
+				symbol = &packageSymbol{}
+				symbols[call.API.Package][name] = symbol
+			}
+			found := packageCall{site: sourceSite{place.Path, call.Line, call.Column}, call: call}
+			if inTest {
+				symbol.testCalls = append(symbol.testCalls, found)
+			} else {
+				symbol.calls = append(symbol.calls, found)
 			}
 		}
 	}
@@ -82,11 +134,30 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 		calls := make([]lines.PackageCall, 0, len(called))
 		var first sourceSite
 		for _, name := range called {
-			site := byName[name].site
-			if first.path == "" || site.compare(first) < 0 {
-				first = site
+			found := byName[name].calls
+			if len(found) == 0 {
+				found = byName[name].testCalls
 			}
-			calls = append(calls, lines.PackageCall{Symbol: name, Call: r.sourceText(files, site.path, site.line, site.column)})
+			found = slices.Clone(found)
+			slices.SortFunc(found, func(a, b packageCall) int { return a.site.compare(b.site) })
+			// The first call of each evidence stands for the calls given
+			// the same, as it is written; written alike, two are one.
+			call := lines.PackageCall{Symbol: name}
+			evidence := make(map[string]bool)
+			for _, each := range found {
+				if first.path == "" || each.site.compare(first) < 0 {
+					first = each.site
+				}
+				key := callEvidence(each.call)
+				if evidence[key] {
+					continue
+				}
+				evidence[key] = true
+				if text := r.sourceText(files, each.site.path, each.site.line, each.site.column); !slices.Contains(call.Calls, text) {
+					call.Calls = append(call.Calls, text)
+				}
+			}
+			calls = append(calls, call)
 		}
 		records := dependencies[pkg]
 		sort.Strings(records)
@@ -106,8 +177,8 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 		name := "not decided"
 		if answer := answers[i].answer; answer != nil {
 			name = answer[lines.SystemColumn]
-			if system := lines.SystemName(name); system != "" {
-				names[pkg] = system
+			if systems := lines.SystemNames(name); len(systems) > 0 {
+				names[pkg] = systems
 			}
 		}
 		fmt.Fprintf(&r.tables, "%s: %s · %s\n", lines.StageSystems, pkg, name)
