@@ -255,7 +255,14 @@ func TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity(t *testing.T) 
 			lookalikes+":19 new Function exact",
 			runtime+":25 eval exact")
 		expectRows(t, "declaration-names.ts declarations", fixture.declared(t, "src/declaration-names.ts"),
-			"_token", "active$", "price", "price$", "token")
+			"_token", "active$", "price", "price$", "price$1", "token")
+		// price$1 is shaped like Go's function literal names; no adapter
+		// fact makes it anonymous, so no row marks it.
+		for _, object := range fixture.index.Objects {
+			if object.Name == "price$1" && object.Anonymous {
+				t.Fatalf("a public price$1 is marked anonymous: %+v", object)
+			}
+		}
 	})
 	t.Run("clojure", func(t *testing.T) {
 		fixture := ownerClojure(t)

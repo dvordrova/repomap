@@ -477,6 +477,7 @@ func (b *builder) collectObjects(target TargetInput) {
 			CodeLines: object.CodeLines,
 			Exported:  object.Visibility == programindex.VisibilityPublic,
 			Macro:     object.Macro,
+			Anonymous: object.Anonymous,
 			ObjectID:  scopedID,
 		})
 		if owner := b.byID[object.OwnerID]; owner.Kind == programindex.ObjectType && owner.Location != nil {
@@ -1690,7 +1691,8 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 				if witness.Kind == "callable_receiver_field" || witness.Kind == "interface_field_assignment" {
 					continue
 				}
-				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Kind: string(relation.Kind), Resolution: string(relation.Resolution)}
+				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), FromAnonymous: from.Anonymous, ToAnonymous: to.Anonymous,
+					Detail: witness.Detail, Kind: string(relation.Kind), Resolution: string(relation.Resolution)}
 				row.Evidence = append(append([]atlas.EdgeEvidence{}, evidence...), registrationEvidence[relation.SourceArgumentID]...)
 				row.Evidence = canonicalBindingEvidence(row.Evidence)
 				row.Arguments = registrations[relation.SourceArgumentID]
@@ -1825,6 +1827,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 				for _, id := range relation.ToIDs {
 					if object, ok := b.byID[id]; ok {
 						call.Name = displayName(object, b.byID)
+						call.CalleeAnonymous = object.Anonymous
 						call.CalleeIDs = nil
 						if symbolID := b.symbolOf[id]; symbolID != "" {
 							call.CalleeIDs = []string{symbolID}
@@ -1844,11 +1847,16 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 					call.Evidence = append(call.Evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
 				}
 			}
+			anonymous := 0
 			for _, id := range relation.ToIDs {
 				if symbolID := b.symbolOf[id]; symbolID != "" {
 					call.CalleeIDs = appendUnique(call.CalleeIDs, symbolID)
 				}
+				if b.byID[id].Anonymous {
+					anonymous++
+				}
 			}
+			call.CalleeAnonymous = anonymous > 0 && anonymous == len(relation.ToIDs)
 			sort.Strings(call.CalleeIDs)
 			call.Stores = b.callStores(relation, call.CalleeIDs)
 			// The selector alone loses the receiver/package: context.Background

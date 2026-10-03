@@ -120,8 +120,9 @@ func renderedEnumerations(value any, report func(field, value string)) {
 	}
 }
 
-// A local_calls line is name@line, an optional invocation word, and control
-// statements in parentheses separated by semicolons.
+// A local_calls line is name@line, an optional anonymous mark and
+// invocation word, each reported on its own, and control statements in
+// parentheses separated by semicolons.
 func localCallEnumerations(line string, report func(field, value string)) {
 	rest := line
 	if at := strings.Index(rest, "@"); at >= 0 {
@@ -138,8 +139,8 @@ func localCallEnumerations(line string, report func(field, value string)) {
 		}
 		rest = strings.TrimSpace(rest[:open])
 	}
-	if rest != "" {
-		report("invocation", rest)
+	for _, word := range strings.Fields(rest) {
+		report("invocation", word)
 	}
 }
 

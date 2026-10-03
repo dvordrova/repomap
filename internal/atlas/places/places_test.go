@@ -122,10 +122,14 @@ func TestCallableBindingsKeepAnonymousHandlersAndQualifiedCalls(t *testing.T) {
 	if len(decls) != 2 {
 		t.Fatalf("callback declaration lost or incidental closure promoted: %+v", decls)
 	}
+	// The handed literal keeps its place, marked by the adapter's fact.
+	if decls[0].Anonymous || !decls[1].Anonymous {
+		t.Fatalf("anonymity of %+v", decls)
+	}
 	bindings := b.symbolBindings()
 	for _, id := range []string{"factory", "handler"} {
 		got := bindings[b.symbolOf[id]]
-		if len(got) != 1 || got[0].To != "Install$1" || got[0].Detail != "company.Worker.Execute" || got[0].Path != loc.Path || got[0].Line != 8 {
+		if len(got) != 1 || got[0].To != "Install$1" || !got[0].ToAnonymous || got[0].FromAnonymous || got[0].Detail != "company.Worker.Execute" || got[0].Path != loc.Path || got[0].Line != 8 {
 			t.Fatalf("binding lost/doubled on %s: %+v", id, got)
 		}
 		if len(got[0].Evidence) != 2 || got[0].Evidence[0].Label != "Name = \"refresh\"" || got[0].Evidence[0].LineNo != 7 || got[0].Evidence[1].LineNo != 6 {

@@ -6,8 +6,10 @@ an earlier model description; `directory_facts` is an extracted description),
 facts about the files that call into it (`callers`: their paths and
 `declarations`, the names of their declarations the graph saw making the
 calls; a caller without that list is known by its path alone), and its
-declarations (name, kind and signature). A name written `name$N` is the N-th
-closure inside the declaration `name`, not a declaration of its own.
+declarations (name, kind and signature). A declaration marked
+`"anonymous": true` is a function literal written inside another declaration
+and named after it: that declaration's code, not a declaration of its own. A
+name's characters never say so: `price$1` unmarked is a declaration.
 
 Fill every cell listed in the request's `fill` for every row. The base cells are:
 

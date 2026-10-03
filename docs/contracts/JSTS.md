@@ -264,8 +264,9 @@ no keyword argument, so it composes none, also recorded.
 
 Which declarations a reader sees is the compiler's kind and the module's
 ownership, never a name's characters (READING "Declarations"):
-`declaration-names.ts`'s `price$`, `active$`, `_token`, `price` and `token`
-are all declarations, whether or not their bodies call anything
+`declaration-names.ts`'s `price$`, `active$`, `price$1`, `_token`, `price` and
+`token` are all declarations, whether or not their bodies call anything; no
+row marks `price$1` anonymous, whatever Go's function literals are named
 (`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`).
 
 ## Inputs a call's words declare, and what JS/TS does not have yet

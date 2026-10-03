@@ -1,5 +1,12 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — A3's prompt remnant: rows state a function literal from the adapter's fact (facts)
+
+- **Before:** `prompts/files.md` and the evidence vocabulary said any `name$N` is the N-th closure of `name`, and no row carried ProgramIndex 25's `anonymous`; a public JavaScript `price$1` read as a closure (control review, native probe).
+- **Now:** places graph 25 carries the mark as `Decl.anonymous`, `SymbolCall.callee_anonymous` and a binding's `from_anonymous`/`to_anonymous`. A file row's declaration says `"anonymous": true`, a symbol row and a boundary owner `anonymous`, a local call `serve$1@12 anonymous`; both prompts read a function literal from those marks and say a name's characters never do. A row with no function literal keeps its exact bytes (the pinned stable rows pass), and a binding of named callables keeps its columns.
+- **Measured requests:** the files and symbols tables these prompts serve are not on the ordinary path (`readFiles` and `readSymbols` have no caller), so no live request's prompt changes; live boundary windows change only where an owner, its calls or its bindings name a function literal: 3 of casdoor 20261002-225344's 87 saved windows mention a `$N` name.
+- **Tests:** `TestRowsStateAFunctionLiteralFromItsAnonymityNeverFromItsName`; places' handed literal keeps its place marked; the Go fixture's StartSweeper renders `anonymous goroutine` with every word defined (the vocabulary check reads a local call's words one by one); the JS fixture gains a public `price$1`, unmarked. lines, places, atlas, table and reading packages and the touched contract tests exit 0 (GOMAXPROCS=2, -p 1).
+
 ## 2026-10-03 — Same-name repeats: etcd's Lease routes read apart; what remains and whose it is (data 2)
 
 - **etcd api, 3 pairs of "POST":** LeaseRevoke, LeaseTimeToLive and LeaseLeases are each registered twice in RegisterLeaseHandlerServer (and in the client), two grpc-gateway patterns per method. They are alike in the first word each handler declares and in their registering function. The saved distinguishing word is the second path each handler declares (`/v3/lease/revoke`, `/v3/kv/lease/revoke`; GroupsIndex operations declared by the handler). Under the 1da657f8 rule, the handler's later words, in source order, are now the last levels. Replaying the rule on the saved api run (20261003-095506) gives 6 inputs alike before and 0 after. `TestSameNamedInputsReadApartByTheirSavedWords` (tested on a HEAD export, because others' in-flight report tests do not build).

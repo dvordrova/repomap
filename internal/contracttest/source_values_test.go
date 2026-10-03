@@ -19,7 +19,9 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 	assertGoOperationSourceValues(t, graph)
 	assertEvidenceVocabulary(t, graph, "interface", "interface_method", "passes_callback",
 		"binds_implementation", "callback_registration", "registration_receiver_call",
-		"interface_field_assignment", "literal_string", "alternatives", "unresolved", "invokes_external")
+		"interface_field_assignment", "literal_string", "alternatives", "unresolved", "invokes_external",
+		// StartSweeper starts its function literal: "StartSweeper$1@N anonymous goroutine".
+		"anonymous")
 	seen := map[string]bool{}
 	// The preset's decisions: Do's request, the URL a request is built
 	// with, the request WithContext is called on, and the option

@@ -36,7 +36,15 @@ report.
   `_SENSITIVE_KEYS` and `__all__` are declarations like their plain-named
   neighbours, whether or not their bodies call anything. An anonymous
   function is a place only when it owns a call or is handed over, as Go
-  closures always were; a lambda (Python's, a JavaScript returned handler)
+  closures always were. The places graph (25) carries the mark as
+  `Decl.anonymous`, `SymbolCall.callee_anonymous` and a binding's
+  `from_anonymous`/`to_anonymous`, and the rows state it from them: a file
+  row's declaration `"anonymous": true`, a symbol row's `anonymous`, a local
+  call `serve$1@12 anonymous`; `prompts/files.md` and the evidence
+  vocabulary read a function literal from those marks, never from `$N` in a
+  name (JavaScript's public `price$1` is a declaration). A row with no
+  anonymous callable keeps its bytes (control review, A3's prompt
+  remnant, `TestRowsStateAFunctionLiteralFromItsAnonymityNeverFromItsName`); a lambda (Python's, a JavaScript returned handler)
   is none, so its calls reach no place: a recorded gap (freqtrade's
   `deploy_config.py:72` lambda calling `validate_is_float`). A Go
   package-level variable is no declaration (its container is a package):

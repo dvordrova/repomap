@@ -165,6 +165,9 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 		// much the declaration's evidence as its first (review A5).
 		fields = append(fields, table.Field{Name: "signature", Value: decl.Signature})
 	}
+	if decl.Anonymous {
+		fields = append(fields, table.Field{Name: "anonymous", Value: true})
+	}
 	if fileLine != "" {
 		fields = append(fields, table.Field{Name: "file_hypothesis", Value: fileLine})
 	}
@@ -211,6 +214,9 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 // what the call says about this declaration, such as a loop that launches it.
 func localCall(call atlas.SymbolCall) string {
 	line := fmt.Sprintf("%s@%d", call.Name, call.Line)
+	if call.CalleeAnonymous {
+		line += " anonymous"
+	}
 	if call.Invocation != "" {
 		line += " " + call.Invocation
 	}
@@ -566,6 +572,11 @@ func BoundaryOwner(ref string, owner atlas.Place, rowLines []int, sourceContext 
 	value := map[string]any{"ref": ref, "path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
 		"signature": decl.Signature, "call_span": OwnerCallSpan, "calls": calls,
 		"callable_bindings": evidence.Bindings(owner.Symbol.Bindings), "owned_declarations": ownedDeclarations(owner.Symbol.Members)}
+	// A function literal says so from the adapter's fact (Decl.Anonymous);
+	// a named owner keeps its bytes.
+	if decl.Anonymous {
+		value["anonymous"] = true
+	}
 	for _, field := range evidence.Fields() {
 		value[field.Name] = field.Value
 	}

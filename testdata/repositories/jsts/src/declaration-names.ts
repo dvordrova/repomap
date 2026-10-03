@@ -6,3 +6,5 @@ export function price(): number { return 42 }
 export const _token = "opaque"
 export const token = "opaque"
 export function active$(): number { return price() }
+// Shaped like Go's function literal names, yet a public declaration.
+export function price$1(): number { return 42 }

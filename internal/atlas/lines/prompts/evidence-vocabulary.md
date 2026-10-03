@@ -32,8 +32,10 @@ Evidence vocabulary. Every value below comes from an extractor, never from a mod
 - `has_repository_callee_candidate`: true when an observed callee candidate is indexed in this repository, absent otherwise;
   it does not settle the dispatch. `callers`: how many declarations call this one, a count. `local_calls`: exact repository
   callees of this declaration, one line each, `name@line`, a non-default invocation, and in parentheses the control
-  statements holding the call; context, never selectable. A `$N` suffix, as in `serve$1`, marks the N-th function literal
-  (closure) inside that declaration: its code, not a declaration of its own. `values` are literal arguments observed at a
+  statements holding the call; context, never selectable. `anonymous` after a local call, `"anonymous": true` on a row,
+  `callee_anonymous` on a call and `from_anonymous`/`to_anonymous` on a binding mark a function literal written inside a
+  declaration and named after it (`serve$1`): that declaration's code, not a declaration of its own. A name's characters
+  never say so: an unmarked `price$1` is a declaration. `values` are literal arguments observed at a
   call, `arguments` repository declarations passed to it, `api` the exact external symbol, `detail` the extractor's note.
 - `lines` of a call are its source lines: one entry stands for the same call with the same evidence at each listed line,
   and a line listed twice holds two such calls.

@@ -32,7 +32,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 24
+	GraphVersion = 25
 	Version      = 19
 
 	GraphFilename    = "places.json"
@@ -193,6 +193,11 @@ type Decl struct {
 	// Macro says the declaration is a macro, expanded where it is written:
 	// its adapter records no use of it (ProgramIndex `macro`).
 	Macro bool `json:"macro,omitempty"`
+	// Anonymous says the declaration is a function literal written inside
+	// another and named after it (ProgramIndex `anonymous`, Go's Open$1):
+	// its code, not a declaration of its own. Rows state it from this fact,
+	// never from a name's characters.
+	Anonymous bool `json:"anonymous,omitempty"`
 	// FanIn counts distinct callers of this declaration in the graph.
 	FanIn int `json:"fan_in"`
 	// ObjectID keeps the program-index identity for the page's anchors,
@@ -423,6 +428,9 @@ type SymbolCall struct {
 	Values          []string         `json:"values,omitempty"`
 	Arguments       []string         `json:"arguments,omitempty"`
 	Evidence        []EdgeEvidence   `json:"evidence,omitempty"`
+	// CalleeAnonymous says every callee the call names is a function
+	// literal (Decl.Anonymous): code of the declaration holding it.
+	CalleeAnonymous bool `json:"callee_anonymous,omitempty"`
 	// CalleeIDs refer to compiler-located symbol places, shared across target
 	// indexes. They are local retrieval keys and never enter provider prose.
 	CalleeIDs []string `json:"callee_ids,omitempty"`
@@ -480,15 +488,19 @@ type SymbolCaller struct {
 // SymbolBinding describes where a callable is supplied or received. It does
 // not claim that registration itself executes the callback.
 type SymbolBinding struct {
-	Arguments  []RegistrationArgument `json:"arguments,omitempty"`
-	Evidence   []EdgeEvidence         `json:"evidence,omitempty"`
-	From       string                 `json:"from"`
-	To         string                 `json:"to"`
-	Detail     string                 `json:"detail"`
-	Kind       string                 `json:"kind"`
-	Resolution string                 `json:"resolution"`
-	Path       string                 `json:"path"`
-	Line       int                    `json:"line"`
+	Arguments []RegistrationArgument `json:"arguments,omitempty"`
+	Evidence  []EdgeEvidence         `json:"evidence,omitempty"`
+	From      string                 `json:"from"`
+	To        string                 `json:"to"`
+	// FromAnonymous and ToAnonymous say an end is a function literal
+	// (Decl.Anonymous).
+	FromAnonymous bool   `json:"from_anonymous,omitempty"`
+	ToAnonymous   bool   `json:"to_anonymous,omitempty"`
+	Detail        string `json:"detail"`
+	Kind          string `json:"kind"`
+	Resolution    string `json:"resolution"`
+	Path          string `json:"path"`
+	Line          int    `json:"line"`
 }
 
 // RegistrationArgument is a literal at the exact call that receives this

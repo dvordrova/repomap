@@ -137,11 +137,20 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 	if len(bindings) == 0 {
 		return nil
 	}
-	columns := []string{"from", "to", "detail", "kind", "resolution", "path", "line", "arguments", "evidence_refs"}
+	columns := []string{"from", "to", "detail", "kind", "resolution", "path", "line", "arguments", "evidence_refs", "from_anonymous", "to_anonymous"}
+	// An end that is a function literal says so; any other end has no such
+	// field, so a binding of named callables keeps its bytes.
+	anonymous := func(literal bool) any {
+		if literal {
+			return true
+		}
+		return nil
+	}
 	var rows [][]any
 	for _, binding := range bindings {
 		refs := c.references(binding.Evidence)
-		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Kind, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs})
+		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Kind, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs,
+			anonymous(binding.FromAnonymous), anonymous(binding.ToAnonymous)})
 	}
 	// A binding without arguments or evidence has no such field, not a null.
 	if len(rows) == 1 {

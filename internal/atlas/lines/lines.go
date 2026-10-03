@@ -186,6 +186,11 @@ func FileRow(
 		if decl.Signature != "" {
 			entry["signature"] = decl.Signature
 		}
+		// A function literal says so from the adapter's fact; its name
+		// (Open$1) is no evidence of it: JavaScript's price$1 is public.
+		if decl.Anonymous {
+			entry["anonymous"] = true
+		}
 		decls = append(decls, entry)
 	}
 	fields = append(fields, table.Field{Name: "declaration_count", Value: len(facts.Decls)}, table.Field{Name: "declarations", Value: decls})
