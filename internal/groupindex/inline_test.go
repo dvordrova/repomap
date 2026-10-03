@@ -32,14 +32,14 @@ func TestInlineCallablesAreNamedByTheirCalleeOrTheirHome(t *testing.T) {
 	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		{ID: "command", Name: "ReplicateCommand", Kind: programindex.ObjectType, Location: at(5), EndLine: 8},
 		run,
-		object("metrics", "Run$1", programindex.ObjectFunction, 20, 25),
+		literal(object("metrics", "Run$1", programindex.ObjectFunction, 20, 25)),
 		object("tool", "DatabasesTool", programindex.ObjectFunction, 50, 70),
-		object("handler", "DatabasesTool$1", programindex.ObjectFunction, 55, 65),
+		literal(object("handler", "DatabasesTool$1", programindex.ObjectFunction, 55, 65)),
 		object("list", "listDatabases", programindex.ObjectFunction, 80, 90),
-		object("both", "Run$2", programindex.ObjectFunction, 30, 35),
+		literal(object("both", "Run$2", programindex.ObjectFunction, 30, 35)),
 		object("lambda", "<lambda>", programindex.ObjectLambda, 60, 60),
-		object("loose", "init$1", programindex.ObjectFunction, 100, 101),
-		object("wrapper", "Tool$2", programindex.ObjectFunction, 66, 68),
+		literal(object("loose", "init$1", programindex.ObjectFunction, 100, 101)),
+		literal(object("wrapper", "Tool$2", programindex.ObjectFunction, 66, 68)),
 		{ID: "serve", Name: "ListenAndServe", Kind: programindex.ObjectFunction, External: &programindex.ExternalSymbol{PackagePath: "net/http", Name: "ListenAndServe"}},
 	}}
 	program.Relations = append(program.Relations, calls("metrics", "serve")...)
@@ -80,16 +80,16 @@ func TestCallablesOneFunctionWritesAlikeAreToldApart(t *testing.T) {
 	}
 	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		function("main", "main", "cmd/hi/main.go", 20, 80),
-		function("doctor", "main$1", "cmd/hi/main.go", 28, 30),
-		function("networks", "main$2", "cmd/hi/main.go", 46, 48),
+		literal(function("doctor", "main$1", "cmd/hi/main.go", 28, 30)),
+		literal(function("networks", "main$2", "cmd/hi/main.go", 46, 48)),
 		function("start", "Start", "service/proxy.go", 306, 372),
-		function("http", "Start$1", "service/proxy.go", 321, 327),
-		function("https", "Start$2", "service/proxy.go", 329, 370),
+		literal(function("http", "Start$1", "service/proxy.go", 321, 327)),
+		literal(function("https", "Start$2", "service/proxy.go", 329, 370)),
 		function("run", "Run", "run.go", 1, 40),
-		function("first", "Run$1", "run.go", 10, 12),
-		function("second", "Run$2", "run.go", 20, 22),
+		literal(function("first", "Run$1", "run.go", 10, 12)),
+		literal(function("second", "Run$2", "run.go", 20, 22)),
 		function("serve", "Serve", "serve.go", 1, 20),
-		function("alone", "Serve$1", "serve.go", 5, 9),
+		literal(function("alone", "Serve$1", "serve.go", 5, 9)),
 	}, Relations: []programindex.Relation{
 		handed("main", "doctor", field(`Name = "doctor"`), field(`Help = "Check system requirements"`)),
 		handed("main", "networks", field(`Name = "networks"`), field(`Help = "Prune unused Docker networks"`)),
@@ -129,16 +129,16 @@ func TestCallablesOfSameNamedFunctionsAreNotCountedTogether(t *testing.T) {
 	startB.OwnerID = "serverB"
 	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		object("a", "main", programindex.ObjectFunction, "cmd/a/main.go", 5, 20),
-		object("ac", "main$1", programindex.ObjectFunction, "cmd/a/main.go", 8, 10),
+		literal(object("ac", "main$1", programindex.ObjectFunction, "cmd/a/main.go", 8, 10)),
 		object("b", "main", programindex.ObjectFunction, "cmd/b/main.go", 5, 20),
-		object("bc", "main$1", programindex.ObjectFunction, "cmd/b/main.go", 8, 10),
+		literal(object("bc", "main$1", programindex.ObjectFunction, "cmd/b/main.go", 8, 10)),
 		object("serverA", "Server", programindex.ObjectType, "a/server.go", 3, 6),
 		object("serverB", "Server", programindex.ObjectType, "b/server.go", 3, 6),
 		startA,
-		object("ag", "Start$1", programindex.ObjectFunction, "a/server.go", 12, 14),
+		literal(object("ag", "Start$1", programindex.ObjectFunction, "a/server.go", 12, 14)),
 		startB,
-		object("bg", "Start$1", programindex.ObjectFunction, "b/server.go", 12, 14),
-		object("bh", "Start$2", programindex.ObjectFunction, "b/server.go", 20, 22),
+		literal(object("bg", "Start$1", programindex.ObjectFunction, "b/server.go", 12, 14)),
+		literal(object("bh", "Start$2", programindex.ObjectFunction, "b/server.go", 20, 22)),
 	}}
 	want := map[string]string{
 		"ac": "main (inline)", "bc": "main (inline)",
@@ -153,14 +153,14 @@ func TestCallablesOfSameNamedFunctionsAreNotCountedTogether(t *testing.T) {
 	}
 }
 
-// A name is no evidence that a callable was written inline: the Go adapter
-// numbers a function literal after the function holding it (Run$1), and
-// only a Go program's numbered function is one; a lambda is one in any
-// language. JavaScript's `export function price$1()`, declared inside no
-// function, is a declaration like any other: it keeps its name and is not
-// Anonymous, which GroupsIndex compiles beside Inline for the report to read
-// (external review, 2026-10-03: the report had hidden every name with "$").
-func TestOnlyGosNumberedFunctionsAndLambdasAreWrittenInline(t *testing.T) {
+// A name is no evidence that a callable was written inline: its adapter
+// says so, a lambda by its kind and a Go function literal by ProgramIndex's
+// Anonymous (go/ssa names it Run$1). JavaScript's `export function
+// price$1()` and `price$`, which no adapter calls anonymous, keep their
+// names and are no Anonymous subjects, which GroupsIndex compiles beside
+// Inline for the report to read (external review, 2026-10-03: the report
+// had hidden every name with "$").
+func TestOnlyWhatItsAdapterCallsAnonymousIsWrittenInline(t *testing.T) {
 	at := func(line int) *programindex.Location {
 		return &programindex.Location{Path: "src/price.js", Line: line, Column: 1}
 	}
@@ -169,32 +169,36 @@ func TestOnlyGosNumberedFunctionsAndLambdasAreWrittenInline(t *testing.T) {
 		{ID: "numbered", Name: "price$1", Kind: programindex.ObjectFunction, Location: at(3), EndLine: 4},
 		{ID: "dollar", Name: "price$", Kind: programindex.ObjectFunction, Location: at(20), EndLine: 21},
 		{ID: "arrow", Name: "lambda@5:3", Kind: programindex.ObjectLambda, Location: at(5), EndLine: 5},
+		{ID: "literal", Name: "active$1", Kind: programindex.ObjectFunction, Anonymous: true, Location: at(6), EndLine: 7},
 	}
-	for _, language := range []string{"jsts", "python", "c", "clojure", "go"} {
-		program := programindex.Index{Target: programindex.Target{Language: language}, Objects: objects}
-		names, written := inlineNames(program), map[string]bool{}
-		for _, object := range objects {
-			written[object.ID] = writtenInline(program, object)
-		}
-		want := map[string]bool{"holder": false, "numbered": language == "go", "dollar": false, "arrow": true}
-		if !reflect.DeepEqual(written, want) {
-			t.Fatalf("%s: written inline %v, want %v", language, written, want)
-		}
-		if _, named := names["numbered"]; named != (language == "go") {
-			t.Fatalf("%s: price$1 is named %q", language, names["numbered"])
-		}
-		if _, named := names["dollar"]; named {
-			t.Fatalf("%s: price$ is renamed %q", language, names["dollar"])
-		}
+	program := programindex.Index{Objects: objects}
+	written := map[string]bool{}
+	for _, object := range objects {
+		written[object.ID] = writtenInline(object)
+	}
+	if want := map[string]bool{"holder": false, "numbered": false, "dollar": false, "arrow": true, "literal": true}; !reflect.DeepEqual(written, want) {
+		t.Fatalf("written inline %v, want %v", written, want)
+	}
+	names := inlineNames(program)
+	if _, named := names["numbered"]; named {
+		t.Fatalf("price$1 is renamed %q", names["numbered"])
+	}
+	if names["literal"] != "active (inline, 2)" || names["arrow"] != "active (inline, 2)" {
+		t.Fatalf("the callables written inline in active read %v", names)
 	}
 	// Compiled into GroupsIndex beside Inline, never persisted.
-	program := programindex.Index{Target: programindex.Target{Language: "jsts"}, Objects: objects}
-	retained := map[string]struct{}{"numbered": {}, "arrow": {}, "dollar": {}}
+	retained := map[string]struct{}{"numbered": {}, "arrow": {}, "dollar": {}, "literal": {}}
 	anonymous := map[string]bool{}
 	for _, subject := range compileRetainedSubjects(program, retained) {
 		anonymous[subject.ID] = subject.Object.Anonymous
 	}
-	if want := map[string]bool{"numbered": false, "arrow": true, "dollar": false}; !reflect.DeepEqual(anonymous, want) {
+	if want := map[string]bool{"numbered": false, "arrow": true, "dollar": false, "literal": true}; !reflect.DeepEqual(anonymous, want) {
 		t.Fatalf("Anonymous %v, want %v", anonymous, want)
 	}
+}
+
+// literal is a function its Go adapter calls anonymous (Run$1).
+func literal(object programindex.Object) programindex.Object {
+	object.Anonymous = true
+	return object
 }

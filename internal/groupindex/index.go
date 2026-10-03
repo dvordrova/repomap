@@ -134,8 +134,9 @@ type ObjectFacts struct {
 	// from the bound ProgramIndex, never persisted: Name stays native.
 	Inline string `json:"-"`
 	// Anonymous marks a callable written inline in another, which its code
-	// gives no name of its own (inline.go writtenInline: a lambda, a Go
-	// function literal), whether or not a reader's name was found for it:
+	// gives no name of its own (inline.go writtenInline: a lambda, or what
+	// its adapter says is anonymous, a Go function literal), whether or not
+	// a reader's name was found for it:
 	// nobody's declaration to look for. Compiled from the bound ProgramIndex
 	// with Inline, never persisted; no reader of GroupsIndex reads it from a
 	// name.
@@ -1484,7 +1485,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 				Parameters: append([]programindex.TypedName(nil), object.Parameters...),
 				Results:    append([]programindex.TypedName(nil), object.Results...),
 				External:   cloneExternal(object.External), Location: cloneLocation(object.Location),
-				Inline: inline[object.ID], Anonymous: writtenInline(index, object), PlatformHandle: handles[object.ID],
+				Inline: inline[object.ID], Anonymous: writtenInline(object), PlatformHandle: handles[object.ID],
 			},
 		})
 	}
