@@ -1,5 +1,10 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — The overview's registration sentence matches the facts' rule (data 2)
+
+- **Wording:** following 0986036d (facts) and the owner's decision "a" of 2026-09-27, the overview prompt now defines a registration's receiver as outside code, or the repository's own code that keeps what it is handed (a parameter it stores, a row of a module-level table, a statement that starts it). A repository function that only runs what it is handed in place is none. c26fcf06 had said "a call that runs the function it is given".
+- **Measured:** 1 of the 7 orientation requests of the saved 5.1.5 run 103451 changes (the overview); its flow requests do not. 1 cached payload carries the c26fcf06 sentence. orientation tests pass.
+
 ## 2026-10-03 — The registration fact says what its producers keep: a receiver that keeps or runs what it is handed (facts)
 
 - **Inconsistency** (data 2's B6, c26fcf06): the overview prompt says a registration's receiver may be outside code or the repository's own, while `facts/registration.go`, `facts/model.go` and PROGRAM_INDEX still defined it as a call into code the repository does not own with two exceptions, and left the keeping registrar (owner decision 2026-09-27 "a", C only) out of the general definition.

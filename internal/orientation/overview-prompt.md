@@ -21,12 +21,13 @@ cite a ref of the wrong kind.
   - `export`: a function or type a library offers to code that links it:
     the library's own evidence for its role, never a way to run anything.
   - `registration`: a call that hands over a repository function or an
-    address-like value to a receiver that keeps or runs it, whether that
-    receiver is code the repository does not own or the repository's own (a
-    dispatcher, a table of functions, a call that runs the function it is
-    given): a route, a command, a consumer, a timer, a client request or a
-    server start. Which of these it is, and what the function does when it
-    runs, the fact does not say.
+    address-like value to a receiver that keeps or runs it: code the
+    repository does not own, or the repository's own code that keeps what
+    it is handed (a parameter it stores, a row of a module-level table, a
+    statement that starts it); a repository function that only runs what it
+    is handed in place is none. It may be a route, a command, a consumer, a
+    timer, a client request or a server start. Which of these it is, and
+    what the function does when it runs, the fact does not say.
   - `sql_query`: an SQL statement and the tables it names.
   - `config_read`: an environment or configuration key read.
   - `dynamic_execution`: code run from data (exec, eval, a subprocess, an
