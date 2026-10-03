@@ -9,12 +9,21 @@ import (
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
-// A registration is the shape of a call the repository does not own and
-// that hands something to the outside: a repository callable, a repository
-// value under an address, or an address on its own. Route registrations,
-// message consumers, timers, plugin hooks and client requests all have this
-// shape; which of them a registration is, the reading stage decides. Nothing
-// here knows a framework.
+// A registration is a call that hands something over to a receiver that
+// keeps or runs it: a repository callable, a repository value under an
+// address, or an address on its own. The receiver is code the repository
+// does not own (this file: route registrations, message consumers, timers,
+// plugin hooks, client requests), or the repository's own where its native
+// evidence shows it keeps what it is handed: a function that stores the
+// callable parameter in a field or a module-level variable (registrar.go,
+// the program index's parameter stores: Lua's lua_cpcall keeps pmain in
+// CCallS.func, then runs it), a row of a module-level table (tableRow:
+// luaL_Reg's {"assert", luaB_assert}), or a statement that starts the
+// callable to run on its own (started.go). A repository function that runs
+// a callable in place and keeps nothing is delegation, a call the walk
+// follows, never a registration (owner decision 2026-09-27 "a"). Which kind
+// of entry a registration is, the reading stage decides. Nothing here knows
+// a framework.
 //
 // The shape keeps everything a reader would use: the call word as written,
 // every string literal in order, the address literal with the mount prefixes

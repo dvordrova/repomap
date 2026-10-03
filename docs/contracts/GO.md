@@ -510,6 +510,8 @@ Clojure's `future`, `Thread.` and `core.async/go` are recorded as missing
 
 ## Handler tables and stored callbacks
 
+A function of the program's own that keeps a handed callable (`l.handlers = append(l.handlers, h)`, `s.onRead = fn`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the Go adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Python, JS/TS and Clojure. C records them (C "Callables the program's own functions keep").
+
 These are the Go equivalents of the C adapter's command table, its callbacks
 stored under a branch and its calls through function-pointer fields. The
 cumulative fixture's `internal/storefixture/command_table.go` checks them:

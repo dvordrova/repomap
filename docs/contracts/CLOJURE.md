@@ -142,6 +142,8 @@ keywords yet: recorded, not fabricated.
 
 ## Handler tables and stored callbacks
 
+A function of the program's own that keeps a handed function (`(swap! handlers conj f)`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the Clojure adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Go, Python and JS/TS. C records them (C "Callables the program's own functions keep").
+
 These are the Clojure equivalents of the C adapter's command table, its
 callbacks stored under a branch and its calls through function-pointer fields.
 A call through a local, whether a parameter or a `let` binding, is an

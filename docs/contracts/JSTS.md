@@ -352,6 +352,8 @@ into both launches (READING).
 
 ## Handler tables and stored callbacks
 
+A function of the program's own that keeps a handed callable (`this.handlers.push(fn)`, `this.onRead = handler`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the JS/TS adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Go, Python and Clojure. C records them (C "Callables the program's own functions keep").
+
 These are the JS/TS equivalents of the C adapter's command table, its
 callbacks stored under a branch and its calls through function-pointer fields.
 The cumulative `src/stored-callbacks.ts` checks that a handler stored into one

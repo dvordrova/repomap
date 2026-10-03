@@ -160,8 +160,12 @@ type Target struct {
 //	registration Key (call word), Values (literals), Path (address literal, mount
 //	            prefixes applied), Method (verb the word or literal states),
 //	            Symbol/ObjectID (callable handed over), Text (external symbol
-//	            behind the call), Evidence (prefix/value sites),
-//	            Invocation (a started callable: goroutine, async_task)
+//	            behind the call, or a table row's record field), Registrar
+//	            (the repository function that keeps the callable),
+//	            Evidence (prefix/value sites), Invocation (a started
+//	            callable: goroutine, async_task). The receiver keeps or runs
+//	            what it is handed: outside code, or the repository's own
+//	            that keeps it (registration.go).
 //	sql_query   Value (statement), Key (tables), Symbol/ObjectID (caller)
 //	config_read Key (env key), Value (literal default), Symbol
 //	dynamic_execution Key (what runs the code), Symbol, Text (source line)

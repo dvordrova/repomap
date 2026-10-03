@@ -596,6 +596,8 @@ checks each kind (`TestCumulativePythonACallSaysWhatItRunsUnder`).
 
 ## Handler tables and stored callbacks
 
+A function of the program's own that keeps a handed callable (`self.handlers.append(fn)`, `self.on_read = handler`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the Python adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Go, JS/TS and Clojure. C records them (C "Callables the program's own functions keep").
+
 These are the Python equivalents of the C adapter's command table, its
 callbacks stored under a branch and its calls through function-pointer fields.
 The cumulative `src/fixture_app/stored_callbacks.py` checks what the adapter

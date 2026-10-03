@@ -1,5 +1,12 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — The registration fact says what its producers keep: a receiver that keeps or runs what it is handed (facts)
+
+- **Inconsistency** (data 2's B6, c26fcf06): the overview prompt says a registration's receiver may be outside code or the repository's own, while `facts/registration.go`, `facts/model.go` and PROGRAM_INDEX still defined it as a call into code the repository does not own with two exceptions, and left the keeping registrar (owner decision 2026-09-27 "a", C only) out of the general definition.
+- **Now** the three say one rule, the producers' own: a registration hands something over to a receiver that keeps or runs it; the receiver is outside code, or the repository's own where native evidence shows it keeps what it is handed (a function storing the callable parameter in a field or a module-level variable, a module-level table row, a statement that starts it). Lua 5.1.5's `lua_cpcall(L, &pmain, &s)` is the registrar case (`CCallS.func`, `src/lapi.c:854`), its `luaL_Reg` tables are rows; no Lua-specific rule exists or was added.
+- **Why the producers differ from "a call that runs the function it is given":** a repository function that runs a callable in place and keeps nothing stays delegation, a call the walk follows; producing it would make every higher-order helper an input asked per call, which the owner's 2026-09-27 "a" refused. Facts are unchanged, so no fixture expectation moves.
+- **Recorded gaps:** only C records parameter stores; GO, PYTHON, JSTS and CLOJURE now say a function of their own that keeps a handed callable registers nothing yet.
+
 ## 2026-10-03 — A3's prompt remnant: rows state a function literal from the adapter's fact (facts)
 
 - **Before:** `prompts/files.md` and the evidence vocabulary said any `name$N` is the N-th closure of `name`, and no row carried ProgramIndex 25's `anonymous`; a public JavaScript `price$1` read as a closure (control review, native probe).
