@@ -37,3 +37,16 @@ long watchTickAgain(int seconds, long ms) {
     long star = (*(seconds ? tickSeconds : tickTenths))(ms);
     return fixed + same + star;
 }
+
+/* A run that prepares, then executes only on what preparing returns, as
+   Lua's luaD_call runs the VM when luaD_precall says a Lua function is
+   called. Preparing also collects. A Main flow that goes on through
+   prepare still keeps execute beside run, under its condition. */
+static long long watchCollected;
+static void watchCollect(void) { watchCollected = loopNowMs(); }
+static int watchPrepare(void) { watchCollect(); return 0; }
+static void watchExecute(void) { netConnect("127.0.0.1", 7379); }
+void watchRun(void) {
+    if (watchPrepare() == 0)
+        watchExecute();
+}

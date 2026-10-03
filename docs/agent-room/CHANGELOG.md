@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — Where `lua script.lua` executes: the saved window and a counterexample (data 2)
+
+- **Saved window, Lua 5.1.5 run 20261003-144315:**
+  - pmain is torn: lua_pcall 0.35 (through dotty, the REPL) against handle_script 0.34. The page stacks the REPL way first and the script's way after it, each numbered from 1, and nothing says the walk was undecided.
+  - handle_script picks lua_pcall 0.72 over luaL_loadfile 0.26 and joins the REPL way.
+  - At luaD_call (request 1751fda6, saved answer luaD_precall 0.72 / luaV_execute 0.28 / luaC_step 0.00), the candidates are offered in name order, each "reached: called". There is no guard, no role line (captions are off), no written order, and no fact that luaV_execute's condition is luaD_precall's result (`if (luaD_precall(...) == PCRLUA) luaV_execute(L, 1);`).
+  - The walk goes into luaD_precall (luaC_step 0.43 / io_readline 0.35) and never returns to luaD_call's next call.
+  - Lua 5.5 run 20261003-144557 reaches luaV_execute: there the split is at lua_pcallk with luaD_call and ccall as helpers, and it is torn.
+- **Counterexample (C fixture util/watch.c):** `watchRun(){ if (watchPrepare()==0) watchExecute(); }`, with `watchPrepare` collecting. Preset at watchRun: watchPrepare. The flow goes run → prepare → collect. watchExecute stays among run's passed calls under a branch, and nothing saved says the branch is prepare's result. `TestCFixtureAPreparedExecutionStaysBesideTheStepThatRunsIt` pins this. Go (`if prepare() == nil { execute() }`) and Python (`if prepare() == 0: execute()`) write the same shape and the walk is shared; they are not fixtured here. JS/TS and Clojure record no guards.
+- **Measured on the 10 fresh runs:** of 52 passed calls under a branch, only Lua 5.1.5's luaV_execute sits under a condition that calls the route's next step (read from the source lines).
+
 ## 2026-10-03 — Same-named declarations of one scope read apart by what only each uses (data 2)
 
 - **Rule (coordinator, option b):** a reading's declarations still named alike after where they stand (`tellDeclsApart`) carry, saved in the page data, the first thing only each of them calls or reads, in source order. A repository declaration comes before an outside one (`groupindex.OwnUses`, the rung the closures took in e4a6c1fc). The column shows the word quiet after the name, with what it is and where it is written on its hover (en and ru vocabulary). Outside callees read by their own name: the platform's bare (`URL`, `ListenAndServe`), a package's with its last element (`status.Error`).

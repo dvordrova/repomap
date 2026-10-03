@@ -315,3 +315,41 @@ func (asked *capturedOrientation) bodies(t *testing.T) [][]byte {
 	}
 	return asked.users
 }
+
+// A step that prepares, then executes only on what preparing returns, as
+// Lua 5.1.5's luaD_call runs luaV_execute when luaD_precall's result says a
+// Lua function is called (util/watch.c's watchRun). The categorizer that
+// takes watchPrepare carries the route on into what preparing collects;
+// watchExecute stays beside watchRun among its passed calls, under its
+// condition, and no saved fact says that condition is watchPrepare's
+// result: the walk never comes back to its step's next call (control
+// review, 2026-10-04: where does `lua script.lua` execute?).
+func TestCFixtureAPreparedExecutionStaysBesideTheStepThatRunsIt(t *testing.T) {
+	fixture := loadCFixture(t)
+	index := buildCIndex(t, fixture, "c:util/watch.c")
+	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := graphWithFacts(t, fixture.repository, places.TargetInput{Index: index, Root: "."})
+	preset := &inputsPreset{decide: func(column string, _ map[string]any, _ []string) (string, bool) { return "domain", column == "role" }}
+	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root, preset)
+	chooser := &flowPreset{choose: map[string]string{"watchRun": "watchPrepare"}}
+	flow := walkFixtureFrom(t, projected, layer, graph, subjectNamed(t, projected, "watchRun", "util/watch.c"), chooser)
+	if got := flowPath([]groupindex.Index{projected}, flow); len(got) < 3 || got[1] != "watchPrepare (called)" || got[2] != "watchCollect (called)" {
+		t.Fatalf("watchRun's flow = %q", got)
+	}
+	if len(chooser.asked) == 0 || !slices.Equal(chooser.asked[0].options, []string{"watchExecute", "watchPrepare"}) {
+		t.Fatalf("splits asked: %+v", chooser.asked)
+	}
+	names := map[string]string{}
+	for _, subject := range projected.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	passed := flow.Steps[0].Passed
+	if len(passed) != 1 || names[passed[0].SubjectID] != "watchExecute" || passed[0].Guard == nil || passed[0].Guard.Kind != programindex.GuardBranch {
+		t.Fatalf("watchRun passed %+v, want watchExecute under a condition", passed)
+	}
+}
