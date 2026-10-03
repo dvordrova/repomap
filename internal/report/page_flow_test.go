@@ -461,6 +461,33 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 			t.Fatalf("%v: the passed calls do not read folded under %q: %s", language, label, html)
 		}
 	}
+	// A passed call in the step's own part, which the walk did not follow
+	// (Lua 5.1.5's luaV_execute under luaD_call, the model taking
+	// luaD_precall), stays one step from the reader: its condition with its
+	// place and its name a link into its declaration, in both languages
+	// (control review and skeptic, 2026-10-03: no part cue, no model line).
+	guarded := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called",
+		Passed: []orientation.FlowBranch{{SubjectID: "resize", Via: "called", Guard: &programindex.Guard{Kind: programindex.GuardBranch, Location: &programindex.Location{Path: "redis.c", Line: 377, Column: 3}}}}},
+		section, map[string]bool{})
+	if guarded.Passed == nil || len(guarded.Passed.Names) != 1 || guarded.Passed.Names[0].Guard == nil || guarded.Passed.Names[0].Code == "" {
+		t.Fatalf("the passed call lost its condition or its link: %+v", guarded.Passed)
+	}
+	for language, words := range map[DisplayLanguage]string{English: "only under a condition", Russian: "только при условии"} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{guarded}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		at := strings.Index(html, "flow-passed")
+		if at < 0 || !strings.Contains(html[at:], ">tryResizeHashTables</code>") || !strings.Contains(html[at:], "data-step-code=") ||
+			!strings.Contains(html[at:], words) || !strings.Contains(html[at:], "redis.c:377") {
+			t.Fatalf("%v: the passed call is not one step from its declaration and condition: %s", language, html)
+		}
+	}
 }
 
 // A Main flow says what its steps are (external review, 2026-10-02: it had

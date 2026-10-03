@@ -2139,7 +2139,14 @@ an item field, luaV_execute won 0.78-0.83, but the same field put
 litestream's RegisterDB (0.40 over 0.33) and freqtrade's
 check_and_call_adjust_trade_position (0.40 over 0.32) within the margin in
 held-out draws, new forks, so it was refused (control review and skeptic,
-2026-10-03; the patch and draws are in the CHANGELOG entry). No unit whose closure enters no
+2026-10-03; the patch and draws are in the CHANGELOG entry). Nor does the
+page add a cue: the VM shares luaD_call's part, so a part beside a passed
+call would mark luaC_step, not luaV_execute (191 of 302 passed calls across
+nine flows would gain one, none saying where work runs), and a model line
+per split candidate would undo captions being off, the owner's call of
+2026-09-17. The passed call stays one step from the reader: its condition
+with its place, its name a link into its declaration, its part on hover
+(`TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls`). No unit whose closure enters no
 part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the

@@ -1,5 +1,10 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Where the script executes when the walk takes another way (data 2)
+
+- **Skeptic verdict (c):** leave luaD_call's "also calls: luaV_execute (only under a condition, src/ldo.c:377)" as the reader's way to the VM. (a) describing split candidates with the Symbols table would add 445 distinct declarations over nine flows (about 49 a run, 118 for redis), a sequential round per split. It is unmeasured on the 0.71-0.76 pick, and it reverses captions off. That was the owner's call of 2026-09-17 ("Подписи - мне кажется это херня использование, на данном этапе ничего непонянто"); the 2026-09-25 reopening covers ranked core declarations only. (b) a part cue beside passed calls marks luaC_step ("Objects and memory") and never the VM, which shares luaD_call's part. 191 of 302 passed calls would gain one, each a duplicate of the hover title.
+- **Pinned:** `TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls` now checks that a passed call in the step's own part keeps its condition with its place and its link into its declaration, in English and Russian. Tests only; no request bytes change.
+
 ## 2026-10-03 — Control review B3 and B4: translation splits at the context window, a text answered twice differently is refused, and the documentation prompt asks for every concept (report)
 
 - **B3, split:** `planWindows` treated only `request_bytes` as "smaller"; DeepSeek's preparation refuses an oversized request with `context_tokens` first, so the stage ended before any call with none of seven texts translated (control probe: one or two texts fit, four did not). Both preparation limits now shrink the window; every text stands in exactly one window with its own dictionary, and a text whose request alone does not fit is indivisible: kept in its source language and named (`does not fit one request`, an `entry_untranslated` row) while its neighbours are translated. Tests: `TestTranslateSplitsAtTheContextWindowAsAtItsBytes` (2+2+2+1, each ref sent once, terms closed; one long text kept and never sent), the byte-limit packing test's oversized case now keeps and names the texts.
