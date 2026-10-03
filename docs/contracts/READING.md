@@ -2107,7 +2107,14 @@ prefers another call to the VM (5.1.5's luaD_call: luaD_precall 0.70-0.75
 over luaV_execute, 0.79-0.82 with luaV_execute's condition written out,
 0.61-0.73 with the ask saying the path never comes back), the VM stays
 among the step's passed calls with its guard: a model choice, not a lost
-candidate, and the honest end of that route. No unit whose closure enters no
+candidate, and the honest end of that route. The question carries no
+written order of the step's calls (its candidates come in name order, each
+"called"); with the step's calls in written order and their guard words as
+an item field, luaV_execute won 0.78-0.83, but the same field put
+litestream's RegisterDB (0.40 over 0.33) and freqtrade's
+check_and_call_adjust_trade_position (0.40 over 0.32) within the margin in
+held-out draws, new forks, so it was refused (control review and skeptic,
+2026-10-03; the patch and draws are in the CHANGELOG entry). No unit whose closure enters no
 part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the

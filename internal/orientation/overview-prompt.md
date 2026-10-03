@@ -20,10 +20,13 @@ cite a ref of the wrong kind.
   - `entrypoint`: where a program starts.
   - `export`: a function or type a library offers to code that links it:
     the library's own evidence for its role, never a way to run anything.
-  - `registration`: a call into code the repository does not own that hands
-    over a repository function or an address-like value: a route, a
-    command, a consumer, a timer, a client request or a server start. Which
-    of these it is, the fact does not say.
+  - `registration`: a call that hands over a repository function or an
+    address-like value to a receiver that keeps or runs it, whether that
+    receiver is code the repository does not own or the repository's own (a
+    dispatcher, a table of functions, a call that runs the function it is
+    given): a route, a command, a consumer, a timer, a client request or a
+    server start. Which of these it is, and what the function does when it
+    runs, the fact does not say.
   - `sql_query`: an SQL statement and the tables it names.
   - `config_read`: an environment or configuration key read.
   - `dynamic_execution`: code run from data (exec, eval, a subprocess, an

@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Why the VM loses at 5.1.5's luaD_call, and a registration's receiver may be the repository's own (data 2)
+
+- **The request** (`.llm-cache/payloads/1751fda6…`, key `t5.n104|next`): state "We trace the one path a newcomer follows from where src/lua starts to the work it exists for, once", item luaD_call with its signature and part, candidates c1 luaC_step, c2 luaD_precall, c3 luaV_execute in name order. Each criterion is name, signature, part and "reached: called". No option has a role line, because this C program has no atlas lines. The guards the walk holds (luaV_execute under ldo.c:377, luaC_step under ldo.c:380) and the order the body writes its calls never reach the request. Reading three equal names, the model takes luaD_precall as the call's work (5 uncached draws: 0.71-0.76).
+- **Draws** (5 each, one variant at a time):
+  - Guard words in the criteria: precall 0.79-0.85, worse.
+  - "When luaD_precall's result meets a condition": 0.77.
+  - Condition source text: 0.71-0.75.
+  - The step's calls in written order as an item field: the VM wins. "in order: luaD_precall; luaV_execute, only under a condition; luaC_step, only under a condition" gives 0.78-0.81; plain order 0.55-0.75; a JSON list 0.50-0.54.
+- **Skeptic:** accepted the written order as the item's symbols, froze that form, and pre-registered a refusal on any lost decision or new fork in held-out splits. Hand-overs and deferred calls are not where they run, so the field is said for every candidate or for none.
+- **Held-out:** warm runs of lua, othello, litestream, etcd, freqtrade, headscale and lua-5.1.5, then 5 uncached draws of every changed split against its twin without the field.
+  - Wins: 5.1.5's luaD_call 0.78-0.83 VM; Lua 5.5's lua_pcallk VM 0.70-0.74 (was torn); othello's choose decided.
+  - Losses: litestream's RegisterDB went from DB 0.61-0.65 over 0.28 to 0.40-0.45 over 0.27-0.34 (within the margin in 4 of 5 draws), and freqtrade's check_and_call_adjust_trade_position from 0.84-0.87 to 0.40-0.50 over execute_trade_exit up to 0.32. Both are new forks, and the runs' own answers forked there.
+  - The first form, which still said hand-overs, took etcd's startEtcd to the interrupt handler 5 of 5.
+- **Refused and reverted.** The patch is kept outside the tree (`calls-refused.patch`, scope.go/path.go: a written site on flow edges, `writtenCalls`, flow contract v2). The VM stays luaD_call's passed call with its guard. READING records it.
+- **Registration wording** (control review B6): the overview prompt defined a registration as a call into code the repository does not own. Lua's lua_cpcall (src/lapi.c:850) is the repository's own, yet fact a1471 registers pmain there. The prompt now says the receiver may be outside code or the repository's own (a dispatcher, a table of functions, a call that runs the function it is given), and what it is and what the function does at run time stay unsaid.
+  - Measured on the saved 5.1.5 run 090413: 1 of its 7 orientation requests carries the sentence (the overview, fde863f8); its 6 flow requests do not. In the shared cache, 93 payloads carry it, all orientation overview requests, each re-asked once when its repository runs next.
+  - The flow's choices (GC, IO, precall) are categorizer requests that never carry this prompt, so the wording is not why they win.
+  - facts/model.go and PROGRAM_INDEX.md still define the native fact as a call the repository does not own, with its two exceptions (table rows, started calls). That is the facts agent's area.
+
 ## 2026-10-03 — Review A4 and A3's report half: a call's kind and names are fields, and no name decides a tile (report)
 
 - **Defect** (review A4, saved casdoor 225344): `connectionCall` refused a call whose names hold spaces, the arrow fell back to its stored label, and `call-card.mjs` split it with `^(\S+) (\S+) (\S+)$`; "StartLdapServer (inline, 3) calls GetConfigString" (ldap/server.go:57) became `other` and the column dropped it, so LDAP → Configuration counted one connection and listed none. In that HTML 4,326 of 10,921 calls were label-only rows the regex happened to parse (mostly external callees such as "GetAdapterCount calls xorm.Session.Count"); 16 carried inline names. Outside calls had the same no-space guard (`page_system_map.go`), and `emphasis.carries` matched a caller by the label's first word.
