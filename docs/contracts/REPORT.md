@@ -714,7 +714,12 @@ etcd's server listed fourteen "POST" under Election and lock APIs; now
 "POST /v3electionpb.Election/Campaign · RegisterElectionHandlerServer",
 the route argument being a package variable whose value no fact reads,
 and the Observe whose handler declares no word "POST
-RegisterElectionHandlerServer"). Words only, never code as written, which
+RegisterElectionHandlerServer"), the handler's later words, in source
+order, last: etcd's api read LeaseRevoke, LeaseTimeToLive and LeaseLeases
+twice each, two routes of one function alike in their first word, now
+apart by the path each handler declares next ("/v3/lease/revoke",
+"/v3/kv/lease/revoke"; on the saved api run, 6 inputs alike before, none
+after). Words only, never code as written, which
 stays behind the link (owner's review, 2026-09-30: redis's setting "save
 strcasecmp(argv[0]"), never a URL composed, never two inputs merged;
 inputs of two kinds (redis's command save and setting save) are not taken

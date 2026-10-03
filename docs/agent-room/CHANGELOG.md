@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Same-name repeats: etcd's Lease routes read apart; what remains and whose it is (data 2)
+
+- **etcd api, 3 pairs of "POST":** LeaseRevoke, LeaseTimeToLive and LeaseLeases are each registered twice in RegisterLeaseHandlerServer (and in the client), two grpc-gateway patterns per method. They are alike in the first word each handler declares and in their registering function. The saved distinguishing word is the second path each handler declares (`/v3/lease/revoke`, `/v3/kv/lease/revoke`; GroupsIndex operations declared by the handler). Under the 1da657f8 rule, the handler's later words, in source order, are now the last levels. Replaying the rule on the saved api run (20261003-095506) gives 6 inputs alike before and 0 after. `TestSameNamedInputsReadApartByTheirSavedWords` (tested on a HEAD export, because others' in-flight report tests do not build).
+- **Remain, not changed here:**
+  - Closures nothing names apart: casdoor's "one of two anonymous functions in Start", etcd's startPeer ×3 and RegisterElectionHandlerServer ×5. Their names come from GroupsIndex `InlineName` (`internal/groupindex/inline.go`, under another agent's uncommitted edit now). The saved fact that differs is each closure's own calls, or for the gateway closures the input whose handler each is.
+  - casdoor's two `LoginPage.login.loginHandler`: arrows bound to one name in two `.then` callbacks of `login` (lines 520 and 553). Only their enclosing callback differs (`AuthBackend.loginCas(...).then` vs `AuthBackend.login(...).then`); the declaration list's TellApart spellings (type, folder, file, part) hold no such word.
+  - beets's `BeatportClient.search`: two `typing.overload` stubs and the implementation, which differ only by signature. The latest beets run (2026-10-02) predates today's declaration changes, so this was not rechecked at HEAD without a render.
+  - The browser check goes into the final walk.
+
 ## 2026-10-03 — Lua 5.1.5's etc/all.c failure says its cause (data 2)
 
 - **Cause:** genuine, not the reading's. etc/Makefile's `one` rule compiles all.c with `-O2 -Wall -I../src`, the flags our unit used. By hand, `clang -fsyntax-only -O2 -Wall -I../src all.c` in etc/ fails the same: all.c includes every core and library .c file into one unit. src/ldebug.h's two-argument macro `getline(f,pc)` is then defined before a later file's `<stdio.h>`, whose macOS SDK declaration of `getline` (three parameters) it captures. A platform property of the single-file build.

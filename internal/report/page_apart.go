@@ -111,9 +111,13 @@ func placeText(path string, line int) string {
 // next (etcd's Observe of RegisterElectionHandlerServer passes no word in
 // its handler and reads by its registering function). Inputs still alike
 // add the next word that differs among them (Campaign registered by
-// RegisterElectionHandlerServer and by RegisterElectionHandlerClient). No
-// word is made up: each is written in the code, and two inputs nothing
-// tells apart keep their names alike.
+// RegisterElectionHandlerServer and by RegisterElectionHandlerClient), the
+// handler's later words, in source order, last: etcd's two LeaseRevoke
+// routes of RegisterLeaseHandlerServer, alike in their first word and
+// their function, read apart by the path each handler declares next
+// ("/v3/lease/revoke", "/v3/kv/lease/revoke"). No word is made up: each is
+// written in the code, and two inputs nothing tells apart keep their names
+// alike.
 func tellInputsApart(nodes []*pageMapNode) {
 	byName := map[string][]*pageMapNode{}
 	var order []string
@@ -157,6 +161,20 @@ func tellInputsApart(nodes []*pageMapNode) {
 				options = pageApartWord{Word: strings.Join(held, ", "), Of: apartOptions}
 			}
 			levels[position] = []pageApartWord{options, declared, key, handler, node.apart.registered}
+			for _, word := range node.apart.handler[min(1, len(node.apart.handler)):] {
+				levels[position] = append(levels[position], word)
+			}
+		}
+		// Every member has as many levels, those with fewer handler words
+		// none at the levels past theirs.
+		longest := 0
+		for _, words := range levels {
+			longest = max(longest, len(words))
+		}
+		for position := range levels {
+			for len(levels[position]) < longest {
+				levels[position] = append(levels[position], pageApartWord{})
+			}
 		}
 		chosen := chooseApart(levels)
 		for position, node := range members {

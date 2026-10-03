@@ -430,6 +430,13 @@ func TestSameNamedInputsReadApartByTheirSavedWords(t *testing.T) {
 		{ID: "campaign-client", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: handler("/v3electionpb.Election/Campaign", "gw.go:307"), registered: registered("RegisterElectionHandlerClient")}},
 		{ID: "observe", FullTitle: "POST", Activation: "request", apart: pageApartFacts{registered: registered("RegisterElectionHandlerServer")}},
 		{ID: "lock", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: handler("/v3lockpb.Lock/Lock", "lock.go:90"), registered: registered("RegisterLockHandlerServer")}},
+		// etcd's two LeaseRevoke routes of one function: alike in their
+		// first handler word and their function, apart by the path each
+		// handler declares next.
+		{ID: "revoke", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: append(handler("/etcdserverpb.Lease/LeaseRevoke", "gw.go:1413"),
+			pageApartWord{Word: "/v3/lease/revoke", Of: apartHandler, At: "gw.go:1413"}), registered: registered("RegisterLeaseHandlerServer")}},
+		{ID: "revoke-kv", FullTitle: "POST", Activation: "request", apart: pageApartFacts{handler: append(handler("/etcdserverpb.Lease/LeaseRevoke", "gw.go:1433"),
+			pageApartWord{Word: "/v3/kv/lease/revoke", Of: apartHandler, At: "gw.go:1433"}), registered: registered("RegisterLeaseHandlerServer")}},
 		// freqtrade: two options of one name, of two subcommands; two table
 		// rows of one name, by their keys; a name no other shares.
 		{ID: "download-data", FullTitle: "download-data", Activation: "command", apart: pageApartFacts{options: []string{"erase-1"}}},
@@ -457,6 +464,8 @@ func TestSameNamedInputsReadApartByTheirSavedWords(t *testing.T) {
 		"campaign-client": "/v3electionpb.Election/Campaign · RegisterElectionHandlerClient",
 		"observe":         "RegisterElectionHandlerServer",
 		"lock":            "/v3lockpb.Lock/Lock",
+		"revoke":          "/etcdserverpb.Lease/LeaseRevoke · /v3/lease/revoke",
+		"revoke-kv":       "/etcdserverpb.Lease/LeaseRevoke · /v3/kv/lease/revoke",
 		"download-data":   "", "install-ui": "",
 		"erase-1": "download-data", "erase-2": "install-ui",
 		"version": "version", "version-main": "version_main",
@@ -472,7 +481,7 @@ func TestSameNamedInputsReadApartByTheirSavedWords(t *testing.T) {
 	if err := json.Unmarshal([]byte(inputCollection(ids, func(id string) pageMapNode { return byID[id] })), &collection); err != nil {
 		t.Fatal(err)
 	}
-	if len(collection.Apart) != 8 || collection.Apart["lock"][0].Word != "/v3lockpb.Lock/Lock" || collection.Apart["trade"] != nil {
+	if len(collection.Apart) != 10 || collection.Apart["lock"][0].Word != "/v3lockpb.Lock/Lock" || collection.Apart["trade"] != nil {
 		t.Fatalf("the collection carries %v", collection.Apart)
 	}
 }
