@@ -2,6 +2,7 @@ package cproject
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -110,6 +111,35 @@ func TestParseIncludeTreeSeparatesDiagnostics(t *testing.T) {
 	}
 	if len(diagnostics) != 2 || !strings.Contains(diagnostics[0], "error:") {
 		t.Fatalf("diagnostics: %q", diagnostics)
+	}
+}
+
+// A unit's failure says each error and the notes after it that point into
+// the repository, at the repository's own paths: Lua 5.1.5's etc/all.c,
+// built in etc/ as `make one` does, fails in the SDK's <stdio.h> because
+// src/ldebug.h defines a macro getline, which only the note says; the
+// SDK's own notes and the error count stay out.
+func TestAUnitFailureSaysTheRepositoryNotesOfItsError(t *testing.T) {
+	names := &fileNames{cwd: "/repo/etc", roots: []string{"/repo"}, corpus: map[string]bool{"etc/all.c": true, "src/ldebug.h": true, "src/luaconf.h": true}, cache: map[string]fileName{}}
+	got := failureLines([]string{
+		"/sdk/usr/include/_stdio.h:460:101: error: too many arguments provided to function-like macro invocation",
+		"../src/ldebug.h:16:9: note: macro 'getline' defined here",
+		"../src/luaconf.h:657:33: note: expanded from macro 'lua_tmpnam'",
+		"/sdk/usr/include/sys/cdefs.h:227:48: note: expanded from macro '__deprecated_msg'",
+		"1 error generated.",
+		"../src/ldebug.h:20:1: note: a note after no error",
+	}, names)
+	want := []string{
+		"/sdk/usr/include/_stdio.h:460:101: error: too many arguments provided to function-like macro invocation",
+		"src/ldebug.h:16:9: note: macro 'getline' defined here",
+		"src/luaconf.h:657:33: note: expanded from macro 'lua_tmpnam'",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("failure lines %q\nwant %q", got, want)
+	}
+	if err := unitFailure(UnitSpec{Path: "etc/all.c", Built: true}, nil, got); !strings.Contains(err.Error(), "clang could not parse etc/all.c: ") ||
+		!strings.Contains(err.Error(), "; src/ldebug.h:16:9: note: macro 'getline' defined here") {
+		t.Fatalf("failure: %v", err)
 	}
 }
 

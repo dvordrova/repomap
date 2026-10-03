@@ -33,7 +33,17 @@ parsed with clang's defaults (exit status 1): src/litestream-vfs.c:1:10:
 fatal error: 'litestream-vfs.h' file not found" (litestream's header is the
 one `make vfs` has `go build -buildmode=c-archive` write, a goal its default
 does not run), never as if the unit itself were broken
-(`TestDiscoverWithoutBuildDescription`).
+(`TestDiscoverWithoutBuildDescription`). A failure says each error and the
+notes clang writes after it that point into the repository, at the
+repository's own paths: what of the repository's own the error meets.
+Lua 5.1.5's etc/all.c, which `make one` compiles as one unit of every core
+and library file with the makefile's `-I../src`, fails in the macOS SDK's
+`<stdio.h>`, whose `getline` declaration meets the two-argument macro
+`getline` src/ldebug.h defines; the failure reads "…/_stdio.h:460:101:
+error: too many arguments provided to function-like macro invocation;
+src/ldebug.h:16:9: note: macro 'getline' defined here" (the makefile's own
+line fails the same on this platform: the file's property, not the
+reading's; `TestAUnitFailureSaysTheRepositoryNotesOfItsError`).
 
 A failed dry run is recorded (`c_build_error`, naming its makefile) and the
 units it would have compiled keep clang's defaults; a unit that then fails to

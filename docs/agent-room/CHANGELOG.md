@@ -1,5 +1,10 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Lua 5.1.5's etc/all.c failure says its cause (data 2)
+
+- **Cause:** genuine, not the reading's. etc/Makefile's `one` rule compiles all.c with `-O2 -Wall -I../src`, the flags our unit used. By hand, `clang -fsyntax-only -O2 -Wall -I../src all.c` in etc/ fails the same: all.c includes every core and library .c file into one unit. src/ldebug.h's two-argument macro `getline(f,pc)` is then defined before a later file's `<stdio.h>`, whose macOS SDK declaration of `getline` (three parameters) it captures. A platform property of the single-file build.
+- **Message:** the failure kept only clang's error line, an SDK place. It now also keeps the notes after an error that point into the repository, at repository paths (`failureLines`): "…/_stdio.h:460:101: error: too many arguments provided to function-like macro invocation; src/ldebug.h:16:9: note: macro 'getline' defined here; src/luaconf.h:657:33: note: expanded from macro 'lua_tmpnam'". The SDK's own notes and clang's error count stay out. `TestAUnitFailureSaysTheRepositoryNotesOfItsError`; C.md. No request bytes change.
+
 ## 2026-10-03 — Where the script executes when the walk takes another way (data 2)
 
 - **Skeptic verdict (c):** leave luaD_call's "also calls: luaV_execute (only under a condition, src/ldo.c:377)" as the reader's way to the VM. (a) describing split candidates with the Symbols table would add 445 distinct declarations over nine flows (about 49 a run, 118 for redis), a sequential round per split. It is unmeasured on the 0.71-0.76 pick, and it reverses captions off. That was the owner's call of 2026-09-17 ("Подписи - мне кажется это херня использование, на данном этапе ничего непонянто"); the 2026-09-25 reopening covers ranked core declarations only. (b) a part cue beside passed calls marks luaC_step ("Objects and memory") and never the VM, which shares luaD_call's part. 191 of 302 passed calls would gain one, each a duplicate of the hover title.

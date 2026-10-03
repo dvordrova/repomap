@@ -437,12 +437,7 @@ func (store *Store) parse(ctx context.Context, env parseEnv, spec UnitSpec) (*Un
 		return nil, ctx.Err()
 	}
 	includes, diagnostics := parseIncludeTree(stderr.String(), names)
-	var failures []string
-	for _, line := range diagnostics {
-		if strings.Contains(line, "error:") {
-			failures = append(failures, line)
-		}
-	}
+	failures := failureLines(diagnostics, names)
 	switch {
 	case waitErr != nil || len(failures) > 0:
 		if len(failures) == 0 {
@@ -465,6 +460,44 @@ func (store *Store) parse(ctx context.Context, env parseEnv, spec UnitSpec) (*Un
 		declaration.Package = classes.packageOf(unit, named, declaration.Position.File)
 	}
 	return unit, nil
+}
+
+// diagnosticAt is a clang diagnostic's place, kind and words.
+var diagnosticAt = regexp.MustCompile(`^(.+?):(\d+):(\d+): (fatal error|error|warning|note): (.*)$`)
+
+// failureLines are the diagnostics a unit's failure says: each error, and
+// the notes clang writes after it that point into the repository, which say
+// what of the repository's own the error meets. Each place in the
+// repository reads as the repository writes it. Lua 5.1.5's etc/all.c
+// compiles every core file into one unit, as `make one` does: the SDK's
+// <stdio.h> declaration of getline then meets the two-argument macro
+// getline src/ldebug.h defines, which only the note "src/ldebug.h:16:9:
+// note: macro 'getline' defined here" says.
+func failureLines(diagnostics []string, names *fileNames) []string {
+	var failures []string
+	afterError := false
+	for _, line := range diagnostics {
+		match := diagnosticAt.FindStringSubmatch(line)
+		inRepository := false
+		if match != nil {
+			if path := names.normalize(match[1]); names.corpus[path] {
+				line = path + line[len(match[1]):]
+				inRepository = true
+			}
+		}
+		switch {
+		case strings.Contains(line, "error:"):
+			failures = append(failures, line)
+			afterError = true
+		case match != nil && match[4] == "note":
+			if afterError && inRepository {
+				failures = append(failures, line)
+			}
+		default:
+			afterError = false
+		}
+	}
+	return failures
 }
 
 // unitFailure is why clang could not parse a unit. A unit no build line
