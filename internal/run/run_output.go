@@ -58,15 +58,21 @@ func (output *runOutput) abortRun(cause error) bool {
 
 // accessRefusal names a provider answer that no retry, split or later stage
 // can change: the credentials are refused or the balance is exhausted.
+// A response whose client names its service (Jev) names it, since a run asks
+// two providers with two keys and one stage may ask both.
 func accessRefusal(receipt debugdump.SemanticFailureReceipt) (error, bool) {
 	if receipt.HTTPResponse == nil {
 		return nil, false
 	}
+	provider, key, account := "the provider", "the API key", "the account"
+	if name := receipt.HTTPResponse.Provider; name != "" {
+		provider, key, account = name, name+"'s API key", name+"'s account"
+	}
 	switch receipt.HTTPResponse.StatusCode {
 	case 401, 403:
-		return fmt.Errorf("the provider refused the credentials: HTTP %d at stage %s; check the API key and model access, then rerun (accepted work is cached)", receipt.HTTPResponse.StatusCode, receipt.Stage), true
+		return fmt.Errorf("%s refused the credentials: HTTP %d at stage %s; check %s and model access, then rerun (accepted work is cached)", provider, receipt.HTTPResponse.StatusCode, receipt.Stage, key), true
 	case 402:
-		return fmt.Errorf("the provider refused for balance: HTTP 402 at stage %s; top up the account, then rerun (accepted work is cached)", receipt.Stage), true
+		return fmt.Errorf("%s refused for balance: HTTP 402 at stage %s; top up %s, then rerun (accepted work is cached)", provider, receipt.Stage, account), true
 	}
 	return nil, false
 }
@@ -446,7 +452,11 @@ func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 			fmt.Sprintf("transport attempts: %d", receipt.TransportAttempts), formatRunOutputDuration(receipt.LatencyMS),
 			"request: "+receipt.RequestPath)
 		if response := receipt.HTTPResponse; response != nil {
-			details = append(details, fmt.Sprintf("last HTTP response: %d", response.StatusCode))
+			from := ""
+			if response.Provider != "" {
+				from = " from " + response.Provider
+			}
+			details = append(details, fmt.Sprintf("last HTTP response: %d%s", response.StatusCode, from))
 			var names []string
 			for name := range response.Headers {
 				names = append(names, name)

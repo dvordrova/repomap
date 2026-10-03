@@ -27,6 +27,7 @@ func ExecuteJSONEach[T any](
 	if len(calls) == 0 {
 		return results
 	}
+	ctx, executor = forProvider(ctx, executor, provider)
 	concurrency := executor.BatchConcurrency
 	if concurrency < 1 {
 		concurrency = 1

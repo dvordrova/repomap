@@ -34,6 +34,16 @@ type BatchController struct {
 	mu      sync.Mutex
 	gate    *attemptGate
 	flights map[string]*flight
+	// limit, when set, is the gate's concurrency whatever the first bound
+	// batch asks for.
+	limit int
+}
+
+// NewBatchController returns a controller whose gate admits at most limit
+// attempts at once, whatever concurrency the batches bound to it ask for, so
+// the order in which stages first call a provider does not set its limit.
+func NewBatchController(limit int) *BatchController {
+	return &BatchController{limit: max(limit, 1)}
 }
 
 func (controller *BatchController) bind(configured int) *attemptGate {
@@ -46,9 +56,42 @@ func (controller *BatchController) bind(configured int) *attemptGate {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
 	if controller.gate == nil {
+		if controller.limit > 0 {
+			configured = controller.limit
+		}
 		controller.gate = newAttemptGate(configured)
 	}
 	return controller.gate
+}
+
+// AttemptControllerOwner is a provider whose rate limits belong to its
+// account rather than to one batch, such as the run's one categorizer client,
+// which every stage asks. Every executor call through it uses the controller
+// it returns (its attempt gate and its requests in the air) in place of
+// Executor.BatchController and of any gate the context already carries: one
+// 429 then cools down every stage's requests to that provider, and none of
+// another provider's. A nil controller leaves the executor's own.
+type AttemptControllerOwner interface {
+	AttemptController() *BatchController
+}
+
+// forProvider binds provider's own controller, when it has one, to the call:
+// the executor shares its flights and the context carries its gate.
+func forProvider(ctx context.Context, executor Executor, provider Provider) (context.Context, Executor) {
+	owner, ok := provider.(AttemptControllerOwner)
+	if !ok {
+		return ctx, executor
+	}
+	controller := owner.AttemptController()
+	if controller == nil {
+		return ctx, executor
+	}
+	executor.BatchController = controller
+	gate := controller.bind(max(executor.BatchConcurrency, 1))
+	if attemptGateForContext(ctx) == gate {
+		return ctx, executor
+	}
+	return context.WithValue(ctx, attemptGateContextKey{}, gate), executor
 }
 
 type attemptGate struct {

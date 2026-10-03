@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
@@ -81,9 +82,12 @@ func newRunCategorizer(factory func() (llm.Categorizer, error), output *runOutpu
 		return nil, err
 	}
 	if client, ok := categorizer.(*typesafe.Client); ok {
-		client.OnRetry = func(attempt, status int, reason string, wait time.Duration) {
-			output.Stage("", fmt.Sprintf("categorizer request: attempt %d failed (HTTP %d: %s); retry after %s", attempt, status, reason, wait))
+		// One gate for every stage's Jev requests: a 429 on one cools down
+		// all of them, and none of the text model's.
+		if client.Controller == nil {
+			client.Controller = llm.NewBatchController(table.ClassifierConcurrency)
 		}
+		client.OnRetry = func(progress llm.RetryProgress) { printRetry(output, "categorizer request", progress) }
 	}
 	return categorizer, nil
 }
@@ -106,30 +110,37 @@ func providerFactoryWithOutput(factory targetPortfolioProviderFactory, output *r
 
 func retryingTheModel(output *runOutput) func(deepseek.RetryProgress) {
 	return func(progress deepseek.RetryProgress) {
-		request := progress.RequestSHA256
-		if len(request) > 12 {
-			request = request[:12]
-		}
-		if progress.Starting {
-			output.Stage("", fmt.Sprintf("model request %s: starting retry, attempt %d/%d", request, progress.Attempt, progress.MaxAttempts))
-			return
-		}
-		reason := "transport failure"
-		switch progress.Failure {
-		case llm.ProviderFailureTimeout:
-			reason = "timeout"
-		case llm.ProviderFailureNetwork:
-			reason = "network failure"
-		case llm.ProviderFailureResponse:
-			// An HTTP 200 that carried no answer; its status says nothing.
-			reason = "empty answer"
-		}
-		if progress.Failure != llm.ProviderFailureResponse && progress.HTTPStatus >= 100 && progress.HTTPStatus <= 599 {
-			reason = fmt.Sprintf("HTTP %d", progress.HTTPStatus)
-		}
-		output.Stage("", fmt.Sprintf("model request %s: attempt %d/%d failed (%s); retry %d/%d after at least %s",
-			request, progress.Attempt, progress.MaxAttempts, reason, progress.Attempt+1, progress.MaxAttempts, progress.Delay.Round(time.Millisecond)))
+		printRetry(output, "model request", llm.RetryProgress(progress))
 	}
+}
+
+// printRetry prints one transport retry of a request, by its digest: the
+// failed attempt with its closed reason or HTTP status and the planned
+// minimum wait, then the retry's actual start after the shared gate.
+func printRetry(output *runOutput, label string, progress llm.RetryProgress) {
+	request := progress.RequestSHA256
+	if len(request) > 12 {
+		request = request[:12]
+	}
+	if progress.Starting {
+		output.Stage("", fmt.Sprintf("%s %s: starting retry, attempt %d/%d", label, request, progress.Attempt, progress.MaxAttempts))
+		return
+	}
+	reason := "transport failure"
+	switch progress.Failure {
+	case llm.ProviderFailureTimeout:
+		reason = "timeout"
+	case llm.ProviderFailureNetwork:
+		reason = "network failure"
+	case llm.ProviderFailureResponse:
+		// An HTTP 200 that carried no answer; its status says nothing.
+		reason = "empty answer"
+	}
+	if progress.Failure != llm.ProviderFailureResponse && progress.HTTPStatus >= 100 && progress.HTTPStatus <= 599 {
+		reason = fmt.Sprintf("HTTP %d", progress.HTTPStatus)
+	}
+	output.Stage("", fmt.Sprintf("%s %s: attempt %d/%d failed (%s); retry %d/%d after at least %s",
+		label, request, progress.Attempt, progress.MaxAttempts, reason, progress.Attempt+1, progress.MaxAttempts, progress.Delay.Round(time.Millisecond)))
 }
 
 // Long calls first report at thirty seconds. Later heartbeats are spaced by

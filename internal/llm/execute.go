@@ -50,6 +50,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 			adapted.Accepted(rows)
 		}
 	}()
+	ctx, executor = forProvider(ctx, executor, provider)
 	ctx = bindExecutorAttemptGate(ctx, executor)
 	ctx = context.WithValue(ctx, splitHTTP500Key{}, call.SplitHTTP500)
 	decodeValidate, err := decoderForCall(call)
@@ -219,6 +220,7 @@ func ExecuteJSONBatch[T any](
 	provider Provider,
 	calls []Call[T],
 ) ([]Outcome[T], error) {
+	ctx, executor = forProvider(ctx, executor, provider)
 	concurrency := executor.BatchConcurrency
 	if concurrency < 1 {
 		concurrency = 1

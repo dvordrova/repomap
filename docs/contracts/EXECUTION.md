@@ -53,7 +53,25 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   concurrency from one, up to the configured twelve. A new 429 resets recovery, and older
   in-flight successes cannot shorten that new cooldown or restore concurrency.
   Cancellation interrupts the wait; other retryable failures retain their
-  short backoff. An HTTP 200 answer with empty content, or with finish reason
+  short backoff. A provider whose rate limit is its account's rather than
+  one batch's owns its gate (`llm.AttemptControllerOwner`): the run's one Jev
+  client carries one controller of `table.ClassifierConcurrency` attempts,
+  which every Jev batch of every reading, the glossary's term decisions and
+  the Main flow's choices use in place of their executor's controller, so a
+  Jev 429 cools down every Jev request and none of the text model's (review
+  A8, 2026-10-03: Jev sent HTTP outside the gate, waited only its own short
+  backoff or an integer Retry-After after a 429, each reading and term decision had its
+  own controller, and the Main flow's Jev choices shared the text model's).
+  Jev's transport retries (five attempts: network failures, unreadable
+  bodies, 429 and 5xx) are its only retry layer and follow the rules above:
+  each attempt holds a gate lease, a 429 sets the shared cooldown before the
+  lease is released, other failures wait 2, 4, 8, 16 s. A failed Jev call
+  returns a typed failure (class, status, attempts, exhausted) with the last
+  attempt's diagnostic headers and body and `HTTPResponse.Provider` "Jev", so
+  its receipt and the run's stop on HTTP 401, 403 or 402 name Jev's key or
+  account; a body that echoes the key is not kept. A Jev HTTP 200 without
+  answers is a response failure and is not sent again (the empty-answer retry
+  below was decided for the text model's empty content). An HTTP 200 answer with empty content, or with finish reason
   `insufficient_system_resource`, is the provider's fault and gets one
   transport retry of the same bytes (owner decision 2026-09-26). It counts as
   a transport attempt and in the call's token usage, keeps the short backoff
@@ -590,7 +608,9 @@ Transport retry progress is independent of wait-heartbeat throttling. Each
 retryable failure immediately prints its request digest, attempt number, closed
 reason or HTTP status and planned minimum delay. A second event marks the actual
 retry start after the shared gate permits it. Both use the ordinary run clock;
-request, response and credential contents never enter these messages.
+request, response and credential contents never enter these messages. The text
+model's lines read "model request", Jev's "categorizer request" (until
+2026-10-03 Jev printed the start of its error body and no retry start).
 
 The owner subsequently supplied a compatible server's actual 429 message:
 `rate limit exceeded: retry after 9.636307001s, reset after 45.636307001s`.
