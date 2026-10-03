@@ -624,6 +624,10 @@ body hint and Retry-After header feed that same minute-minimum shared cooldown.
 The supplied example still waits one minute; a longer reset can extend it.
 Negative, unitless or invalid values are ignored, the original error bytes
 remain available unchanged, and non-429 responses keep their existing backoff.
+The text model's and Jev's clients read the cooldown, Retry-After and the
+diagnostic response headers through the same `internal/llm` functions
+(`RateLimitCooldown`, `RetryAfterDelay`, `DiagnosticHTTPResponse`) and report
+retries as `llm.RetryProgress`; neither keeps a copy.
 The owner's reported 3,000 requests/minute, 300,000 tokens/minute and million-token
 context describe their custom endpoint, not global product defaults. The current
 gate controls concurrent attempts and server-requested cooldowns; it does not

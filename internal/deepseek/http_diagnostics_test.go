@@ -31,7 +31,7 @@ func TestHTTPResponseDiagnosticsKeepsOnlyDiagnosticHeaders(t *testing.T) {
 	} {
 		response.Header.Set(name, "secret-or-unrelated")
 	}
-	got := httpResponseDiagnostics(response)
+	got := llm.DiagnosticHTTPResponse(response)
 	if got.StatusCode != 500 || !reflect.DeepEqual(got.Headers, want) {
 		t.Fatalf("diagnostic headers differ from allowlist: %#v", got)
 	}
@@ -39,7 +39,7 @@ func TestHTTPResponseDiagnosticsKeepsOnlyDiagnosticHeaders(t *testing.T) {
 	if got.Headers["X-Request-Id"][0] != "first" {
 		t.Fatal("diagnostic aliases live response headers")
 	}
-	if httpResponseDiagnostics(nil) != nil {
+	if llm.DiagnosticHTTPResponse(nil) != nil {
 		t.Fatal("invented HTTP response for absent transport response")
 	}
 }

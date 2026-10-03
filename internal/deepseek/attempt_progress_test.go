@@ -35,7 +35,7 @@ func TestOwnerHTTP500OrTimeoutSplitsAndWarmRunSkipsRefusedParent(t *testing.T) {
 					}
 					_, _ = w.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
 				}))
-				client.OnRetry = func(RetryProgress) { t.Error("divisible refused request retried identical bytes") }
+				client.OnRetry = func(llm.RetryProgress) { t.Error("divisible refused request retried identical bytes") }
 				build := func(items []string) ([]llm.Call[map[string]any], error) {
 					calls := make([]llm.Call[map[string]any], len(items))
 					for i, item := range items {
@@ -95,7 +95,7 @@ func TestRetryProgressAnnouncesFailuresBeforeWaitAndActualStarts(t *testing.T) {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				attempts := 0
-				var events []RetryProgress
+				var events []llm.RetryProgress
 				client := llmProviderHandlerClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					attempts++
 					if attempts == 1 {
@@ -108,7 +108,7 @@ func TestRetryProgressAnnouncesFailuresBeforeWaitAndActualStarts(t *testing.T) {
 					}
 					_, _ = w.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
 				}))
-				client.OnRetry = func(event RetryProgress) { events = append(events, event) }
+				client.OnRetry = func(event llm.RetryProgress) { events = append(events, event) }
 				call := llmProviderFailureCall()
 				call.Limits.AttemptTimeout = 4 * time.Minute
 				call.SplitHTTP500 = status != 500 // a singleton 500 and other statuses still retry

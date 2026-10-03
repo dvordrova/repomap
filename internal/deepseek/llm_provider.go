@@ -201,7 +201,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			return completion, closedLLMProviderError("complete", acquireErr, attempts, false)
 		}
 		if attempt > 1 && c.OnRetry != nil {
-			c.OnRetry(RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1, Starting: true, Elapsed: time.Since(started)})
+			c.OnRetry(llm.RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1, Starting: true, Elapsed: time.Since(started)})
 		}
 
 		attemptCtx := ctx
@@ -218,7 +218,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			errors.Is(attemptCtx.Err(), context.DeadlineExceeded)
 		cancelAttempt()
 		if providerRateLimited(err) {
-			retryDelay = max(minimumRateLimitBackoff, completion.retryAfter)
+			retryDelay = max(llm.MinimumRateLimitCooldown, completion.retryAfter)
 			llm.BackoffProviderAttempts(ctx, retryDelay)
 		} else {
 			retryDelay = backoffDuration(attempt)
@@ -254,7 +254,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			return result, closedLLMProviderError("complete", lastErr, attempts, false)
 		}
 		if attempt <= maxRetries && ctx.Err() == nil && c.OnRetry != nil {
-			c.OnRetry(RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1,
+			c.OnRetry(llm.RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1,
 				Failure: failure.Kind, HTTPStatus: failure.HTTPStatus, Delay: retryDelay, Elapsed: time.Since(started)})
 		}
 	}

@@ -259,9 +259,9 @@ func TestRetryProgressUsesRunClockAndIsNeverHeartbeatThrottled(t *testing.T) {
 	retry := retryingTheModel(output)
 	clock = clock.Add(4 * time.Minute)
 	wait(deepseek.WaitProgress{Stage: "model completion", Elapsed: 4 * time.Minute})
-	retry(deepseek.RetryProgress{RequestSHA256: strings.Repeat("a", 64), Attempt: 1, MaxAttempts: 4, Failure: llm.ProviderFailureTimeout, Delay: time.Second})
+	retry(llm.RetryProgress{RequestSHA256: strings.Repeat("a", 64), Attempt: 1, MaxAttempts: 4, Failure: llm.ProviderFailureTimeout, Delay: time.Second})
 	clock = clock.Add(time.Second)
-	retry(deepseek.RetryProgress{RequestSHA256: strings.Repeat("a", 64), Attempt: 2, MaxAttempts: 4, Starting: true})
+	retry(llm.RetryProgress{RequestSHA256: strings.Repeat("a", 64), Attempt: 2, MaxAttempts: 4, Starting: true})
 	for _, want := range []string{
 		"[ 240.000 +0.000]   model request aaaaaaaaaaaa: attempt 1/4 failed (timeout); retry 2/4 after at least 1s",
 		"[ 241.000 +1.000]   model request aaaaaaaaaaaa: starting retry, attempt 2/4",
@@ -289,7 +289,7 @@ func TestRunOutputTerminalErrorKeepsStreamAndClock(t *testing.T) {
 func TestRetryProgressNamesAnEmptyAnswer(t *testing.T) {
 	var buffer bytes.Buffer
 	output := newRunOutput(&buffer)
-	retryingTheModel(output)(deepseek.RetryProgress{RequestSHA256: strings.Repeat("b", 64), Attempt: 1, MaxAttempts: 4, Failure: llm.ProviderFailureResponse, HTTPStatus: 200, Delay: time.Second})
+	retryingTheModel(output)(llm.RetryProgress{RequestSHA256: strings.Repeat("b", 64), Attempt: 1, MaxAttempts: 4, Failure: llm.ProviderFailureResponse, HTTPStatus: 200, Delay: time.Second})
 	if !strings.Contains(buffer.String(), "attempt 1/4 failed (empty answer); retry 2/4") {
 		t.Fatalf("an HTTP 200 without an answer is not named as one:\n%s", buffer.String())
 	}

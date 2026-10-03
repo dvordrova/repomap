@@ -35,7 +35,6 @@ const (
 	// REPOMAP_LLM_TIMEOUT changes it; nothing here is in a cache key.
 	defaultTimeout              = 10 * time.Minute
 	defaultWaitProgressInterval = 10 * time.Second
-	minimumRateLimitBackoff     = time.Minute
 
 	authBearer = "bearer"
 	authNone   = "none"
@@ -83,19 +82,8 @@ type Client struct {
 	OnWait func(WaitProgress)
 	// OnRetry reports transport retries immediately, independently of throttled
 	// wait heartbeats. It has the same concurrency/content rules as OnWait.
-	OnRetry      func(RetryProgress)
+	OnRetry      func(llm.RetryProgress)
 	waitInterval time.Duration
-}
-
-type RetryProgress struct {
-	RequestSHA256 string
-	Attempt       int
-	MaxAttempts   int
-	Starting      bool
-	Failure       llm.ProviderFailureKind
-	HTTPStatus    int
-	Delay         time.Duration
-	Elapsed       time.Duration
 }
 
 type WaitProgress struct {
@@ -485,7 +473,9 @@ type chatCompletion struct {
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
 	finishReasonClass     string
-	retryAfter            time.Duration
+	// retryAfter is the server's requested wait; after a 429 it is the
+	// shared cooldown, llm.RateLimitCooldown.
+	retryAfter time.Duration
 }
 
 func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) (chatCompletion, bool, error) {
@@ -509,12 +499,12 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		retry := isRetryableNetworkError(err) || retryableTimeout(ctx, err)
-		return chatCompletion{HTTPResponse: httpResponseDiagnostics(resp)}, retry, newProviderTransportError(
+		return chatCompletion{HTTPResponse: llm.DiagnosticHTTPResponse(resp)}, retry, newProviderTransportError(
 			providerNetworkFailureKind(err), 0, fmt.Errorf("llm request failed: %w", err),
 		)
 	}
 	defer resp.Body.Close()
-	httpResponse := httpResponseDiagnostics(resp)
+	httpResponse := llm.DiagnosticHTTPResponse(resp)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
@@ -544,9 +534,9 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			return chatCompletion{Content: append([]byte(nil), respBody...), ResponseBytes: len(respBody), HTTPResponse: httpResponse}, false, resourceErr
 		}
 		retry := isRetryableHTTP(resp.StatusCode)
-		retryAfter := retryAfterDuration(resp.Header.Get("Retry-After"), time.Now())
+		retryAfter := llm.RetryAfterDelay(resp.Header.Get("Retry-After"), time.Now())
 		if resp.StatusCode == http.StatusTooManyRequests {
-			retryAfter = max(retryAfter, rateLimitBodyDelay(respBody))
+			retryAfter = llm.RateLimitCooldown(resp.Header.Get("Retry-After"), respBody, time.Now())
 		}
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
@@ -731,60 +721,4 @@ func backoffDuration(attempt int) time.Duration {
 	base := time.Duration(1<<(attempt-1)) * 500 * time.Millisecond
 	jitter := time.Duration(float64(base) * (0.5 + rand.Float64()*0.5))
 	return jitter
-}
-
-func retryAfterDuration(value string, now time.Time) time.Duration {
-	value = strings.TrimSpace(value)
-	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
-		// Saturate before converting seconds to nanoseconds; a long server wait
-		// must never overflow into an immediate retry.
-		const maxDuration = time.Duration(1<<63 - 1)
-		if seconds > uint64(maxDuration/time.Second) {
-			return maxDuration
-		}
-		return time.Duration(seconds) * time.Second
-	}
-	if date, err := http.ParseTime(value); err == nil && date.After(now) {
-		return date.Sub(now)
-	}
-	return 0
-}
-
-// Compatible servers may put relative waits in their 429 error message, for
-// example "retry after 9.636307001s, reset after 45.636307001s". Both extend
-// the same shared cooldown; neither can shorten Retry-After or its minute floor.
-func rateLimitBodyDelay(body []byte) time.Duration {
-	messages := []string{string(body)}
-	var envelope struct {
-		Message string          `json:"message"`
-		Error   json.RawMessage `json:"error"`
-	}
-	if json.Unmarshal(body, &envelope) == nil {
-		messages = []string{envelope.Message}
-		var message string
-		if json.Unmarshal(envelope.Error, &message) == nil {
-			messages = append(messages, message)
-		} else {
-			var detail struct {
-				Message string `json:"message"`
-			}
-			if json.Unmarshal(envelope.Error, &detail) == nil {
-				messages = append(messages, detail.Message)
-			}
-		}
-	}
-	var wait time.Duration
-	for _, message := range messages {
-		words := strings.Fields(message)
-		for i := 2; i < len(words); i++ {
-			if !(strings.EqualFold(words[i-2], "retry") || strings.EqualFold(words[i-2], "reset")) ||
-				!strings.EqualFold(words[i-1], "after") {
-				continue
-			}
-			if delay, err := time.ParseDuration(strings.TrimRight(words[i], ",;.")); err == nil && delay > wait {
-				wait = delay
-			}
-		}
-	}
-	return wait
 }

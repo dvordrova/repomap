@@ -108,10 +108,8 @@ func providerFactoryWithOutput(factory targetPortfolioProviderFactory, output *r
 	}
 }
 
-func retryingTheModel(output *runOutput) func(deepseek.RetryProgress) {
-	return func(progress deepseek.RetryProgress) {
-		printRetry(output, "model request", llm.RetryProgress(progress))
-	}
+func retryingTheModel(output *runOutput) func(llm.RetryProgress) {
+	return func(progress llm.RetryProgress) { printRetry(output, "model request", progress) }
 }
 
 // printRetry prints one transport retry of a request, by its digest: the
