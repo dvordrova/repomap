@@ -590,6 +590,30 @@ func TestAMainFlowSaysEachStepsPartTypeAndInputs(t *testing.T) {
 	if parted.Steps[1].TypeLine == "" || same.PartHead != "" || same.TypeLine != "" || other.PartHead != "#t1-g5" {
 		t.Fatalf("the ways' heads: same part %q type %q, other part %q", same.PartHead, same.TypeLine, other.PartHead)
 	}
+	// The ways of an undecided split stand side by side: each shows its
+	// head, its rest folded, and the step says the walk did not decide, in
+	// both languages (control review, 2026-10-04: Lua 5.1.5's script way had
+	// been read only after the REPL way's whole route).
+	builder.data.Orientation.MainFlow.Steps[1].Paths[0].Steps = append(builder.data.Orientation.MainFlow.Steps[1].Paths[0].Steps, orientation.FlowStep{TargetID: "t1", SubjectID: "h1", Via: "called"})
+	parted, _ = builder.flow(section)
+	if way := parted.Steps[1].Ways[0]; !way.Folded || len(way.Rest) != 1 {
+		t.Fatalf("a way of two steps is not folded: %+v", way)
+	}
+	for language, words := range map[DisplayLanguage]string{English: "Here the walk did not decide between these ways", Russian: "Здесь обход не выбрал между этими путями"} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: parted}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		first, second := strings.Index(html, `<ol class="flow flow-way">`), strings.LastIndex(html, `<ol class="flow flow-way">`)
+		if !strings.Contains(html, words) || first < 0 || second <= first || !strings.Contains(html[first:second], "flow-way-rest") {
+			t.Fatalf("%v: the undecided ways do not stand side by side: %s", language, html)
+		}
+	}
 }
 
 // A walked flow says how a step is reached as its code does, and a

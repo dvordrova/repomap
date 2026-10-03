@@ -2257,10 +2257,15 @@ candidates no way follows stay the step's folded line, which the report
 reads in words ("one of the calls `call` may make", never a count), and the
 split is journaled under `flow_fork` with its lead and the ways followed. No
 answer at all ends the path at a named fork of every candidate. The report
-reads the trunk, then, under the step where it parts, each way as a short
-path of its own, one name per line; a way longer than three steps shows its
-first step and folds the rest under "the rest of this way" (ru "остальные
-шаги этого пути"), never a count. There is no count cap, and no unit is on a
+reads the trunk, then, under the step where it parts, a sentence that the
+walk did not decide between these ways (ru "Здесь обход не выбрал между
+этими путями"), and the ways side by side: each shows its first step and
+folds the rest under "the rest of this way" (ru "остальные шаги этого
+пути"), never a count, and a way's steps carry no numbers of their own, so
+no way is read only after all of another (control review, 2026-10-04: Lua
+5.1.5's script way, handle_script with luaL_loadfile, had stood after the
+REPL way's whole route, both numbered from 1;
+`TestAMainFlowSaysEachStepsPartTypeAndInputs`). There is no count cap, and no unit is on a
 path twice. No step is written by a model:
 each is its declaration with its accepted atlas line (`Explanation`) and how
 the step before reaches it (`Via`: "called", "one of 94", "handed to …",

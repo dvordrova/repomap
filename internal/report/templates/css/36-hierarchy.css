@@ -51,6 +51,9 @@ ol.flow{list-style:none;counter-reset:flow;padding:0;margin:.5rem 0 0}
 /* Where a Main flow parts, each way reads as a short path of its own under the step. */
 .flow-ways{display:block;margin:.3rem 0 0 .2rem}
 ol.flow.flow-way{margin:.25rem 0 0;padding-left:.6rem;border-left:2px solid var(--line,#d0d7de)}
+/* A way's steps are alternatives of an undecided split, not the trunk's
+   next numbers: each is marked without a number. */
+ol.flow.flow-way>.flow-step::before,.flow-way-rest ol.flow>.flow-step::before{content:""}
 .flow-way-rest>summary{cursor:pointer;font-size:max(var(--text-small),.85em);color:var(--muted)}
 .flow-chain{display:block}
 .flow-chain-name{font-weight:400}

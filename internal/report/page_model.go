@@ -1028,11 +1028,6 @@ func (builder *pageBuilder) flowParts(section *pageSection, steps []pageFlowStep
 	return parts
 }
 
-// flowWayShown is how many steps a way of a parted flow shows before the
-// rest fold under one line, its first step always shown: a way reads as a
-// short named path beside the others, never a wall.
-const flowWayShown = 3
-
 // flowWays are the ways a flow goes on from the step where it parts, each
 // read as the trunk's steps are, a way parting again holding its own.
 func (builder *pageBuilder) flowWays(step orientation.FlowStep, section *pageSection, shown map[string]bool) []pageFlowWay {
@@ -1049,7 +1044,12 @@ func (builder *pageBuilder) flowWays(step orientation.FlowStep, section *pageSec
 			continue
 		}
 		builder.qualifySharedLabels(rows, subjects)
-		ways = append(ways, pageFlowWay{Head: rows[0], Rest: rows[1:], Folded: len(rows) > flowWayShown})
+		// The ways of a split the walk did not decide stand side by side:
+		// each shows its first step, its rest folded, so the second way is
+		// never read only after all of the first (control review,
+		// 2026-10-04: Lua 5.1.5's script way had stood after the REPL's
+		// whole route).
+		ways = append(ways, pageFlowWay{Head: rows[0], Rest: rows[1:], Folded: len(rows) > 1})
 	}
 	return ways
 }

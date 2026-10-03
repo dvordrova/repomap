@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — An undecided split's ways stand side by side; the prepare-then-execute variant is the owner's call (data 2)
+
+- **Skeptic on step 3:** do not build the prepare-then-execute variant now.
+  - The Guard would gain DecidedBy, the callees of the condition expression, and the walk would read "X, then Y" when Y's guard calls X. The fact is code, but "Y continues X" is an interpretation.
+  - Stopping luaD_precall's descent hides where C library functions run. An else arm gives two continuations. C's `if (validate(r) < 0) { reject(r); return -1; }` would read "validate, then reject". Loop conditions would be skipped.
+  - It fires once in 10 runs (Lua 5.1.5; 5.5 already reaches the VM), for ProgramIndex 27, three adapters and a rule change. Left as a variant for the owner.
+- **The one change built: undecided splits read honestly, from saved data only.**
+  - Under a torn step the page now says "Here the walk did not decide between these ways; each is read on its own:" (ru "Здесь обход не выбрал между этими путями; каждый читается отдельно:").
+  - Every way shows its first step with its rest folded, and a way's steps carry no numbers. The invented three-step fold threshold is gone.
+  - `repomap render` of saved Lua 5.1.5 run 144315: pmain → (undecided) lua_pcall (rest folded), then handle_script right beside it, where it had followed the REPL way's whole route. Lua 5.5 run 144557: lua_pcallk → (undecided) luaV_execute and luaD_precall.
+  - The report tests pass with `TestAMainFlowSaysEachStepsPartTypeAndInputs` extended (en, ru).
+
 ## 2026-10-04 — Where `lua script.lua` executes: the saved window and a counterexample (data 2)
 
 - **Saved window, Lua 5.1.5 run 20261003-144315:**
