@@ -408,7 +408,12 @@ Validation preserves unambiguous formatting variants before checking meaning.
 Table choices with an advertised free-text tag normalize whitespace around its
 colon: `other:Name` and `OTHER : Name` retain the written name as `other: Name`.
 The requested tag and a nonempty value remain necessary; this does not infer a
-closed choice or substitute a catalogue member. The original response stays in
+closed choice or substitute a catalogue member. A closed choice is an option
+written exactly, in any letter case, with surrounding whitespace, quotes or
+backticks or one final mark; an answer that only begins an option, even a
+single one, is refused at its cell or row and is never completed to it
+(review B1, 2026-10-03: the unlisted `a100` was taken as `a1000` and `p100`
+as `p1000`). The original response stays in
 the exact cache, so current decoding can recover previously refused formatting
 without another provider request.
 

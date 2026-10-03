@@ -292,16 +292,66 @@ func TestDecodeAcceptsEveryKeyOnce(t *testing.T) {
 	}
 }
 
-func TestChoiceAcceptsAUniquePrefix(t *testing.T) {
+// A closed choice is only an option written exactly, in any case, with
+// spaces, quotes, backticks or one final mark around it. An answer that
+// begins one option, uniquely or not, is not completed to it (review B1:
+// the unlisted a100 was accepted as a1000 and p100 as p1000).
+func TestChoiceIsOnlyAnExactOption(t *testing.T) {
 	def := testDefinition()
 	def.Columns[1] = Column{Name: "box", Kind: Choice, Options: []string{"Utilities and configuration", "Utilities and logging", "Storage"}}
 	windows, _ := Windows(def, 1, testRows()[:1])
-	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":"a","box":"Utilities and"}]}`)); err == nil {
-		t.Fatal("an ambiguous prefix was accepted")
+	for _, written := range []string{"Storage", "STORAGE", "  storage ", "`Storage`", `\"Storage\"`, "Storage."} {
+		answers, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":"a","box":"`+written+`"}]}`))
+		if err != nil || answers[0]["box"] != "Storage" {
+			t.Fatalf("%q: %v %v", written, answers, err)
+		}
 	}
-	answers, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":"a","box":"Stor"}]}`))
-	if err != nil || answers[0]["box"] != "Storage" {
-		t.Fatalf("unique prefix: %v %v", answers, err)
+	for _, written := range []string{"Stor", "Utilities and", "Storage2", "Storage: the database"} {
+		if answers, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":"a","box":"`+written+`"}]}`)); err == nil {
+			t.Fatalf("%q was completed to %v", written, answers)
+		}
+	}
+}
+
+// The reviewer's controls through DecodeResult, with an Alone cell as the
+// boundary and address tables have: an unlisted ref that begins an option,
+// a ref that begins none and a prefix of two options are each refused at
+// their cell; the row keeps its other answer, the neighbour its own, and a
+// row repeated the same way is one answer.
+func TestAnUnlistedRefIsRefusedAtItsCellAndNeighboursStay(t *testing.T) {
+	for _, test := range []struct {
+		field, written string
+		options        []string
+	}{
+		{"address", "a100", []string{"a1000", "unknown"}},
+		{"part", "p100", []string{"p1000", "unknown"}},
+		{"address", "a199", []string{"a1000", "unknown"}},
+		{"address", "a100", []string{"a1000", "a1001", "unknown"}},
+	} {
+		def := Definition{Stage: "atlas_boundaries", Contract: "b1-controls", Columns: []Column{
+			{Name: "line", Kind: Text, MaxRunes: 100},
+			{Name: test.field, Kind: Choice, OptionsFrom: test.field + "_options", Alone: true},
+		}}
+		row := func(id string, options []string) Row {
+			return Row{ID: id, Fields: []Field{{Name: test.field + "_options", Value: options}}}
+		}
+		window := Window{Stage: def.Stage, Rows: []Row{row("b1", test.options), row("b2", []string{"known2", "unknown"})}}
+		first := `{"key":"b1","line":"kept first row","` + test.field + `":"` + test.written + `"}`
+		raw := `{"rows":[` + first + `,` + first + `,{"key":"b2","line":"kept neighbour","` + test.field + `":"known2"}]}`
+		result, err := DecodeResult(def, window, []byte(raw))
+		if err != nil {
+			t.Fatalf("%s %v: %v", test.written, test.options, err)
+		}
+		if got := result.Answers[0]; got == nil || got["line"] != "kept first row" || got[test.field] != "" {
+			t.Fatalf("%s %v: first row %v", test.written, test.options, got)
+		}
+		if got := result.Answers[1]; got == nil || got[test.field] != "known2" || got["line"] != "kept neighbour" {
+			t.Fatalf("%s %v: neighbour %v", test.written, test.options, got)
+		}
+		rejections := result.ResponseRejections()
+		if len(rejections) != 1 || !strings.Contains(rejections[0].Reason, "not one of the options") {
+			t.Fatalf("%s %v: rejections %+v", test.written, test.options, rejections)
+		}
 	}
 }
 

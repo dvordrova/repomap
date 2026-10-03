@@ -516,23 +516,9 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 		if column.Free == "" && len(options) == 1 && options[0] == "unknown" {
 			return "unknown", nil
 		}
-		// A cut answer that begins exactly one option is that option: the
-		// model wrote "Utilities and" for "Utilities and configuration".
-		if len(text) >= 4 {
-			matched := ""
-			for _, option := range options {
-				if len(option) > len(text) && strings.EqualFold(option[:len(text)], text) {
-					if matched != "" {
-						matched = ""
-						break
-					}
-					matched = option
-				}
-			}
-			if matched != "" {
-				return matched, nil
-			}
-		}
+		// Only an exact option, after the forms above, is a choice. An answer
+		// that begins one is not completed to it: the unlisted a100 was taken
+		// for a1000, another place's address (review B1, 2026-10-03).
 		if rest, free := freeChoiceText(column.Free, text); free {
 			if rest == "" {
 				return "", fmt.Errorf("cell %q has an empty %q value", column.Name, strings.TrimSpace(column.Free))
