@@ -42,6 +42,7 @@ func (builder *pageBuilder) nativeGroupConnections(index groupindex.Index, group
 			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
 			Kind: relationWord(string(edge.RelationKind), section.Language), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor,
 			fromSubject: edge.FromSubjectID, at: edge.Location, fromTarget: index.Target.ID, toTarget: index.Target.ID, toSubject: edge.ToSubjectID})
+		builder.sayRelation(&rows[len(rows)-1], "")
 	}
 	return rows
 }
@@ -146,6 +147,7 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
 			Kind: relationWord(string(edge.RelationKind), builder.targetLanguage(index.Target.ID)), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor,
 			fromSubject: edge.FromSubjectID, fromTarget: index.Target.ID, toTarget: index.Target.ID, toSubject: edge.ToSubjectID})
+		builder.sayRelation(&rows[len(rows)-1], "")
 	}
 	return collapseConnections(rows)
 }

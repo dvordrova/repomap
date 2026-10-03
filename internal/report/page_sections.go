@@ -1470,6 +1470,7 @@ func (builder *pageBuilder) groupConnections(
 			row.Title = strings.ReplaceAll(connection.SemanticKind, "_", " ")
 		}
 		builder.nameConnectionEnds(&row, connection)
+		builder.sayRelation(&row, connection.Label)
 		if section := builder.byProgram[other.TargetID]; section != nil {
 			row.Href = "#" + groupAnchorID(section.ID, other.GroupID)
 			if other.TargetID != index.Target.ID {

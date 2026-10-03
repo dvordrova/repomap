@@ -147,7 +147,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   neutral dot. A collection lists its kinds as the column names its
   sections (Scheduled tasks apart from Background work, Queue consumers,
   Extension points, Kind not established). A tile names a callable written
-  inline as the column does, "anonymous function in {function}". A program's
+  inline as the column does, in the words the page gives it ("anonymous
+  function in {function}"). A program's
   Inputs and Outside frames are named with their program in Connections and
   cards ("← Inputs · redis-server"), and a part's reading is headed "Part".
 - An input whose handler is not established (GroupsIndex `handler_unknown`:
@@ -846,9 +847,19 @@ model's main flow is the orientation's (READING): its order is the model's,
 read from each member's calls in written order. Two steps in a row naming
 one declaration are its one step, the later's words kept; a method is named
 with its type, and two declarations the flow names alike by their module or
-file ("trade_commands.start_trading"); a callable written inline reads as
-GroupsIndex names it everywhere in the report ("ReplicateCommand.Run
-(inline)", `ObjectFacts.Inline`), never `Run$1`. A step
+file ("trade_commands.start_trading"); a callable written inline reads
+everywhere in the report in words of the page's language, composed by the
+page from GroupsIndex's fields (`ObjectFacts.Inline`: the callable it only
+wraps, else the function holding it, the word its hand-over gives it or
+how many alike it is one of): "anonymous function in
+ReplicateCommand.Run", "anonymous function in main for doctor", "one of
+two anonymous functions in Start", never `Run$1`, and the page's script
+reads no name back into these parts (review, 2026-10-03: its pattern had
+missed a holder with a space). An entry saved under its inline handler's
+name and a call it makes say the same words; a tree writes no "()" after
+them (`anonymous`). A row between two named declarations is said by code
+in the same way, from the vocabulary and the two names, and is no text
+for the model to translate. A step
 citing a
 registration of a repository callable, or naming a callable some
 registration hands over, reads as that callable, never as the registrar
@@ -1065,7 +1076,7 @@ where its callee is declared as that declaration's index once. A call says
 a relation between two named ends by fields of its own: its
 `kind` (the card's word, "calls", "passes_callback", "connects_to") and the
 two names as the report names them (`caller_name`, `callee_name`, spaces and
-all: casdoor's "StartLdapServer (inline, 3)"). A call's `label` is words
+all: casdoor's "one of three anonymous functions in StartLdapServer"). A call's `label` is words
 only, an arrow's own or "implemented in", and nothing reads names or a kind
 out of it: casdoor's LDAP connection had counted a call whose label the card
 split at its spaces and so never listed (external review, 2026-10-03). A

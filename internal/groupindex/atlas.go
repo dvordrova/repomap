@@ -651,7 +651,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// had read "FindSQLiteDatabases$1 calls IsSQLiteDatabase".
 		inline := inlineHolders(program)
 		said := func(id string) string {
-			if name := inline[id]; name != "" {
+			if name := inline[id].String(); name != "" {
 				return name
 			}
 			return objects[id].Name
@@ -914,8 +914,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// A handler written inline is named as a reader names it, never
 		// by its number (inline.go): DatabasesTool$1 is DatabasesTool
 		// (inline).
-		if subject := byID[subjectID]; boundary.Name == "" && subject != nil && subject.Object != nil && subject.Object.Inline != "" {
-			name = subject.Object.Inline
+		if subject := byID[subjectID]; boundary.Name == "" && subject != nil && subject.Object != nil && !subject.Object.Inline.IsZero() {
+			name = subject.Object.Inline.String()
 		}
 		onOf[boundary.ID] = declaredOn(boundary)
 		wordless[boundary.ID] = len(boundary.Values) == 0
@@ -924,7 +924,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// draw), else its handler's name (etcd's two "start", startGateway
 		// and startGRPCProxy, whose parent commands no fact names).
 		key := entryKey(name, boundary.Values)
-		if subject := byID[subjectID]; key == "" && subject != nil && subject.Object != nil && subject.Object.Inline == "" && subject.Object.Name != name &&
+		if subject := byID[subjectID]; key == "" && subject != nil && subject.Object != nil && subject.Object.Inline.IsZero() && subject.Object.Name != name &&
 			!strings.ContainsAny(subject.Object.Name, " \t\r\n") && validText(subject.Object.Name) {
 			key = subject.Object.Name
 		}

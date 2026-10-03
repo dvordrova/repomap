@@ -257,6 +257,9 @@ type subjectRef struct {
 }
 
 type pageBuilder struct {
+	// language is the language the page says its own words in; a callable
+	// written inline is named in it (inlineWords).
+	language DisplayLanguage
 	// places are the declarations the page keys, by identity, each with
 	// the place it is written at (notePlace): the scene names a handler or
 	// a caller by its place, never by parsing a key.
@@ -362,6 +365,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	}
 	builder := &pageBuilder{
 		data:         data,
+		language:     data.displayLanguage,
 		places:       map[string]SceneSource{},
 		links:        newPageLinks(data),
 		byProgram:    make(map[string]*pageSection),
@@ -1265,7 +1269,7 @@ func (builder *pageBuilder) flowHandles(section *pageSection, program, subjectID
 			position, kinds = len(result), append(kinds, operation.Kind)
 			result = append(result, pageFlowHandles{Words: words[0]})
 		}
-		result[position].Names = append(result[position].Names, pageFlowInput{Name: operation.Name, Input: operationNodeID(section.ID, operation.ID)})
+		result[position].Names = append(result[position].Names, pageFlowInput{Name: builder.operationDisplayName(program, operation), Input: operationNodeID(section.ID, operation.ID)})
 	}
 	for position := range result {
 		if len(result[position].Names) > 1 {
@@ -1577,9 +1581,10 @@ func packagedIn(module string, packages []string) bool {
 
 // subjectDisplay names one GroupsIndex subject and anchors it when it has a
 // repository location. External symbols are named by package and symbol; a
-// callable written inline in another as a reader names it (GroupsIndex
-// ObjectFacts.Inline: "ReplicateCommand.Run (inline)"), never by its number
-// (owner, 2026-09-29: no Run$1 anywhere).
+// callable written inline in another as a reader names it, in words
+// (inlineWords, from GroupsIndex ObjectFacts.Inline's fields: "anonymous
+// function in ReplicateCommand.Run"), never by its number (owner,
+// 2026-09-29: no Run$1 anywhere).
 func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, *pageAnchor) {
 	switch {
 	case subject.Object != nil:
@@ -1593,7 +1598,8 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 			// 2026-10-03: two functions written on one line had one key).
 			anchor.key = object.DeclarationKey()
 			builder.notePlace(anchor.key, object.Location)
-			return cmp.Or(object.Inline, object.Name), anchor
+			anchor.words = object.Inline.Wraps == "" && object.Inline.In != ""
+			return cmp.Or(builder.inlineWords(object.Inline), object.Name), anchor
 		}
 		if object.External != nil {
 			return externalSymbolName(object.External.PackagePath, object.External.Receiver, object.External.Name), nil
@@ -1720,4 +1726,35 @@ func pluralS(count int) string {
 		return ""
 	}
 	return "s"
+}
+
+// inlineMany are the UI messages naming one of several callables a function
+// writes alike, by how many they are.
+var inlineMany = map[int]string{2: "one of two anonymous functions in {0}", 3: "one of three anonymous functions in {0}", 4: "one of four anonymous functions in {0}",
+	5: "one of five anonymous functions in {0}", 6: "one of six anonymous functions in {0}", 7: "one of seven anonymous functions in {0}",
+	8: "one of eight anonymous functions in {0}", 9: "one of nine anonymous functions in {0}"}
+
+// inlineWords names a callable written inline in the page's language, from
+// GroupsIndex's fields (ObjectFacts.Inline): the callable it only wraps by
+// that name, else "anonymous function in {In}", "… in {In} for {For}", or
+// "one of {Of} anonymous functions in {In}" ("one of many" past nine); ""
+// for a callable named by its own name. The page writes these words; its
+// script never reads a name back into parts (review, 2026-10-03: the
+// script's pattern had missed a holder with a space).
+func (builder *pageBuilder) inlineWords(name groupindex.InlineName) string {
+	if name.Wraps != "" || name.In == "" {
+		return name.Wraps
+	}
+	key, params := "anonymous function in {0}", []any{name.In}
+	switch {
+	case name.For != "":
+		key, params = "anonymous function in {0} for {1}", []any{name.In, name.For}
+	case name.Of > 1:
+		key = cmp.Or(inlineMany[name.Of], "one of many anonymous functions in {0}")
+	}
+	words, err := uiText(builder.language, key, params...)
+	if err != nil {
+		return name.String()
+	}
+	return words
 }

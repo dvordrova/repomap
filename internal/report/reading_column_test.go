@@ -60,10 +60,11 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 			FromLocation: &programindex.Location{Path: "anet.c", Line: 158, Column: 1}, ToLocation: &programindex.Location{Path: "anet.c", Line: 256, Column: 1}},
 		{ID: "x3", From: here, To: groupindex.Endpoint{TargetID: "server", GroupID: "lists"}, Label: "redis.c imports adlist.h", SourceKind: "native_imports", FromSubjectID: "main", ToSubjectID: "header"},
 	}}
-	// A callable written inline is named as GroupsIndex names it, spaces
-	// and all: casdoor's "StartLdapServer (inline, 3)".
+	// A callable written inline is named in words, from GroupsIndex's
+	// fields, spaces and all: casdoor's "StartLdapServer (inline, 3)" is
+	// "one of three anonymous functions in StartLdapServer".
 	builder.subjects[subjectKey("server", "closure")] = subjectRef{subject: groupindex.Subject{ID: "closure", Object: &groupindex.ObjectFacts{Name: "StartLdapServer$3",
-		Inline: "StartLdapServer (inline, 3)", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "ldap/server.go", Line: 50, Column: 13}}}}
+		Inline: groupindex.InlineName{In: "StartLdapServer", Of: 3}, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "ldap/server.go", Line: 50, Column: 13}}}}
 	server.Connections = append(server.Connections, groupindex.Connection{ID: "x4", From: here, To: groupindex.Endpoint{TargetID: "server", GroupID: "lists"},
 		Label: "StartLdapServer (inline, 3) calls initServer", SourceKind: "native_calls", FromSubjectID: "closure", ToSubjectID: "init",
 		FromLocation: &programindex.Location{Path: "ldap/server.go", Line: 57, Column: 3}})
@@ -76,7 +77,7 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 	// with spaces is no sentence: the card had split the call's one label
 	// at its spaces and lost casdoor's LDAP call (review, 2026-10-03).
 	for connection, want := range map[int][3]string{0: {"initServer", "passes callback", "acceptHandler"}, 1: {"anetTcpGenericConnect", "connects to", "anetAccept"},
-		2: {"redis.c", "includes", "adlist.h"}, 3: {"StartLdapServer (inline, 3)", "calls", "initServer"}} {
+		2: {"redis.c", "includes", "adlist.h"}, 3: {"one of three anonymous functions in StartLdapServer", "calls", "initServer"}} {
 		call := builder.connectionCall(server.Connections[connection])
 		if call == nil {
 			t.Fatalf("connection %d has no call on its arrow", connection)

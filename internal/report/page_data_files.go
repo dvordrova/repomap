@@ -91,7 +91,7 @@ func (builder *pageBuilder) fillSectionFiles(section *pageSection, index *groupi
 			kind = "function"
 		}
 		at[key] = len(reading.Decls)
-		reading.Decls = append(reading.Decls, pageReadingDecl{Name: builder.withType(targetID, ref.subject, label), Key: key, Href: anchor.Href, Open: anchor.Open,
+		reading.Decls = append(reading.Decls, pageReadingDecl{Name: builder.withType(targetID, ref.subject, label), Key: key, Anonymous: anchor.words, Href: anchor.Href, Open: anchor.Open,
 			NoSource: anchor.NoSource, Code: anchor.Code, At: anchor.Text, File: anchor.Path, Kind: kind, Part: part})
 		return at[key], part, title
 	}

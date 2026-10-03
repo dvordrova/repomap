@@ -274,7 +274,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 				// chain to that operation without inventing another label.
 				for _, operation := range index.Operations {
 					if step.SubjectID != "" && operation.SubjectID == step.SubjectID {
-						name = operation.Name
+						name = builder.operationDisplayName(index.Target.ID, operation)
 						break
 					}
 				}
@@ -419,7 +419,7 @@ func (builder *pageBuilder) reachedName(index *groupindex.Index, section *pageSe
 	if object := ref.subject.Object; object != nil && (object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod) {
 		kind = "function"
 	}
-	name.decl = pageReadingDecl{Name: builder.withType(index.Target.ID, ref.subject, label), Key: key, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource,
+	name.decl = pageReadingDecl{Name: builder.withType(index.Target.ID, ref.subject, label), Key: key, Anonymous: anchor.words, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource,
 		Code: anchor.Code, At: anchor.Text, File: anchor.Path, Kind: kind, Part: name.part}
 	if location != nil {
 		name.site = builder.links.anchor(location.Path, location.Line, location.Column)

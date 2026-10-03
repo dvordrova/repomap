@@ -61,9 +61,9 @@ test('a declaration pointed at or chosen darkens only the arrows that carry its 
     {id:'out',from:'clients',to:'net',relations:[{calls:[{kind:'calls',caller_name:'acceptHandler',callee_name:'anetAccept',caller:'redis.c#L2551',from:'redis.c#L2560',to:'anet.c#L300'}]}]},
     {id:'other',from:'clients',to:'lists',relations:[{calls:[{kind:'calls',caller_name:'createClient',callee_name:'listCreate',caller:'redis.c#L80',from:'redis.c#L90',to:'adlist.c#L40'}]}]},
     // A callable written inline in acceptHandler is a declaration of its
-    // own: its name begins with acceptHandler's, and its calls are not
+    // own: its name names acceptHandler, and its calls are not
     // acceptHandler's.
-    {id:'inline',from:'clients',to:'strings',relations:[{calls:[{kind:'calls',caller_name:'acceptHandler (inline, 2)',callee_name:'sdsnew',caller:'redis.c#L2570',from:'redis.c#L2571',to:'sds.c#L9'}]}]},
+    {id:'inline',from:'clients',to:'strings',relations:[{calls:[{kind:'calls',caller_name:'one of two anonymous functions in acceptHandler',callee_name:'sdsnew',caller:'redis.c#L2570',from:'redis.c#L2571',to:'sds.c#L9'}]}]},
   ];
   const member={part:'clients',names:['acceptHandler'],sources:['redis.c#L2551']};
   const hovered=emphasis(empty,'clients',id=>[id],part,member);

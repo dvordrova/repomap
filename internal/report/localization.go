@@ -220,6 +220,7 @@ func PreparePage(data *ReportData, options RenderOptions) (*PreparedPage, error)
 	if err := collectOpenablePaths(&copy); err != nil {
 		return nil, err
 	}
+	copy.displayLanguage = options.Language
 	data = &copy
 	view, err := buildPageView(data, options.ReportSHA256, renderPayloadLocalRoots(data, options.LocalRoots))
 	if err != nil {
@@ -554,7 +555,12 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			if !operationLinks[values[i].Href] {
 				add("label", &values[i].Title)
 			}
-			values[i].LabelRef = add("label", &values[i].Label)
+			// A row between two named declarations is said by code in the
+			// page's language (sayRelation); only words the model wrote are
+			// its to translate.
+			if values[i].Phrase() == "" {
+				values[i].LabelRef = add("label", &values[i].Label)
+			}
 			values[i].SummaryRef = add("summary", &values[i].Summary)
 		}
 	}

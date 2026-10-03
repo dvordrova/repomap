@@ -268,7 +268,7 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, shownS
 
 // stepName names a declaration a Main flow step reads: its name, a method
 // with its type, a callable written inline as a reader names it
-// ("ReplicateCommand.Run (inline)", subjectDisplay), read in its part, its
+// ("anonymous function in ReplicateCommand.Run", subjectDisplay), read in its part, its
 // link all of its lines.
 func (builder *pageBuilder) stepName(section *pageSection, subjectID string) pageStepName {
 	ref, known := builder.subject(section.programTargetID, subjectID)

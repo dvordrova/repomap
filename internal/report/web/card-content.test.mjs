@@ -56,28 +56,29 @@ test('a call between programs names each side from its own code, and an outside 
 
 // casdoor's LDAP → Configuration in the reading column, in English and in
 // Russian: the call stands as its row, the callable written inline named as
-// the column names it and linked to where the call is written
-// (ldap/server.go:57), since the report has no declaration to read for it;
-// the callee, a tile of the part it goes into, is read there (review,
-// 2026-10-03: the row had been dropped, and the call site was nowhere).
+// the page gives it, in words of the page's language (Go's inlineWords,
+// from GroupsIndex's fields), shown as given, and linked to where the call
+// is written (ldap/server.go:57), since the report has no declaration to
+// read for it; the callee, a tile of the part it goes into, is read there
+// (review, 2026-10-03: the row had been dropped, the call site was nowhere,
+// and the card had parsed the name).
 test('a call made inline stands in the column, its caller linked to where the call is written',async()=>{
-  const ru={'one of three anonymous functions in {0}':'одна из трёх анонимных функций в {0}'};
   const view=await build({entryPoints:[new URL('./call-card-view.jsx',import.meta.url).pathname],bundle:true,write:false,format:'cjs',packages:'external',jsx:'transform'});
   const loaded={exports:{}};
   new Function('require','module','exports',view.outputFiles[0].text)(createRequire(import.meta.url),loaded,loaded.exports);
   const {CallRows}=loaded.exports;
   const {callCard}=await import('./call-card.mjs');
-  const ldap={kind:'calls',caller_name:'StartLdapServer (inline, 3)',callee_name:'GetConfigString',caller:'k/ldap/server.go:50:13',callee:'k/conf/conf.go:44',
-    from:'https://github.com/o/r/blob/abc/ldap/server.go#L57',to:'https://github.com/o/r/blob/abc/conf/conf.go#L44',at:'ldap/server.go:57'};
-  const card=callCard([{from:'ldap',to:'config',calls:[ldap]}],{nameOf:id=>({ldap:'LDAP',config:'Configuration'})[id]});
+  globalThis.window={rmT:(key,...values)=>values.reduce((s,v,i)=>s.replace(`{${i}}`,v),key)};
   const choose={can:(part,key)=>part==='config'&&key==='k/conf/conf.go:44',go(){}};
-  for(const [dictionary,said] of [[{},'one of three anonymous functions in StartLdapServer'],[ru,'одна из трёх анонимных функций в StartLdapServer']]){
-    globalThis.window={rmT:(key,...values)=>values.reduce((s,v,i)=>s.replace(`{${i}}`,v),dictionary[key]||key)};
+  for(const said of ['one of three anonymous functions in StartLdapServer','одна из трёх анонимных функций в StartLdapServer','anonymous function in Main loop (inline, 2)']){
+    const ldap={kind:'calls',caller_name:said,callee_name:'GetConfigString',caller:'k/ldap/server.go:50:13',callee:'k/conf/conf.go:44',
+      from:'https://github.com/o/r/blob/abc/ldap/server.go#L57',to:'https://github.com/o/r/blob/abc/conf/conf.go#L44',at:'ldap/server.go:57'};
+    const card=callCard([{from:'ldap',to:'config',calls:[ldap]}],{nameOf:id=>({ldap:'LDAP',config:'Configuration'})[id]});
     const html=renderToStaticMarkup(React.createElement(CallRows,{card,choose}));
     const caller=/<a href="([^"]+)"[^>]*>(.*?)<\/a>/.exec(html);
     assert.ok(caller,`the caller links to its code: ${html}`);
     assert.equal(caller[1],ldap.from,'the caller leads to where the call is written');
-    assert.equal(caller[2].replace(/<wbr\/?>/g,''),said);
+    assert.equal(caller[2].replace(/<wbr\/?>/g,''),said,'the name is shown as given');
     assert.match(html,/<i>→<\/i><a href="https:\/\/github.com\/o\/r\/blob\/abc\/conf\/conf.go#L44"[^>]*>GetConfigString<\/a>/,'the callee, read in its part, keeps its link');
   }
 });

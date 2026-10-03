@@ -1,17 +1,14 @@
 import React from 'react';
 import {countsHandlers, countsInputs, headingRows, briefCard} from './call-card.mjs';
-import {inlineName} from './cards.mjs';
 
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
 // A name breaks only after a dot or a slash, never inside a word
 // ("sql.Tx.Rollbac k"; 43-map-reading.css makes it a unit): a route
 // ("/api/v1/backtest/history") had been clipped in its row.
-// A callable written inline reads "anonymous function in
-// ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
-// (inline)"), as the reading column reads it (cards.mjs inlineName).
-const inline=text=>typeof text==='string'?inlineName(text,t):text;
-const dotted=text=>{text=inline(text);return typeof text==='string'&&/[./]/.test(text)?text.split(/(?<=[./])/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;};
+// A callable written inline comes named in words ("anonymous function in
+// ReplicateCommand.Run"); the card shows a name as the page data says it.
+const dotted=text=>{return typeof text==='string'&&/[./]/.test(text)?text.split(/(?<=[./])/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;};
 function Link({href,title,children}){
   children=dotted(children);
   return href?<a href={href} title={title||undefined} target="_blank" onClick={stop}>{children}</a>:<span title={title||undefined}>{children}</span>;

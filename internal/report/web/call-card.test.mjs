@@ -181,14 +181,14 @@ test('an arrow card names a call leaving its program by the functions on each si
 // reading column dropped it (external review, 2026-10-03). The call's kind
 // and names are its own fields, the accepted name kept whole.
 test('a call whose names hold spaces is listed by its fields, its name whole',()=>{
-  const ldap={kind:'calls',caller_name:'StartLdapServer (inline, 3)',callee_name:'GetConfigString',caller:'d/ldap/server.go:50:13',callee:'d/conf/conf.go:44',
+  const ldap={kind:'calls',caller_name:'one of three anonymous functions in StartLdapServer',callee_name:'GetConfigString',caller:'d/ldap/server.go:50:13',callee:'d/conf/conf.go:44',
     from:'h/ldap/server.go#L57',to:'h/conf/conf.go#L44',at:'ldap/server.go:57'};
   const card=callCard([{from:'ldap',to:'config',calls:[ldap]}],{nameOf:id=>({ldap:'LDAP',config:'Configuration'})[id]});
   assert.equal(card.total,1);
   assert.deepEqual(card.kinds,[['calls',1]],'counted as the call it is');
   const group=card.groups[0],rows=headingRows(group.pairs[0],group);
   assert.deepEqual(rows.map(row=>[row.kind,row.caller,row.callee,row.site,row.calleeHref,row.at]),
-    [['calls','StartLdapServer (inline, 3)','GetConfigString','h/ldap/server.go#L57','h/conf/conf.go#L44','ldap/server.go:57']],'the reading column lists the call');
+    [['calls','one of three anonymous functions in StartLdapServer','GetConfigString','h/ldap/server.go#L57','h/conf/conf.go#L44','ldap/server.go:57']],'the reading column lists the call');
   assert.deepEqual([rows[0].callerAt,rows[0].calleeAt],[{part:'ldap',key:'d/ldap/server.go:50:13'},{part:'config',key:'d/conf/conf.go:44'}]);
   assert.deepEqual(briefCard(card).map(part=>part.names.map(entry=>entry.name)),[['GetConfigString']]);
   // Calls of one caller to one callee from two sites are one call, by
@@ -207,7 +207,7 @@ test('an arrow\'s words are never split into a caller, a kind and a callee, in E
     const row=card.groups[0].pairs[0].rows[0];
     assert.deepEqual([card.kinds,row.kind,row.caller,row.callee],[[['other',1]],'other','',''],label);
   }
-  const card=callCard([{from:'server',to:'storage',calls:[{kind:'passes_callback',caller_name:'Сервер.Старт (inline)',callee_name:'обработчик',from:'h/a.go#L1',to:'h/b.go#L2',at:'a.go:1'}]}],{nameOf:id=>id});
+  const card=callCard([{from:'server',to:'storage',calls:[{kind:'passes_callback',caller_name:'анонимная функция в Сервер.Старт',callee_name:'обработчик',from:'h/a.go#L1',to:'h/b.go#L2',at:'a.go:1'}]}],{nameOf:id=>id});
   const row=card.groups[0].pairs[0].rows[0];
-  assert.deepEqual([card.kinds,row.kind,row.caller,row.callee],[[['passes_callback',1]],'passes_callback','Сервер.Старт (inline)','обработчик']);
+  assert.deepEqual([card.kinds,row.kind,row.caller,row.callee],[[['passes_callback',1]],'passes_callback','анонимная функция в Сервер.Старт','обработчик']);
 });

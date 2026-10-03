@@ -901,11 +901,11 @@ func TestOperationArrowsSortTheSameWhateverOrderTheyArriveIn(t *testing.T) {
 // net/http.ListenAndServe" by its spaces and listed nothing (external
 // review, 2026-10-03). Its kind and two names are fields of their own.
 func TestAnOutsideCallMadeInlineIsACallOfItsOwnFields(t *testing.T) {
-	row := pageOutbound{Caller: "Start (inline, 2)", External: "net/http.ListenAndServe",
+	row := pageOutbound{Caller: "one of two anonymous functions in Start", External: "net/http.ListenAndServe",
 		CallerAnchor: pageAnchor{Path: "proxy/proxy.go", Line: 40, Href: "https://github.com/o/r/blob/abc/proxy/proxy.go#L40", Text: "proxy/proxy.go:40"},
 		Anchor:       pageAnchor{Path: "proxy/proxy.go", Line: 52, Href: "https://github.com/o/r/blob/abc/proxy/proxy.go#L52", Text: "proxy/proxy.go:52"}}
 	call := outsideCall(row)
-	if call == nil || call.Label != "" || call.Kind != "calls" || call.CallerName != "Start (inline, 2)" || call.CalleeName != "net/http.ListenAndServe" ||
+	if call == nil || call.Label != "" || call.Kind != "calls" || call.CallerName != "one of two anonymous functions in Start" || call.CalleeName != "net/http.ListenAndServe" ||
 		call.Caller != row.CallerAnchor.Href || call.To != row.Anchor.Href || call.At != "proxy/proxy.go:52" {
 		t.Fatalf("the outside call reads %+v", call)
 	}

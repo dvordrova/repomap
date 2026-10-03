@@ -93,6 +93,27 @@ func declarationKey(anchor *pageAnchor) string {
 	}
 }
 
+// sayRelation writes a row between two named declarations as its sentence
+// in the page's language, from the vocabulary and the two names ("one of
+// two anonymous functions in Start calls GetConfigString"): code says it,
+// so it is no text for the model to translate (localization). The stored
+// label it replaces ("Start (inline, 2) calls GetConfigString") is no
+// summary of the row either. A row the model wrote keeps its words.
+func (builder *pageBuilder) sayRelation(row *pageConnection, stored string) {
+	phrase := row.Phrase()
+	if phrase == "" {
+		return
+	}
+	said, err := uiText(builder.language, phrase, row.FromName, row.ToName)
+	if err != nil {
+		return
+	}
+	if row.Summary == stored {
+		row.Summary = ""
+	}
+	row.Label = said
+}
+
 // targetLanguage is the language of the program a target's section reads.
 func (builder *pageBuilder) targetLanguage(targetID string) string {
 	if section := builder.byProgram[targetID]; section != nil {
@@ -135,7 +156,7 @@ func (builder *pageBuilder) nameConnectionEnds(row *pageConnection, connection g
 // or nil when the connection is a sentence of its own. The call carries its
 // relation and the names and keys of its two declarations as fields of
 // their own, never one label the card would split again: a name may hold
-// spaces ("StartLdapServer (inline, 3)", GroupsIndex's accepted name of a
+// spaces ("one of three anonymous functions in StartLdapServer", the name of a
 // callable written inline), and casdoor's LDAP connection had counted a
 // call its card could not read and so never listed (external review,
 // 2026-10-03). The relation is the vocabulary's words when its phrase

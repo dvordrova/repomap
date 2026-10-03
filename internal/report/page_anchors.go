@@ -33,6 +33,9 @@ type pageAnchor struct {
 	// written on one line have one link (review, 2026-10-03). Written as
 	// "Key" (MarshalJSON).
 	key string
+	// words marks a declaration subjectDisplay names in words, a callable
+	// written inline ("anonymous function in Start"), not by a code name.
+	words bool
 }
 
 // Key is the identity of the declaration the anchor names, "" when it

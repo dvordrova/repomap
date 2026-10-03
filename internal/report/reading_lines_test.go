@@ -27,13 +27,15 @@ const b=rmDotBreaks(rmEl('b','','build_helpers/create_command_partials.py:'));
 assert.deepEqual(pieces(b),['build_helpers/','create_command_partials.','py:']);
 const c=rmDotBreaks(rmEl('span','','redis-benchmark'));
 assert.deepEqual(pieces(c),['redis-benchmark'],'no break at a hyphen');
-const d=rmDotBreaks(rmEl('span','','InfoCommand.Run (inline)'));
-assert.equal(d.textContent,'anonymous function in InfoCommand.Run','an inline callable is an anonymous function in its home');
-assert.ok(d.children.some(x=>!x.has&&/^\s+$/.test(x.textContent)),'words break at their spaces');
-assert.equal(rmInlineText('main → Run (inline)'),'main → anonymous function in Run');
-assert.equal(rmInlineText('main (inline for doctor)'),'anonymous function in main for doctor','one of several by the word its hand-over gives it');
-assert.equal(rmInlineText('Start (inline, 2)'),'one of two anonymous functions in Start','several nothing tells apart as one of how many, in words');
-assert.equal(rmInlineText('Serve (inline, 14)'),'one of many anonymous functions in Serve','never a number of one\'s own');
+// A callable written inline comes named in words (Go's inlineWords); the
+// column breaks them at their spaces and never reads a name back into
+// parts, in any language (review, 2026-10-03).
+for(const said of ['anonymous function in InfoCommand.Run','одна из двух анонимных функций в Main loop','anonymous function in Main loop (inline, 2)']){
+  const d=rmDotBreaks(rmEl('span','',said));
+  assert.equal(d.textContent,said,'the name is shown as given');
+  assert.ok(d.children.some(x=>!x.has&&/^\s+$/.test(x.textContent)),'words break at their spaces');
+}
+assert.equal(typeof rmInlineText,'undefined','the column has no name parser');
 `)
 }
 

@@ -17,12 +17,15 @@ type pageDecl struct {
 	Name string `json:"name"`
 	// Key is the declaration's identity, as a reading and a tile key it
 	// (pageAnchor.Key), never its link.
-	Key      string `json:"key,omitempty"`
-	Href     string `json:"href,omitempty"`
-	Open     string `json:"open,omitempty"`
-	Source   string `json:"source,omitempty"`
-	NoSource bool   `json:"no_source,omitempty"`
-	Part     string `json:"part,omitempty"`
+	Key string `json:"key,omitempty"`
+	// Anonymous marks a callable written inline, named in words: a tree
+	// writes no "()" after it.
+	Anonymous bool   `json:"anonymous,omitempty"`
+	Href      string `json:"href,omitempty"`
+	Open      string `json:"open,omitempty"`
+	Source    string `json:"source,omitempty"`
+	NoSource  bool   `json:"no_source,omitempty"`
+	Part      string `json:"part,omitempty"`
 	// Code is the link to all of its lines, where Href names the first.
 	Code string `json:"code,omitempty"`
 	// Named is, for a key of a table its input's handler looks up, what the
@@ -266,17 +269,15 @@ func (decls *pathDecls) of(subject string) int {
 	}
 	decl := pageDecl{Name: subject}
 	if ref, known := decls.builder.subject(decls.targetID, subject); known {
+		// A callable written inline is named as a reader names it, in words
+		// (subjectDisplay): "declared in anonymous function in
+		// ReplicateCommand.Run", never Run$1.
 		name, anchor := decls.builder.subjectDisplay(ref.subject)
 		if name != "" {
 			decl.Name = decls.builder.withType(decls.targetID, ref.subject, name)
 		}
-		// A callable written inline is named as a reader names it, never by
-		// its number: "declared in ReplicateCommand.Run (inline)", not Run$1.
-		if object := ref.subject.Object; object != nil && object.Inline != "" {
-			decl.Name = object.Inline
-		}
 		if anchor != nil {
-			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code, decl.Key = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code, anchor.key
+			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code, decl.Key, decl.Anonymous = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code, anchor.key, anchor.words
 		}
 	}
 	decl.Part = decls.part(subject)

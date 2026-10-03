@@ -32,8 +32,9 @@ var rmEndWords={
 };
 function rmUsesVariable(kind){return kind==='reads'||kind==='writes';}
 // A declaration's name as a tree writes it: a function with "()", unless
-// its name already closes a parenthesis ("ReplicateCommand.Run (inline)").
-function rmCallableName(decl){return decl.name+(decl.kind==='function'&&!/\)$/.test(decl.name||'')?'()':'');}
+// it is a callable written inline, named in words ("anonymous function in
+// ReplicateCommand.Run", its anonymous field).
+function rmCallableName(decl){return decl.name+(decl.kind==='function'&&!decl.anonymous?'()':'');}
 // Model text is told apart by its style alone: italic, with a hover saying
 // who wrote it; no chip opens it.
 function rmModelText(tag,cls,text,ref){
@@ -124,15 +125,10 @@ function rmEndTitle(ctx,decl){
 // (reviewer, 2026-09-30: thirteen names had ended in "…"): it may also
 // break after its underscores, and one with none at its words' humps
 // ("zunionInter" / "BlockClient…"), each part of it whole; the whole name
-// stays on its hover. A callable written inline reads "anonymous function
-// in ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
-// (inline)"); one of several its function writes alike, the word its
-// hand-over gives it, "anonymous function in main for doctor" ("main
-// (inline for doctor)"), or, when nothing tells them apart, as one of how
-// many they are, "one of two anonymous functions in Start" ("Start
-// (inline, 2)").
+// stays on its hover. A callable written inline comes named in words
+// ("anonymous function in ReplicateCommand.Run"; Go's inlineWords, from
+// GroupsIndex's fields): the column never reads a name back into parts.
 var rmLongPiece=24;
-var rmInlineMany={2:'one of two anonymous functions in {0}',3:'one of three anonymous functions in {0}',4:'one of four anonymous functions in {0}',5:'one of five anonymous functions in {0}',6:'one of six anonymous functions in {0}',7:'one of seven anonymous functions in {0}',8:'one of eight anonymous functions in {0}',9:'one of nine anonymous functions in {0}'};
 // The words saved beside a same-named input's name (page_apart.go), quiet
 // after it, each saying on its hover what it is and where it is written.
 var rmApartSays={options:'the commands it is an option of',declared:'the declaration declaring it',key:'its registration\'s own word',handler:'a word its handler declares, at {0}',registered:'the function registering it, at {0}'};
@@ -145,11 +141,6 @@ function rmApartWords(words){
   span.title=rmApartTitle(words);
   return span;
 }
-function rmInlineText(text){return String(text).replace(/([^\s→(]+) \(inline(?: for ([^)]+)|, (\d+))?\)/g,function(_,home,word,count){
-  if(word)return rmT('anonymous function in {0} for {1}',home,word);
-  if(count)return rmT(rmInlineMany[count]||'one of many anonymous functions in {0}',home);
-  return rmT('anonymous function in {0}',home);
-});}
 // A long piece's words: after each underscore, else at each hump.
 function rmPieceWords(piece){
   var words=piece.split(/(?<=_)(?=.)/);
@@ -157,8 +148,8 @@ function rmPieceWords(piece){
   return words;
 }
 function rmDotBreaks(element){
-  var said=element.textContent,text=rmInlineText(said),inline=text!==said;
-  if(!/[.\/-]/.test(text)&&text.length<=rmLongPiece){if(inline)element.textContent=text;return element;}
+  var text=element.textContent;
+  if(!/[.\/-]/.test(text)&&text.length<=rmLongPiece)return element;
   element.textContent='';
   var long=false;
   // Words break at their spaces; a name within them only after its dots
@@ -448,9 +439,7 @@ function rmOutboundRecord(record,reached,title,said){
   });
   if(reached)parts.splice(after<0?0:after,0,reached);
   body.replaceChildren.apply(body,parts);
-  // Where the call is made from reads its callables as the column names
-  // them; how many address sources there are is not counted.
-  body.querySelectorAll('.outbound-side code').forEach(function(code){code.textContent=rmInlineText(code.textContent);});
+  // How many address sources there are is not counted.
   body.querySelectorAll(':scope>p.meta').forEach(function(meta){meta.textContent=meta.textContent.replace(/\s*·\s*\d+\s*$/,'');});
   body.querySelectorAll('.outbound-chain').forEach(function(chain){
     var steps=kid(chain,tag('OL'));if(!steps)return;

@@ -68,6 +68,9 @@ type pageReadingDecl struct {
 	// Kind is function, type or variable (a method is a function, a
 	// type's field a field); empty when the declaration is none of them.
 	Kind string `json:"kind,omitempty"`
+	// Anonymous marks a callable written inline, named in words ("anonymous
+	// function in Start"): a tree writes no "()" after it.
+	Anonymous bool `json:"anonymous,omitempty"`
 	// Part is the link to the part it stands in, "#…": the reading reads
 	// it there and names that part on hover.
 	Part string `json:"part,omitempty"`
@@ -341,7 +344,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if anchor == nil {
 			return -1
 		}
-		return declare(pageReadingDecl{Name: label, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code,
+		return declare(pageReadingDecl{Name: label, Key: declarationKey(anchor), Anonymous: anchor.words, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code,
 			At: anchor.Text, File: anchor.Path, Kind: kind, Part: part})
 	}
 
@@ -843,7 +846,7 @@ func (builder *pageBuilder) readingFan(targetID string, fold *dispatchFold, ends
 		if anchor == nil {
 			continue
 		}
-		if position := declare(pageReadingDecl{Name: name, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code, At: anchor.Text, File: anchor.Path}); position >= 0 {
+		if position := declare(pageReadingDecl{Name: name, Key: declarationKey(anchor), Anonymous: anchor.words, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code, At: anchor.Text, File: anchor.Path}); position >= 0 {
 			fan.Via = append(fan.Via, position)
 		}
 	}

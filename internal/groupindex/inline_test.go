@@ -46,7 +46,7 @@ func TestInlineCallablesAreNamedByTheirCalleeOrTheirHome(t *testing.T) {
 	program.Relations = append(program.Relations, calls("handler", "list", "serve")...)
 	program.Relations = append(program.Relations, calls("both", "list", "tool")...)
 	program.Relations = append(program.Relations, calls("wrapper", "list")...)
-	got := inlineNames(program)
+	got := said(inlineNames(program))
 	// Two a function holds alike are each one of two (the test below).
 	want := map[string]string{
 		"metrics": "ReplicateCommand.Run (inline, 2)",
@@ -102,7 +102,7 @@ func TestCallablesOneFunctionWritesAlikeAreToldApart(t *testing.T) {
 		"first": "Run (inline, 2)", "second": "Run (inline, 2)",
 		"alone": "Serve (inline)",
 	}
-	for name, got := range map[string]map[string]string{"names": inlineNames(program), "holders": inlineHolders(program)} {
+	for name, got := range map[string]map[string]string{"names": said(inlineNames(program)), "holders": said(inlineHolders(program))} {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s = %v, want %v", name, got, want)
 		}
@@ -145,7 +145,7 @@ func TestCallablesOfSameNamedFunctionsAreNotCountedTogether(t *testing.T) {
 		"ag": "Server.Start (inline)",
 		"bg": "Server.Start (inline, 2)", "bh": "Server.Start (inline, 2)",
 	}
-	for name, got := range map[string]map[string]string{"names": inlineNames(program), "holders": inlineHolders(program)} {
+	for name, got := range map[string]map[string]string{"names": said(inlineNames(program)), "holders": said(inlineHolders(program))} {
 		t.Logf("%s: %v", name, got)
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s = %v, want %v", name, got, want)
@@ -179,7 +179,7 @@ func TestOnlyWhatItsAdapterCallsAnonymousIsWrittenInline(t *testing.T) {
 	if want := map[string]bool{"holder": false, "numbered": false, "dollar": false, "arrow": true, "literal": true}; !reflect.DeepEqual(written, want) {
 		t.Fatalf("written inline %v, want %v", written, want)
 	}
-	names := inlineNames(program)
+	names := said(inlineNames(program))
 	if _, named := names["numbered"]; named {
 		t.Fatalf("price$1 is renamed %q", names["numbered"])
 	}
@@ -201,4 +201,32 @@ func TestOnlyWhatItsAdapterCallsAnonymousIsWrittenInline(t *testing.T) {
 func literal(object programindex.Object) programindex.Object {
 	object.Anonymous = true
 	return object
+}
+
+// said is each inline name as analysis writes it into saved text.
+func said(names map[string]InlineName) map[string]string {
+	result := make(map[string]string, len(names))
+	for id, name := range names {
+		result[id] = name.String()
+	}
+	return result
+}
+
+// The fields say the name; their text is what saved labels and entry names
+// carry, as before.
+func TestAnInlineNameIsItsFields(t *testing.T) {
+	for _, check := range []struct {
+		name InlineName
+		want string
+	}{
+		{InlineName{Wraps: "listDatabases"}, "listDatabases"},
+		{InlineName{In: "ReplicateCommand.Run"}, "ReplicateCommand.Run (inline)"},
+		{InlineName{In: "main", For: "doctor"}, "main (inline for doctor)"},
+		{InlineName{In: "Start", Of: 2}, "Start (inline, 2)"},
+		{InlineName{}, ""},
+	} {
+		if got := check.name.String(); got != check.want || check.name.IsZero() != (check.want == "") {
+			t.Fatalf("%+v reads %q, want %q", check.name, got, check.want)
+		}
+	}
 }

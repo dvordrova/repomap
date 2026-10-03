@@ -13,6 +13,14 @@ import (
 // Reuse a declaration's accepted alias only when an operation repeats its
 // native name. A distinct action label or command/path has its own meaning.
 func (builder *pageBuilder) operationDisplayName(targetID string, operation groupindex.Operation) string {
+	// An entry its registration wrote no word for is named by its handler;
+	// one written inline was saved under its handler's inline name, which
+	// the page says in words, from GroupsIndex's fields.
+	if ref, ok := builder.subject(targetID, operation.SubjectID); ok && operation.SubjectID != "" && ref.subject.Object != nil {
+		if inline := ref.subject.Object.Inline; inline.Wraps == "" && inline.In != "" && operation.Name == inline.String() {
+			return builder.inlineWords(inline)
+		}
+	}
 	if operation.Source != "model" || operation.Kind == "command" || operation.Kind == "request" || operation.Kind == "setting" {
 		return operation.Name
 	}

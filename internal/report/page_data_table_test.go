@@ -104,7 +104,7 @@ func TestThePageScriptReadsTheCompactDataBackExactly(t *testing.T) {
 			"calls": `[{"at":"redis.c:1277","callee":"` + cron[:0] + resize + `","caller":"` + cron + `","caller_name":"serverCron","callee_name":"tryResizeHashTables","from":"` + base + `redis.c#L1277","kind":"calls","to":"` + base + `redis.c#L1180"},` +
 				`{"at":"redis.c:1290","caller":"` + cron + `","callee":"` + resize + `","caller_name":"serverCron","callee_name":"tryResizeHashTables","from":"` + base + `redis.c#L1290","kind":"passes_callback","to":"` + base + `redis.c#L1185"},` +
 				`{"at":"anet.c:146","callee":"","caller":"` + cron + `","caller_name":"serverCron","callee_name":"netdb.h.gethostbyname","from":"` + base + `anet.c#L128","kind":"calls","to":"` + base + `anet.c#L146"},` +
-				`{"at":"redis.c:1301","callee":"` + resize + `","caller":"redis.c:1299:9:function:serverCron$1","caller_name":"serverCron (inline, 2)","callee_name":"tryResizeHashTables","from":"` + base + `redis.c#L1301","kind":"calls","to":"` + base + `redis.c#L1180"},` +
+				`{"at":"redis.c:1301","callee":"` + resize + `","caller":"redis.c:1299:9:function:serverCron$1","caller_name":"one of two anonymous functions in serverCron","callee_name":"tryResizeHashTables","from":"` + base + `redis.c#L1301","kind":"calls","to":"` + base + `redis.c#L1180"},` +
 				`{"label":"implemented in","name":"serverCron","to":"` + base + `redis.c#L1250","callee":"` + cron + `"},` +
 				`{"label":"Сервер вызывает хранилище","from":"` + base + `redis.c#L1250","at":"redis.c:1250"}]`,
 			// A tile of a declaration, one named otherwise, and a second
@@ -130,7 +130,7 @@ func TestThePageScriptReadsTheCompactDataBackExactly(t *testing.T) {
 		}
 		if strings.Contains(string(raw), `"href":"\u0001redis.c#L1277"`) || !strings.Contains(string(raw), `"shared"`) ||
 			!strings.Contains(string(raw), `{"at":"redis.c:1277","caller":0,"from":1,"to":1}`) || strings.Contains(string(raw), `"caller_name":"serverCron"`) ||
-			!strings.Contains(string(raw), `"caller_name":"serverCron (inline, 2)"`) || !strings.Contains(string(raw), `"callee_name":"netdb.h.gethostbyname"`) ||
+			!strings.Contains(string(raw), `"caller_name":"one of two anonymous functions in serverCron"`) || !strings.Contains(string(raw), `"callee_name":"netdb.h.gethostbyname"`) ||
 			!strings.Contains(string(raw), `"key":":5:function:serverCron"`) || !strings.Contains(string(raw), `"decl_key":":40:function:cronHelper"`) ||
 			!strings.Contains(string(raw), `":16:type:listNode"`) || strings.Contains(string(raw), `adlist.h:36:16`) || !strings.Contains(string(raw), `{"d":0,"kind":"function","line":1250,"text":"(): int"}`) {
 			t.Fatalf("the data is not compact: %s", raw)

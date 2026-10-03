@@ -129,10 +129,11 @@ type ObjectFacts struct {
 	Results    []programindex.TypedName     `json:"results,omitempty"`
 	External   *programindex.ExternalSymbol `json:"external,omitempty"`
 	Location   *programindex.Location       `json:"location,omitempty"`
-	// Inline is how a reader names a callable written inline in another
-	// (inline.go): its one repository callee, or "Run (inline)". Compiled
-	// from the bound ProgramIndex, never persisted: Name stays native.
-	Inline string `json:"-"`
+	// Inline is how a reader names a callable written inline in another,
+	// as fields (inline.go InlineName): its one repository callee, or the
+	// function holding it with a word or a count. Compiled from the bound
+	// ProgramIndex, never persisted: Name stays native.
+	Inline InlineName `json:"-"`
 	// Anonymous marks a callable written inline in another, which its code
 	// gives no name of its own (inline.go writtenInline: a lambda, or what
 	// its adapter says is anonymous, a Go function literal), whether or not

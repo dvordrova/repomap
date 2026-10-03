@@ -844,9 +844,9 @@ func nameSharedOutside(result *pageMap, positions map[string]int, sections []*pa
 
 // outsideCall is an outside communication's call as its arrow's card lists
 // it: the declaration making it calls the outside symbol, each named as a
-// field of its own, spaces and all (a callable written inline is
-// "Start (inline, 2)"); nil when the record names no caller or no outside
-// symbol.
+// field of its own, spaces and all (a callable written inline is "one of
+// two anonymous functions in Start"); nil when the record names no caller
+// or no outside symbol.
 func outsideCall(row pageOutbound) *pageEdgeCall {
 	if row.Caller == "" || row.External == "" {
 		return nil

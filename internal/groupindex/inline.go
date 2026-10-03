@@ -7,6 +7,42 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
+// InlineName is how a reader names a callable written inline in another,
+// as fields: the repository callable it only wraps (Wraps), else the
+// function whose lines hold it (In, a method with its type), with the word
+// its hand-over gives it (For) or, when its holder writes several alike and
+// no word tells them apart, how many they are (Of). The report says it in
+// words in its own language ("one of three anonymous functions in
+// StartLdapServer"); nothing reads these fields back out of a name
+// (review, 2026-10-03: the page had parsed "StartLdapServer (inline, 3)").
+type InlineName struct {
+	Wraps string
+	In    string
+	For   string
+	Of    int
+}
+
+// IsZero says the callable is named by its own name: no reader's name was
+// found for it.
+func (name InlineName) IsZero() bool { return name == InlineName{} }
+
+// String is the name as analysis writes it into saved text (an entry
+// named by its handler, a connection's label): its wrapped callable's name,
+// or "In (inline)", "In (inline for For)", "In (inline, Of)".
+func (name InlineName) String() string {
+	switch {
+	case name.Wraps != "":
+		return name.Wraps
+	case name.In == "":
+		return ""
+	case name.For != "":
+		return name.In + " (inline for " + name.For + ")"
+	case name.Of > 1:
+		return name.In + " (inline, " + strconv.Itoa(name.Of) + ")"
+	}
+	return name.In + " (inline)"
+}
+
 // inlineNames are, by object, how a reader names a callable written inline
 // in another (a Go closure the adapter numbers Run$1, a lambda): the
 // repository function or method it only wraps, when that call is the only
@@ -17,7 +53,7 @@ import (
 // "RestoreTool (inline)", not a helper it checks with. The function holding
 // it is the innermost callable, not itself inline, whose lines hold it; a
 // method reads with its type. A callable no other holds keeps its name.
-func inlineNames(program programindex.Index) map[string]string {
+func inlineNames(program programindex.Index) map[string]InlineName {
 	return inlineNamesBy(program, true)
 }
 
@@ -25,7 +61,7 @@ func inlineNames(program programindex.Index) map[string]string {
 // lines hold it, followed by " (inline)", never by a function it wraps: a
 // relation between it and that function would read "IsSQLiteDatabase calls
 // IsSQLiteDatabase".
-func inlineHolders(program programindex.Index) map[string]string {
+func inlineHolders(program programindex.Index) map[string]InlineName {
 	return inlineNamesBy(program, false)
 }
 
@@ -38,7 +74,7 @@ func writtenInline(object programindex.Object) bool {
 	return object.Kind.Callable() && (object.Kind == programindex.ObjectLambda || object.Anonymous)
 }
 
-func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
+func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName {
 	inline := writtenInline
 	byID := make(map[string]programindex.Object, len(program.Objects))
 	var callables, closures []programindex.Object
@@ -74,7 +110,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 			}
 		}
 	}
-	result := make(map[string]string, len(closures))
+	result := make(map[string]InlineName, len(closures))
 	// holderOf is, by closure named after the function whose lines hold it,
 	// that function's ID: closures are counted alike by the function holding
 	// them, never by its name, which two functions (two packages' main, two
@@ -83,7 +119,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 	for _, closure := range closures {
 		if called := callees[closure.ID]; wraps && len(called) == 1 {
 			if callee, known := byID[called[0]]; known && callee.Location != nil && callee.External == nil && callee.Kind.Callable() && !inline(callee) {
-				result[closure.ID] = named(callee)
+				result[closure.ID] = InlineName{Wraps: named(callee)}
 				continue
 			}
 		}
@@ -100,7 +136,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 			}
 		}
 		if holder != nil {
-			result[closure.ID] = named(*holder) + " (inline)"
+			result[closure.ID] = InlineName{In: named(*holder)}
 			holderOf[closure.ID] = holder.ID
 		}
 	}
@@ -132,12 +168,12 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 		holder := named(byID[holderID])
 		if words := handedWords(program, ids); words != nil {
 			for position, id := range ids {
-				result[id] = holder + " (inline for " + words[position] + ")"
+				result[id] = InlineName{In: holder, For: words[position]}
 			}
 			continue
 		}
 		for _, id := range ids {
-			result[id] = holder + " (inline, " + strconv.Itoa(len(ids)) + ")"
+			result[id] = InlineName{In: holder, Of: len(ids)}
 		}
 	}
 	return result

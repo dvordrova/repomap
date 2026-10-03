@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines,inlineName} from './cards.mjs';
+import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines} from './cards.mjs';
 
 // canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
 const column=260-2*1.5-2*16;
@@ -235,24 +235,17 @@ test('an input collection is headed Inputs, whatever the page titles it',()=>{
   assert.deepEqual(overviewHeading(card,card.overviewMinWidth,measure).lines,['Входы']);
 });
 
-// The canvas names an inline callable as the column does (owner,
-// 2026-09-30: tiles still read "ReplicateCommand.Run (inline)").
-test('an input written inline is named as the reading names it',()=>{
-  const [input]=prepareCards([{id:'run',title:'ReplicateCommand.Run (inline)',activation:'command'}],{},text=>String(text).length*7,(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),'translated '+key));
-  assert.equal(input.name,'translated anonymous function in ReplicateCommand.Run');
-  assert.doesNotMatch(input.title,/inline/);
-});
-
-// Callables one function writes alike read apart (groupindex inline.go):
-// by the word their hand-over gives each, else as one of how many they
-// are, in words, never a number of one's own.
-test('inline callables written alike are named apart, in words',()=>{
-  const translate=(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),key);
-  assert.equal(inlineName('main (inline for doctor)',translate),'anonymous function in main for doctor');
-  assert.equal(inlineName('Start (inline, 2)',translate),'one of two anonymous functions in Start');
-  assert.equal(inlineName('Headscale.Serve (inline, 12)',translate),'one of many anonymous functions in Headscale.Serve');
-  const [card]=prepareCards([{id:'go',title:'Start (inline, 2)',activation:'continuous'}],{},text=>String(text).length*7,translate);
-  assert.equal(card.name,'one of two anonymous functions in Start');
+// A callable written inline comes named in words, in the page's language,
+// from GroupsIndex's fields (Go's inlineWords); the canvas shows the name
+// as given and never reads one back into parts, in English or Russian, a
+// holder with a space and parentheses included (review, 2026-10-03: the
+// pattern had missed such a holder).
+test('an input written inline is shown with the name the page gives it',()=>{
+  const translate=(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),'translated '+key);
+  for(const title of ['one of two anonymous functions in Start','одна из двух анонимных функций в Start','anonymous function in Main loop (inline, 2)']){
+    const [card]=prepareCards([{id:'go',title,activation:'continuous'}],{},text=>String(text).length*7,translate);
+    assert.equal(card.name,title,'the name is shown as given');
+  }
 });
 
 // An input another of its kind shares its name with is drawn with the

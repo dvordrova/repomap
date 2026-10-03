@@ -247,7 +247,7 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
   if(!ways.length&&!handler)return null;
   var section=rmEl('section','map-input-flow');
   function readName(decl,hover){
-    var part=rmFlowPart(ctx,decl.part),text=rmCallableName({name:decl.name,kind:'function'});
+    var part=rmFlowPart(ctx,decl.part),text=rmCallableName({name:decl.name,kind:'function',anonymous:decl.anonymous});
     if(!part){var plain=rmEl('span','map-reading-name map-flow-plain',text);if(hover)plain.title=hover;return plain;}
     var key=repomapMembers.declKey(decl);
     return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,key:key},text,function(){ctx.readDeclIn(part,key);},[part.dataset.title,hover].filter(Boolean).join('\n'));

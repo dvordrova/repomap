@@ -31,8 +31,9 @@ import (
 //     number of its last line: 7,900 sites had carried each line twice;
 //   - a call names the declarations at its ends by their index in the
 //     declarations, a relation's names only when they are not its
-//     declarations' names (a callable written inline, "Start (inline, 2)";
-//     an outside symbol) and its kind only when it is not "calls"; a tile
+//     declarations' names (a callable written inline, "one of two
+//     anonymous functions in Start"; an outside symbol) and its kind only
+//     when it is not "calls"; a tile
 //     names the declaration it draws the same way; a reading's call is a
 //     call unless it says otherwise;
 //   - any part of a value written again elsewhere (an input's writes, an

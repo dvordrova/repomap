@@ -91,6 +91,9 @@ type ReportData struct {
 	// sceneKeys has a page key every declaration by its place, whatever
 	// its links (deriveScene).
 	sceneKeys bool
+	// displayLanguage is the language the page says its own words in
+	// (PreparePage): a callable written inline is named in it.
+	displayLanguage DisplayLanguage
 }
 
 // RunTiming mirrors the run's Time stage as the page reads it.
