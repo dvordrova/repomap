@@ -399,11 +399,13 @@ func (projection *goProjection) projectObjects() error {
 		if err != nil {
 			return err
 		}
+		// A function literal (Open$1) is anonymous: a reader looks up the
+		// function holding it, never a name go/ssa made up.
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: node.ID, Kind: programindex.ObjectFunction, Name: node.Symbol.Name,
 			Signature:  shortSignature(node.Signature),
 			Visibility: visibility(node.Exported), OwnerRef: packageRef, ContainerRef: packageRef,
-			Location: location,
+			Location: location, Anonymous: node.Anonymous,
 		}); err != nil {
 			return err
 		}

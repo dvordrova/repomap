@@ -248,6 +248,26 @@ with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 
 Compiler-observed `setInterval`, worker construction, callbacks and native source expressions enter existing observations. Constructor/helper names do not prove a persistent responsibility. A periodic callback and a supported one-shot scheduled task remain distinct legitimate operation candidates; the initializer is not automatically that work. Explicit imports and compiler-resolved barrels retain original native identities; no export or target is inferred by name alone.
 
+## Names the compiler resolves
+
+A setting read and an evaluation are calls of particular outside functions
+the compiler resolves the call to, never the call's word (PROGRAM_INDEX,
+2026-10-03 review's A1): `eval(...)` is `platform:javascript.eval` and `new
+Function(body)` `platform:javascript.Function`, both dynamic executions;
+`lookalike-names.ts`'s own `getenv` and `exec` are its code, and a RegExp's
+`exec` (`platform:javascript.RegExp.exec`) matches text. A module is strict
+code and cannot declare a function named `eval`. A program reads
+`process.env.KEY` as a property, no call, so JavaScript has no config read: a
+recorded gap. A route prefix composes from a mount's positional address
+(`route-mounts.ts`); an options object (`new Router({prefix: "/api"})`) reaches
+no keyword argument, so it composes none, also recorded.
+
+Which declarations a reader sees is the compiler's kind and the module's
+ownership, never a name's characters (READING "Declarations"):
+`declaration-names.ts`'s `price$`, `active$`, `_token`, `price` and `token`
+are all declarations, whether or not their bodies call anything
+(`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`).
+
 ## Inputs a call's words declare, and what JS/TS does not have yet
 
 A call of an outside symbol given words asks that symbol what they become

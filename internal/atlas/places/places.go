@@ -312,20 +312,23 @@ func (b *builder) indexCorpus() {
 	}
 }
 
-// declarationKinds says which objects are declarations a reader sees.
+// declaration says which objects are declarations a reader sees: what the
+// adapter's kind, ownership and anonymity say, never the characters of a
+// name. JavaScript's `export function price$()` and `export const _token`,
+// Python's `_SENSITIVE_KEYS` and Clojure's `(defn price$ [])` are
+// declarations like their plain-named neighbours.
 func declaration(object programindex.Object, byID map[string]programindex.Object) bool {
 	switch object.Kind {
 	case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectType:
-		// Closures are named after their function with a "$n" suffix; they
-		// are code, not declarations a reader looks up.
-		if object.Name == "" || object.Name == "call result" || strings.Contains(object.Name, "$") {
-			return false
-		}
-		return object.Location != nil
+		// A function literal (Go's Open$1) is code inside the function
+		// holding it, not a declaration a reader looks up; a lambda is not
+		// of these kinds at all.
+		return object.Name != "" && !object.Anonymous && object.Location != nil
 	case programindex.ObjectVariable:
-		// Module-level variables of Python and TypeScript are declarations;
-		// ContainerID is lexical containment; OwnerID identifies a callable/type
-		// owner and is empty on module-level variables. Locals are not shown.
+		// Module-level variables of Python, TypeScript and Clojure are
+		// declarations; ContainerID is lexical containment; OwnerID identifies
+		// a callable/type owner and is empty on module-level variables. Locals
+		// are not shown.
 		if object.Location == nil || object.ContainerID == "" {
 			return false
 		}
@@ -333,7 +336,7 @@ func declaration(object programindex.Object, byID map[string]programindex.Object
 		if !ok || container.Kind != programindex.ObjectModule {
 			return false
 		}
-		return object.Name != "" && object.Name != "self" && !strings.HasPrefix(object.Name, "_")
+		return object.Name != ""
 	default:
 		return false
 	}

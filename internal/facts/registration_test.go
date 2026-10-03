@@ -469,3 +469,16 @@ func TestDeadModulesNeedAnEntrypoint(t *testing.T) {
 		t.Fatalf("library without seeds: dead=%+v diagnostics=%+v", dead, result.Diagnostics)
 	}
 }
+
+// A keyword names a prefix when its last word is prefix; a path-shaped
+// literal under any other keyword is a value (statedPrefix).
+func TestAPrefixKeywordEndsInTheWordPrefix(t *testing.T) {
+	for keyword, want := range map[string]bool{
+		"prefix": true, "url_prefix": true, "urlPrefix": true, "Prefix": true,
+		"description": false, "docs_url": false, "path": false, "prefixes": false, "prefix_length": false, "suffixprefix": false,
+	} {
+		if got := namesPrefix(keyword); got != want {
+			t.Errorf("namesPrefix(%q) = %v, want %v", keyword, got, want)
+		}
+	}
+}

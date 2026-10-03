@@ -749,8 +749,12 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 				t.Fatalf("%s lists the lexical child %s", place.Path, decl.Name)
 			}
 		}
+		// A Go identifier holds no "$": a Go file's name with one is go/ssa's
+		// for a function literal (Open$1), which no request lists. Elsewhere
+		// "$" is a name's own character: JavaScript's and Clojure's price$
+		// are declarations like any other.
 		for _, name := range names {
-			if strings.Contains(name, "$") {
+			if strings.HasSuffix(place.Path, ".go") && strings.Contains(name, "$") {
 				t.Fatalf("%s lists the closure %s", place.Path, name)
 			}
 		}

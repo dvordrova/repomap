@@ -23,22 +23,26 @@
     },
     {
       "id": "f6",
-      "path": "src/example/rates.clj"
+      "path": "src/example/lookalike.clj"
     },
     {
       "id": "f7",
-      "path": "src/example/service.cljc"
+      "path": "src/example/rates.clj"
     },
     {
       "id": "f8",
-      "path": "src/example/web.cljs"
+      "path": "src/example/service.cljc"
     },
     {
       "id": "f9",
-      "path": "test/example/fixtures.clj"
+      "path": "src/example/web.cljs"
     },
     {
       "id": "f10",
+      "path": "test/example/fixtures.clj"
+    },
+    {
+      "id": "f11",
       "path": "test/example/service_test.clj"
     }
   ]

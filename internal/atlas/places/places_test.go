@@ -98,8 +98,8 @@ func TestCallableBindingsKeepAnonymousHandlersAndQualifiedCalls(t *testing.T) {
 	loc := &programindex.Location{Path: "app/main.go", Line: 8, Column: 2}
 	index := programindex.Index{Target: programindex.Target{ID: "app", Language: "go"}, Objects: []programindex.Object{
 		{ID: "factory", Name: "Install", Kind: programindex.ObjectFunction, Location: loc},
-		{ID: "handler", Name: "Install$1", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: loc.Path, Line: 9, Column: 3}},
-		{ID: "incidental", Name: "helper$1", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: loc.Path, Line: 20, Column: 3}},
+		{ID: "handler", Name: "Install$1", Kind: programindex.ObjectFunction, Anonymous: true, Location: &programindex.Location{Path: loc.Path, Line: 9, Column: 3}},
+		{ID: "incidental", Name: "helper$1", Kind: programindex.ObjectFunction, Anonymous: true, Location: &programindex.Location{Path: loc.Path, Line: 20, Column: 3}},
 		{ID: "timeout", Name: "WithTimeout", Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: "context", Name: "WithTimeout"}},
 	}, Relations: []programindex.Relation{
 		{FromID: "factory", ToIDs: []string{"handler"}, Kind: programindex.RelationPassesCallback, Resolution: programindex.ResolutionExact, Witnesses: []programindex.Witness{

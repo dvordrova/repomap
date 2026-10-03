@@ -748,7 +748,24 @@ is the type, so on the map of parts it goes with its type's file part, and
 a file holding only such methods has no unit of its own
 (`internal/localstore/ledger_append.go` in the cumulative Go fixture). A
 closure (`f$1`) has no native parent in the index (its container is the
-package); the map of parts finds it as a lexical child by source range.
+package); the map of parts finds it as a lexical child by source range. Its
+native fact is the `anonymous` mark (ProgramIndex 25): the direct-call index
+records each function go/ssa gives a parent (`DirectCallNode.Anonymous`) and
+the adapter carries it to the object, so places hides a function literal by
+that mark, never by the `$` go/ssa writes in its name
+(`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`: `markExitRows$1`
+is anonymous, `markExitRows` and `main` are not).
+
+Go evaluates no code, and a repository function named like a setting read
+or an evaluation is the program's own: `cmd/app/lookalike_names.go`'s
+`eval`, `Getenv` and `statusLedger.exec` give no fact, its `os.Getenv` a
+config read (`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`;
+casdoor's `slavedb.exec("show slave status")` and etcd's `txn.eval()` were
+dynamic executions by their names). Go writes no keyword argument, so no
+keyword names a route prefix; a group's positional address composes as
+before. A package-level variable is no reader declaration: the
+`var GetVersionFromBinary = func(...)` form reaches the reader only as its
+literal's place (READING "Declarations", a recorded gap).
 
 Each type and callable carries `code_lines`: the lines from its name to its
 end that hold a `go/scanner` token, so its doc comment, comment-only lines and

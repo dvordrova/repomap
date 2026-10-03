@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 24
+	Version          = 25
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -468,6 +468,12 @@ type ObjectInput struct {
 	// it is written (Clojure's `defmacro`), so a use of it is no runtime
 	// relation and the adapter records none. Only a callable can be one.
 	Macro bool
+	// Anonymous says the callable is written as an expression inside another
+	// declaration and has no name of its own, so its name is the adapter's
+	// and no declaration a reader looks up: a Go function literal, which
+	// go/ssa names after the function holding it (Open$1). Any adapter may
+	// set it on a callable; a lambda is anonymous by its kind already.
+	Anonymous bool
 	// Directory is an adapter-observed repository directory for a package or
 	// module. It remains available when that boundary has no source file.
 	Directory string
@@ -822,6 +828,7 @@ type Object struct {
 	CodeLines   int             `json:"code_lines,omitempty"`
 	Unreachable bool            `json:"unreachable,omitempty"`
 	Macro       bool            `json:"macro,omitempty"`
+	Anonymous   bool            `json:"anonymous,omitempty"`
 	Directory   string          `json:"directory,omitempty"`
 	External    *ExternalSymbol `json:"external,omitempty"`
 	Aliases     []Alias         `json:"aliases,omitempty"`
@@ -1622,7 +1629,7 @@ func New(input Input) (Index, error) {
 		object := Object{
 			ID: id, SourceRef: value.SourceRef,
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
-			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Directory: value.Directory,
+			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Anonymous: value.Anonymous, Directory: value.Directory,
 			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases), Types: slices.Clone(value.Types),
 			ParameterStores: canonicalParameterStores(value.ParameterStores), Rows: cloneRows(value.Rows),
 			Comparisons: canonicalComparisons(value.Comparisons),
@@ -2467,7 +2474,7 @@ func validateObjectInput(value ObjectInput) error {
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(canonicalAliases(value.Aliases)) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
+		(value.Unreachable || value.Macro) && !callableKind(value.Kind) || value.Anonymous && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) ||
 		!validComparisons(value.Kind, canonicalComparisons(value.Comparisons)) {
 		return fmt.Errorf("program index: invalid object input")
@@ -2488,7 +2495,7 @@ func validateObject(value Object) error {
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(value.Aliases) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
+		(value.Unreachable || value.Macro) && !callableKind(value.Kind) || value.Anonymous && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) ||
 		!validComparisons(value.Kind, value.Comparisons) {
 		return fmt.Errorf("program index: invalid object")

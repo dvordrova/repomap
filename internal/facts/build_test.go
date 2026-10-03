@@ -241,8 +241,18 @@ func backendIndex(t *testing.T) programindex.Index {
 	s.object("level", programindex.ObjectFunction, "get_level", "backend/app/app.py", 60, "appmod")
 	s.object("run", programindex.ObjectFunction, "run_level", "backend/app/app.py", 75, "appmod")
 	s.object("settings", programindex.ObjectType, "Settings", "backend/app/settings.py", 4, "settingsmod")
+	s.object("payload", programindex.ObjectType, "Payload", "backend/app/settings.py", 12, "settingsmod")
 	s.external("fastapi", "fastapi", "FastAPI", programindex.ExternalAuthorityPackage)
 	s.external("field", "pydantic", "Field", programindex.ExternalAuthorityPackage)
+	s.external("basesettings", "pydantic", "BaseSettings", programindex.ExternalAuthorityPackage)
+	s.external("basemodel", "pydantic", "BaseModel", programindex.ExternalAuthorityPackage)
+	for _, base := range [][2]string{{"settings", "basesettings"}, {"payload", "basemodel"}} {
+		s.relations = append(s.relations, programindex.RelationInput{
+			SourceRef: "base-" + base[0], Kind: programindex.RelationImplements, FromRef: base[0], ToRefs: []string{base[1]},
+			Resolution: programindex.ResolutionExact, TargetsObserved: 1,
+			Witnesses: []programindex.Witness{{Kind: "base_class"}}, WitnessesObserved: 1,
+		})
+	}
 	s.seed("main", programindex.SeedMainGuard, "backend/main.py", 14)
 	s.relate("imp-app", programindex.RelationImports, "main", []string{"app"}, loc("backend/main.py", 12))
 	s.relate("imp-settings", programindex.RelationImports, "main", []string{"settings"}, loc("backend/main.py", 6))
@@ -256,6 +266,9 @@ func backendIndex(t *testing.T) programindex.Index {
 		pattern("p", programindex.PatternCall, "Field", loc("backend/app/settings.py", 5), nil, keyword("default", "0.0.0.0"), keyword("env", "APP_HOST")))
 	s.relate("cfg-port", programindex.RelationInvokesExternal, "settings", []string{"field"}, loc("backend/app/settings.py", 6),
 		pattern("p", programindex.PatternCall, "Field", loc("backend/app/settings.py", 6), nil, programindex.PatternArgumentInput{Keyword: "default", Kind: programindex.PatternDynamic}, keyword("env", "APP_PORT")))
+	// On a model that is no BaseSettings, env is metadata: nothing reads it.
+	s.relate("cfg-payload", programindex.RelationInvokesExternal, "payload", []string{"field"}, loc("backend/app/settings.py", 13),
+		pattern("p", programindex.PatternCall, "Field", loc("backend/app/settings.py", 13), nil, keyword("env", "NOT_A_SETTING")))
 	return s.index()
 }
 
@@ -322,38 +335,57 @@ func TestBuildConfigReadsFromPatterns(t *testing.T) {
 	if port.Value != "" || port.Anchor.Line != 6 {
 		t.Fatalf("port = %+v", port)
 	}
+	for _, fact := range result.OfKind(KindConfigRead) {
+		if fact.Key == "NOT_A_SETTING" {
+			t.Fatalf("a BaseModel field's env metadata became a config read: %+v", fact)
+		}
+	}
 }
 
 // TestBuildDynamicExecution proves the stage names the places where the
-// program runs code it was handed, using only what the adapter sealed. A
-// selector alone is never enough: pattern.exec in JavaScript is a RegExp
-// method and json.loads cannot construct objects, so neither is reported.
+// program runs code it was handed, using only what the adapter sealed: the
+// callee the graph resolves the call to, never the call's word. Python's exec
+// is the builtin the adapter witnessed; JavaScript's Function is the
+// platform's constructor. A repository function named eval is the
+// repository's own code; an eval the graph left unresolved, without the
+// adapter's builtin witness, has no known owner; pattern.exec is a RegExp
+// method; json.loads cannot construct objects. None of those is reported.
 func TestBuildDynamicExecution(t *testing.T) {
 	repository := newCorpus(t, map[string]string{
-		"svc/field.py": "class Field:\n    def make_step(self):\n        exec(code, {}, {})\n        subprocess.run(cmd)\n        os.system('ls')\n        data = json.loads(raw)\n",
+		"svc/field.py": "class Field:\n    def make_step(self):\n        exec(code, {}, {})\n        subprocess.run(cmd)\n        os.system('ls')\n        data = json.loads(raw)\n        eval(text)\n        evaluate(text)\n",
 		"svc/ui.tsx":   "const m = pattern.exec(text);\nconst f = new Function('return 1');\n",
 	})
 	s := newSynthetic(t, "python", "svc", "svc/field.py", "svc/ui.tsx")
 	s.object("mod", programindex.ObjectModule, "field", "svc/field.py", 1, "")
 	s.object("type", programindex.ObjectType, "Field", "svc/field.py", 1, "mod")
 	s.object("step", programindex.ObjectMethod, "make_step", "svc/field.py", 2, "type")
+	s.object("evaluate", programindex.ObjectFunction, "eval", "svc/field.py", 9, "mod")
 	s.object("ui", programindex.ObjectModule, "ui", "svc/ui.tsx", 1, "")
 	s.external("run", "subprocess", "run", programindex.ExternalAuthorityPackage)
 	s.external("system", "os", "system", programindex.ExternalAuthorityPackage)
 	s.external("loads", "json", "loads", programindex.ExternalAuthorityPackage)
+	s.external("regexp", "platform:javascript", "exec", programindex.ExternalAuthorityPlatform)
+	s.objects[len(s.objects)-1].External.Receiver = "RegExp"
+	s.external("function", "platform:javascript", "Function", programindex.ExternalAuthorityPlatform)
 	s.seed("mod", programindex.SeedMainGuard, "svc/field.py", 1)
 	s.relate("exec", programindex.RelationCalls, "step", nil, loc("svc/field.py", 3),
 		pattern("p", programindex.PatternCall, "exec", loc("svc/field.py", 3), nil, dynamic(1), dynamic(2), dynamic(3)))
+	s.relations[len(s.relations)-1].Witnesses = []programindex.Witness{{Kind: "builtin", Detail: "exec"}}
 	s.relate("run", programindex.RelationInvokesExternal, "step", []string{"run"}, loc("svc/field.py", 4),
 		pattern("p", programindex.PatternCall, "run", loc("svc/field.py", 4), nil, dynamic(1)))
 	s.relate("system", programindex.RelationInvokesExternal, "step", []string{"system"}, loc("svc/field.py", 5),
 		pattern("p", programindex.PatternCall, "system", loc("svc/field.py", 5), nil, dynamic(1)))
 	s.relate("loads", programindex.RelationInvokesExternal, "step", []string{"loads"}, loc("svc/field.py", 6),
 		pattern("p", programindex.PatternCall, "loads", loc("svc/field.py", 6), nil, dynamic(1)))
-	s.relate("jsexec", programindex.RelationCalls, "ui", nil, loc("svc/ui.tsx", 1),
+	s.relate("unknown", programindex.RelationCalls, "step", nil, loc("svc/field.py", 7),
+		pattern("p", programindex.PatternCall, "eval", loc("svc/field.py", 7), nil, dynamic(1)))
+	s.relate("local", programindex.RelationCalls, "step", []string{"evaluate"}, loc("svc/field.py", 8),
+		pattern("p", programindex.PatternCall, "eval", loc("svc/field.py", 8), nil, dynamic(1)))
+	s.relate("jsexec", programindex.RelationInvokesExternal, "ui", []string{"regexp"}, loc("svc/ui.tsx", 1),
 		pattern("p", programindex.PatternCall, "exec", loc("svc/ui.tsx", 1), nil, dynamic(1)))
-	s.relate("jsfn", programindex.RelationCalls, "ui", nil, loc("svc/ui.tsx", 2),
+	s.relate("jsfn", programindex.RelationInvokesExternal, "ui", []string{"function"}, loc("svc/ui.tsx", 2),
 		pattern("p", programindex.PatternCall, "Function", loc("svc/ui.tsx", 2), nil, dynamic(1)))
+	s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
 	result := mustBuild(t, Input{Repository: repository, Targets: []TargetInput{{Index: s.index(), Root: "svc"}}})
 	byAnchor := make(map[string]Fact)
 	for _, fact := range result.OfKind(KindDynamicExecution) {
@@ -364,13 +396,14 @@ func TestBuildDynamicExecution(t *testing.T) {
 		exec.Resolution != ResolutionExact {
 		t.Fatalf("exec = %+v", exec)
 	}
-	if fn := byAnchor["svc/ui.tsx:2"]; fn.Key != "new Function" {
+	if fn := byAnchor["svc/ui.tsx:2"]; fn.Key != "new Function" || fn.Resolution != ResolutionExact {
 		t.Fatalf("new Function = %+v", fn)
 	}
 	// subprocess.run and os.system start another program, which the
-	// reading asks about (runs_program); json.loads reads data;
+	// reading asks about (runs_program); json.loads reads data; an eval of
+	// unknown owner and the repository's own eval are no builtin;
 	// pattern.exec matches text. None runs code in this process.
-	for _, quiet := range []string{"svc/field.py:4", "svc/field.py:5", "svc/field.py:6", "svc/ui.tsx:1"} {
+	for _, quiet := range []string{"svc/field.py:4", "svc/field.py:5", "svc/field.py:6", "svc/field.py:7", "svc/field.py:8", "svc/ui.tsx:1"} {
 		if fact, found := byAnchor[quiet]; found {
 			t.Fatalf("unexpected dynamic execution at %s: %+v", quiet, fact)
 		}

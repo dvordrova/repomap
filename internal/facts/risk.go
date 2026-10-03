@@ -6,26 +6,75 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// dynamicRule is the closed condition under which a selector runs code that
-// is not in the source: which origin packages qualify (nil means the bare
-// builtin name is enough).
-type dynamicRule struct {
-	origins []string
-}
-
-// dynamicRules are the calls that run code inside this program's own
-// process that the source does not show: code evaluated from a string, a
-// function built from one, a value deserialized into code. Starting
+// dynamicExecutions are the outside functions that run code inside this
+// program's own process that the source does not show: code evaluated from a
+// string (Python's builtin eval and exec, JavaScript's eval, Clojure's eval),
+// a function built from one (JavaScript's Function), a value deserialized
+// into code (pickle, marshal, and yaml's load with no loader or one of its
+// unsafe loaders; yaml.load(f, Loader=yaml.SafeLoader) reads data). Starting
 // another program is no such call: the reading asks which calls do
 // (atlas.BoundaryRunsProgram) and names the program they start, so no
-// library's launching names are kept here. C has no builtin that
-// evaluates code, so a C file has none.
-var dynamicRules = map[string]dynamicRule{
-	"exec":     {},
-	"eval":     {},
-	"loads":    {origins: []string{"pickle", "yaml", "marshal"}},
-	"load":     {origins: []string{"pickle", "yaml", "marshal"}},
-	"Function": {},
+// library's launching names are kept here. Go and C have no function that
+// evaluates code, so their programs have none. label is what the fact names;
+// empty is the package and the name.
+var dynamicExecutions = []dynamicExecution{
+	{function: outsideFunction{pkg: "builtins", name: "eval"}, label: "eval"},
+	{function: outsideFunction{pkg: "builtins", name: "exec"}, label: "exec"},
+	{function: outsideFunction{pkg: "pickle", name: "loads", anyReceiver: true}},
+	{function: outsideFunction{pkg: "pickle", name: "load", anyReceiver: true}},
+	{function: outsideFunction{pkg: "marshal", name: "loads", anyReceiver: true}},
+	{function: outsideFunction{pkg: "marshal", name: "load", anyReceiver: true}},
+	{function: outsideFunction{pkg: "yaml", name: "load"}, loader: yamlLoader},
+	{function: outsideFunction{pkg: "yaml", name: "load_all"}, loader: yamlLoader},
+	{function: outsideFunction{pkg: "yaml", name: "unsafe_load"}},
+	{function: outsideFunction{pkg: "yaml", name: "unsafe_load_all"}},
+	{function: outsideFunction{pkg: "platform:javascript", name: "eval"}, label: "eval"},
+	{function: outsideFunction{pkg: "platform:javascript", name: "Function"}, label: "Function"},
+	{function: outsideFunction{pkg: "clojure.core", name: "eval"}, label: "eval"},
+}
+
+type dynamicExecution struct {
+	function outsideFunction
+	label    string
+	// loader, when set, is the argument deciding whether the call builds
+	// code: it does when the argument is absent or names one of unsafe.
+	loader *loaderArgument
+}
+
+type loaderArgument struct {
+	keyword  string
+	position int
+	unsafe   []outsideFunction
+}
+
+// yamlLoader is yaml.load's Loader: its Loader and UnsafeLoader (and their C
+// twins) construct any Python object a document names.
+var yamlLoader = &loaderArgument{keyword: "Loader", position: 2, unsafe: []outsideFunction{
+	{pkg: "yaml", name: "Loader"}, {pkg: "yaml", name: "UnsafeLoader"},
+	{pkg: "yaml", name: "CLoader"}, {pkg: "yaml", name: "CUnsafeLoader"},
+}}
+
+// buildsCode reports whether a call's loader argument lets it build code.
+func (loader *loaderArgument) buildsCode(target *targetContext, pattern programindex.RelationPattern) bool {
+	argument, found := keywordArgument(pattern, loader.keyword)
+	if !found {
+		argument, found = positionalArgument(pattern, loader.position)
+	}
+	if !found {
+		return true
+	}
+	for _, id := range argument.ObjectIDs {
+		object, ok := target.object(id)
+		if !ok || object.Kind != programindex.ObjectExternalSymbol || object.External == nil {
+			continue
+		}
+		for _, unsafe := range loader.unsafe {
+			if unsafe.matches(*object.External) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (b *builder) addDynamicExecution(target *targetContext) {
@@ -34,16 +83,16 @@ func (b *builder) addDynamicExecution(target *targetContext) {
 			continue
 		}
 		for _, pattern := range relation.Patterns {
+			label, resolution, ok := dynamicLabel(target, relation, pattern)
+			if !ok {
+				continue
+			}
 			anchor := target.patternAnchor(relation, pattern)
 			if anchor == nil {
 				continue
 			}
-			label, ok := dynamicLabel(target, relation, pattern, *anchor, b.source.line(anchor.Path, anchor.Line))
-			if !ok {
-				continue
-			}
 			symbol, _ := target.enclosingSymbol(relation.FromID)
-			b.addDynamicExecutionFact(target, *anchor, label, symbol, ResolutionExact)
+			b.addDynamicExecutionFact(target, *anchor, label, symbol, resolution)
 		}
 	}
 }
@@ -63,43 +112,33 @@ func (b *builder) addDynamicExecutionFact(target *targetContext, anchor Anchor, 
 	}, label)
 }
 
-// dynamicLabel applies the closed rule for one selector. A bare exec in
-// JavaScript is a RegExp method, and "Function" counts only as the
-// constructor form. A C file evaluates no code.
-func dynamicLabel(target *targetContext, relation programindex.Relation, pattern programindex.RelationPattern, anchor Anchor, line string) (string, bool) {
-	if isCFile(anchor.Path) {
-		return "", false
+// dynamicLabel names the dynamic execution one call makes, when it calls
+// one of dynamicExecutions: a Function the call constructs is "new
+// Function".
+func dynamicLabel(target *targetContext, relation programindex.Relation, pattern programindex.RelationPattern) (string, Resolution, bool) {
+	functions := make([]outsideFunction, 0, len(dynamicExecutions))
+	for _, execution := range dynamicExecutions {
+		functions = append(functions, execution.function)
 	}
-	rule, ok := dynamicRules[pattern.Selector]
+	function, _, resolution, ok := target.calledFunction(relation, pattern, functions)
 	if !ok {
-		return "", false
+		return "", "", false
 	}
-	switch pattern.Selector {
-	case "Function":
-		if !strings.Contains(line, "new Function") {
-			return "", false
+	for _, execution := range dynamicExecutions {
+		if execution.function != function {
+			continue
 		}
-		return "new Function", true
-	case "exec":
-		if isJavaScriptFile(anchor.Path) {
-			return "", false
+		if execution.loader != nil && !execution.loader.buildsCode(target, pattern) {
+			return "", "", false
 		}
-	}
-	if rule.origins == nil {
-		return pattern.Selector, true
-	}
-	pkg, found := originPackage(target.externalOrigins(relation, pattern), rule.origins...)
-	if !found {
-		return "", false
-	}
-	return pkg + "." + pattern.Selector, true
-}
-
-func originPackage(origins []programindex.ExternalSymbol, candidates ...string) (string, bool) {
-	for _, origin := range origins {
-		if pkg, ok := packageMatches(origin.PackagePath, candidates...); ok {
-			return pkg, true
+		label := execution.label
+		if label == "" {
+			label = function.pkg + "." + function.name
 		}
+		if label == "Function" && relation.Invocation == programindex.InvocationConstruct {
+			label = "new Function"
+		}
+		return label, resolution, true
 	}
-	return "", false
+	return "", "", false
 }

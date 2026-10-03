@@ -532,10 +532,17 @@ table row, compares an element of the client's argument vector it was handed
 with `nx`: set's sub-argument, never asked (READING, K3), as Redis's SORT,
 DEBUG and SLAVEOF words are.
 A C file has no dynamic execution: C has no builtin that evaluates code, so
-a repository function named `eval` or `exec` is the repository's own code,
-and `system` and `popen` start another program, which the reading asks
-about (`runs_program`, READING) instead of the fact layer naming them. The database extractor
-does not read `.c` files, so C SQL literals give no table entities.
+a repository function named `eval` or `exec` is the repository's own code by
+its owner, as in every language (PROGRAM_INDEX: the callee decides, no
+longer the file's extension), and `system` and `popen` start another
+program, which the reading asks about (`runs_program`, READING) instead of
+the fact layer naming them. `getenv` is a config read because the call
+reaches the platform's `stdlib.h` `getenv`. A `$` in a C name is a compiler
+extension and a file-scope name starting with an underscore is reserved to
+the implementation (C11 7.1.3), so the fixture keeps no declaration like
+JavaScript's and Clojure's `price$` (READING "Declarations"). The database
+extractor does not read `.c` files, so C SQL literals give no table
+entities.
 
 C comments enter the ordinary claims layer. A `/* */` block or a run of `//`
 lines that ends directly above a top-level declaration (a line starting at

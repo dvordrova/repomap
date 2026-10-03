@@ -451,6 +451,19 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   entry kind are one input named by the first spelling, the others its
   `Operation.Aliases` (litestream's `storageClass`/`storage-class`); each
   call is still asked on its own ([Reading](../contracts/READING.md)).
+- **The callee, a stated role and native anonymity decide (2026-10-03
+  review A1–A3, skeptic: accept with changes):** a config read or dynamic
+  execution is a call the graph resolves to that outside function (a local
+  `getenv`/`eval`/`exec` is the repository's own code, an unresolved call
+  stays unknown; Python's builtins carry a `builtin` witness, and a class
+  body's names no longer reach its methods); a route prefix composes only
+  from a positional address or a keyword whose last word is `prefix`
+  (`description="/docs"` is a value); places shows every named function,
+  method, type and module-level variable whatever its characters and hides
+  a function literal by its ProgramIndex 25 `anonymous` mark, never by `$`
+  ([ProgramIndex](../contracts/PROGRAM_INDEX.md),
+  [Reading](../contracts/READING.md) "Declarations",
+  [Python](../contracts/PYTHON.md) "Builtins and class bodies").
 - **Files a program keeps are its data (owner, 2026-09-29; skeptic: no
   role):** the calls of symbols answered `talks: file` are walked along their
   decided argument and grouped by where the path ends (a literal or template,
@@ -496,7 +509,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 24, places graph 23, reading input 20, atlas 19,
+This wave uses ProgramIndex 25, places graph 23, reading input 20, atlas 19,
 GroupsIndex 26, dependency catalog 2, extraction artifact 2, facts 6, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`

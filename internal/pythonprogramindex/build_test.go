@@ -361,6 +361,7 @@ version = "1.0.0"
 		t, index, programindex.ObjectFunction, "sanitize_text", "nested_call_demo.py",
 	)
 	columnsByCallee := make(map[string][]int)
+	builtins := make(map[string][]int)
 	for _, relation := range index.Relations {
 		if relation.Kind != programindex.RelationCalls || relation.FromID != sanitize.ID {
 			continue
@@ -373,10 +374,19 @@ version = "1.0.0"
 				witness.Location.Line != 2 {
 				t.Fatalf("nested call witness has no exact source location: %#v", witness)
 			}
+			// str is the builtin no name of the module binds: its witness
+			// names it at the same callee token (PYTHON "Builtins").
+			if witness.Kind == "builtin" {
+				builtins[witness.Detail] = append(builtins[witness.Detail], witness.Location.Column)
+				continue
+			}
 			columnsByCallee[witness.Detail] = append(
 				columnsByCallee[witness.Detail], witness.Location.Column,
 			)
 		}
+	}
+	if !reflect.DeepEqual(builtins, map[string][]int{"str": {21}}) {
+		t.Fatalf("builtin witnesses = %#v, want str at its callee token", builtins)
 	}
 	for callee := range columnsByCallee {
 		sort.Ints(columnsByCallee[callee])

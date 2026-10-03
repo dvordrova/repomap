@@ -1,10 +1,16 @@
 import ast
 import base64
+import builtins
 import hashlib
 import io
 import json
 import sys
 import tokenize
+
+
+# The names the running interpreter's builtins module defines: what a bare
+# name no scope of its module binds falls back to (RelationVisitor.builtin_name).
+BUILTIN_NAMES = frozenset(vars(builtins))
 
 
 def stable_ref(domain, *parts):
@@ -346,9 +352,13 @@ class Scope:
         return owner.bindings[name] if owner is not None else None
 
     def owner(self, name):
+        # A class body's names are visible in that body only: Python looks a
+        # name a method or a lambda uses up in it, the functions around it
+        # and the module, never in a class body around it (a method calling
+        # range() calls the builtin, not the class's own range method).
         current = self
         while current is not None:
-            if name in current.bindings:
+            if name in current.bindings and (current is self or current.kind != "type"):
                 return current
             current = current.parent
         return None
@@ -3491,6 +3501,48 @@ class RelationVisitor(ast.NodeVisitor):
 
     visit_YieldFrom = visit_Yield
 
+    def builtin_witness(self, func):
+        """A bare call of a name no scope of its module binds calls Python's
+        builtin of that name, which Python looks up last (PYTHON
+        "Builtins"). The call stays unresolved: every builtin is no outside
+        symbol of the index. Its witness names the builtin."""
+        name = self.builtin_name(func)
+        if not name:
+            return ()
+        witness = {"kind": "builtin", "detail": name}
+        location = callee_location(self.module["path"], func)
+        if location is not None:
+            witness["location"] = location
+        return (witness,)
+
+    def builtin_name(self, func):
+        """The builtin a bare name falls back to, or "" when the name may be
+        something else: any binding of it in its scope or a function or
+        module around it (a def, a class, an import, an assignment, a
+        parameter, a for, with, except or match target, a comprehension's
+        target), a global or nonlocal declaration of it anywhere in the
+        module, or a star import that may bind any name leaves it unknown, as
+        a name the builtins module does not define does. A class body around
+        the call is no scope it is looked up in. The builtins are the running
+        interpreter's (BUILTIN_NAMES): a later Python's new builtin is a
+        module global to an earlier one."""
+        if not isinstance(func, ast.Name) or func.id not in BUILTIN_NAMES or func.id in self.read_shadows:
+            return ""
+        name = func.id
+        if name in self.analyzer.shared_names.get(self.module["name"], ()) or \
+                self.module["name"] + "." + name in self.analyzer.objects_by_qname:
+            return ""
+        scope = self.scope
+        while scope is not None:
+            # A class body around the call binds nothing it sees (Scope.owner).
+            visible = scope is self.scope or scope.kind != "type"
+            if visible and (name in scope.bindings or name in scope.stores or name in scope.parameters or
+                            name in scope.unstored_names or name in scope.opaque_names or
+                            name in scope.global_names or name in scope.nonlocal_names) or scope.star_imports:
+                return ""
+            scope = scope.parent
+        return name
+
     def visit_Call(self, node):
         name = self.expression_name(node.func)
         source_expression = safe_expression_name(node.func)
@@ -3591,7 +3643,7 @@ class RelationVisitor(ast.NodeVisitor):
                     kind, self.scope.ref, resolved, node, "callsite", name, invocation,
                     exact_authorities=("literal",), source_expression=source_expression,
                     witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
-                    extra_witnesses=self.stored_function_witnesses(node.func) if not resolved[1] else (),
+                    extra_witnesses=tuple(self.stored_function_witnesses(node.func)) + self.builtin_witness(node.func) if not resolved[1] else (),
                 )
                 parameter = self.called_parameter(node.func) if not resolved[1] else None
                 if parameter is not None and call_relation_ref:

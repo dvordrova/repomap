@@ -26,6 +26,22 @@ report.
   value, with no per-file rank cutoff; the boundaries (registrations with
   their holder, SQL statements, configuration reads); the file-to-file edges;
   the seeds.
+- **Declarations** (2026-10-03 review's A3). Which objects are a reader's
+  declarations is what the adapter's kind, ownership and anonymity say,
+  never a name's characters: a function, method or type with a location and
+  a name, unless the adapter marks it `anonymous` (a Go function literal,
+  PROGRAM_INDEX), and a variable whose container is a module, whatever its
+  name. JavaScript's `export function price$()` and `export const _token`,
+  Clojure's `(defn price$ [])` and `(def _token ...)`, Python's
+  `_SENSITIVE_KEYS` and `__all__` are declarations like their plain-named
+  neighbours, whether or not their bodies call anything. An anonymous
+  function is a place only when it owns a call or is handed over, as Go
+  closures always were; a lambda (Python's, a JavaScript returned handler)
+  is none, so its calls reach no place: a recorded gap (freqtrade's
+  `deploy_config.py:72` lambda calling `validate_is_float`). A Go
+  package-level variable is no declaration (its container is a package):
+  etcd's `var GetVersionFromBinary = func(...)` reaches the reader only as
+  its function literal's place, another recorded gap.
 - Each declaration carries `uses`, local keys that never reach a provider:
   every declaration its program index's exact or alternatives `reads`,
   `passes_callback` and `decorates` relations name (a decorated declaration

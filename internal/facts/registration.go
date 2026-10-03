@@ -452,7 +452,7 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) (*
 					next = producedAt(produced.ReceiverValue)
 					// The call that made this value from its holder names the
 					// place the value stands under: Group("/articles").
-					if prefix, ok := prefixLiteral(produced); ok && next != nil {
+					if prefix, _, ok := statedPrefix(produced); ok && next != nil {
 						prefixes = append([]string{prefix}, prefixes...)
 					}
 				}

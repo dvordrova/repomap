@@ -378,13 +378,16 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 		t.Fatalf("http_registrations.py's handlers are asked with registrations %v", registered)
 	}
 	// The helper question: format_score, which __all__ leaves out and only
-	// render_level calls, is a helper, so exports.py keeps one declaration
-	// that is none and stays whole with it. levels.py's constants are asked
-	// with the function of models.py that reads them.
+	// render_level calls, is a helper and goes with render_level by code.
+	// __all__ is a module-level declaration like any other (its name's
+	// underscores decide nothing), so exports.py holds two that are none and
+	// is split between them. levels.py's constants are asked with the
+	// function of models.py that reads them.
 	exports := "src/fixture_app/exports.py"
 	format, render := split.Symbols[[2]string{exports, "format_score"}], split.Symbols[[2]string{exports, "render_level"}]
-	if !split.Helpers[[2]string{exports, "format_score"}] || split.Helpers[[2]string{exports, "render_level"}] || split.PartOf[format] == "" || split.PartOf[format] != split.PartOf[render] || !recorded(split, "role_not_split", exports) {
-		t.Fatalf("format_score in %q, render_level in %q", split.PartOf[format], split.PartOf[render])
+	if !split.Helpers[[2]string{exports, "format_score"}] || split.Helpers[[2]string{exports, "render_level"}] || split.Helpers[[2]string{exports, "__all__"}] ||
+		split.PartOf[format] == "" || split.PartOf[format] != split.PartOf[render] || split.Symbols[[2]string{exports, "__all__"}] == "" || !split.Split[exports] {
+		t.Fatalf("format_score in %q, render_level in %q, __all__ %q", split.PartOf[format], split.PartOf[render], split.Symbols[[2]string{exports, "__all__"}])
 	}
 	for _, name := range []string{"READ_VALUES", "READ_LIMIT"} {
 		if got := split.HelperItems[[2]string{"src/fixture_app/levels.py", name}]["read_by"]; !slices.Contains(anyStrings(got), "src/fixture_app/models.py:read_level_data") {

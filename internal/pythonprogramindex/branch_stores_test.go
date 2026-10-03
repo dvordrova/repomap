@@ -250,8 +250,9 @@ def chosen_class(flag):
 		"calls_hook": "unresolved 100:8 flush stored in hook|102:12 accept stored in hook under a condition",
 		// A module name no store always binds falls back to a builtin.
 		"calls_compat": "unresolved 115:14 accept stored in compat under a condition",
-		// A method does not see its class body's names.
-		"run": "unresolved 124:18 accept stored in handle under a condition|126:18 flush stored in handle under a condition",
+		// A method does not see its class body's names: its call is none
+		// of their stores' (Scope.owner skips the class body).
+		"run": "unresolved",
 		// picked holds either function where handler = picked runs; the
 		// witness names the one its last store binds.
 		"aliased": "unresolved 136:15 flush stored in handler|138:19 accept stored in handler under a condition",

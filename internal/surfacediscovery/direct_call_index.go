@@ -109,6 +109,10 @@ type DirectCallNode struct {
 	ScenarioID  string              `json:"scenario_id"`
 	Declaration Location            `json:"declaration"`
 	Body        DirectCallBodyRange `json:"body"`
+	// Anonymous says the function is a literal written inside another
+	// function (go/ssa gives it a parent): it has no name of its own, and
+	// go/ssa names it after its parent, Open$1.
+	Anonymous bool `json:"anonymous,omitempty"`
 }
 
 // DirectCallVariable is a package-level variable whose initializer calls a
@@ -1060,7 +1064,7 @@ func (a *analyzer) directCallNode(function *ssa.Function, scenario Scenario) (Di
 	node := DirectCallNode{
 		Symbol: symbol, Package: packagePath, Exported: directCallFunctionExported(function),
 		ModuleID: module.ID, ScenarioID: scenario.ID,
-		Declaration: declaration, Body: body,
+		Declaration: declaration, Body: body, Anonymous: function.Parent() != nil,
 	}
 	if function.Signature != nil {
 		node.Signature = types.TypeString(function.Signature, packageQualifier)

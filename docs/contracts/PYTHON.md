@@ -20,7 +20,9 @@ their already parsed inputs. A failed shared parser preparation retains the
 existing exact-target fallback; cancellation stops dispatch immediately.
 
 A module-level function, class or variable is public unless its name starts
-with an underscore; a module that declares a literal `__all__` list or tuple
+with an underscore (visibility, never whether a reader sees it: a module's
+`_token` and `__all__` are declarations, READING "Declarations",
+`lookalike_names.py`); a module that declares a literal `__all__` list or tuple
 of strings exports exactly the names it lists, so an unlisted module-level
 name is internal. Methods and attributes keep the underscore rule. The map of
 parts shows the signatures of public names only
@@ -136,6 +138,44 @@ freqtrade's `scripts/rest_client.py` calling
 `levels.py` into `client/fixture_client/rest.py`). Go and JS/TS index another
 module's or workspace package's source themselves; the Clojure and C
 fixtures import no other target's code.
+
+### Builtins and class bodies
+
+Python looks a bare name up in its own scope, the functions around it, the
+module and last the builtins module; a class body's names are visible in that
+body only, never to the methods, lambdas or nested functions it holds
+(2026-10-03 review's A1). The adapter follows both rules:
+
+- A method's bare `range()` or `eval()` never resolves to its class's own
+  `range` or `eval` method (`Scope.owner` skips a class body around the
+  scope); freqtrade's `strategy/parameters.py:220` `range(...)` had been an
+  exact call of `NumericParameter.range`. `self.eval(...)` stays the method.
+- **Builtins.** A bare call whose name no scope around it binds (no def,
+  class, import, assignment, parameter, for, with, except or match target, no
+  comprehension target, no `global` or `nonlocal` declaration anywhere in the
+  module), in a module with no star import, and which the running
+  interpreter's `builtins` module defines, stays an unresolved call with a
+  `builtin` witness naming the builtin, at the callee token beside its
+  `callsite` witness. Resolving every builtin to an outside symbol would put
+  `len`, `print` and 50 others among the outside symbols the reading asks
+  about (freqtrade calls 52 builtins 3,856 times, 200 of them with a word):
+  a separate decision. The facts read the witness as `builtins.<name>`; an
+  explicit `import builtins` or `from builtins import eval` is the external
+  symbol itself. A star import may bind any name, so a module with one
+  witnesses no builtin and its `eval(...)` stays unknown. The builtins are the
+  interpreter's that runs the parser: a name a later Python added
+  (`anext`) is a module global to an earlier one.
+
+The cumulative fixture: `lookalike_names.py` declares its own `getenv`,
+`Field`, `eval` and `exec` (its calls resolve to them exactly and are neither
+setting reads nor evaluation) and reads `os.environ.get` and an imported
+`environ.get`; `class_scope.py`'s `Evaluator.run` calls the builtin `range`
+and `eval` beside its class's methods of those names;
+`star_evaluation.py`'s `eval` after `from math import *` is unknown;
+`runtime_registrations.py:95` is the builtin `eval`; `outside_readers.py`
+holds a `BaseSettings` field's `env` read beside a `BaseModel` field's
+metadata, and `yaml.load` with `Loader` and with `SafeLoader`
+(`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`).
 
 ## Typed parameters and explicit re-exports
 
@@ -631,8 +671,11 @@ supports:
       anywhere in the module;
     - its module has star imports;
     - it is a module or class name that no store reaching the call always
-      binds, so it would fall back to a builtin or a global;
-    - it is a class body's name, called in a method.
+      binds, so it would fall back to a builtin or a global.
+
+    A class body's name called in a method is no name of the method's at
+    all (Python skips the class body; "Builtins and class bodies"): the call
+    stays unresolved with no store of the class body as its witness.
 
   Only the call through the name is resolved. In `models.py`,
   `register_callback_aliases` passes its parameter `handler` after
@@ -747,6 +790,8 @@ implementation's docstring, comment and blank line leave it 3 code lines.
 ## Framework-neutral registrations
 
 The original AST call site, result identity, positional/keyword arguments and callback targets remain separate. `Thread(target=...)`, async-task and supported schedule registrations preserve their written activation evidence. A later `start`, `join` or liveness check on that same result does not invent a callback call. Lifespan setup and finite retry loops remain negative controls; final scheduled/continuous roles belong to [operation review](READING.md#operation-ownership). A coroutine call handed to another call carries the `async_task` invocation; with one exact repository callee it is a registration handing that coroutine over, its word the call it is handed to (`create_task`), asked on its own what it starts (PROGRAM_INDEX, READING starting statements): `runtime_registrations.py`'s `start_background_tasks` starts the polling loop `poll_prices` and the one-shot `announce_start`, and `submit_candles` hands `refresh_candles` a stream (`TestCumulativePythonStartsAreAskedPerStatement`). `tool_cli.py`'s `run_init`, init's handler, compares a field of the namespace it was handed with `init-*` through `fnmatch.fnmatch`: init's sub-argument, never asked (READING, K3).
+
+A route's path takes a prefix only from an argument a call states as one (PROGRAM_INDEX `statedPrefix`): `route_mounts.py`'s `APIRouter(prefix="/v1")`, `include_router(api, prefix="/api")` and `register_blueprint(blueprint, url_prefix="/flask")` compose, while `route_metadata.py`'s `APIRouter(description="/docs")` and `FastAPI(docs_url="/docs")` leave `/ping` and `/health` as written and `APIRouter(prefix="/v2", description="/docs")` gives `/v2/ping` (`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`). A positional parameter passed by keyword (`app.mount(path="/static", ...)`) is no prefix: a recorded gap.
 
 ## Inputs a call's words declare, and what Python does not have yet
 

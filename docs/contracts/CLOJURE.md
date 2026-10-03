@@ -258,6 +258,19 @@ a function (`(def app (wrap routes))`) also runs at load, but its calls still
 belong to the var, while Python gives a module-level assignment's calls to
 the module.
 
+## Settings, evaluation and declaration names
+
+clj-kondo writes a call's selector qualified (`java.lang.System/getenv`,
+`clojure.core/eval`), so no bare-word rule ever matched a Clojure call; the
+callee's owner decides now (PROGRAM_INDEX, 2026-10-03 review's A1):
+`lookalike.clj`'s `(System/getenv "FIXTURE_LOOKALIKE_SETTING")` is a config
+read and `(clojure.core/eval form)` a dynamic execution, while the
+namespace's own `eval` (with `:refer-clojure :exclude [eval]`) and `getenv`
+are its code (`TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity`).
+Its public `(defn price$ [])` and `(def _token ...)` are declarations like
+any other (READING "Declarations"). The fixture mounts no router, so no
+keyword names a route prefix in Clojure: no equivalent of Python's.
+
 ## Inputs a call's words declare, and what Clojure does not have yet
 
 A call of an outside var given a literal is asked on its own what the

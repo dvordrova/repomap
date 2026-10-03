@@ -9,9 +9,11 @@ import (
 
 // A mount is a call the repository does not own that hands a repository
 // value (a router, a blueprint, an included module) to something else under a
-// path prefix. A constructor given a "/prefix" literal keyword gives its
-// result an intrinsic prefix. Both follow observed values, never variable
-// names, so two routers in one module stay distinct.
+// path prefix. A constructor given a prefix keyword (APIRouter(prefix="/v1"))
+// gives its result an intrinsic prefix. Both follow observed values, never
+// variable names, so two routers in one module stay distinct. Only an
+// argument the call states as that address composes into a route's path
+// (statedPrefix); a leading "/" alone states nothing.
 //
 // When a mount prefix and an intrinsic prefix meet, frameworks differ on
 // whether they compose or the mount replaces the router's own prefix. The
@@ -94,22 +96,45 @@ func (target *targetContext) includedModule(resultID string) string {
 	return ""
 }
 
-// prefixLiteral is the one path literal of a mount, positional or keyword,
-// stating where the handed value answers: "/api", or "django/" as Django
-// writes it. A host or a name is not a prefix; several paths name no one.
-func prefixLiteral(pattern programindex.RelationPattern) (string, bool) {
-	found := ""
+// statedPrefix is the one argument a mount, a group or a router's
+// constructor states as the address the routes it holds answer under: a
+// positional address literal, as a registration states its own address
+// ("/api", or "django/" as Django writes it), or a literal starting with "/"
+// under a keyword whose last word is prefix (prefix="/v1", url_prefix=
+// "/flask"): the outside API's own name for that argument. Any other
+// keyword's literal is a value whatever its shape (APIRouter(description=
+// "/docs"), FastAPI(docs_url="/docs")), and two such arguments name none.
+// keyword says the one is a keyword's.
+func statedPrefix(pattern programindex.RelationPattern) (prefix string, keyword bool, ok bool) {
+	found := 0
 	for _, argument := range pattern.Arguments {
 		value, _, literal := literalValue(argument)
-		if !literal || !strings.HasPrefix(value, "/") && !strings.HasSuffix(value, "/") {
+		if !literal {
 			continue
 		}
-		if found != "" {
-			return "", false
+		switch {
+		case argument.Keyword == "" && (strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/")):
+		case argument.Keyword != "" && namesPrefix(argument.Keyword) && strings.HasPrefix(value, "/"):
+		default:
+			continue
 		}
-		found = value
+		found++
+		prefix, keyword = value, argument.Keyword != ""
 	}
-	return found, found != ""
+	if found != 1 {
+		return "", false, false
+	}
+	return prefix, keyword, true
+}
+
+// namesPrefix reports a keyword whose last word is prefix: prefix,
+// url_prefix, urlPrefix.
+func namesPrefix(keyword string) bool {
+	head, found := strings.CutSuffix(strings.ToLower(keyword), "prefix")
+	if !found {
+		return false
+	}
+	return head == "" || strings.HasSuffix(head, "_") || keyword[len(head)] == 'P'
 }
 
 // prefixesByObject composes the prefixes each router value answers under.
@@ -129,14 +154,15 @@ func (target *targetContext) prefixesByObject() map[string][]routePrefix {
 			if at == nil || target.ownsReceiver(pattern) || len(target.callOrigins(relation, pattern, originsByValue)) == 0 {
 				continue
 			}
-			prefix, ok := prefixLiteral(pattern)
+			prefix, keyword, ok := statedPrefix(pattern)
 			if !ok {
 				continue
 			}
-			if pattern.ResultID != "" {
-				if _, keyword := keywordPrefix(pattern); keyword {
-					intrinsic[pattern.ResultID] = append(intrinsic[pattern.ResultID], routePrefix{path: prefix, evidence: []Anchor{*at}})
-				}
+			// A constructor names its result's own prefix under a prefix
+			// keyword; its positional literals are names (Blueprint("public",
+			// __name__, url_prefix="/default")).
+			if pattern.ResultID != "" && keyword {
+				intrinsic[pattern.ResultID] = append(intrinsic[pattern.ResultID], routePrefix{path: prefix, evidence: []Anchor{*at}})
 			}
 			child := target.mountedValue(pattern)
 			if child == "" && (strings.EqualFold(pattern.Selector, "route") || strings.EqualFold(pattern.Selector, "mount")) {
@@ -196,18 +222,6 @@ func (target *targetContext) prefixesByObject() map[string][]routePrefix {
 		}
 	}
 	return result
-}
-
-func keywordPrefix(pattern programindex.RelationPattern) (string, bool) {
-	for _, argument := range pattern.Arguments {
-		if argument.Keyword == "" {
-			continue
-		}
-		if value, _, literal := literalValue(argument); literal && strings.HasPrefix(value, "/") {
-			return value, true
-		}
-	}
-	return "", false
 }
 
 // mountedRouter resolves a route-group closure: Route("/api", func(r) {...})
