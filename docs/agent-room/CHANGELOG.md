@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Closures one function writes alike read apart by what only each uses (data 2)
+
+- **Rule (on dbd3efbd's saved InlineName fields):** when no hand-over word tells a holder's alike closures apart, each is said by the first thing only it of them uses, in its source order. A repository declaration comes before an outside one: what it calls (`Calls`, an outside callee written as code writes it, `Config.GetCertificate`, `http.ListenAndServe`) or reads (`Reads`). Page words, en and ru: "anonymous function in {0} calling {1}" / "…, вызывающая {1}", and "anonymous function in {0} reading {1}" / "…, читающая {1}". One using only what the others use stays "one of how many".
+- **Replayed on saved data:**
+  - casdoor's proxy Start: "calling http.ListenAndServe", "calling Config.GetCertificate".
+  - etcd's startPeer: "calling String", "reading recvc", "reading propc".
+  - etcd's RegisterElectionHandlerServer: each calls its own `local_request_Election_*_0`, and Observe "calling status.Error".
+- **Tests:** `TestCallablesWrittenAlikeReadApartByWhatOnlyEachUses` and `TestAnInlineCallableIsNamedInWordsOfThePagesLanguage`. groupindex and report pass, and the six contract groups pass.
+
+## 2026-10-03 — casdoor's two LoginPage.login.loginHandler: no saved fact names where each is written (data 2)
+
+- **Skeptic:** both arrows (lines 520 and 553) share name, signature, owner, file and part. The `.then` calls they sit in are saved: their receivers are the call results of `loginCas` and `login`. Each arrow argument, though, is saved only as an `unknown` origin with a start anchor, no object and no end. "Inside the then of loginCas" would be a guess from anchors. Both hand-overs go to `checkLoginMfa`.
+- **Not done; two options recorded:**
+  1. A JS/TS adapter fact: the argument pattern an anonymous callback holding a declaration is, then the declarations' apart ladder adds the enclosing call's receiver word ("loginHandler · loginCas").
+  2. Today's saved data only: the first callee only one of them calls (URL vs goToLink), the same rung the closures now use.
+
 ## 2026-10-03 — An overload stub is a signature of its implementation, not a declaration (data 2)
 
 - **Why:** beets's `BeatportClient.search` (two `@typing.overload` stubs and the implementation) listed "search" three times, and casdoor-style TS overloads did too. In TS a call of an overloaded name reached every signature as an alternative: `refsForSymbol` returned all three declarations of `pick`, and `ambiguity.tsx`'s `ambiguousHandler` was handed over as "alternatives".

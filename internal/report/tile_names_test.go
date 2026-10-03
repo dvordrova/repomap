@@ -86,6 +86,8 @@ func TestAnInlineCallableIsNamedInWordsOfThePagesLanguage(t *testing.T) {
 	}{
 		{groupindex.InlineName{In: "Main loop"}, "anonymous function in Main loop", "анонимная функция в Main loop"},
 		{groupindex.InlineName{In: "Main loop", For: "doctor"}, "anonymous function in Main loop for doctor", "анонимная функция в Main loop для doctor"},
+		{groupindex.InlineName{In: "startPeer", Reads: "recvc"}, "anonymous function in startPeer reading recvc", "анонимная функция в startPeer, читающая recvc"},
+		{groupindex.InlineName{In: "Start", Calls: "ListenAndServe"}, "anonymous function in Start calling ListenAndServe", "анонимная функция в Start, вызывающая ListenAndServe"},
 		{groupindex.InlineName{In: "Main loop", Of: 3}, "one of three anonymous functions in Main loop", "одна из трёх анонимных функций в Main loop"},
 		{groupindex.InlineName{In: "Headscale.Serve", Of: 12}, "one of many anonymous functions in Headscale.Serve", ""},
 		{groupindex.InlineName{Wraps: "listDatabases"}, "listDatabases", "listDatabases"},

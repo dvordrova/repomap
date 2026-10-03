@@ -916,6 +916,8 @@ var russianUI = map[string]string{
 
 	// Callables one function writes alike (31-reading-column.js rmInlineText).
 	"anonymous function in {0} for {1}":       "анонимная функция в {0} для {1}",
+	"anonymous function in {0} calling {1}":   "анонимная функция в {0}, вызывающая {1}",
+	"anonymous function in {0} reading {1}":   "анонимная функция в {0}, читающая {1}",
 	"one of two anonymous functions in {0}":   "одна из двух анонимных функций в {0}",
 	"one of three anonymous functions in {0}": "одна из трёх анонимных функций в {0}",
 	"one of four anonymous functions in {0}":  "одна из четырёх анонимных функций в {0}",

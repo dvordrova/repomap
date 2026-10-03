@@ -626,11 +626,19 @@ outside calls and is "RestoreTool (inline)", never that helper. Callables
 one function writes alike are told apart by the word each one's hand-over
 gives it, a string field of the value it is handed in (headscale's cmd/hi
 commands, `Name = "doctor"`: "main (inline for doctor)", read "anonymous
-function in main for doctor"); when no field tells them all apart each
-is said as one of how many they are, in words, never a number or an
-ordinal of one's own (owner's reviewer, 2026-10-02: casdoor's two
-goroutines of proxy `Start` are "Start (inline, 2)", read "one of two
-anonymous functions in Start"; ten or more read "one of many"). They are
+function in main for doctor"); when no field tells them all apart, each
+is said by the first thing only it of them uses, in its source order, a
+repository declaration before an outside one: what it calls ("anonymous
+function in Start calling http.ListenAndServe", casdoor's two goroutines of
+proxy `Start`, the other "calling Config.GetCertificate"; the gateway's
+handlers in etcd's `RegisterElectionHandlerServer` each calling its own
+`local_request_`) or reads ("anonymous function in startPeer reading
+recvc", etcd's goroutines reading `recvc` and `propc`), its words saved
+fields of the name, said in the page's language
+(`TestCallablesWrittenAlikeReadApartByWhatOnlyEachUses`). One using only
+what the others use is said as one of how many they are, in words, never
+a number or an ordinal of one's own (owner's reviewer, 2026-10-02: "one of
+two anonymous functions in Start"; ten or more read "one of many"). They are
 counted by the function whose lines hold them, never by its name: one
 closure in each of two packages' `main` is "main (inline)" twice, not one
 of two (review 2026-10-02;

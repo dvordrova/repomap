@@ -230,3 +230,74 @@ func TestAnInlineNameIsItsFields(t *testing.T) {
 		}
 	}
 }
+
+// Callables one function writes alike, no hand-over word telling them
+// apart, are told apart by the first thing only each uses, in its source
+// order, a repository declaration before an outside one: etcd's startPeer
+// goroutines read recvc and propc (and the first calls String), casdoor's
+// Start goroutines call http.ListenAndServe and Config.GetCertificate.
+// Two using only what the other uses stay one of how many.
+func TestCallablesWrittenAlikeReadApartByWhatOnlyEachUses(t *testing.T) {
+	at := func(path string, line, column int) *programindex.Location {
+		return &programindex.Location{Path: path, Line: line, Column: column}
+	}
+	function := func(id, name, path string, line, end int) programindex.Object {
+		return programindex.Object{ID: id, Name: name, Kind: programindex.ObjectFunction, Location: at(path, line, 2), EndLine: end}
+	}
+	external := func(id, receiver, name string) programindex.Object {
+		return programindex.Object{ID: id, Name: "go." + receiver + "." + name, Kind: programindex.ObjectExternalSymbol,
+			External: &programindex.ExternalSymbol{PackagePath: "net/http", Receiver: receiver, Name: name}}
+	}
+	relation := func(kind programindex.RelationKind, from, to, path string, line, column int) programindex.Relation {
+		return programindex.Relation{Kind: kind, Resolution: programindex.ResolutionExact, FromID: from, ToIDs: []string{to}, Location: at(path, line, column)}
+	}
+	const peer, proxy, same = "peer.go", "proxy.go", "same.go"
+	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
+		function("startPeer", "startPeer", peer, 131, 210),
+		literal(function("p1", "startPeer$1", peer, 135, 140)),
+		literal(function("p2", "startPeer$2", peer, 174, 188)),
+		literal(function("p3", "startPeer$3", peer, 192, 206)),
+		{ID: "recvc", Name: "recvc", Kind: programindex.ObjectVariable, Location: at(peer, 20, 2)},
+		{ID: "propc", Name: "propc", Kind: programindex.ObjectVariable, Location: at(peer, 21, 2)},
+		{ID: "logger", Name: "Logger", Kind: programindex.ObjectVariable, Location: at(peer, 22, 2)},
+		function("process", "Process", peer, 300, 310),
+		function("string", "String", peer, 320, 322),
+		function("start", "Start", proxy, 306, 372),
+		literal(function("http", "Start$1", proxy, 321, 327)),
+		literal(function("https", "Start$2", proxy, 329, 370)),
+		external("printf", "", "Printf"),
+		external("listen", "", "ListenAndServe"),
+		external("certificate", "*Config", "GetCertificate"),
+		function("run", "Run", same, 1, 40),
+		literal(function("first", "Run$1", same, 10, 12)),
+		literal(function("second", "Run$2", same, 20, 22)),
+	}, Relations: []programindex.Relation{
+		relation(programindex.RelationReads, "p1", "logger", peer, 136, 8),
+		relation(programindex.RelationCalls, "p1", "string", peer, 137, 83),
+		relation(programindex.RelationReads, "p2", "recvc", peer, 177, 19),
+		relation(programindex.RelationCalls, "p2", "process", peer, 178, 24),
+		relation(programindex.RelationReads, "p2", "logger", peer, 179, 11),
+		relation(programindex.RelationReads, "p3", "propc", peer, 195, 19),
+		relation(programindex.RelationCalls, "p3", "process", peer, 196, 24),
+		relation(programindex.RelationInvokesExternal, "http", "printf", proxy, 322, 3),
+		relation(programindex.RelationInvokesExternal, "http", "listen", proxy, 323, 3),
+		relation(programindex.RelationInvokesExternal, "https", "printf", proxy, 330, 3),
+		relation(programindex.RelationInvokesExternal, "https", "certificate", proxy, 331, 3),
+		relation(programindex.RelationCalls, "first", "process", same, 11, 3),
+		relation(programindex.RelationCalls, "second", "process", same, 21, 3),
+		// Each also calls outside code, so none only wraps a callee.
+		relation(programindex.RelationInvokesExternal, "p1", "printf", peer, 137, 17),
+		relation(programindex.RelationInvokesExternal, "p2", "printf", peer, 180, 20),
+		relation(programindex.RelationInvokesExternal, "p3", "printf", peer, 198, 20),
+		relation(programindex.RelationInvokesExternal, "first", "printf", same, 11, 20),
+		relation(programindex.RelationInvokesExternal, "second", "printf", same, 21, 20),
+	}}
+	want := map[string]string{
+		"p1": "startPeer (inline calling String)", "p2": "startPeer (inline reading recvc)", "p3": "startPeer (inline reading propc)",
+		"http": "Start (inline calling http.ListenAndServe)", "https": "Start (inline calling Config.GetCertificate)",
+		"first": "Run (inline, 2)", "second": "Run (inline, 2)",
+	}
+	if got := said(inlineNames(program)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("names = %v, want %v", got, want)
+	}
+}

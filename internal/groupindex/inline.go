@@ -1,6 +1,8 @@
 package groupindex
 
 import (
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -10,8 +12,9 @@ import (
 // InlineName is how a reader names a callable written inline in another,
 // as fields: the repository callable it only wraps (Wraps), else the
 // function whose lines hold it (In, a method with its type), with the word
-// its hand-over gives it (For) or, when its holder writes several alike and
-// no word tells them apart, how many they are (Of). The report says it in
+// its hand-over gives it (For), else the first thing only it of those its
+// holder writes alike calls (Calls) or reads (Reads), or, when nothing
+// tells it apart, how many they are (Of). The report says it in
 // words in its own language ("one of three anonymous functions in
 // StartLdapServer"); nothing reads these fields back out of a name
 // (review, 2026-10-03: the page had parsed "StartLdapServer (inline, 3)").
@@ -19,6 +22,8 @@ type InlineName struct {
 	Wraps string
 	In    string
 	For   string
+	Calls string
+	Reads string
 	Of    int
 }
 
@@ -37,6 +42,10 @@ func (name InlineName) String() string {
 		return ""
 	case name.For != "":
 		return name.In + " (inline for " + name.For + ")"
+	case name.Calls != "":
+		return name.In + " (inline calling " + name.Calls + ")"
+	case name.Reads != "":
+		return name.In + " (inline reading " + name.Reads + ")"
 	case name.Of > 1:
 		return name.In + " (inline, " + strconv.Itoa(name.Of) + ")"
 	}
@@ -172,8 +181,107 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName
 			}
 			continue
 		}
-		for _, id := range ids {
-			result[id] = InlineName{In: holder, Of: len(ids)}
+		uses := ownUses(program, ids, byID, named, inline)
+		for position, id := range ids {
+			switch use := uses[position]; {
+			case use.word == "":
+				result[id] = InlineName{In: holder, Of: len(ids)}
+			case use.reads:
+				result[id] = InlineName{In: holder, Reads: use.word}
+			default:
+				result[id] = InlineName{In: holder, Calls: use.word}
+			}
+		}
+	}
+	return result
+}
+
+// ownUse is the first thing one callable of several written alike uses
+// that none of the others does: a callee's name, or a read declaration's
+// with reads set.
+type ownUse struct {
+	word  string
+	reads bool
+}
+
+// ownUses tells callables one function writes alike apart by what only
+// each of them uses, in its own source order, a repository declaration
+// before an outside one: etcd's startPeer goroutines read recvc and propc,
+// casdoor's Start goroutines call http.ListenAndServe and
+// Config.GetCertificate, the gateway's handlers in
+// RegisterElectionHandlerServer each call their own local_request_. A
+// callable using nothing the others do keeps no word (they stay one of how
+// many).
+func ownUses(program programindex.Index, ids []string, byID map[string]programindex.Object, named func(programindex.Object) string, inline func(programindex.Object) bool) []ownUse {
+	type use struct {
+		to    string
+		reads bool
+		at    programindex.Location
+	}
+	position := make(map[string]int, len(ids))
+	for i, id := range ids {
+		position[id] = i
+	}
+	uses := make([][]use, len(ids))
+	for _, relation := range program.Relations {
+		at, ours := position[relation.FromID]
+		if !ours || relation.Location == nil {
+			continue
+		}
+		reads := relation.Kind == programindex.RelationReads
+		if !reads && relation.Kind != programindex.RelationCalls && relation.Kind != programindex.RelationInvokesExternal {
+			continue
+		}
+		for _, to := range relation.ToIDs {
+			if to != relation.FromID {
+				uses[at] = append(uses[at], use{to: to, reads: reads, at: *relation.Location})
+			}
+		}
+	}
+	users := map[string]map[int]bool{}
+	for at, list := range uses {
+		for _, used := range list {
+			if users[used.to] == nil {
+				users[used.to] = map[int]bool{}
+			}
+			users[used.to][at] = true
+		}
+	}
+	// An outside callee reads as its code writes it: a method with its
+	// type (Config.GetCertificate), a function with its package's last
+	// element (http.ListenAndServe, status.Error).
+	word := func(object programindex.Object) string {
+		if external := object.External; external != nil {
+			if receiver := strings.TrimPrefix(external.Receiver, "*"); receiver != "" {
+				return receiver + "." + external.Name
+			}
+			if external.PackagePath != "" {
+				return path.Base(external.PackagePath) + "." + external.Name
+			}
+			return external.Name
+		}
+		return named(object)
+	}
+	result := make([]ownUse, len(ids))
+	for at, list := range uses {
+		sort.SliceStable(list, func(i, j int) bool {
+			a, b := list[i].at, list[j].at
+			return a.Path < b.Path || a.Path == b.Path && (a.Line < b.Line || a.Line == b.Line && a.Column < b.Column)
+		})
+		for _, outside := range []bool{false, true} {
+			for _, used := range list {
+				object, known := byID[used.to]
+				if !known || len(users[used.to]) != 1 || (object.External != nil) != outside || !outside && (object.Location == nil || inline(object)) {
+					continue
+				}
+				if said := word(object); said != "" && !strings.ContainsAny(said, " \t\r\n()") && validText(said) {
+					result[at] = ownUse{word: said, reads: used.reads}
+					break
+				}
+			}
+			if result[at].word != "" {
+				break
+			}
 		}
 	}
 	return result

@@ -1736,8 +1736,9 @@ var inlineMany = map[int]string{2: "one of two anonymous functions in {0}", 3: "
 
 // inlineWords names a callable written inline in the page's language, from
 // GroupsIndex's fields (ObjectFacts.Inline): the callable it only wraps by
-// that name, else "anonymous function in {In}", "… in {In} for {For}", or
-// "one of {Of} anonymous functions in {In}" ("one of many" past nine); ""
+// that name, else "anonymous function in {In}", "… in {In} for {For}",
+// "… in {In} calling {Calls}", "… in {In} reading {Reads}", or "one of
+// {Of} anonymous functions in {In}" ("one of many" past nine); ""
 // for a callable named by its own name. The page writes these words; its
 // script never reads a name back into parts (review, 2026-10-03: the
 // script's pattern had missed a holder with a space).
@@ -1749,6 +1750,10 @@ func (builder *pageBuilder) inlineWords(name groupindex.InlineName) string {
 	switch {
 	case name.For != "":
 		key, params = "anonymous function in {0} for {1}", []any{name.In, name.For}
+	case name.Calls != "":
+		key, params = "anonymous function in {0} calling {1}", []any{name.In, name.Calls}
+	case name.Reads != "":
+		key, params = "anonymous function in {0} reading {1}", []any{name.In, name.Reads}
 	case name.Of > 1:
 		key = cmp.Or(inlineMany[name.Of], "one of many anonymous functions in {0}")
 	}
