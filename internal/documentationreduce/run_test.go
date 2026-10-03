@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -223,10 +224,17 @@ func TestNormalizeResponseAcceptsHarmlessFormsAndRefusesOnlyTheBadPart(t *testin
 
 func TestPromptsKeepDocumentationUntrustedAndOutOfGraphClassification(t *testing.T) {
 	for name, prompt := range map[string]string{"source": sourcePrompt, "merge": mergePrompt} {
-		for _, fragment := range []string{"untrusted", "Do not", "entrypoints", "graph edges", "`sources`", "`concepts`", "12"} {
+		for _, fragment := range []string{"untrusted", "Do not", "entrypoints", "graph edges", "`sources`", "`concepts`", "every distinct"} {
 			if !strings.Contains(prompt, fragment) {
 				t.Fatalf("%s prompt does not contain %q", name, fragment)
 			}
+		}
+		// Every valid distinct concept is kept (DISCOVERY): no prompt states a
+		// quota or promises a local drop the decoder never makes (control
+		// review B4, 2026-10-03: "At most 12 … more are dropped locally"
+		// beside a decoder keeping 15).
+		if regexp.MustCompile(`(?i)at most \d+|dropped locally|\b12\b`).MatchString(prompt) {
+			t.Fatalf("%s prompt states a concept quota", name)
 		}
 		if strings.Contains(prompt, "claim") {
 			t.Fatalf("%s prompt still asks for claims", name)

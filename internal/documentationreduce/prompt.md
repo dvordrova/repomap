@@ -17,8 +17,8 @@ sentences on what the repository is for, written from the supplied text.
 things the product manages, its business or scientific terms, its named
 components. Not the process vocabulary of the guidance itself (ceremonies,
 conventions, contributor instructions), not paths, commands, variables, tool
-names or generic words. At most 12 concepts per document, most useful first;
-more are dropped locally. Return a sparse response: omit a document whose
+names or generic words. Return every distinct such concept of the document,
+each once, most useful first. Return a sparse response: omit a document whose
 visible part adds no concept. Reuse only advertised `d*` refs; never copy
 paths or invent refs. If no useful source-bound context exists, return an
 empty overview and an empty `sources` array. Never return quotations,

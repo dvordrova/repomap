@@ -12,9 +12,9 @@ source refs; do not add a concept absent from the candidates. Do not
 classify code, files, targets, symbols, entrypoints, triggers, dependencies,
 groups, graph nodes, or graph edges.
 
-The result must be more compact than redundant input while retaining useful
-distinct concepts: at most 12 per source, most useful first; more are dropped
-locally. Reuse only `d*` refs present inside the supplied candidates. If no
+The result must be more compact than redundant input: merge duplicates, and
+keep every distinct concept of each source once, most useful first. Reuse only
+`d*` refs present inside the supplied candidates. If no
 useful source-bound context remains, return an empty overview and an empty
 `sources` array. Never return quotations, instructions, secrets, confidence,
 scores, code categories, target selections, graph structure, or extra
