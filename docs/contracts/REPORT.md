@@ -872,7 +872,8 @@ each by its kind's words and its name as written ("handles the command
 trade"), the name reading that input and lighting its tile, several of one
 kind folding under the kind's plural words; where the walk decided a split,
 the calls the path did not follow fold under "also calls:" (orientation
-`Passed`), never "one of N". The flow closes with "The path stops here. At
+`Passed`), never "one of N", and what it hands over under "also hands
+over:", each with what it is handed to ("laction to signal.h.signal"). The flow closes with "The path stops here. At
 each step it follows one call the step before may make; open a step for all
 of its calls."
 Each step's twist, opening its calls in place, is always shown. A program no

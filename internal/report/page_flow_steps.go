@@ -36,6 +36,10 @@ type pageStepName struct {
 	// candidate is never a way on, and says so.
 	Guard *pageGuard
 	Loop  *pageAnchor
+	// HandedTo is, for a callable a step hands over rather than calls,
+	// what it is handed to, as the walk saved it (FlowBranch.Via "handed to
+	// signal.h.signal"); empty when the code names no receiver.
+	HandedTo string
 }
 
 // pageStepRegistration is one place a step's callable is registered: the

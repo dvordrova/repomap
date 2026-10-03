@@ -2168,7 +2168,14 @@ a split the categorizer decided, the candidates the path did not follow are
 kept on the step (`FlowStep.Passed`, orientation version 2; external review,
 2026-10-02: freqtrade's FreqtradeBot.process passes IStrategy, where the
 strategy takes part) and read in words, folded under "also calls:", never
-"one of N": the step does not run one of them, it may run each. No model is
+"one of N": the step does not run one of them, it may run each. One the
+step hands over rather than calls (its saved `Via` "handed to X") reads
+under "also hands over:" with what it is handed to, never as a call (Lua
+5.1.5's handle_script, whose docall hands laction to signal;
+`TestAStepsPassedHandOverReadsAsHanded`, and each fixture's flow test
+through `assertPassedHanded`, C's kvd main handing acceptHandler to
+loopCreateFileEvent; Clojure has none: a call of a function's own parameter
+joins nothing, CLOJURE). No model is
 asked anything new for them, the walk's own split keeping them. A step whose callable a registration hands over keeps where it is
 registered and what runs it (`FlowStep.Registered` and `RunBy`, orientation
 version 3), read over the same edges the walk walks (exact calls, a

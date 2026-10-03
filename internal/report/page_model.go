@@ -1135,7 +1135,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		row.Stop = "From here this route also goes on as the way from {0}."
 	}
 	row.Fork = builder.flowFork(step)
-	row.Passed = builder.flowPassed(step)
+	row.Passed, row.Handed = builder.flowPassed(step)
 	builder.flowStepOwn(&row, step, section)
 	var owner *pageSection
 	switch {
@@ -1392,16 +1392,39 @@ func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
 
 // flowPassed is, at a split the walk decided, the candidates the path did
 // not follow, read folded under "also calls:" (never "one of N": the step
-// does not run one of them but may run each).
-func (builder *pageBuilder) flowPassed(step orientation.FlowStep) *pageFlowFork {
-	if len(step.Passed) == 0 {
-		return nil
+// does not run one of them but may run each), and those of them it hands
+// over rather than calls, under "also hands over:" with what each is
+// handed to.
+func (builder *pageBuilder) flowPassed(step orientation.FlowStep) (*pageFlowFork, *pageFlowFork) {
+	var called, handed []orientation.FlowBranch
+	for _, branch := range step.Passed {
+		if strings.HasPrefix(branch.Via, "handed") {
+			handed = append(handed, branch)
+		} else {
+			called = append(called, branch)
+		}
 	}
-	names := builder.flowBranchNames(step.TargetID, step.Passed)
-	if len(names) == 0 {
-		return nil
+	var passed, over *pageFlowFork
+	if names := builder.flowBranchNames(step.TargetID, called); len(names) > 0 {
+		passed = &pageFlowFork{Label: "also calls:", Names: names}
 	}
-	return &pageFlowFork{Label: "also calls:", Names: names}
+	// A callable handed over is said with what it is handed to, never as
+	// a call (the walk's own words, FlowBranch.Via).
+	if names := builder.flowBranchNames(step.TargetID, handed); len(names) > 0 {
+		at := 0
+		for _, branch := range handed {
+			if _, ok := builder.flowName(step.TargetID, branch.SubjectID); !ok {
+				continue
+			}
+			names[at].HandedTo, _ = strings.CutPrefix(branch.Via, "handed to ")
+			if branch.Via == "handed over" {
+				names[at].HandedTo = ""
+			}
+			at++
+		}
+		over = &pageFlowFork{Label: "also hands over:", Names: names}
+	}
+	return passed, over
 }
 
 // flowBranchNames are a split's candidates by name; candidates sharing a

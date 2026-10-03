@@ -103,6 +103,20 @@ func TestCFixtureMainFlowWalksWhatMainHandsOver(t *testing.T) {
 		t.Fatalf("splits asked: %+v", preset.asked)
 	}
 	assertNoRepeats(t, result.MainFlow)
+	// main goes on through loopMain and keeps the handler it hands the
+	// event loop beside it as handed, never as a call (control review,
+	// 2026-10-03: Lua's laction, handed to signal, had read as a call).
+	handedAccept := false
+	for _, branch := range result.MainFlow.Steps[0].Passed {
+		handedAccept = handedAccept || branch.Via == "handed to loopCreateFileEvent" && slices.ContainsFunc(run.indexes, func(index groupindex.Index) bool {
+			return slices.ContainsFunc(index.Subjects, func(subject groupindex.Subject) bool {
+				return subject.ID == branch.SubjectID && subject.Object != nil && subject.Object.Name == "acceptHandler"
+			})
+		})
+	}
+	if !handedAccept {
+		t.Fatalf("main passed %+v, want acceptHandler handed to loopCreateFileEvent", result.MainFlow.Steps[0].Passed)
+	}
 	// Torn between acceptHandler and loopMain, main's ways meet: the loop
 	// loopMain runs reaches acceptHandler again, one of the handlers a file
 	// event runs, and joins its way, asked about it among the others

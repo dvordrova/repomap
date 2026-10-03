@@ -156,6 +156,31 @@ func flowJoins(indexes []groupindex.Index, flow orientation.MainFlow) []string {
 	return joins
 }
 
+// assertPassedHanded walks a fixture's flow from start, which calls runner
+// and hands it handed: the step goes on through runner and keeps handed
+// beside it as handed to runner, never as a call, which the page reads
+// under "also hands over:" (control review, 2026-10-03: Lua 5.1.5's
+// handle_script had listed laction, which docall hands to signal, among
+// its calls).
+func assertPassedHanded(t *testing.T, index groupindex.Index, layer facts.Result, graph atlas.Graph, start, path, runner, handed string) {
+	t.Helper()
+	preset := &flowPreset{choose: map[string]string{start: runner}}
+	flow := walkFixtureFrom(t, index, layer, graph, subjectNamed(t, index, start, path), preset)
+	names := map[string]string{}
+	for _, subject := range index.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	var passed []string
+	for _, branch := range flow.Steps[0].Passed {
+		passed = append(passed, names[branch.SubjectID]+" "+branch.Via)
+	}
+	if len(flow.Steps) < 2 || names[flow.Steps[1].SubjectID] != runner || !slices.Equal(passed, []string{handed + " handed to " + runner}) {
+		t.Fatalf("%s goes on to %v passing %q, want %s passing %s handed to %s", start, flowPath([]groupindex.Index{index}, flow), passed, runner, handed, runner)
+	}
+}
+
 // assertWaysJoin walks a fixture's flow from start, its split torn, where
 // second calls first, the other way's start, and other: second's way is
 // asked between both, joins first and is never walked into it (control
@@ -316,6 +341,7 @@ func TestPythonFixtureMainFlowsWalkByCode(t *testing.T) {
 	}
 	assertNoTestCode(t, throttle, "lambda", "throttle_a_lambda")
 	assertWaysJoin(t, index, layer, graph, "start_session", "src/fixture_app/stored_callbacks.py", "run_session", "accept_client", "flush_replies")
+	assertPassedHanded(t, index, layer, graph, "start_once", "src/fixture_app/stored_callbacks.py", "run_once", "accept_client")
 }
 
 // goFlowFixture is one command of the cumulative Go fixture as an ordinary
@@ -375,6 +401,7 @@ func TestGoFixtureMainFlowsWalkByCode(t *testing.T) {
 		t.Fatalf("registerLevelRoute's flow = %q", got)
 	}
 	assertWaysJoin(t, app, layer, graph, "StartSession", "internal/storefixture/command_table.go", "runSession", "acceptJob", "flushJob")
+	assertPassedHanded(t, app, layer, graph, "StartOnce", "internal/storefixture/command_table.go", "runOnce", "acceptJob")
 }
 
 // jstsFlowFixture is the cumulative JS/TS fixture as an ordinary run reads
@@ -420,6 +447,7 @@ func TestJSTSFixtureMainFlowsWalkByCode(t *testing.T) {
 	}
 	assertNoTestCode(t, preset, "exerciseMarket", "throttleAnArrow")
 	assertWaysJoin(t, index, layer, graph, "startSession", "src/stored-callbacks.ts", "runSession", "acceptClient", "flushReplies")
+	assertPassedHanded(t, index, layer, graph, "startOnce", "src/stored-callbacks.ts", "runOnce", "acceptClient")
 }
 
 // clojureFlowFixture is the cumulative Clojure fixture as an ordinary run

@@ -934,6 +934,47 @@ func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
 	}
 }
 
+// A callable a step hands over rather than calls is never among its "also
+// calls:": it reads under "also hands over:" with what it is handed to and
+// the helper the hand-over is written in, in both languages (control
+// review, 2026-10-03: Lua 5.1.5's handle_script listed laction, which docall
+// hands to signal, as a call).
+func TestAStepsPassedHandOverReadsAsHanded(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called", Passed: []orientation.FlowBranch{
+		{SubjectID: "h1", Via: "called"},
+		{SubjectID: "h2", Via: "handed to signal.h.signal", Through: []string{"log"}, Guard: &programindex.Guard{Kind: programindex.GuardBranch, Location: &programindex.Location{Path: "lua.c", Line: 249, Column: 3}}},
+	}}, section, map[string]bool{})
+	if step.Passed == nil || len(step.Passed.Names) != 1 || step.Passed.Names[0].Name != "getCommand" || step.Handed == nil || len(step.Handed.Names) != 1 ||
+		step.Handed.Names[0].Name != "setCommand" || step.Handed.Names[0].HandedTo != "signal.h.signal" {
+		t.Fatalf("passed %+v, handed %+v", step.Passed, step.Handed)
+	}
+	for language, words := range map[DisplayLanguage][]string{
+		English: {"<summary>also calls:</summary>", "<summary>also hands over:</summary>", ">setCommand</code> to signal.h.signal"},
+		Russian: {"<summary>также вызывает:</summary>", "<summary>также передаёт:</summary>", ">setCommand</code> в signal.h.signal"},
+	} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		for _, word := range words {
+			if !strings.Contains(html, word) {
+				t.Fatalf("%v: the step does not say %q: %s", language, word, html)
+			}
+		}
+		calls, _, _ := strings.Cut(html[strings.Index(html, "flow-passed"):], "</details>")
+		if strings.Contains(calls, "setCommand") || !strings.Contains(html, "redisLog") || !strings.Contains(html, "lua.c:249") {
+			t.Fatalf("%v: the hand-over reads as a call, or lost its helper or guard: %s", language, html)
+		}
+	}
+}
+
 // A saved flow's code title ("From main to <where the walk stopped>") is
 // never shown: the parts line is the flow's only title, in both languages,
 // and an orientation saved with one still renders (control review and

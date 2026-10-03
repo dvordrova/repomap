@@ -450,8 +450,12 @@ type pageFlowStep struct {
 	ViaArg string
 	Fork   *pageFlowFork
 	// Passed, on a step where the walk decided a split, are the candidates
-	// the path did not follow, read folded under "also calls:".
+	// the path did not follow, read folded under "also calls:"; Handed,
+	// those of them the step hands over rather than calls, under "also
+	// hands over:", each with what it is handed to (Lua's docall hands
+	// laction to signal: never "calls" it).
 	Passed *pageFlowFork
+	Handed *pageFlowFork
 	// PartHead is, on the first of a run of steps read in one part, that
 	// part ("#…"): the column stands the run under the part's box, its
 	// title alone, its description on hover (review 2026-10-02, item 2).
