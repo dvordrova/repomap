@@ -174,6 +174,14 @@ func TestATornSplitPartsTheFlowIntoWays(t *testing.T) {
 	if walk.flow.Title != "From main to play" || validFlowSteps(walk.flow.Steps) != nil {
 		t.Fatalf("title %q", walk.flow.Title)
 	}
+	// play calls on_click: the way from on_move goes on into the other
+	// way's start, joining it, never walking it twice; the way from
+	// on_click comes back to its own start.
+	ways := walk.flow.Steps[len(walk.flow.Steps)-1].Paths
+	first, second := ways[0].Steps[len(ways[0].Steps)-1], ways[1].Steps[len(ways[1].Steps)-1]
+	if first.Stop != StopRevisits || second.Stop != StopJoins || len(second.Joins) != 1 || second.Joins[0].SubjectID != "on_click" || second.Joins[0].Via != "called" {
+		t.Fatalf("the ways end %q and %q (%+v)", first.Stop, second.Stop, second.Joins)
+	}
 	var fork struct {
 		Step       string
 		Candidates []string
@@ -725,6 +733,149 @@ func TestAWeakerRouteThroughASharedHelperGoesOn(t *testing.T) {
 		candidates := graph.candidates("S", []string{"S"})
 		if len(candidates) != 1 || candidates[0].unit != "X" || candidates[0].guard.Fails() || !slices.Equal(candidates[0].reach.through, test.through) {
 			t.Fatalf("%s: S reaches %+v, want X on its normal route through %v", test.name, candidates, test.through)
+		}
+	}
+}
+
+// joinProgram is a program of bare functions, P its seed, each call an
+// exact call written in its own file at its own line, every function in a
+// core part.
+func joinProgram(calls [][2]string) Input {
+	var subjects []groupindex.Subject
+	var members []string
+	seen := map[string]bool{}
+	for _, call := range calls {
+		for _, id := range call {
+			if !seen[id] {
+				seen[id] = true
+				members = append(members, id)
+				subjects = append(subjects, groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction,
+					Location: &programindex.Location{Path: "join.c", Line: len(members), Column: 1}}})
+			}
+		}
+	}
+	var edges []groupindex.StructuralEdge
+	for _, call := range calls {
+		edges = append(edges, groupindex.StructuralEdge{FromSubjectID: call[0], ToSubjectID: call[1], Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact})
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1", Name: "join", Seeds: []programindex.TargetSeed{{ObjectID: "P", Kind: programindex.SeedCallable}}},
+		Subjects: subjects, Groups: []groupindex.Group{{ID: "g1", Title: "Core", Core: true, MemberSubjectIDs: members}}, StructuralEdges: edges}
+	return Input{Groups: []groupindex.Index{index}}
+}
+
+// Where a way goes on into where other ways start, every such choice is a
+// way it goes on as, kept with how it is reached, and none is walked twice
+// (control review, 2026-10-03: H torn between A and B kept only A). A join
+// alone ends the way; two end it as either; a join beside a way of its own
+// leaves the split torn, that way walked and the join beside it; a split
+// nested in a way may join a start of the split around it.
+func TestAWayGoesOnAsEveryWayItJoins(t *testing.T) {
+	walkOf := func(t *testing.T, calls [][2]string, decide map[string]map[string]float64) MainFlow {
+		t.Helper()
+		categorizer := &typesafetest.Categorizer{Decide: func(_ string, question llm.Question) (llm.Verdict, bool) {
+			step, _ := question.Item["step"].(string)
+			if odds, known := decide[step]; known {
+				lead := ""
+				for name, odd := range odds {
+					if lead == "" || odd > odds[lead] || odd == odds[lead] && name < lead {
+						lead = name
+					}
+				}
+				return llm.Verdict{Choice: lead, Probabilities: odds}, true
+			}
+			return llm.Verdict{}, false
+		}}
+		walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, joinProgram(calls), "t1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validFlowSteps(walk.flow.Steps); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {
+			t.Fatalf("a flow with joins does not seal: %v", err)
+		}
+		return walk.flow
+	}
+	way := func(t *testing.T, step FlowStep, start string) FlowStep {
+		t.Helper()
+		for _, path := range step.Paths {
+			if path.Steps[0].SubjectID == start {
+				return path.Steps[len(path.Steps)-1]
+			}
+		}
+		t.Fatalf("no way from %s: %+v", start, step.Paths)
+		return FlowStep{}
+	}
+	subjects := func(branches []FlowBranch) []string {
+		var ids []string
+		for _, branch := range branches {
+			ids = append(ids, branch.SubjectID)
+		}
+		slices.Sort(ids)
+		return ids
+	}
+	names := func(steps []FlowStep) []string {
+		var ids []string
+		for _, step := range steps {
+			ids = append(ids, step.SubjectID)
+		}
+		return ids
+	}
+	t.Run("one join", func(t *testing.T) {
+		flow := walkOf(t, [][2]string{{"P", "A"}, {"P", "H"}, {"H", "A"}, {"H", "X"}, {"A", "VA"}},
+			map[string]map[string]float64{"P": {"A": 0.52, "H": 0.48}, "H": {"A": 0.9, "X": 0.1}})
+		h := way(t, flow.Steps[0], "H")
+		if h.Stop != StopJoins || !slices.Equal(subjects(h.Joins), []string{"A"}) || h.Joins[0].Via != "called" || !slices.Equal(subjects(h.Passed), []string{"X"}) {
+			t.Fatalf("H ends %q joining %+v, passing %+v", h.Stop, h.Joins, h.Passed)
+		}
+	})
+	for _, order := range [][2]string{{"A", "B"}, {"B", "A"}} {
+		t.Run("two joins "+order[0]+order[1], func(t *testing.T) {
+			flow := walkOf(t, [][2]string{{"P", "A"}, {"P", "B"}, {"P", "H"}, {"H", order[0]}, {"H", order[1]}, {"A", "VA"}, {"B", "VB"}},
+				map[string]map[string]float64{"P": {"A": 0.34, "B": 0.33, "H": 0.33}, "H": {"A": 0.52, "B": 0.48}})
+			h := way(t, flow.Steps[0], "H")
+			if h.Stop != StopJoins || !slices.Equal(subjects(h.Joins), []string{"A", "B"}) || len(h.Paths) != 0 || len(h.Passed) != 0 {
+				t.Fatalf("H ends %q joining %+v (ways %+v, passed %+v)", h.Stop, h.Joins, h.Paths, h.Passed)
+			}
+			if a, b := way(t, flow.Steps[0], "A"), way(t, flow.Steps[0], "B"); a.SubjectID != "VA" || b.SubjectID != "VB" {
+				t.Fatalf("the joined ways end at %s and %s", a.SubjectID, b.SubjectID)
+			}
+		})
+	}
+	t.Run("a join beside a way", func(t *testing.T) {
+		flow := walkOf(t, [][2]string{{"P", "A"}, {"P", "H"}, {"H", "A"}, {"H", "C"}, {"C", "VC"}, {"A", "VA"}},
+			map[string]map[string]float64{"P": {"A": 0.52, "H": 0.48}, "H": {"A": 0.52, "C": 0.48}})
+		ways := flow.Steps[0].Paths
+		if len(ways) != 2 || ways[1].Steps[0].SubjectID != "H" {
+			t.Fatalf("P's ways %+v", ways)
+		}
+		h := ways[1].Steps[len(ways[1].Steps)-1]
+		if h.SubjectID != "H" || h.Stop != StopTorn || !slices.Equal(subjects(h.Joins), []string{"A"}) || len(h.Paths) != 1 || !slices.Equal(names(h.Paths[0].Steps), []string{"C", "VC"}) {
+			t.Fatalf("H ends %q joining %+v, its ways %+v", h.Stop, h.Joins, h.Paths)
+		}
+	})
+	t.Run("a nested split joins the split around it", func(t *testing.T) {
+		flow := walkOf(t, [][2]string{{"P", "A"}, {"P", "H"}, {"H", "C"}, {"H", "D"}, {"D", "A"}, {"D", "E"}, {"A", "VA"}, {"C", "VC"}},
+			map[string]map[string]float64{"P": {"A": 0.52, "H": 0.48}, "H": {"C": 0.52, "D": 0.48}, "D": {"A": 0.8, "E": 0.2}})
+		h := way(t, flow.Steps[0], "H")
+		if h.SubjectID != "H" || h.Stop != StopTorn || len(h.Joins) != 0 {
+			t.Fatalf("H ends %q joining %+v", h.Stop, h.Joins)
+		}
+		if d := way(t, h, "D"); d.SubjectID != "D" || d.Stop != StopJoins || !slices.Equal(subjects(d.Joins), []string{"A"}) || !slices.Equal(subjects(d.Passed), []string{"E"}) {
+			t.Fatalf("D ends %q joining %+v, passing %+v", d.Stop, d.Joins, d.Passed)
+		}
+	})
+}
+
+// An orientation saved before every join was kept (version 3, one
+// stop_subject) is refused by its version, never field by field: render on
+// an older run says which version it holds (control review, 2026-10-03).
+func TestAnOlderOrientationIsRefusedByItsVersion(t *testing.T) {
+	old := []byte(`{"version":3,"main_flow":{"steps":[{"target_id":"t1","subject_id":"H","stop":"joins","stop_subject":"A"}]}}`)
+	for _, err := range []error{CheckVersion(old), func() error { _, err := Decode(old); return err }()} {
+		if err == nil || !strings.Contains(err.Error(), "unsupported version 3") || strings.Contains(err.Error(), "unknown field") {
+			t.Fatalf("an older orientation is refused by %v", err)
 		}
 	}
 }

@@ -933,3 +933,85 @@ func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
 		}
 	}
 }
+
+// A way going on as others says each, with how the step reaches it: two
+// joins end a way as either, and a join beside a way of the step's own is
+// read after that way, in both languages (control review, 2026-10-03: H
+// torn between two ways' starts kept only one).
+func TestAMainFlowWaySaysEveryWayItGoesOnAs(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	guard := &programindex.Guard{Kind: programindex.GuardBranch, Location: &programindex.Location{Path: "ldo.c", Line: 377, Column: 3}}
+	joins := []orientation.FlowBranch{{SubjectID: "cron", Via: "called", Guard: guard}, {SubjectID: "h2", Via: "called", Through: []string{"h1"}}}
+	ended := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "h3", Via: "called", Stop: orientation.StopJoins, Joins: joins}, section, map[string]bool{})
+	torn := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "h3", Via: "called", Stop: orientation.StopTorn, Joins: joins[:1]}, section, map[string]bool{})
+	if len(ended.Joins) != 2 || ended.Joins[0].Guard == nil || len(ended.Joins[1].Through) != 1 || len(torn.Joins) != 1 || torn.Stop == "" {
+		t.Fatalf("a join or its reach is lost: %+v / %+v", ended, torn)
+	}
+	for language, words := range map[DisplayLanguage][]string{
+		English: {"From here this route goes on as the way from", " or ", "only under a condition", "From here this route also goes on as the way from"},
+		Russian: {"Дальше этот путь идёт как путь от", " или ", "только при условии", "Отсюда этот путь идёт и как путь от"},
+	} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{ended, torn}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		for _, word := range words {
+			if !strings.Contains(html, word) {
+				t.Fatalf("%v: the joins do not say %q: %s", language, word, html)
+			}
+		}
+		if !strings.Contains(html, "ldo.c:377") || strings.Count(html, ">"+ended.Joins[1].Name+"<") < 1 {
+			t.Fatalf("%v: a join lost its place or its name: %s", language, html)
+		}
+	}
+}
+
+// A Main flow's parts line names the parts its steps stand in, each once in
+// the order the path enters them; one way alone entering new parts reads as
+// the path, a way going on as another adds nothing, and ways going on apart
+// read as alternatives, never as a sequence (control review, 2026-10-03:
+// "From main to forprep or luaD_hook" asked a newcomer to know Lua's
+// internals; Lua 5.1.5's collector and libraries ways are not one after the
+// other).
+func TestAMainFlowNamesThePartsItPassesThrough(t *testing.T) {
+	groups := []groupindex.Group{{ID: "g1", Title: "Standalone interpreter"}, {ID: "g2", Title: "Core API"}, {ID: "g3", Title: "Virtual machine"},
+		{ID: "g4", Title: "Collector"}, {ID: "g5", Title: "Libraries"}}
+	builder := &pageBuilder{groupTitles: map[groupindex.Endpoint]string{}, indexes: []groupindex.Index{{Target: programindex.Target{ID: "t1"}, Groups: groups}}}
+	section := &pageSection{ID: "t1", programTargetID: "t1"}
+	part := func(group string) string { return "#" + groupAnchorID("t1", group) }
+	step := func(group string) pageFlowStep { return pageFlowStep{Part: part(group)} }
+	read := func(steps []pageFlowStep) string {
+		var line strings.Builder
+		for at, said := range builder.flowParts(section, steps) {
+			switch {
+			case said.Or:
+				line.WriteString(" or ")
+			case at > 0:
+				line.WriteString(" → ")
+			}
+			line.WriteString(said.Title)
+		}
+		return line.String()
+	}
+	joined := step("g4")
+	joined.Joins = []pageStepName{{Name: "lua_pcall"}}
+	steps := []pageFlowStep{step("g1"), step("g1"), step("g2")}
+	steps[2].Ways = []pageFlowWay{{Head: step("g3"), Rest: []pageFlowStep{step("g3")}}, {Head: step("g2"), Rest: []pageFlowStep{step("g2")}}, {Head: step("g1"), Rest: []pageFlowStep{joined}}}
+	if got, want := read(steps), "Standalone interpreter → Core API → Virtual machine"; got != want {
+		t.Fatalf("parts %q, want %q", got, want)
+	}
+	apart := []pageFlowStep{step("g1"), step("g2"), step("g3")}
+	apart[2].Ways = []pageFlowWay{{Head: step("g4"), Rest: []pageFlowStep{step("g5")}}, {Head: step("g5")}, {Head: step("g4")}}
+	if got, want := read(apart), "Standalone interpreter → Core API → Virtual machine → Collector or Libraries"; got != want {
+		t.Fatalf("ways going on apart read %q, want %q", got, want)
+	}
+	if parts := builder.flowParts(section, []pageFlowStep{step("g1"), step("g1")}); parts != nil {
+		t.Fatalf("one part names no parts line: %+v", parts)
+	}
+}

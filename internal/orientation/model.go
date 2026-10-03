@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	Version          = 3
+	Version          = 4
 	ArtifactFilename = "orientation.json"
 	RejectedFilename = "rejected.jsonl"
 
@@ -64,7 +64,8 @@ type RecipeStep struct {
 // categorizer decided, Passed are the candidates the path did not follow
 // (version 2): the calls of the step it goes on beside (freqtrade's
 // FreqtradeBot.process passes IStrategy). Registered and RunBy (version 3)
-// say where a registered callable is registered and what runs it.
+// say where a registered callable is registered and what runs it. Joins
+// (version 4) are every way a path goes on as, each with its reach.
 type FlowStep struct {
 	TargetID    string `json:"target_id"`
 	FactID      string `json:"fact_id,omitempty"`
@@ -85,13 +86,15 @@ type FlowStep struct {
 	Basis string `json:"basis,omitempty"`
 	// Guard is the construct the step before's call of it runs under, the
 	// weakest of its ways (ProgramIndex Guard), Loop the loop statement it
-	// runs in; Stop, on the last step of a path, why the path ends there,
-	// and StopSubject, for a way that goes on as another way, where that
-	// way starts.
-	Guard       *programindex.Guard    `json:"guard,omitempty"`
-	Loop        *programindex.Location `json:"loop,omitempty"`
-	Stop        string                 `json:"stop,omitempty"`
-	StopSubject string                 `json:"stop_subject,omitempty"`
+	// runs in; Stop, on the last step of a path, why the path ends there.
+	Guard *programindex.Guard    `json:"guard,omitempty"`
+	Loop  *programindex.Location `json:"loop,omitempty"`
+	Stop  string                 `json:"stop,omitempty"`
+	// Joins are, on the last step of a path, the ways it goes on as: each
+	// chosen candidate that is where another way of the splits around it
+	// starts, reached as a branch is, never walked twice. They end a path
+	// alone (StopJoins) or stand beside its own ways (StopTorn).
+	Joins []FlowBranch `json:"joins,omitempty"`
 	// OpenAt is, on a route's last step, where the step calls through a
 	// value the index leaves open with no possible target.
 	OpenAt   *programindex.Location `json:"open_at,omitempty"`
@@ -133,12 +136,16 @@ const (
 	StopJoins       = "joins"
 )
 
-func validStop(stop, subject string) bool {
+// validStop checks why a path ends against the ways it joins: a join ends
+// a path alone or stands beside the ways of a torn split, never elsewhere.
+func validStop(stop string, joins int) bool {
 	switch stop {
-	case "", StopTorn, StopUnanswered, StopLeaf, StopFailureOnly, StopRevisits:
-		return subject == ""
+	case "", StopUnanswered, StopLeaf, StopFailureOnly, StopRevisits:
+		return joins == 0
+	case StopTorn:
+		return true
 	case StopJoins:
-		return validText(subject)
+		return joins > 0
 	}
 	return false
 }
@@ -328,10 +335,10 @@ func validBasis(basis string) bool {
 func validFlowSteps(steps []FlowStep) error {
 	for position, step := range steps {
 		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) ||
-			!validThrough(step.Through) || !validBasis(step.Basis) || !validGuard(step.Guard) || !validStop(step.Stop, step.StopSubject) {
+			!validThrough(step.Through) || !validBasis(step.Basis) || !validGuard(step.Guard) || !validStop(step.Stop, len(step.Joins)) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
-		for _, branch := range append(slices.Clone(step.Branches), step.Passed...) {
+		for _, branch := range slices.Concat(step.Branches, step.Passed, step.Joins) {
 			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) || !validThrough(branch.Through) ||
 				!validBasis(branch.Basis) || !validGuard(branch.Guard) {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)

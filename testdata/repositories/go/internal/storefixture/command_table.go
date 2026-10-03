@@ -277,3 +277,18 @@ func WatchTick(ms int, seconds bool) int {
 	}
 	return tick(ms)
 }
+
+// Two ways from one start may meet, as Lua's script way reaches lua_pcall,
+// the prompt way's start, through docall: StartSession calls acceptJob and
+// runSession, which calls acceptJob and flushJob. Walked from StartSession
+// with its split torn, runSession's way may go on into acceptJob, the other
+// way's start, and then joins it, never walking it twice.
+func runSession() {
+	acceptJob()
+	flushJob()
+}
+
+func StartSession() {
+	acceptJob()
+	runSession()
+}

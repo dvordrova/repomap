@@ -207,6 +207,11 @@ type SpinePath struct {
 	Paths  []SpinePath
 	Rest   []SpineStep
 	Passed map[int][]SpineStep
+	// Joins are, on a path's last step, each chosen candidate that is where
+	// another way of the splits around it starts, with the edge reaching
+	// it: the path goes on into it as that way, never walking it twice.
+	// Beside ways of its own (Paths) they stand as more ways of the split.
+	Joins []SpineStep
 }
 
 // WalkPaths walks as Walk does, pick naming the candidates to follow at a
@@ -217,21 +222,29 @@ type SpinePath struct {
 // further on; none ends the path at a named fork of every candidate. Owner, 2026-09-30: several main paths are allowed where the
 // model is torn between them.
 func WalkPaths(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
-	return walkPath(start, map[string]bool{}, next, pick)
+	return walkPath(start, map[string]bool{}, nil, next, pick)
 }
 
-func walkPath(step SpineStep, seen map[string]bool, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
+// walkPath walks one path; starts are the first steps of the other ways of
+// the splits around it, which it may go on into, as a candidate of its own,
+// never walking them twice. Chosen alone, the path ends there joining that
+// way (5.1.5's script way reaching lua_pcall, the REPL way's start, through
+// docall); chosen beside a way of its own, the split is torn, the join one
+// of its ways.
+func walkPath(step SpineStep, seen map[string]bool, starts map[string]bool, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
 	visited := make(map[string]bool, len(seen)+1)
 	for id := range seen {
 		visited[id] = true
 	}
 	visited[step.SubjectID] = true
+	own := step.SubjectID
+	joinable := func(id string) bool { return starts[id] && id != own }
 	var result SpinePath
 	for {
 		result.Steps = append(result.Steps, step)
 		var candidates []SpineStep
 		for _, candidate := range next(step) {
-			if !visited[candidate.SubjectID] {
+			if !visited[candidate.SubjectID] || joinable(candidate.SubjectID) {
 				candidates = append(candidates, candidate)
 			}
 		}
@@ -248,32 +261,43 @@ func walkPath(step SpineStep, seen map[string]bool, next func(SpineStep) []Spine
 				}
 			}
 		}
-		switch len(chosen) {
-		case 0:
+		// What the path goes on into where another way starts is joined,
+		// never walked again; every such choice is kept.
+		var walked []int
+		for _, at := range chosen {
+			if joinable(candidates[at].SubjectID) {
+				result.Joins = append(result.Joins, candidates[at])
+				continue
+			}
+			walked = append(walked, at)
+		}
+		switch {
+		case len(chosen) == 0:
 			result.Rest = candidates
 			return result
-		case 1:
+		case len(walked) == 0:
+			result.keepPassed(candidates, chosen)
+			return result
+		case len(walked) == 1 && len(result.Joins) == 0:
 			// A decided split keeps what it did not follow.
-			if len(candidates) > 1 {
-				if result.Passed == nil {
-					result.Passed = map[int][]SpineStep{}
-				}
-				for position, candidate := range candidates {
-					if position != chosen[0] {
-						result.Passed[len(result.Steps)-1] = append(result.Passed[len(result.Steps)-1], candidate)
-					}
-				}
-			}
-			step = candidates[chosen[0]]
+			result.keepPassed(candidates, chosen)
+			step = candidates[walked[0]]
 			visited[step.SubjectID] = true
 			continue
 		}
-		// Each way is walked apart; none walks into another's first step.
-		for _, at := range chosen {
-			visited[candidates[at].SubjectID] = true
+		// The split is torn: each way of its own is walked apart, and none
+		// walks into another's first step, though each may go on into it,
+		// joining that way; the joins chosen here stand beside them.
+		ways := make(map[string]bool, len(starts)+len(walked))
+		for id := range starts {
+			ways[id] = true
 		}
-		for _, at := range chosen {
-			result.Paths = append(result.Paths, walkPath(candidates[at], visited, next, pick))
+		for _, at := range walked {
+			visited[candidates[at].SubjectID] = true
+			ways[candidates[at].SubjectID] = true
+		}
+		for _, at := range walked {
+			result.Paths = append(result.Paths, walkPath(candidates[at], visited, ways, next, pick))
 		}
 		for position, candidate := range candidates {
 			if !containsInt(chosen, position) {
@@ -281,6 +305,23 @@ func walkPath(step SpineStep, seen map[string]bool, next func(SpineStep) []Spine
 			}
 		}
 		return result
+	}
+}
+
+// keepPassed keeps, at a decided split, the candidates the path did not
+// follow, by the position of the step deciding it.
+func (result *SpinePath) keepPassed(candidates []SpineStep, chosen []int) {
+	if len(candidates) < 2 {
+		return
+	}
+	if result.Passed == nil {
+		result.Passed = map[int][]SpineStep{}
+	}
+	at := len(result.Steps) - 1
+	for position, candidate := range candidates {
+		if !containsInt(chosen, position) {
+			result.Passed[at] = append(result.Passed[at], candidate)
+		}
 	}
 }
 

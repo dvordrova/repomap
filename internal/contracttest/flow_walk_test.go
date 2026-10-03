@@ -39,8 +39,11 @@ type flowSplit struct {
 type flowPreset struct {
 	choose map[string]string
 	tie    map[string]bool
-	mu     sync.Mutex
-	asked  []flowSplit
+	// torn names, for a step, the two options a near-tie is between, where
+	// they are not its first two.
+	torn  map[string][2]string
+	mu    sync.Mutex
+	asked []flowSplit
 }
 
 func (preset *flowPreset) categorizer() *typesafetest.Categorizer {
@@ -55,6 +58,9 @@ func (preset *flowPreset) categorizer() *typesafetest.Categorizer {
 		preset.mu.Unlock()
 		if preset.tie[step] && len(options) > 1 {
 			return llm.Verdict{Choice: options[0], Probabilities: map[string]float64{options[0]: 0.5, options[1]: 0.45}}, true
+		}
+		if pair, torn := preset.torn[step]; torn && slices.Contains(options, pair[0]) && slices.Contains(options, pair[1]) {
+			return llm.Verdict{Choice: pair[0], Probabilities: map[string]float64{pair[0]: 0.5, pair[1]: 0.45}}, true
 		}
 		chosen, known := preset.choose[step]
 		if !known || !slices.Contains(options, chosen) {
@@ -121,6 +127,58 @@ func flowPath(indexes []groupindex.Index, flow orientation.MainFlow) []string {
 	}
 	walk("", flow.Steps)
 	return path
+}
+
+// flowJoins reads where each way of a walked flow ends going on as another
+// way ("runSession joins acceptJob").
+func flowJoins(indexes []groupindex.Index, flow orientation.MainFlow) []string {
+	names := map[string]string{}
+	for _, index := range indexes {
+		for _, subject := range index.Subjects {
+			if subject.Object != nil {
+				names[index.Target.ID+"."+subject.ID] = subject.Object.Name
+			}
+		}
+	}
+	var joins []string
+	var walk func(steps []orientation.FlowStep)
+	walk = func(steps []orientation.FlowStep) {
+		for _, step := range steps {
+			for _, joined := range step.Joins {
+				joins = append(joins, names[step.TargetID+"."+step.SubjectID]+" joins "+names[step.TargetID+"."+joined.SubjectID])
+			}
+			for _, way := range step.Paths {
+				walk(way.Steps)
+			}
+		}
+	}
+	walk(flow.Steps)
+	return joins
+}
+
+// assertWaysJoin walks a fixture's flow from start, its split torn, where
+// second calls first, the other way's start, and other: second's way is
+// asked between both, joins first and is never walked into it (control
+// review, 2026-10-03: two ways from one start may meet, as Lua 5.1.5's
+// script way reaches lua_pcall, the prompt way's start, through docall).
+func assertWaysJoin(t *testing.T, index groupindex.Index, layer facts.Result, graph atlas.Graph, start, path, second, first, other string) {
+	t.Helper()
+	preset := &flowPreset{tie: map[string]bool{start: true}, choose: map[string]string{second: first}}
+	flow := walkFixtureFrom(t, index, layer, graph, subjectNamed(t, index, start, path), preset)
+	// The ways come in the options' order, by name.
+	want := []string{start + " ()", "1: " + first + " (called)", "2: " + second + " (called)"}
+	if second < first {
+		want = []string{start + " ()", "1: " + second + " (called)", "2: " + first + " (called)"}
+	}
+	if got := flowPath([]groupindex.Index{index}, flow); !slices.Equal(got, want) {
+		t.Fatalf("%s's flow = %q\nwant %q", start, got, want)
+	}
+	if got, want := flowJoins([]groupindex.Index{index}, flow), []string{second + " joins " + first}; !slices.Equal(got, want) {
+		t.Fatalf("the ways' joins = %q, want %q", got, want)
+	}
+	if len(preset.asked) != 2 || preset.asked[1].step != second || !slices.Equal(preset.asked[1].options, []string{first, other}) && !slices.Equal(preset.asked[1].options, []string{other, first}) {
+		t.Fatalf("splits asked %+v, want %s between %s and %s", preset.asked, second, first, other)
+	}
 }
 
 // assertNoRepeats says a walked flow names no declaration twice.
@@ -257,6 +315,7 @@ func TestPythonFixtureMainFlowsWalkByCode(t *testing.T) {
 		t.Fatalf("Throttle.run's flow = %q", got)
 	}
 	assertNoTestCode(t, throttle, "lambda", "throttle_a_lambda")
+	assertWaysJoin(t, index, layer, graph, "start_session", "src/fixture_app/stored_callbacks.py", "run_session", "accept_client", "flush_replies")
 }
 
 // goFlowFixture is one command of the cumulative Go fixture as an ordinary
@@ -315,6 +374,7 @@ func TestGoFixtureMainFlowsWalkByCode(t *testing.T) {
 	if got := flowPath([]groupindex.Index{app}, walkFixtureFrom(t, app, layer, graph, subjectNamed(t, app, "registerLevelRoute", "cmd/app/main.go"), route)); !slices.Equal(got, []string{"registerLevelRoute ()"}) || len(route.asked) != 0 {
 		t.Fatalf("registerLevelRoute's flow = %q", got)
 	}
+	assertWaysJoin(t, app, layer, graph, "StartSession", "internal/storefixture/command_table.go", "runSession", "acceptJob", "flushJob")
 }
 
 // jstsFlowFixture is the cumulative JS/TS fixture as an ordinary run reads
@@ -359,6 +419,7 @@ func TestJSTSFixtureMainFlowsWalkByCode(t *testing.T) {
 		t.Fatalf("the market worker's flow = %q after %d questions", got, len(worker.asked))
 	}
 	assertNoTestCode(t, preset, "exerciseMarket", "throttleAnArrow")
+	assertWaysJoin(t, index, layer, graph, "startSession", "src/stored-callbacks.ts", "runSession", "acceptClient", "flushReplies")
 }
 
 // clojureFlowFixture is the cumulative Clojure fixture as an ordinary run
@@ -401,4 +462,5 @@ func TestClojureFixtureMainFlowWalksByCode(t *testing.T) {
 		t.Fatalf("start-sketch!'s flow = %q after %d questions\nwant %q", got, len(preset.asked), want)
 	}
 	assertNoRepeats(t, flow)
+	assertWaysJoin(t, index, layer, graph, "example.core/open-greeting", "src/example/core.clj", "example.core/greet-command", "example.service/command-for", "example.core/loud-greeting")
 }

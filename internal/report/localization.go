@@ -639,6 +639,11 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		}
 		if section.Flow != nil {
 			section.Flow.TitleRef = add("label", &section.Flow.Title)
+			for i := range section.Flow.Parts {
+				if section.Flow.Parts[i].Href != "" {
+					section.Flow.Parts[i].TitleRef = add("label", &section.Flow.Parts[i].Title)
+				}
+			}
 			// A parted flow's ways read their steps' lines as the trunk's.
 			var explain func(step *pageFlowStep)
 			explain = func(step *pageFlowStep) {

@@ -373,6 +373,21 @@ type pageFlow struct {
 	TitleRef string
 	Title    string
 	Steps    []pageFlowStep
+	// Parts are the parts the flow's steps stand in, each once in the order
+	// the path enters them, ways going on apart read as alternatives
+	// (flowParts): "Standalone interpreter → Core API and state → Virtual
+	// machine", a reader's title beside the code's own.
+	Parts []pageFlowPart
+}
+
+// pageFlowPart is one part a Main flow passes through: its title, translated
+// as the part's own, and its place on the map; Or, that it is another way's
+// part beside the one before, not after it.
+type pageFlowPart struct {
+	Title    string
+	TitleRef string
+	Href     string
+	Or       bool
 }
 
 type pageFlowStep struct {
@@ -414,10 +429,12 @@ type pageFlowStep struct {
 	Guard *pageGuard
 	Loop  *pageAnchor
 	// Stop is, on the last step of a path, why the path ends there, as a
-	// message of the page's language (flowStopMessage); StopName, for a way
-	// going on as another, where that way starts.
-	Stop     string
-	StopName *pageStepName
+	// message of the page's language (flowStopMessage); Joins, the ways it
+	// goes on as, each where that way starts, read with how the step
+	// reaches it (orientation FlowStep.Joins): alone they end the path,
+	// beside its own ways they are more of them.
+	Stop  string
+	Joins []pageStepName
 	// OpenAt is, on a route's last step, where it calls through a value
 	// whose target is not established (orientation FlowStep.OpenAt).
 	OpenAt *pageAnchor

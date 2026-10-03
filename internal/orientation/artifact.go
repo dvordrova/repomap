@@ -23,10 +23,29 @@ func Encode(result Result) ([]byte, error) {
 	return encoded, nil
 }
 
+// CheckVersion refuses an artifact written for another orientation version
+// by that version, before any of its fields is read: an older artifact is
+// never read field by field (no old-format reader).
+func CheckVersion(encoded []byte) error {
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(encoded, &header); err != nil {
+		return fmt.Errorf("orientation: decode artifact version: %w", err)
+	}
+	if header.Version != Version {
+		return fmt.Errorf("orientation: unsupported version %d; this build reads version %d", header.Version, Version)
+	}
+	return nil
+}
+
 // Decode strictly restores one canonical orientation artifact.
 func Decode(encoded []byte) (Result, error) {
 	if len(encoded) == 0 {
 		return Result{}, fmt.Errorf("orientation: invalid artifact size")
+	}
+	if err := CheckVersion(encoded); err != nil {
+		return Result{}, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()

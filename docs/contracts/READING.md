@@ -2077,10 +2077,37 @@ title had named sweeplist). The last step of every path says why the path
 ends (`FlowStep.Stop`): it parts into ways (`torn`), its split is left
 undecided (`unanswered`), its work reaches no further unit (`leaf`), only
 failing paths (`failure_only`), only units already on the path
-(`revisits`), or, for a way, where another way of the same split starts,
-which it goes on as (`joins`, `StopSubject`; the title leaves such a way
-out); the page says it under the step, and each guard and loop with its
-place (`TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops`). No unit whose closure enters no
+(`revisits`), or only into where other ways start, which it goes on as
+(`joins`; the title leaves such a way out); the page says it under the
+step, and each guard and loop with its place
+(`TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops`). A way may go on
+into where another way of the splits around it starts: that start is one
+of its candidates, asked as any other, never walked twice. Every such
+start chosen is kept on the step with how it is reached, its via, site,
+helpers, basis, guard and loop (`FlowStep.Joins`, orientation version 4,
+an older orientation refused by its version): chosen alone they end the
+way (`joins`, read "goes on as the way from A or B"); chosen beside a way
+of the step's own the split stays torn, that way walked and the joins
+read after it ("also goes on as the way from A"). No join wins over
+another (control review, 2026-10-03: H torn between two ways' starts had
+kept only the first; `TestAWayGoesOnAsEveryWayItJoins`, and each
+language's fixture flow test through `assertWaysJoin`, C's kvd in
+`TestCFixtureMainFlowWalksWhatMainHandsOver`;
+Lua 5.1.5's script way reaches lua_pcall, the REPL way's start, through
+docall: 5 uncached draws gave lua_pcall 0.65-0.70 over luaL_loadfile).
+Over the code's title the page names the parts the steps stand in, each
+once in the order the path enters them; one way alone entering new parts
+reads as the path, a way only joining others adds none, and ways going
+on apart read as alternatives, the first new part each enters joined by
+"or", the line ending there; with fewer than two parts there is no line.
+The parts' own titles are its only words, none written for it
+(`TestAMainFlowNamesThePartsItPassesThrough`; Lua 5.5 "Standalone
+interpreter → Core API and state → Virtual machine"). Where the model
+prefers another call to the VM (5.1.5's luaD_call: luaD_precall 0.70-0.75
+over luaV_execute, 0.79-0.82 with luaV_execute's condition written out,
+0.61-0.73 with the ask saying the path never comes back), the VM stays
+among the step's passed calls with its guard: a model choice, not a lost
+candidate, and the honest end of that route. No unit whose closure enters no
 part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the

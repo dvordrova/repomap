@@ -248,3 +248,19 @@ def deferred_between_stores(flag):
     if flag:
         handler = accept_client
     queued[0]()
+
+
+# Two ways from one start may meet, as Lua's script way reaches lua_pcall,
+# the prompt way's start, through docall: start_session calls accept_client
+# and run_session, which calls accept_client and flush_replies. Walked from
+# start_session with its split torn, run_session's way may go on into
+# accept_client, the other way's start, and then joins it, never walking it
+# twice.
+def run_session():
+    accept_client()
+    flush_replies()
+
+
+def start_session():
+    accept_client()
+    run_session()

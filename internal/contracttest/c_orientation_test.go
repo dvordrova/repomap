@@ -103,6 +103,20 @@ func TestCFixtureMainFlowWalksWhatMainHandsOver(t *testing.T) {
 		t.Fatalf("splits asked: %+v", preset.asked)
 	}
 	assertNoRepeats(t, result.MainFlow)
+	// Torn between acceptHandler and loopMain, main's ways meet: the loop
+	// loopMain runs reaches acceptHandler again, one of the handlers a file
+	// event runs, and joins its way, asked about it among the others
+	// (control review, 2026-10-03: two ways from one start may meet).
+	torn := &flowPreset{torn: map[string][2]string{"main": {"acceptHandler", "loopMain"}}, choose: map[string]string{"loopMain": "loopProcessEvents", "loopProcessEvents": "acceptHandler"}}
+	met := walkFixtureFlow(t, run.layer, run.indexes, run.graph, run.server, torn)
+	if got, want := flowJoins(run.indexes, met.MainFlow), []string{"loopProcessEvents joins acceptHandler"}; !slices.Equal(got, want) {
+		t.Fatalf("kvd's joins = %q, want %q (flow %q)", got, want, flowPath(run.indexes, met.MainFlow))
+	}
+	for _, split := range torn.asked {
+		if split.step == "loopProcessEvents" && !slices.Contains(split.options, "acceptHandler") {
+			t.Fatalf("loopProcessEvents was not asked about acceptHandler: %+v", split)
+		}
+	}
 }
 
 // callHeads reads each call tuple's called name and line.

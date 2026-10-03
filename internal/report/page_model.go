@@ -929,7 +929,91 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, map[string]bo
 	if !here {
 		return nil, nil
 	}
+	flow.Parts = builder.flowParts(section, flow.Steps)
 	return flow, shown
+}
+
+// flowParts are the parts a walked flow's steps stand in, each once, in the
+// order the path enters them; where it parts into several ways that each go
+// on, the first part each enters, read as alternatives ("or"), the line
+// ending there; a way going on as another adds nothing, and one way alone
+// entering new parts reads as the path. None when fewer than two (saved
+// data only: the parts' own titles, never written for the line).
+func (builder *pageBuilder) flowParts(section *pageSection, steps []pageFlowStep) []pageFlowPart {
+	titles := map[string]string{}
+	if index := builder.graphIndex(section.programTargetID); index != nil {
+		for _, group := range index.Groups {
+			title := builder.groupTitles[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: group.ID}]
+			if title == "" {
+				title = group.Title
+			}
+			titles["#"+groupAnchorID(section.ID, group.ID)] = title
+		}
+	}
+	var parts []pageFlowPart
+	seen := map[string]bool{}
+	// A way that only goes on as others adds none of its own.
+	joinsOnly := func(route []pageFlowStep) bool {
+		last := route[len(route)-1]
+		return len(last.Joins) > 0 && len(last.Ways) == 0
+	}
+	fresh := func(href string) bool { return href != "" && !seen[href] && titles[href] != "" }
+	// first is the first part a route enters that the line has not named.
+	var first func(rows []pageFlowStep) string
+	first = func(rows []pageFlowStep) string {
+		for _, row := range rows {
+			if fresh(row.Part) {
+				return row.Part
+			}
+			for _, way := range row.Ways {
+				route := append([]pageFlowStep{way.Head}, way.Rest...)
+				if joinsOnly(route) {
+					continue
+				}
+				if href := first(route); href != "" {
+					return href
+				}
+			}
+		}
+		return ""
+	}
+	var follow func(rows []pageFlowStep)
+	follow = func(rows []pageFlowStep) {
+		for _, row := range rows {
+			if fresh(row.Part) {
+				seen[row.Part] = true
+				parts = append(parts, pageFlowPart{Title: titles[row.Part], Href: row.Part})
+			}
+			var going [][]pageFlowStep
+			var enters []string
+			for _, way := range row.Ways {
+				route := append([]pageFlowStep{way.Head}, way.Rest...)
+				if joinsOnly(route) {
+					continue
+				}
+				if href := first(route); href != "" {
+					going = append(going, route)
+					if !slices.Contains(enters, href) {
+						enters = append(enters, href)
+					}
+				}
+			}
+			switch {
+			case len(going) == 1:
+				follow(going[0])
+			case len(enters) > 0:
+				for at, href := range enters {
+					seen[href] = true
+					parts = append(parts, pageFlowPart{Title: titles[href], Href: href, Or: at > 0})
+				}
+			}
+		}
+	}
+	follow(steps)
+	if len(parts) < 2 {
+		return nil
+	}
+	return parts
 }
 
 // flowWayShown is how many steps a way of a parted flow shows before the
@@ -1043,10 +1127,12 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	row.Guard, row.Loop = builder.flowGuard(step.Guard), builder.flowLoop(step.Loop)
 	row.Stop = flowStopMessage(step.Stop)
 	row.OpenAt = builder.flowLoop(step.OpenAt)
-	if step.Stop == orientation.StopJoins {
-		if name, ok := builder.flowName(step.TargetID, step.StopSubject); ok {
-			row.StopName = &name
-		}
+	row.Joins = builder.flowBranchNames(step.TargetID, step.Joins)
+	switch {
+	case step.Stop == orientation.StopJoins && len(row.Joins) == 0:
+		row.Stop = ""
+	case step.Stop == orientation.StopTorn && len(row.Joins) > 0:
+		row.Stop = "From here this route also goes on as the way from {0}."
 	}
 	row.Fork = builder.flowFork(step)
 	row.Passed = builder.flowPassed(step)

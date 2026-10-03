@@ -296,7 +296,12 @@ func readSavedFiles(data *ReportData, files []savedFile, runDir string) error {
 		case savedSectionClaims:
 			err = restoreSection(raw, file.Path, &data.Claims)
 		case savedSectionOrientation:
-			err = restoreSection(raw, file.Path, &data.Orientation)
+			// An orientation of another version is refused by its version.
+			if err = orientation.CheckVersion(raw); err != nil {
+				err = fmt.Errorf("report: %s: %w", file.Path, err)
+			} else {
+				err = restoreSection(raw, file.Path, &data.Orientation)
+			}
 		case savedSectionGlossary:
 			err = restoreSection(raw, file.Path, &data.Glossary)
 		default:

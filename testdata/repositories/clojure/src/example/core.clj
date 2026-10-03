@@ -194,3 +194,17 @@
 (defn greet-times
   ([name] (greet-times name 1))
   ([name times] (if (= times 0) name (recur (str name "!") (dec times)))))
+
+;; Two ways from one start may meet, as Lua's script way reaches lua_pcall,
+;; the prompt way's start, through docall: open-greeting calls
+;; service/command-for and greet-command, which calls service/command-for and
+;; loud-greeting. Walked from open-greeting with its split torn,
+;; greet-command's way may go on into service/command-for, the other way's
+;; start, and then joins it, never walking it twice.
+(defn greet-command [name key]
+  (service/command-for key)
+  (loud-greeting name))
+
+(defn open-greeting [name key]
+  (service/command-for key)
+  (greet-command name key))

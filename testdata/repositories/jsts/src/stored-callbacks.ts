@@ -291,3 +291,19 @@ function relayHelper(): number {
 }
 
 const chainedHelper = (): number => 1;
+
+// Two ways from one start may meet, as Lua's script way reaches lua_pcall,
+// the prompt way's start, through docall: startSession calls acceptClient
+// and runSession, which calls acceptClient and flushReplies. Walked from
+// startSession with its split torn, runSession's way may go on into
+// acceptClient, the other way's start, and then joins it, never walking it
+// twice.
+function runSession(): void {
+  acceptClient();
+  flushReplies();
+}
+
+export function startSession(): void {
+  acceptClient();
+  runSession();
+}
