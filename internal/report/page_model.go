@@ -25,6 +25,8 @@ import (
 // graph IDs may address DOM elements; digests and adapter construction refs do
 // not become reader-facing identities.
 type pageView struct {
+	// places are the page's declarations' places by identity (pageBuilder).
+	places           map[string]SceneSource
 	Language         DisplayLanguage
 	UIVocabularyJSON template.JS
 	TermMentionsJSON template.JS
@@ -255,6 +257,10 @@ type subjectRef struct {
 }
 
 type pageBuilder struct {
+	// places are the declarations the page keys, by identity, each with
+	// the place it is written at (notePlace): the scene names a handler or
+	// a caller by its place, never by parsing a key.
+	places          map[string]SceneSource
 	overviewIndexes []groupindex.Index
 	sourceIndexes   []groupindex.Index
 	data            *ReportData
@@ -356,6 +362,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	}
 	builder := &pageBuilder{
 		data:         data,
+		places:       map[string]SceneSource{},
 		links:        newPageLinks(data),
 		byProgram:    make(map[string]*pageSection),
 		byFacts:      make(map[string]*pageSection),
@@ -438,6 +445,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		view.Notes = append(view.Notes, scrubBrowserLocalPaths(warning, localRoots))
 	}
 	view.Timing = timingLines(data.Timing)
+	view.places = builder.places
 	return view, nil
 }
 
@@ -1191,7 +1199,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	if owner == section && step.SubjectID != "" && row.Anchor != nil {
 		if index := builder.graphIndex(section.programTargetID); index != nil {
 			if group := builder.edgesBetweenGroups(*index).groupOf[step.SubjectID]; group != "" {
-				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKey(row.Anchor)
+				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKeyOf(builder, section.programTargetID, step.SubjectID)
 			}
 		}
 	}
@@ -1581,6 +1589,10 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 				object.Location.Path, object.Location.Line, object.Location.Column,
 			)
 			anchor.Code = builder.links.rangeLink(object.Location.Path, object.Location.Line, builder.declarationEnd(*object.Location))
+			// The declaration's identity, apart from its link (review,
+			// 2026-10-03: two functions written on one line had one key).
+			anchor.key = object.DeclarationKey()
+			builder.notePlace(anchor.key, object.Location)
 			return cmp.Or(object.Inline, object.Name), anchor
 		}
 		if object.External != nil {

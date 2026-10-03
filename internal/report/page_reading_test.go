@@ -30,7 +30,8 @@ func readingFixture(t *testing.T) (*pageBuilder, groupindex.Index, groupindex.Gr
 			subject.Interpretation = &groupindex.Interpretation{Key: true}
 		}
 		b.subjects[subjectKey("t1", id)] = subjectRef{subject: subject}
-		anchors[id] = b.links.anchorPointer("server.go", line, 1)
+		// The declaration as the page names it, its identity with its link.
+		_, anchors[id] = b.subjectDisplay(subject)
 	}
 	object("module", "server", programindex.ObjectModule, 1, "", "", false)
 	object("cron", "serverCron", programindex.ObjectFunction, 20, "module", "", false)
@@ -370,7 +371,7 @@ func TestAPartsMembersKeepTheirFilesPathAndTheirOwnNames(t *testing.T) {
 		object.Location = &programindex.Location{Path: path, Line: line, Column: 1}
 		ref.subject.Object = &object
 		b.subjects[subjectKey("t1", id)] = ref
-		anchors[id] = b.links.anchorPointer(path, line, 1)
+		_, anchors[id] = b.subjectDisplay(ref.subject)
 	}
 	move("sleep", "cmd/app/main.go", 40)
 	move("alpha", "cmd/tool/main.go", 50)

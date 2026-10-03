@@ -13,7 +13,7 @@ typedef struct {
 void sbInit(strbuf *sb);
 void sbAppend(strbuf *sb, const char *data, size_t len);
 void sbConsume(strbuf *sb, size_t len);
-void sbFree(strbuf *sb);
+void sbFree(strbuf *sb); void sbRewind(strbuf *sb); void sbTruncate(strbuf *sb);
 
 /* Reserve room for len more bytes: a size of zero or past the limit fails. */
 void sbReserve(strbuf *sb, size_t len);

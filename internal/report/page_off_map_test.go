@@ -360,7 +360,7 @@ func TestACallLeavingItsProgramReadsFromItsOwnCode(t *testing.T) {
 			t.Errorf("side of %s %s = %q, want %q", check.target, check.subject, got, check.want)
 		}
 	}
-	if side := builder.callSide("t1", "a2"); side.Path[0].Part != "n-t1-g1" || side.Path[2].Part != "n-t1-g2" || side.Path[0].Key != "https://github.com/o/r/blob/abc/redis.c#L5000" {
+	if side := builder.callSide("t1", "a2"); side.Path[0].Part != "n-t1-g1" || side.Path[2].Part != "n-t1-g2" || side.Path[0].Key != "redis.c:5000:5:function:syncWithMaster" {
 		t.Fatalf("a side's steps do not name the part each is read in: %+v", side.Path)
 	}
 }

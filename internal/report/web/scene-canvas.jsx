@@ -25,9 +25,9 @@ import './scene.css';
 const t=(...args)=>window.rmT?window.rmT(...args):args[0];
 const context2d=document.createElement('canvas').getContext('2d');
 const measure=(text,font)=>{context2d.font=font;return context2d.measureText(String(text??'')).width;};
-// A tile's declaration as the reading keys it: its link, else its place
-// (26-map-members.js symbolKey; a page with no source link).
-const symbolKey=symbol=>symbol?symbol.href||symbol.open||(symbol.path?JSON.stringify([symbol.path,symbol.line||0]):''):'';
+// A tile's declaration as the reading keys it: its identity (decl_key),
+// else its link, else its place (26-map-members.js symbolKey).
+const symbolKey=symbol=>symbol?symbol.decl_key||symbol.href||symbol.open||(symbol.path?JSON.stringify([symbol.path,symbol.line||0]):''):'';
 const sameSet=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
 
 // The words a box shows at its level's text size, each of its title, role
@@ -420,7 +420,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const symbols=model.nodes.get(member?.part)?.item?.symbols||[],symbol=symbols[member?.index];
     if(!symbol)return null;
     const owner=symbol.owner?symbols[symbol.owner-1]?.name:'';
-    return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open,symbolKey(symbol)].filter(Boolean)};
+    // A declaration is known by its identity; a link, which two
+    // declarations written on one line share, only where it has none.
+    return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:symbol.decl_key?[symbol.decl_key]:[symbol.href,symbol.open,symbolKey(symbol)].filter(Boolean)};
   }
   // A declaration clicked is read in its part, named; with a modifier its
   // code opens.
@@ -439,8 +441,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   map.addEventListener('repomap:reading',()=>{
     const named=map.explorerMember;if(!named?.owner)return;
     const part=named.owner,symbols=model.nodes.get(part)?.item?.symbols||[];
-    const same=value=>!!value&&[named.key,named.href,named.open].includes(value);
-    const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open)||same(symbolKey(symbol)));
+    // By its identity when it has one: sbTruncate, written on sbRewind's
+    // line, shares its link (review, 2026-10-03).
+    const same=value=>!!value&&[named.href,named.open].includes(value);
+    const index=named.key?symbols.findIndex(symbol=>symbolKey(symbol)===named.key):symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open));
     const chosen=store.getState().member.chosen;
     if(index<0||chosen?.part===part&&chosen.index===index)return;
     store.dispatch({type:'member',member:{chosen:{part,index}}});

@@ -34,7 +34,7 @@ func (builder *pageBuilder) settingSets(index *groupindex.Index, operation group
 		set := pageDecl{Name: access.label}
 		if ref, known := builder.subject(index.Target.ID, access.field); known && ref.subject.Object != nil && ref.subject.Object.OwnerID != "" {
 			typed := decls.list[decls.of(ref.subject.Object.OwnerID)]
-			set.Href, set.Open, set.Code, set.NoSource, set.Part, set.Source = typed.Href, typed.Open, typed.Code, typed.NoSource, typed.Part, typed.Source
+			set.Href, set.Open, set.Code, set.NoSource, set.Part, set.Source, set.Key = typed.Href, typed.Open, typed.Code, typed.NoSource, typed.Part, typed.Source, typed.Key
 		}
 		sets = append(sets, set)
 	}

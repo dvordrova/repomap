@@ -114,7 +114,8 @@ type pageSection struct {
 	OffMapEntries []pageOffMapEntry
 	// EntryPart and EntrySource are where the component's "Entrypoints"
 	// link lands (GroupsIndex's Entries): the part holding every seed of
-	// the program, and the seed's source key, read there, when it is one.
+	// the program, and the seed's declaration key, read there, when it is
+	// one.
 	// A seed no part holds leaves them empty: the link then reads the
 	// component at its entry line.
 	EntryPart   string
@@ -237,14 +238,7 @@ func (builder *pageBuilder) entryLanding(sectionID string, index *groupindex.Ind
 	}
 	source := ""
 	if len(index.Entries) == 1 {
-		if ref, known := builder.subject(index.Target.ID, index.Entries[0].SubjectID); known {
-			if _, anchor := builder.subjectDisplay(ref.subject); anchor != nil {
-				source = anchor.Href
-				if source == "" {
-					source = anchor.Open
-				}
-			}
-		}
+		source = declarationKeyOf(builder, index.Target.ID, index.Entries[0].SubjectID)
 	}
 	return groupAnchorID(sectionID, group), source
 }

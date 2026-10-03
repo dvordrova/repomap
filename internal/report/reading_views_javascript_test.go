@@ -33,7 +33,7 @@ const document={createElement:tag=>new El(tag),createTextNode:text};
 const names=el=>el.all(c=>c.has('map-reading-name')).map(c=>c.textContent);
 function rmEl(tag,cls,value){const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=value;return item;}
 function rmT(key,...values){let used=0;const out=values.reduce((s,v,i)=>{if(s.includes('{'+i+'}'))used++;return s.replace('{'+i+'}',v);},key);if(used!==values.length)throw new Error('Extra report UI parameter: '+key);return out;}
-const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const nodes={'#own':{dataset:{title:'Server lifecycle and cron',summary:'Keeps the server running.',summaryRef:'s1',lane:'',symbols:'[{"name":"serverCron","kind":"function","text":"(id: long)","href":"h#serverCron"}]'},getAttribute:()=>'#own'},
  '#main':{dataset:{title:'main',lane:'triggers'},getAttribute:()=>'#main'},
  '#core':{dataset:{title:'Server core state',lane:'core'},getAttribute:()=>'#core'}};
@@ -443,7 +443,7 @@ func TestAFunctionsReadingSaysEachReadOnceWithNoLineNumbers(t *testing.T) {
 	add := func(id, name string, kind programindex.ObjectKind, line int, owner string) {
 		b.subjects[subjectKey("t1", id)] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: name, Kind: kind, OwnerID: owner,
 			Location: &programindex.Location{Path: "server.go", Line: line, Column: 1}}}}
-		anchors[id] = b.links.anchorPointer("server.go", line, 1)
+		_, anchors[id] = b.subjectDisplay(b.subjects[subjectKey("t1", id)].subject)
 	}
 	add("objects", "sharedObjectsStruct", programindex.ObjectType, 600, "module")
 	add("f-czero", "czero", programindex.ObjectVariable, 601, "objects")
@@ -519,7 +519,7 @@ func TestAFunctionsReadingSaysEachReadOnceWithNoLineNumbers(t *testing.T) {
 const reading=`+raw+`;
 reading.decls.forEach(decl=>{if(decl.key===undefined)decl.key=decl.href;});
 const cron=reading.decls.find(decl=>decl.name==='serverCron');
-const view=rmDeclView(ctx,nodes['#own'],reading,{name:'serverCron',source:{Href:cron.href,Text:cron.at}});
+const view=rmDeclView(ctx,nodes['#own'],reading,{name:'serverCron',source:{Key:cron.key,Href:cron.href,Text:cron.at}});
 const said=view.all(()=>true).map(c=>c.textContent).filter(text=>/:\d/.test(text));
 assert.deepEqual(said,[],'no line number anywhere in the reading');
 assert.deepEqual(view.all(c=>c.has('map-reading-reads')).map(names),[['redisClient.argv','server','shared.czero.ptr']],'one line, each read once, in the order first used');

@@ -2,15 +2,19 @@
 // It neither extends the analysis graph nor attaches relations to a member.
 var repomapMembers = (function () {
   var inventories = new WeakMap();
-  function sourceKey(source) { return source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
-  // A tile's declaration by the same key: its link, else its place (a page
-  // with no source link keys every declaration by its place, sourceKey).
-  function symbolKey(symbol) { return symbol ? symbol.href || symbol.open || (symbol.path ? JSON.stringify([symbol.path,symbol.line||0]) : '') : ''; }
-  // A declaration a reading lists by the same key: its link, else its own
-  // key, else, with no source link, its place as written ("path:line").
+  // A declaration is keyed by its identity (Go's declarationKey: path,
+  // line, column, kind and name), never by its link, which two declarations
+  // written on one line share; what names no declaration by its link, else
+  // its place.
+  function sourceKey(source) { return source.Key || source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
+  // A tile's declaration by the same key (decl_key; its "key" is the
+  // model's mark of a key declaration).
+  function symbolKey(symbol) { return symbol ? symbol.decl_key || symbol.href || symbol.open || (symbol.path ? JSON.stringify([symbol.path,symbol.line||0]) : '') : ''; }
+  // A declaration a reading lists by the same key: its identity, else its
+  // link, else, with no source link, its place as written ("path:line").
   function declKey(decl) {
     if (!decl) return '';
-    if (decl.href || decl.open || decl.key) return decl.href || decl.open || decl.key;
+    if (decl.key || decl.href || decl.open) return decl.key || decl.href || decl.open;
     var place = decl.no_source ? /^(.*):(\d+)$/.exec(decl.source || decl.at || '') : null;
     return place ? JSON.stringify([place[1], Number(place[2])]) : '';
   }
@@ -39,7 +43,7 @@ var repomapMembers = (function () {
     if (reading) {
       var explained = new Map((rmPage.data(node,'explained')||[]).map(function (said) { return [sourceKey(said.source), said]; }));
       (reading.members||[]).forEach(function (kind) { (kind.decls||[]).forEach(function (index) {
-        var decl = reading.decls[index], source = placeSource(decl.href, decl.open, decl.no_source, decl.at || decl.name), said = explained.get(sourceKey(source));
+        var decl = reading.decls[index], source = placeSource(decl.href, decl.open, decl.no_source, decl.at || decl.name, decl.key), said = explained.get(sourceKey(source));
         add({name:decl.name, alias:said ? said.alias || '' : '', key:!!decl.bold, explanation:said ? said.explanation || '' : '', explanation_ref:said ? said.explanation_ref || '' : '', source:source,
           fields:(decl.fields||[]).map(function (field) { return {name:field.name, alias:'', explanation:'', source:placeSource(field.href, field.open, field.no_source, field.at || field.name)}; })});
       }); });
@@ -48,9 +52,11 @@ var repomapMembers = (function () {
   }
   // A declaration's source as the reading column links it: its first line,
   // its editor action, or its place when it has neither.
-  function placeSource(href, open, noSource, at) {
+  function placeSource(href, open, noSource, at, key) {
     var place = /^(.*):(\d+)$/.exec(at || '');
-    return {Href:href || '', Open:open || '', NoSource:!!noSource, Path:place ? place[1] : '', Line:place ? Number(place[2]) : 0, Text:at || ''};
+    var source = {Href:href || '', Open:open || '', NoSource:!!noSource, Path:place ? place[1] : '', Line:place ? Number(place[2]) : 0, Text:at || ''};
+    if (key) source.Key = key;
+    return source;
   }
   function size(node) {
     return {w:360,h:112 + Math.min(items(node).length,5)*66 + (items(node).length>5?32:0)};

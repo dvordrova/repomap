@@ -119,7 +119,14 @@ func deriveScene(data *ReportData) (*SceneFacts, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sceneOf(view.SystemMap(), sceneSourceOf), nil
+	// A declaration is named by its identity: its place is the one the page
+	// recorded for it (pageBuilder.places), never read back from the key.
+	return sceneOf(view.SystemMap(), func(key string) *SceneSource {
+		if place, known := view.places[key]; known {
+			return &place
+		}
+		return sceneSourceOf(key)
+	}), nil
 }
 
 // sceneKey is a place as the keyed page writes it (pageLinks.anchor).

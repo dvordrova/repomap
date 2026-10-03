@@ -1214,11 +1214,21 @@ func operationKey(operation Operation) string {
 // repeat across targets and a name alone is no identity; one located
 // declaration compiled into two programs has this one key in both.
 func DeclarationKey(object programindex.Object) string {
-	if object.Location == nil {
+	return declarationKey(object.Location, object.Kind, object.Name)
+}
+
+// DeclarationKey is the subject's declaration identity, the same as its
+// ProgramIndex object's (DeclarationKey): never its link, which names no
+// column, so two declarations written on one line stay two.
+func (object ObjectFacts) DeclarationKey() string {
+	return declarationKey(object.Location, object.Kind, object.Name)
+}
+
+func declarationKey(location *programindex.Location, kind programindex.ObjectKind, name string) string {
+	if location == nil {
 		return ""
 	}
-	location := object.Location
-	return fmt.Sprintf("%s:%d:%d:%s:%s", location.Path, location.Line, location.Column, object.Kind, object.Name)
+	return fmt.Sprintf("%s:%d:%d:%s:%s", location.Path, location.Line, location.Column, kind, name)
 }
 
 func dedupeConnections(values []Connection) []Connection {

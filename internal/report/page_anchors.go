@@ -1,12 +1,14 @@
 package report
 
 import (
+	"encoding/json"
 	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // pageAnchor is one path:line reference on the static page. Href is a
@@ -22,9 +24,41 @@ type pageAnchor struct {
 	Text     string
 	NoSource bool `json:"NoSource,omitempty"`
 	// Code is, for a declaration on a static page, the link to all of its
-	// lines (#L1250-L1360), where Href, the page's key for it, names its
-	// first (owner, 2026-09-28: a code link covers the whole declaration).
+	// lines (#L1250-L1360), where Href names its first (owner, 2026-09-28: a
+	// code link covers the whole declaration).
 	Code string `json:"Code,omitempty"`
+	// key is, for a declaration, its identity (groupindex DeclarationKey:
+	// path, line, column, kind and name), set where the declaration is named
+	// (subjectDisplay); the link names no column and two declarations
+	// written on one line have one link (review, 2026-10-03). Written as
+	// "Key" (MarshalJSON).
+	key string
+}
+
+// Key is the identity of the declaration the anchor names, "" when it
+// names none; the page's script reads a declaration by it, never by its
+// link.
+func (anchor pageAnchor) Key() string { return anchor.key }
+
+// notePlace records where the declaration keyed key is written.
+func (builder *pageBuilder) notePlace(key string, location *programindex.Location) {
+	if key == "" || location == nil {
+		return
+	}
+	if builder.places == nil {
+		builder.places = map[string]SceneSource{}
+	}
+	builder.places[key] = SceneSource{Path: location.Path, Line: location.Line}
+}
+
+// MarshalJSON writes an anchor as the page's script reads it, with the
+// identity of the declaration it names.
+func (anchor pageAnchor) MarshalJSON() ([]byte, error) {
+	type plain pageAnchor
+	return json.Marshal(struct {
+		plain
+		Key string `json:"Key,omitempty"`
+	}{plain(anchor), anchor.key})
 }
 
 // pageLinks builds anchors for one render. Static reports carry one external

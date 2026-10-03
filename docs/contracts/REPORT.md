@@ -1044,7 +1044,20 @@ that would only repeat its heading is not repeated, and ends of one name are
 one heading in column and card alike. A row wraps with its names whole. The
 page data names a call's two end declarations (`caller`, `callee`, keyed as
 the reading keys a declaration) apart from where the call is written and
-lands, and says a relation between two named ends by fields of its own: its
+lands. The page keys a declaration by its identity, never by its link
+(`groupindex.DeclarationKey`: path, line, column, kind and name, the same
+identity two programs share): a link names no column, and kvd's sbRewind
+and sbTruncate, written on one line, had been one key, the part's reading
+listing one, sbTruncate's tile reading sbRewind and freeClient's calls naming
+sbRewind alone (review, 2026-10-03; `TestCDeclarationsWrittenOnOneLineAreReadApart`
+on GitHub, GitLab and no-remote renders). Readings, tiles (`decl_key`; a
+tile's `key` is the model's mark), an input's declarations, a handler, an
+entry and a step carry it; the scene names a declaration by the place the
+page recorded for its identity, never by reading the key back. The page
+data writes an identity beginning with its place as the rest
+(":49:function:sbTruncate" beside "at":"strbuf.c:90") and a call landing
+where its callee is declared as that declaration's index once. A call says
+a relation between two named ends by fields of its own: its
 `kind` (the card's word, "calls", "passes_callback", "connects_to") and the
 two names as the report names them (`caller_name`, `callee_name`, spaces and
 all: casdoor's "StartLdapServer (inline, 3)"). A call's `label` is words
@@ -1879,8 +1892,8 @@ still fails.
   permalink. A report without a remote source link likewise keeps the
   original code, explanation and navigation, and so does a served path with
   no openable ID: every place with no link is plain text with `No source`,
-  and a declaration is keyed by its place (path and line), so Code search,
-  its reading, its calls, its part and Back work as on a linked page, two
+  and a declaration is keyed by its identity as on a linked page, so Code
+  search, its reading, its calls, its part and Back work there too, two
   declarations of one name in two files staying two (control review,
   2026-10-02: a render with no remote had lost every function's reading and
   Code search; its GitHub renders are byte-identical outside the report's

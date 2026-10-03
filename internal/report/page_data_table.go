@@ -189,6 +189,12 @@ func (data *pageData) JSON() (template.JS, error) {
 			values[i] = compact.byName(name, values[i])
 		}
 	}
+	for i := range decls {
+		decls[i] = compactKeys(decls[i])
+	}
+	for i := range values {
+		values[i] = compactKeys(values[i])
+	}
 	if data.base != "" {
 		for i := range decls {
 			decls[i] = compact.links(decls[i])
@@ -295,12 +301,7 @@ func (compact pageDataCompaction) call(call map[string]any) {
 	callee, hasCallee := call["callee"].(string)
 	to, _ := call["to"].(string)
 	callerAt, callerKnown := compact.byKey[caller]
-	// The callee is where the call lands unless it says otherwise.
-	landing := to
-	if hasCallee {
-		landing = callee
-	}
-	calleeAt, calleeKnown := compact.byKey[landing]
+	calleeAt, calleeKnown := compact.byKey[callee]
 	if _, said := call["label"]; !said && call["name"] == nil {
 		if call["kind"] == "calls" {
 			delete(call, "kind")
@@ -315,30 +316,43 @@ func (compact pageDataCompaction) call(call map[string]any) {
 	if callerKnown {
 		call["caller"] = json.Number(strconv.Itoa(callerAt))
 	}
-	if hasCallee {
-		if calleeKnown && callee != "" {
-			call["callee"] = json.Number(strconv.Itoa(calleeAt))
-		}
-	} else if calleeKnown && to != "" {
+	switch {
+	case hasCallee && calleeKnown && callee != "" && to != "" && compact.declField(calleeAt, "href") == to:
+		// The call lands where its callee is declared: one index says both,
+		// the script restoring the link and the identity from it.
 		call["to"] = json.Number(strconv.Itoa(calleeAt))
+		delete(call, "callee")
+	case hasCallee && calleeKnown && callee != "":
+		call["callee"] = json.Number(strconv.Itoa(calleeAt))
 	}
 }
 
+// declField is one text field of a declaration as written.
+func (compact pageDataCompaction) declField(index int, name string) string {
+	object, _ := compact.decls[index].(map[string]any)
+	text, _ := object[name].(string)
+	return text
+}
+
 // symbol names the declaration a tile draws by its index when the tile
-// says what the declaration says (its name, link, code and file) and only
-// adds to it (its signature, kind, owner): the script takes those four from
-// the declaration.
+// says what the declaration says (its identity, name, link, code and file)
+// and only adds to it (its signature, kind, owner): the script takes those
+// from the declaration. A tile is found by its identity, never its link.
 func (compact pageDataCompaction) symbol(symbol map[string]any) {
-	href, _ := symbol["href"].(string)
-	at, known := compact.byKey[href]
-	if href == "" || !known {
+	key, _ := symbol["decl_key"].(string)
+	if key == "" {
+		key, _ = symbol["href"].(string)
+	}
+	at, known := compact.byKey[key]
+	if key == "" || !known {
 		return
 	}
 	decl, _ := compact.decls[at].(map[string]any)
-	if symbol["name"] != decl["name"] || symbol["href"] != decl["href"] || symbol["code"] != decl["code"] || symbol["path"] != any(placePath(decl)) || placePath(decl) == "" {
+	if symbol["name"] != decl["name"] || symbol["href"] != decl["href"] || symbol["code"] != decl["code"] || symbol["decl_key"] != decl["key"] ||
+		symbol["path"] != any(placePath(decl)) || placePath(decl) == "" {
 		return
 	}
-	for _, field := range []string{"name", "href", "code", "path"} {
+	for _, field := range []string{"name", "href", "code", "path", "decl_key"} {
 		delete(symbol, field)
 	}
 	symbol["d"] = json.Number(strconv.Itoa(at))
@@ -398,6 +412,43 @@ func parsePlace(text string) (string, int) {
 // "at", a call step's by its "source", an anchor's by its "Text".
 var pageDataLinkPlaces = []struct{ link, place, code string }{
 	{"href", "at", "code"}, {"href", "source", "code"}, {"from", "at", ""}, {"Href", "Text", "Code"},
+}
+
+// pageDataKeyPlaces are the declaration identities (groupindex
+// DeclarationKey, "path:line:column:kind:name") that begin with the place
+// beside them: a declaration's key by its "at" or "source", an anchor's Key
+// by its "Text".
+var pageDataKeyPlaces = []struct{ key, place string }{{"key", "at"}, {"key", "source"}, {"Key", "Text"}}
+
+// compactKeys writes an identity that begins with its place as the rest,
+// ":column:kind:name"; a tile's begins with its path and line. The script
+// puts the place back (10-ui.js rmPage); an identity never begins with ":".
+func compactKeys(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		for i := range typed {
+			typed[i] = compactKeys(typed[i])
+		}
+	case map[string]any:
+		for key, item := range typed {
+			typed[key] = compactKeys(item)
+		}
+		for _, pair := range pageDataKeyPlaces {
+			key, _ := typed[pair.key].(string)
+			place, _ := typed[pair.place].(string)
+			if place != "" && strings.HasPrefix(key, place+":") {
+				typed[pair.key] = key[len(place):]
+			}
+		}
+		if key, _ := typed["decl_key"].(string); key != "" {
+			path, _ := typed["path"].(string)
+			line, _ := typed["line"].(json.Number)
+			if place := path + ":" + line.String(); path != "" && line != "" && strings.HasPrefix(key, place+":") {
+				typed["decl_key"] = key[len(place):]
+			}
+		}
+	}
+	return value
 }
 
 // links writes a link its place says as 1 and a link to all of a

@@ -14,7 +14,10 @@ import (
 // code (Source is its place, for a tooltip only) and the drawn part it
 // stands in, where a plain click reads it.
 type pageDecl struct {
-	Name     string `json:"name"`
+	Name string `json:"name"`
+	// Key is the declaration's identity, as a reading and a tile key it
+	// (pageAnchor.Key), never its link.
+	Key      string `json:"key,omitempty"`
 	Href     string `json:"href,omitempty"`
 	Open     string `json:"open,omitempty"`
 	Source   string `json:"source,omitempty"`
@@ -273,7 +276,7 @@ func (decls *pathDecls) of(subject string) int {
 			decl.Name = object.Inline
 		}
 		if anchor != nil {
-			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code
+			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code, decl.Key = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code, anchor.key
 		}
 	}
 	decl.Part = decls.part(subject)

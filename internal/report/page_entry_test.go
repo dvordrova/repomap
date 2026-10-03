@@ -125,10 +125,11 @@ func TestTheEntrypointsLinkLandsOnTheProgramsEntry(t *testing.T) {
 	server := groupindex.Group{ID: "g1", Title: "Server", MemberSubjectIDs: []string{"n1", "n3"}}
 	loop := groupindex.Group{ID: "g2", Title: "Event loop", MemberSubjectIDs: []string{"n2"}}
 	section, link := build([]groupindex.Group{server, loop}, "n1")
-	if section.EntryPart != groupAnchorID("t1", "g1") || section.EntrySource != "https://example.test/kvd/blob/r/kvd.c#L302" {
+	// The seed is read by its declaration's identity, never its link.
+	if section.EntryPart != groupAnchorID("t1", "g1") || section.EntrySource != "kvd.c:302:1:function:main" {
 		t.Fatalf("the entry on the map lands at %q %q", section.EntryPart, section.EntrySource)
 	}
-	if link != `<a href="#t1-entrypoints" data-entry-landing data-entry-part="t1-g1" data-entry-source="https://example.test/kvd/blob/r/kvd.c#L302">` {
+	if link != `<a href="#t1-entrypoints" data-entry-landing data-entry-part="t1-g1" data-entry-source="`+section.EntrySource+`">` {
 		t.Fatalf("the Entrypoints link: %s", link)
 	}
 	// Two seeds in one part land on the part; in two parts, on no part.

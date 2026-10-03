@@ -197,7 +197,7 @@ static int setNonBlocking(int fd) {
 static void freeClient(kvClient *c) {
     loopDeleteFileEvent(server.el, c->fd, LOOP_READABLE | LOOP_WRITABLE);
     close(c->fd);
-    sbFree(&c->query);
+    sbRewind(&c->query); sbTruncate(&c->reply); sbFree(&c->query);
     sbFree(&c->reply);
     free(c);
 }

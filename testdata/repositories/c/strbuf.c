@@ -85,3 +85,7 @@ void sbReserve(strbuf *sb, size_t len) {
 _Noreturn void sbDrainForever(strbuf *sb) {
     for (;;) sbConsume(sb, sb->len);
 }
+
+/* Two functions written on one line are two declarations, each read by
+ * itself: a link to their line is no identity (review, 2026-10-03). */
+void sbRewind(strbuf *sb) { sb->len = 0; sb->buf[0] = '\0'; } void sbTruncate(strbuf *sb) { if (sb->len > 0) sb->buf[--sb->len] = '\0'; }

@@ -27,7 +27,7 @@ const node=(title,owner)=>({dataset:{title,symbols,owner},closest:()=>map});
 const item=(name,path,line)=>({name,source:{Href:'h/'+path+'#L'+line,Path:path,Line:line},fields:[]});
 groupNodes.gs=node('Data structures','server');groupNodes.gb=node('Linked list','bench');
 const members=new Map([[groupNodes.gs,[item('listCreate','adlist.c',41),item('list','adlist.h',47)]],[groupNodes.gb,[item('listCreate','adlist.c',41)]]]);
-const repomapMembers={items:n=>members.get(n)||[],sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={items:n=>members.get(n)||[],sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const chip=(text,href)=>({textContent:text,tagName:'A',getAttribute:name=>name==='href'?href:null,dataset:{},querySelector:()=>null});
 const section=id=>sections[id];
 function offMap(sectionID,path,text,list){
@@ -102,7 +102,7 @@ const map={};
 const symbols=JSON.stringify([{name:'Campaign',kind:'function',path:'election.go',line:10,text:'(ctx)'},{name:'Campaign',kind:'function',path:'lock.go',line:10,text:'(l)'}]);
 groupNodes.g=({dataset:{title:'Election and lock APIs',symbols,owner:'server'},closest:()=>map});
 const item=path=>({name:'Campaign',source:{NoSource:true,Path:path,Line:10,Text:path+':10'},fields:[]});
-const repomapMembers={items:()=>[item('election.go'),item('lock.go')],sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={items:()=>[item('election.go'),item('lock.go')],sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 `+code+`
 assert.equal(entries.length,2,'two functions of one name in two files are two results');
 for(const [path,text] of [['election.go','(ctx)'],['lock.go','(l)']]){

@@ -42,6 +42,8 @@ function rmScrollToReading(node) {
 // once, by index in its "decls"; the base of the source links, once (a link
 // inside the data starting with \u0001, one in a key attribute with "@");
 // a link its place says written as 1 ("href":1 beside "at":"redis.c:9068"),
+// a declaration's identity as the rest of its place (":5:function:main"
+// beside "at":"redis.c:9068"),
 // a link to all of a declaration's lines as its last line; a call's ends by
 // their index in the declarations, a relation's names when they are its
 // declarations' names and its kind when it is "calls";
@@ -58,7 +60,7 @@ var rmPage = (function () {
   // A place as the page writes it: "path:line" or "path:line:column".
   function place(text){var at=/^(.*?):(\d+)(?::(\d+))?$/.exec(text);return at?{path:at[1],line:Number(at[2])}:{path:text,line:0};}
   function said(text){var at=place(text);return load().base+at.path+(at.line>0?'#L'+at.line:'');}
-  var links=[['href','at','code'],['href','source','code'],['from','at',''],['Href','Text','Code']];
+  var links=[['href','at','code'],['href','source','code'],['from','at',''],['Href','Text','Code']],keyPlaces=[['key','at'],['key','source'],['Key','Text']];
   function expand(value){
     if(typeof value==='string')return value.charCodeAt(0)===1?load().base+value.slice(1):value;
     if(Array.isArray(value))return value.map(expand);
@@ -72,6 +74,12 @@ var rmPage = (function () {
         if(pair[1]==='Text'&&!('Open' in out))out.Open='';
         if(pair[2]&&typeof out[pair[2]]==='number'&&place(text).line>0)out[pair[2]]=said(text)+load().range+out[pair[2]];
       });
+      // A declaration's identity written as the rest of its place.
+      keyPlaces.forEach(function(pair){
+        var key=out[pair[0]],text=out[pair[1]];
+        if(typeof key==='string'&&key.charAt(0)===':'&&typeof text==='string'&&text)out[pair[0]]=text+key;
+      });
+      if(typeof out.decl_key==='string'&&out.decl_key.charAt(0)===':'&&out.path)out.decl_key=out.path+':'+out.line+out.decl_key;
       return out;
     }
     return value;
@@ -90,12 +98,14 @@ var rmPage = (function () {
     }
     if(caller>=0)item.caller=declKey(caller);
     if(typeof item.callee==='number')item.callee=declKey(item.callee);
-    if(typeof item.to==='number')item.to=declKey(item.to);
+    // A call landing where its callee is declared: its link and its
+    // callee's identity, both from that declaration.
+    if(typeof item.to==='number'){item.callee=declKey(item.to);item.to=decl(item.to).href;}
   }
-  // A tile's declaration by index: its name, link, code and file.
+  // A tile's declaration by index: its identity, name, link, code and file.
   function symbol(item){
     if(typeof item.d!=='number')return;
-    var d=decl(item.d);item.name=d.name;item.href=d.href;if(d.code!==undefined)item.code=d.code;item.path=place(d.at||d.source).path;delete item.d;
+    var d=decl(item.d);item.name=d.name;item.href=d.href;if(d.code!==undefined)item.code=d.code;if(d.key!==undefined)item.decl_key=d.key;item.path=place(d.at||d.source).path;delete item.d;
   }
   // A reading's relation ends are calls unless they say otherwise.
   function kinds(value){

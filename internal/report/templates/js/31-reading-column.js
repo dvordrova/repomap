@@ -1004,7 +1004,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
       if(!part||!code)return;
       code.replaceChildren(rmStepName(ctx,step,code.textContent));
       step.querySelector(':scope>.anchor')?.remove();
-      rmFlowStep(ctx,step,part,rmPage.link(step.dataset.stepKey));
+      rmFlowStep(ctx,step,part,step.dataset.stepKey);
     });
     // A step no part holds is still its name, the link into its code, with
     // no line printed after it.
@@ -1039,7 +1039,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
 // all of its code (the step's `data-step-code`, else its line link), whose
 // plain click reads the declaration in its part, the part named on hover.
 function rmStepName(ctx,element,text){
-  var d=element.dataset,part=d.stepPart?ctx.nodeByHref(d.stepPart):null,key=d.stepKey?rmPage.link(d.stepKey):'';
+  var d=element.dataset,part=d.stepPart?ctx.nodeByHref(d.stepPart):null,key=d.stepKey||'';
   var anchor=element.querySelector?element.querySelector(':scope>.anchor'):null;
   var code=d.stepCode?rmPage.link(d.stepCode):anchor&&anchor.getAttribute('href')!=='#'?anchor.getAttribute('href')||'':'';
   var open=d.stepOpen||(anchor&&anchor.dataset.open)||'';

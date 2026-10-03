@@ -2008,20 +2008,21 @@ type pageEdgeCall struct {
 // same says whether two calls are one.
 func (call pageEdgeCall) same(other pageEdgeCall) bool { return reflect.DeepEqual(call, other) }
 
-// MarshalJSON writes a call as the page's script reads it: the callee is
-// left out when it is where the call lands (To), as it is for nearly every
-// call, and the script takes To for it; an empty callee beside a To is
-// written as "". Redis's arrows had carried each callee twice.
+// MarshalJSON writes a call as the page's script reads it: its callee's
+// identity always, "" beside a link when the callee is no declaration of
+// the report. A callee is never left to be read off where the call lands:
+// that is a link, which names no column. The page data's compaction writes
+// a call landing where its callee is declared as that declaration's index
+// once (page_data_table.go call); Redis's arrows had carried each callee
+// twice.
 func (call pageEdgeCall) MarshalJSON() ([]byte, error) {
 	type plain pageEdgeCall
 	written := struct {
 		plain
 		Callee *string `json:"callee,omitempty"`
 	}{plain: plain(call)}
-	if call.Callee != call.To || call.To == "" {
-		if call.Callee != "" || call.To != "" {
-			written.Callee = &call.Callee
-		}
+	if call.Callee != "" || call.To != "" {
+		written.Callee = &call.Callee
 	}
 	return json.Marshal(written)
 }
@@ -2070,6 +2071,11 @@ type pageNodeSymbol struct {
 	Kind string `json:"kind,omitempty"`
 	Key  bool   `json:"key,omitempty"`
 	Href string `json:"href,omitempty"`
+	// Decl is the identity of the declaration the tile draws (groupindex
+	// DeclarationKey), as a reading keys it: the tile is read by it, never
+	// by its link, which two declarations written on one line share. Key
+	// above is the model's mark of a key declaration.
+	Decl string `json:"decl_key,omitempty"`
 	// Owner is the position, from 1, of the type in the same list this
 	// method belongs to: it is drawn inside that type's tile.
 	Owner int `json:"owner,omitempty"`
@@ -2214,7 +2220,7 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		symbol.Quiet = builder.neverRun(targetID, id)
 		symbol.Text = symbolText(object, name)
 		if anchor != nil {
-			symbol.Href, symbol.Open, symbol.Path, symbol.Line, symbol.Code = anchor.Href, anchor.Open, anchor.Path, anchor.Line, anchor.Code
+			symbol.Href, symbol.Open, symbol.Path, symbol.Line, symbol.Code, symbol.Decl = anchor.Href, anchor.Open, anchor.Path, anchor.Line, anchor.Code, anchor.key
 		}
 		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
 			symbol.Key = true

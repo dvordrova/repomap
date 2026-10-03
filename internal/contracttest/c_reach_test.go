@@ -67,8 +67,10 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 		{server, []string{"loop.c:loopNowMs", "net.c:netConnect", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
 		{client, []string{"loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopMain", "loop.c:loopNowMs", "loop.c:loopProcessEvents",
 			"loop.c:loopSetBeforeSleep", "loop.c:loopStop", "loop.c:oom", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiPoll",
-			"net.c:netListen", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
-		{dump, []string{"strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
+			"net.c:netListen", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbRewind", "strbuf.c:sbTrace", "strbuf.c:sbTruncate"}},
+		// sbRewind and sbTruncate, written on one line, are the server's
+		// freeClient's (TestCDeclarationsWrittenOnOneLineAreReadApart).
+		{dump, []string{"strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbRewind", "strbuf.c:sbTrace", "strbuf.c:sbTruncate"}},
 	} {
 		if got := cUnreachable(want.index); !reflect.DeepEqual(got, want.names) {
 			t.Errorf("%s never runs %v, want %v", want.index.Target.Name, got, want.names)

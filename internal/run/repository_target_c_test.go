@@ -576,7 +576,8 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 	want := []string{"loop.c:oom run by kvd", "loop.c:loopCreate run by kvd", "loop.c:loopCreateFileEvent run by kvd", "loop.c:loopDeleteFileEvent run by kvd",
 		"loop.c:loopSetBeforeSleep run by kvd", "loop.c:loopProcessEvents run by kvd", "loop.c:loopMain run by kvd", "loop.c:loopStop run by kvd", "loop.c:loopNowMs",
 		"loop_poll.c:loopApiCreate run by kvd", "loop_poll.c:loopApiAddEvent run by kvd", "loop_poll.c:loopApiPoll run by kvd",
-		"net.c:netListen run by kvd", "strbuf.c:sbConsume run by kvd", "strbuf.c:sbTrace", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbReserve", "strbuf.c:sbDrainForever"}
+		"net.c:netListen run by kvd", "strbuf.c:sbConsume run by kvd", "strbuf.c:sbTrace", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbReserve", "strbuf.c:sbDrainForever",
+		"strbuf.c:sbRewind run by kvd", "strbuf.c:sbTruncate run by kvd"}
 	if listed := neverRuns("kvcli"); !reflect.DeepEqual(listed, want) {
 		t.Fatalf("the client lists %v as never run, want %v", listed, want)
 	}

@@ -320,21 +320,12 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		return owner.subject.Object.Name + "." + label
 	}
 	// declare names a declaration once, by the key the page's script keys
-	// it by; a later mention fills what an earlier one did not know.
+	// it by, its identity (declarationKey): fields a struct declares on one
+	// line (shared.cone, shared.czero) and two functions written on one line
+	// stay two. A later mention fills what an earlier one did not know.
 	declare := func(decl pageReadingDecl) int {
 		if decl.Key == "" {
 			return -1
-		}
-		// Fields a struct declares on one line share their link: each is
-		// its own declaration by name, or shared.cone would read as czero.
-		if position, known := at[decl.Key]; known && decl.Kind == "field" && reading.Decls[position].Name != decl.Name {
-			key := decl.Key + "\x00" + decl.Name
-			if position, known := at[key]; known {
-				return position
-			}
-			at[key] = len(reading.Decls)
-			reading.Decls = append(reading.Decls, decl)
-			return len(reading.Decls) - 1
 		}
 		if position, known := at[decl.Key]; known {
 			listed := &reading.Decls[position]
@@ -1075,9 +1066,7 @@ func componentEntries(section *pageSection) string {
 		if entry.Anchor != nil {
 			item.Href, item.Open, item.NoSource, item.Key = entry.Anchor.Href, entry.Anchor.Open, entry.Anchor.NoSource, declarationKey(entry.Anchor)
 		}
-		if section.EntryPart != "" && item.Key != "" && item.Key == section.EntrySource {
-			item.Part = "#" + section.EntryPart
-		} else if part := section.EntryParts[entry.ObjectID]; entry.ObjectID != "" && part != "" && entry.Anchor != nil &&
+		if part := section.EntryParts[entry.ObjectID]; entry.ObjectID != "" && part != "" && entry.Anchor != nil &&
 			section.EntryAt[entry.ObjectID] == entry.Anchor.Path+":"+strconv.Itoa(entry.Anchor.Line) {
 			// Joined by its subject where the fact stands at that declaration,
 			// and read by the key its part lists it under. A module run as a

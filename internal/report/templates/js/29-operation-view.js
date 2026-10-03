@@ -944,7 +944,7 @@ function rmSavedScene(doc){
   // read by its place (control review, 2026-10-02: a page with no remote).
   function readsHandler(n,card){
     var d=n.dataset,name=card.querySelector('.map-card-handler>a,.map-card-handler>span'),part=byID[scene.handlerPart(n.id)];
-    var key=d.handlerSource||d.handlerOpen||(d.handlerNoSource==='true'&&d.handlerPath?JSON.stringify([d.handlerPath,Number(d.handlerLine)||0]):'');
+    var key=d.handlerKey||d.handlerSource||d.handlerOpen||(d.handlerNoSource==='true'&&d.handlerPath?JSON.stringify([d.handlerPath,Number(d.handlerLine)||0]):'');
     if(!name||!part||part.dataset.activation||!key)return;
     var symbols=rmPage.data(part,'symbols')||[];
     if(!symbols.some(function(symbol){return repomapMembers.symbolKey(symbol)===key;}))return;

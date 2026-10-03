@@ -104,7 +104,8 @@ func TestRelationRowsNameTheDeclarationsAtTheirEnds(t *testing.T) {
 	rows := builder.internalGroupConnections(index, part)
 	_, input := builder.subjectDisplay(builder.subjects["input"].subject)
 	_, command := builder.subjectDisplay(builder.subjects["command"].subject)
-	if len(rows) != 1 || rows[0].FromKey() != input.Href || rows[0].ToKey() != command.Href || rows[0].FromSource.Line != 2353 {
+	// Each end by its declaration's identity, never its link.
+	if len(rows) != 1 || rows[0].FromKey() != input.Key() || rows[0].ToKey() != command.Key() || input.Key() == input.Href || rows[0].FromSource.Line != 2353 {
 		t.Fatalf("the row does not name its declarations apart from its call site: %+v", rows)
 	}
 	// A declaration without a link is keyed by its place, as the script keys it.
@@ -137,11 +138,14 @@ func TestAnArrowsCallNamesTheDeclarationsAtItsEnds(t *testing.T) {
 		t.Fatal("the joint has no call on its arrow")
 	}
 	want := func(line int) string { return links.anchor("anet.c", line, 1).Href }
-	if call.Caller != want(128) || call.Callee != want(248) || call.From != want(158) || call.To != want(256) {
+	// Each end by its declaration's identity, apart from the links to where
+	// the call is written and lands.
+	caller, callee := "anet.c:128:1:function:anetTcpGenericConnect", "anet.c:248:1:function:anetAccept"
+	if call.Caller != caller || call.Callee != callee || call.From != want(158) || call.To != want(256) {
 		t.Fatalf("the call does not name its declarations apart from where it is written and lands: %+v", call)
 	}
 	raw := pageMapEdge{Calls: []pageEdgeCall{*call}}.CallsJSON()
-	if !strings.Contains(raw, `"caller":"`+want(128)+`"`) || !strings.Contains(raw, `"callee":"`+want(248)+`"`) {
+	if !strings.Contains(raw, `"caller":"`+caller+`"`) || !strings.Contains(raw, `"callee":"`+callee+`"`) {
 		t.Fatalf("the page's script cannot read the declarations: %s", raw)
 	}
 }

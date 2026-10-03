@@ -34,7 +34,7 @@ func nameBreaksJS(t *testing.T) string {
 func TestDeclarationReadingListsCallersAndCalleesByPart(t *testing.T) {
 	code := systemJSPiece(t, "30-map.js", "function rmDeclarationText(", "// The reading layer over the map")
 	runSystemJS(t, fakeElements+`
-const repomapMembers={sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const K='h#processInputBuffer';
 function row(kind,from,to,fromName,toName,site,peer,sentence,possible){
   return {dataset:{kind,fromDecl:from,toDecl:to,fromName,toName},closest:s=>s==='.conn-group'?peer:null,
@@ -165,7 +165,7 @@ func TestAnInputsHandlerNameReadsItsDeclaration(t *testing.T) {
 const strings={id:'strings',dataset:{symbols:JSON.stringify([{name:'getCommand',href:'h/getCommand'}])}};
 const local={id:'local',dataset:{symbols:JSON.stringify([{name:'setCommand',path:'t_string.c',line:9}])}};
 const byID={strings,local},scene={handlerPart:id=>({get:'strings',orphan:'strings',set:'local'})[id]||''},read=[];
-const repomapMembers={sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 function readDeclaration(part,key){read.push([part.id,key]);}
 const link=()=>({listeners:{},addEventListener(k,f){this.listeners[k]=f;}});
 const cardWith=name=>({querySelector:s=>s.split(',').includes('.map-card-handler>a')?name:null});
@@ -374,7 +374,7 @@ const byID={a:part('a','Compression','','Compresses dumps.'),b:part('b','Data st
 function rmModelText(tag,cls,text){const e=rmEl(tag,cls+' model',text);return e;}
 const members={a:[{name:'lzf_compress',key:true,source:{Href:'h/c'}},{name:'u8',source:{Href:'h/u8'}}],b:[{name:'listNext',source:{Href:'h/n'}}]};
 const repomapMembers={sorted:p=>members[p.id]||[],composition:p=>({total:(members[p.id]||[]).length,counts:(members[p.id]||[]).length+' functions',files:p.id==='a'?['lzf.c']:[]}),
-  sourceLink:s=>{const a=rmEl('a');a.href=s.Href;return a;},displayName:i=>i.name,sourceKey:s=>s.Href};
+  sourceLink:s=>{const a=rmEl('a');a.href=s.Href;return a;},displayName:i=>i.name,sourceKey:s=>s.Key||s.Href};
 const chosen=[];function select(n,navigate,source,focus){chosen.push([n.id,source?source.key:undefined,focus]);}
 `+code+`
 const section=areaComposition({dataset:{children:'a b c'}});
@@ -425,7 +425,7 @@ func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
 	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
 	runSystemJS(t, fakeElements+`
-const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const decl=(name,part)=>({name,href:'h/'+name,source:'redis.c:1',part});
 const path={dispatched:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:11,inputs:['t1-sinter','t1-smembers']}],reached_from:['t1-exec']},{site:1,of:94,handlers:94,inputs:95}],registered_by:['t1-accept'],
   spine:{steps:[{decl:2,part:'n-strings'},{decl:3,part:'n-strings'}],branches:[{decl:4,part:'n-keys'},{decl:5,part:'n-clients',helper:true},{decl:6,part:'n-clients',helper:true}]},
@@ -501,7 +501,7 @@ func TestAnInputsPathReadsItsSpineAndNamesItsParts(t *testing.T) {
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration") +
 		systemJSPiece(t, "31-reading-column.js", "function rmModelText(", "// A declaration's name: a link into its code")
 	runSystemJS(t, fakeElements+`
-const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const decls=['start_trading','Worker','run','exit','__init__','FreqtradeBot','process','startup','Configuration','State'].map(name=>({name}));
 `+code+`
 // A class reads with its own line, the model's, from its part's explained
@@ -548,7 +548,7 @@ assert.ok(folded.children.some(c=>c.className==='map-reading-label'&&c.textConte
 func TestADispatchSitesReadingListsTheInputsReachingIt(t *testing.T) {
 	code := systemJSPiece(t, "30-map.js", "// The inputs dispatched at a site", "// Who calls a declaration and what it calls")
 	runSystemJS(t, fakeElements+`
-const repomapMembers={sourceKey(s){return s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.href||d.open||d.key)return d.href||d.open||d.key;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
+const repomapMembers={sourceKey(s){return s.Key||s.Href||s.Open||(s.NoSource?(s.Path?JSON.stringify([s.Path,s.Line||0]):s.Text):'');},symbolKey(s){return s?s.decl_key||s.href||s.open||(s.path?JSON.stringify([s.path,s.line||0]):''):'';},declKey(d){if(!d)return '';if(d.key||d.href||d.open)return d.key||d.href||d.open;const p=d.no_source?/^(.*):(\d+)$/.exec(d.source||d.at||''):null;return p?JSON.stringify([p[1],Number(p[2])]):'';}};
 const readings={sites:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:5,inputs:['t1-sinter','t1-smembers']}],reached_from:[{input:'t1-exec',calls:[[2,0,0]]},{input:'t1-lpush',calls:[[3,4,0],[4,0,1]]}]},{site:1,of:94,handlers:94,inputs:95}],
   decls:[{name:'call',href:'h/call'},{name:'loadAppendOnlyFile',href:'h/load'},{name:'execCommand'},{name:'lpushCommand'},{name:'handleClientsWaitingListPush'},{name:'sinterCommand'}]};
 const node={dataset:{dispatch:JSON.stringify(readings)}},chosen=[];

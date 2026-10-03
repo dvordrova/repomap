@@ -61,16 +61,21 @@ func (row pageConnection) Phrase() string {
 }
 
 // FromKey and ToKey identify the declarations at the row's ends the way the
-// page's script keys a declaration (its link, its editor action, or its
-// place when it has neither), so a declaration's reading finds the rows
-// that call it and that it calls without matching names.
+// page's script keys a declaration, so a declaration's reading finds the
+// rows that call it and that it calls without matching names.
 func (row pageConnection) FromKey() string { return declarationKey(row.FromDecl) }
 func (row pageConnection) ToKey() string   { return declarationKey(row.ToDecl) }
 
+// declarationKey is how the page's script keys what an anchor names: a
+// declaration by its identity (pageAnchor.key, groupindex DeclarationKey),
+// never by its link; anything else (a pattern, a place a fact names) by its
+// link, its editor action, or its place when it has neither.
 func declarationKey(anchor *pageAnchor) string {
 	switch {
 	case anchor == nil:
 		return ""
+	case anchor.key != "":
+		return anchor.key
 	case anchor.Href != "":
 		return anchor.Href
 	case anchor.Open != "":
