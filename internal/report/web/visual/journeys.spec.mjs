@@ -143,7 +143,11 @@ for(const [index,file] of reports.entries()){
   // path) stands at its first lines when that section is already in sight,
   // and the column's top edge never cuts a line (final journeys,
   // 2026-10-02: etcd's Campaign reading, scrolled as far as it went toward
-  // its empty flow, had its registration line cut under the heading).
+  // its empty flow, had its registration line cut under the heading). A
+  // line is text on the screen: the text of a closed <details> is laid out
+  // and never drawn (Redis's loglevel and casdoor's logConfig had been
+  // reported cut by 5px by their closed "Code and connections" list, the
+  // edge standing in blank space).
   // Every input with a path when there are at most 60, else 60 spread
   // evenly over them.
   test(`readings open on whole lines in ${basename(file)}`,async({page})=>{
@@ -161,7 +165,7 @@ for(const [index,file] of reports.entries()){
         const edge=content.getBoundingClientRect().top+content.clientTop,range=document.createRange();
         const walker=document.createTreeWalker(content,NodeFilter.SHOW_TEXT);
         for(let node=walker.nextNode();node;node=walker.nextNode()){
-          if(!node.data.trim())continue;
+          if(!node.data.trim()||!node.parentElement.checkVisibility())continue;
           range.selectNodeContents(node);
           for(const r of range.getClientRects())if(r.top<edge-1&&r.bottom>edge+1)return `"${node.data.trim().slice(0,70)}" cut ${Math.round(edge-r.top)} of its ${Math.round(r.height)}px`;
         }

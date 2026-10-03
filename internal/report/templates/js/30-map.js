@@ -984,11 +984,16 @@ function rmOpenAt(content,section,room){
     content.scrollTop-=Math.ceil(line.edge-at);
   }
 }
-// The text line a scrolling column's top edge cuts, if any.
+// The text line a scrolling column's top edge cuts, if any: a line on the
+// screen. The text of a closed <details> is laid out but never drawn, and
+// its boxes may stand outside its parent's (Redis's loglevel and casdoor's
+// logConfig: "→ declared in …" of a closed "Code and connections" lay 5px
+// across the edge, drawing nothing), so what is not rendered is no line.
 function rmTopCut(content){
   var edge=content.getBoundingClientRect().top+content.clientTop,range=document.createRange(),found=null;
   var walker=document.createTreeWalker(content,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:function(node){
     if(node.nodeType===3)return node.data.trim()?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT;
+    if(node.checkVisibility&&!node.checkVisibility())return NodeFilter.FILTER_REJECT;
     var r=node.getBoundingClientRect();
     return r.height&&(r.bottom<=edge||r.top>=edge)?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_SKIP;
   }});

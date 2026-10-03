@@ -1,5 +1,11 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — Control review item 2: the "cut" first line of loglevel and logConfig was text of a closed details (report)
+
+- **Cause.** `readings open on whole lines` (journeys.spec.mjs:149) reported Redis's `loglevel` and casdoor's `logConfig` (fresh runs 144748, 152441) as "→ declared in · … cut 5 of its 17px". The reading opens at its Path section (`rmOpenAt`, room 8, scrollTop 0 → 72, section top 80.25 → 8.25). That leaves the column's top edge (318.44) in the blank space between the reading's header rule and "Path". The flagged text is the one row of the closed "Code and connections" `<details>`. Chromium lays that row out at 313.69–330.69, outside the details box (287.0–307.9), and never draws it (`checkVisibility()` false). So no line on the screen was cut. The check counted undrawn text, and `rmTopCut` had skipped it only because it prunes by the parent's box.
+- **Fix.** No offset. `rmTopCut` and the whole-lines check count only drawn text (`checkVisibility`). Geometry is unchanged: scrollTop 72, the edge in blank space, "Path" whole.
+- **Checks** (render of the same saved runs, binary from a clean HEAD export plus this file, workers=1): whole-lines passed on Redis (60 readings, 0 cut) and casdoor (52, 0 cut). The A4 journey on casdoor passed: LDAP → Configuration → "anonymous function in StartLdapServer calling GetConfigString" → ldap/server.go#L57 → back with reading, camera and open connection unchanged → Show whole map, no page errors.
+
 ## 2026-10-04 — An undecided split's ways stand side by side; the prepare-then-execute variant is the owner's call (data 2)
 
 - **Skeptic on step 3:** do not build the prepare-then-execute variant now.
