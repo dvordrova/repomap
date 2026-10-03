@@ -30,10 +30,11 @@ import (
 //     9068) is written as 1, a declaration's link to all its lines as the
 //     number of its last line: 7,900 sites had carried each line twice;
 //   - a call names the declarations at its ends by their index in the
-//     declarations, and its words only when their names do not say them
-//     ("rdbSaveBackground calls vmReopenSwapFile"); a tile names the
-//     declaration it draws the same way; a reading's call is a call unless
-//     it says otherwise;
+//     declarations, a relation's names only when they are not its
+//     declarations' names (a callable written inline, "Start (inline, 2)";
+//     an outside symbol) and its kind only when it is not "calls"; a tile
+//     names the declaration it draws the same way; a reading's call is a
+//     call unless it says otherwise;
 //   - any part of a value written again elsewhere (an input's writes, an
 //     anchor, a chain every input of a dispatch site shares) is written
 //     once in "shared" and referred to as {"$": index}: 98 inputs' state
@@ -282,9 +283,10 @@ func (compact pageDataCompaction) byName(name string, value any) any {
 	return value
 }
 
-// call names the declarations at a call's ends by index and drops its
-// words when the names and its verb say them. The script restores the
-// caller's and callee's keys and "caller verb callee".
+// call names the declarations at a call's ends by index and, for a relation
+// between two named ends (one with neither words nor a handler's name),
+// drops each name its declaration says and the kind "calls". The script
+// restores the caller's and callee's keys, the names and the kind.
 func (compact pageDataCompaction) call(call map[string]any) {
 	if _, numbered := call["caller"].(json.Number); numbered {
 		return
@@ -299,17 +301,15 @@ func (compact pageDataCompaction) call(call map[string]any) {
 		landing = callee
 	}
 	calleeAt, calleeKnown := compact.byKey[landing]
-	label, labelled := call["label"].(string)
-	if labelled && callerKnown && calleeKnown && call["name"] == nil {
-		prefix, suffix := compact.declName(callerAt)+" ", " "+compact.declName(calleeAt)
-		if strings.HasPrefix(label, prefix) && strings.HasSuffix(label, suffix) && len(label) > len(prefix)+len(suffix) {
-			verb := label[len(prefix) : len(label)-len(suffix)]
-			if !strings.ContainsAny(verb, " ") {
-				delete(call, "label")
-				if verb != "calls" {
-					call["v"] = verb
-				}
-			}
+	if _, said := call["label"]; !said && call["name"] == nil {
+		if call["kind"] == "calls" {
+			delete(call, "kind")
+		}
+		if callerKnown && call["caller_name"] == compact.declName(callerAt) {
+			delete(call, "caller_name")
+		}
+		if calleeKnown && call["callee_name"] == compact.declName(calleeAt) {
+			delete(call, "callee_name")
 		}
 	}
 	if callerKnown {

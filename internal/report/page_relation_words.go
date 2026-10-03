@@ -127,19 +127,23 @@ func (builder *pageBuilder) nameConnectionEnds(row *pageConnection, connection g
 }
 
 // connectionCall is a stored connection as the call its arrow's card lists,
-// or nil when the connection is a sentence of its own. The card reads a call
-// as three words, caller, relation and callee, links the two names and says
-// the relation with its underscores as spaces ("calls" as an arrow); any
-// other label shows neither name. So the relation is the vocabulary's words
-// when its phrase stands between the two names ("connects to", which had
-// been "integrates with" and named no function), and the relation's own
-// kind when the phrase wraps the callee ("passes {1} as a callback" is
-// "passes callback" on the card). The arrow's calls are not translated.
+// or nil when the connection is a sentence of its own. The call carries its
+// relation and the names and keys of its two declarations as fields of
+// their own, never one label the card would split again: a name may hold
+// spaces ("StartLdapServer (inline, 3)", GroupsIndex's accepted name of a
+// callable written inline), and casdoor's LDAP connection had counted a
+// call its card could not read and so never listed (external review,
+// 2026-10-03). The relation is the vocabulary's words when its phrase
+// stands between the two names ("connects to", which had been "integrates
+// with" and named no function), and the relation's own kind when the
+// phrase wraps the callee ("passes {1} as a callback" is "passes callback"
+// on the card), with underscores for its spaces. The arrow's calls are not
+// translated.
 func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pageEdgeCall {
 	var said pageConnection
 	builder.nameConnectionEnds(&said, connection)
 	phrase := said.Phrase()
-	if phrase == "" || strings.ContainsAny(said.FromName+said.ToName, " \t\n") {
+	if phrase == "" {
 		return nil
 	}
 	relation, between := strings.CutPrefix(phrase, "{0} ")
@@ -147,8 +151,7 @@ func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pa
 	if !between || !ends || strings.Contains(relation, "{") {
 		relation = said.Kind
 	}
-	label := said.FromName + " " + strings.ReplaceAll(relation, " ", "_") + " " + said.ToName
-	call := &pageEdgeCall{Label: label, Caller: said.FromKey(), Callee: said.ToKey()}
+	call := &pageEdgeCall{Kind: strings.ReplaceAll(relation, " ", "_"), CallerName: said.FromName, CalleeName: said.ToName, Caller: said.FromKey(), Callee: said.ToKey()}
 	if location := connection.FromLocation; location != nil {
 		from := builder.links.anchor(location.Path, location.Line, location.Column)
 		call.From, call.At = from.Href, from.Text

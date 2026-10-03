@@ -19,13 +19,15 @@ function Link({href,title,children}){
 const modified=event=>event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||event.button!==0;
 // A declaration's name in the reading column reads that declaration in the
 // report, as a click on its tile does; a modifier-click still opens the code
-// it linked to. A name the report has no declaration for is only named.
-// Without a chooser (the canvas's own card) a name stays the link it was.
-// Redis's "anetTcpGeneri…" opened GitHub for a reader who meant to read it.
+// it linked to. Redis's "anetTcpGeneri…" opened GitHub for a reader who
+// meant to read it. A name the report cannot read (a callable written
+// inline, which is no tile; an outside symbol) links to its code, as the
+// canvas's own card does: the caller to where the call is written, the
+// callee to where it lands. Casdoor's "StartLdapServer (inline, 3) →
+// GetConfigString" had left ldap/server.go:57 nowhere on the page.
 function Name({at,href,title,choose,children}){
-  if(!choose)return <Link href={href} title={title}>{children}</Link>;
+  if(!choose||!at||!choose.can(at.part,at.key))return <Link href={href} title={title}>{children}</Link>;
   children=dotted(children);
-  if(!at||!choose.can(at.part,at.key))return <span title={title||undefined}>{children}</span>;
   const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,at.key);};
   return href?<a href={href} title={title||undefined} target="_blank" onClick={read}>{children}</a>
     :<button type="button" className="flow-card-name" title={title||undefined} onClick={read}>{children}</button>;
@@ -113,7 +115,7 @@ function SidesRow({row,choose}){
     {row.sides.map((side,s)=><React.Fragment key={s}>{s>0&&<i className="flow-card-joint">⇢</i>}{row.sides.length>1&&<b className="flow-card-program">{side.program}:</b>}
       {side.path.map((step,k)=><React.Fragment key={k}>{k>0&&<i>→</i>}<Name at={step.part&&step.key?{part:step.part,key:step.key}:null} href={k===side.path.length-1&&s===0?row.site:''} choose={choose}>{step.name}</Name></React.Fragment>)}
     </React.Fragment>)}
-    {row.sides.length===1&&first&&<><i>→</i><span>{dotted(row.callee)}</span><em>{t('outgoing')}</em></>}
+    {row.sides.length===1&&first&&<><i>→</i><Link href={row.calleeHref}>{row.callee}</Link><em>{t('outgoing')}</em></>}
   </p>;
 }
 

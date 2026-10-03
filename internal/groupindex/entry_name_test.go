@@ -39,7 +39,7 @@ func TestAConnectionNamesAnInlineCallableByItsHolder(t *testing.T) {
 	at := func(path string, line int) *programindex.Location {
 		return &programindex.Location{Path: path, Line: line, Column: 2}
 	}
-	program := programindex.Index{Objects: []programindex.Object{
+	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		{ID: "find", Name: "FindSQLiteDatabases", Kind: programindex.ObjectFunction, Location: at("main.go", 1010), EndLine: 1040},
 		{ID: "walk", Name: "FindSQLiteDatabases$1", Kind: programindex.ObjectFunction, Location: at("main.go", 1020), EndLine: 1030},
 		{ID: "check", Name: "IsSQLiteDatabase", Kind: programindex.ObjectFunction, Location: at("main.go", 1035), EndLine: 1050},

@@ -55,14 +55,17 @@ export function focusAncestors(focus, placed) {
 }
 
 // Whether an arrow of a part carries a call of one of its declarations: a
-// call into it names its source as the callee, a call out of it names it as
-// the caller. `member` is {part, names, sources} from the page data.
+// call into it names it as the callee (or lands at its source), a call out
+// of it names it as the caller, by key or, for a caller the report keys
+// none, by the name the call gives it; never a word split off a label.
+// `member` is {part, names, sources} from the page data.
 export function carries(edge,member){
   const sources=new Set((member.sources||[]).filter(Boolean)),names=new Set(member.names||[]);
   const into=edge.to===member.part,out=edge.from===member.part;
   return edge.relations.some(relation=>
     (into&&sources.has(relation.toSource))||(out&&sources.has(relation.fromSource))||
-    (relation.calls||[]).some(call=>(into&&sources.has(call.to))||(out&&names.has(String(call.label||'').split(' ')[0]))));
+    (relation.calls||[]).some(call=>(into&&(sources.has(call.callee)||sources.has(call.to)))||
+      (out&&(sources.has(call.caller)||!call.caller&&names.has(call.caller_name)))));
 }
 
 // The frame whose parts' quiet arrows are drawn (route-drawing.mjs): the

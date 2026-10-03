@@ -31,11 +31,16 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
     // taking it in (page_system_map.go).
     const member=!relation.calls?.length&&!relation.label&&!relation.summary&&!groupable(relation.from);
     for(const call of calls){
-      // A named call's label is its relation's words ("looked up in"),
-      // never "caller verb callee".
-      const words=!call.name&&String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
-      const key=[fromID,intoID,words?call.label:`${call.label}|${call.at||''}|${call.name||''}`].join('|');
-      const kind=words?words[2]:call.name?(takenIn.has(call.label)?call.label:'implemented in'):member?'input':'other';
+      // A relation between two named ends says its kind and both names as
+      // fields of its own (page_relation_words.go connectionCall); words
+      // ("looked up in", an arrow's own label) are never split into names.
+      // casdoor's "StartLdapServer (inline, 3) calls GetConfigString" had
+      // been read as words, counted and never listed (review, 2026-10-03).
+      // One caller calling one callee from several sites is one call: one
+      // key and one name at each end.
+      const said=!call.name&&call.kind?call:null;
+      const key=[fromID,intoID,said?[said.kind,said.caller||'',said.caller_name,said.callee||'',said.callee_name].join('\0'):`${call.label}|${call.at||''}|${call.name||''}`].join('|');
+      const kind=said?said.kind:call.name?(takenIn.has(call.label)?call.label:'implemented in'):member?'input':'other';
       // Inputs taken in, not handled, count as inputs, each once.
       if(takenIn.has(kind)||kind==='input'){inputs.add(relation.from);kinds.set('inputs',inputs.size);}
       if(seen.has(key)){
@@ -57,18 +62,18 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
       // there instead of opening its code.
       const end=(part,key)=>part&&key?{part,key}:null;
       const row={kind,site:call.from||'',at:call.at||'',
-        caller:words?words[1]:call.name||member?nameOf(relation.from):'',
-        callee:words?words[3]:call.name||'',calleeHref:words||call.name?call.to||'':'',
-        callerAt:words?end(relation.from,call.caller):null,calleeAt:words||call.name?end(intoID,call.callee):null,
-        other:words||call.name?'':nameOf(incoming?relation.from:relation.to),
+        caller:said?said.caller_name||'':call.name||member?nameOf(relation.from):'',
+        callee:said?said.callee_name||'':call.name||'',calleeHref:said||call.name?call.to||'':'',
+        callerAt:said?end(relation.from,call.caller):null,calleeAt:said||call.name?end(intoID,call.callee):null,
+        other:said||call.name?'':nameOf(incoming?relation.from:relation.to),
         otherHref:call.from||call.to||'',
         // A call that leaves its program: each program's side of it, from
         // its own code (page_shared_code.go).
         sides:call.sides||null};
       // A row of inputs names each by its node, so the reading column can
       // read it ("sync, slaveof → syncCommand").
-      seen.set(key,!words&&(call.name||member)?Object.assign(row,{inputs:[row.caller],inputRefs:[{id:relation.from,name:row.caller}]}):null);
-      if(call.fold&&words){
+      seen.set(key,!said&&(call.name||member)?Object.assign(row,{inputs:[row.caller],inputRefs:[{id:relation.from,name:row.caller}]}):null);
+      if(call.fold&&said){
         const foldKey=`${row.caller}\0${call.fold}`;
         if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,at:row.at,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
         const fold=group.folds.get(foldKey);fold.count++;

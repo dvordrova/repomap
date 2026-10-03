@@ -43,7 +43,8 @@ function rmScrollToReading(node) {
 // inside the data starting with \u0001, one in a key attribute with "@");
 // a link its place says written as 1 ("href":1 beside "at":"redis.c:9068"),
 // a link to all of a declaration's lines as its last line; a call's ends by
-// their index in the declarations and its words when their names say them;
+// their index in the declarations, a relation's names when they are its
+// declarations' names and its kind when it is "calls";
 // a tile's declaration by its index; a reading's call as a call unless it
 // says otherwise; and any part written again elsewhere as {"$": index} into
 // "shared". rmPage.data(element, name) is the value its dataset[name]
@@ -77,14 +78,19 @@ var rmPage = (function () {
   }
   function decl(index){if(!decls.has(index))decls.set(index,expand(load().decls[index]));return Object.assign({},decls.get(index));}
   function declKey(index){var d=decl(index);return d.key||d.href;}
-  // A call's ends by index, its words from their names.
+  // A call's ends by index. A relation between two named ends (a call with
+  // neither words nor a handler's name) gets back its kind, "calls" unless
+  // it says otherwise, and the names its declarations say.
   function call(item){
     var caller=typeof item.caller==='number'?item.caller:-1,callee=typeof item.callee==='number'?item.callee:typeof item.to==='number'?item.to:-1;
+    if(!('label' in item)&&!('name' in item)){
+      if(!('kind' in item))item.kind='calls';
+      if(!('caller_name' in item)&&caller>=0)item.caller_name=decl(caller).name;
+      if(!('callee_name' in item)&&callee>=0)item.callee_name=decl(callee).name;
+    }
     if(caller>=0)item.caller=declKey(caller);
     if(typeof item.callee==='number')item.callee=declKey(item.callee);
     if(typeof item.to==='number')item.to=declKey(item.to);
-    if(!('label' in item)&&caller>=0&&callee>=0)item.label=decl(caller).name+' '+(item.v||'calls')+' '+decl(callee).name;
-    delete item.v;
   }
   // A tile's declaration by index: its name, link, code and file.
   function symbol(item){

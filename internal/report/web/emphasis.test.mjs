@@ -57,9 +57,13 @@ test('search matches are not combined with an old input or hover path, including
 // Redis's acceptHandler lit every arrow of Client connections and replies.
 test('a declaration pointed at or chosen darkens only the arrows that carry its calls',()=>{
   const part=[
-    {id:'in',from:'events',to:'clients',relations:[{calls:[{label:'aeMain calls acceptHandler',from:'ae.c#L10',to:'redis.c#L2551'}]}]},
-    {id:'out',from:'clients',to:'net',relations:[{calls:[{label:'acceptHandler calls anetAccept',from:'redis.c#L2560',to:'anet.c#L300'}]}]},
-    {id:'other',from:'clients',to:'lists',relations:[{calls:[{label:'createClient calls listCreate',from:'redis.c#L90',to:'adlist.c#L40'}]}]},
+    {id:'in',from:'events',to:'clients',relations:[{calls:[{kind:'calls',caller_name:'aeMain',callee_name:'acceptHandler',caller:'ae.c#L5',callee:'redis.c#L2551',from:'ae.c#L10',to:'redis.c#L2551'}]}]},
+    {id:'out',from:'clients',to:'net',relations:[{calls:[{kind:'calls',caller_name:'acceptHandler',callee_name:'anetAccept',caller:'redis.c#L2551',from:'redis.c#L2560',to:'anet.c#L300'}]}]},
+    {id:'other',from:'clients',to:'lists',relations:[{calls:[{kind:'calls',caller_name:'createClient',callee_name:'listCreate',caller:'redis.c#L80',from:'redis.c#L90',to:'adlist.c#L40'}]}]},
+    // A callable written inline in acceptHandler is a declaration of its
+    // own: its name begins with acceptHandler's, and its calls are not
+    // acceptHandler's.
+    {id:'inline',from:'clients',to:'strings',relations:[{calls:[{kind:'calls',caller_name:'acceptHandler (inline, 2)',callee_name:'sdsnew',caller:'redis.c#L2570',from:'redis.c#L2571',to:'sds.c#L9'}]}]},
   ];
   const member={part:'clients',names:['acceptHandler'],sources:['redis.c#L2551']};
   const hovered=emphasis(empty,'clients',id=>[id],part,member);
@@ -67,7 +71,7 @@ test('a declaration pointed at or chosen darkens only the arrows that carry its 
   assert.ok(!hovered.participants.has('lists'));
   const chosen=emphasis({...empty,scope:'clients',selected:new Set(['clients'])},'',id=>[id],part,member);
   assert.deepEqual([...chosen.activeEdges],['in','out']);
-  assert.deepEqual([...emphasis(empty,'clients',id=>[id],part).activeEdges],['in','out','other'],'the part itself keeps all its arrows');
+  assert.deepEqual([...emphasis(empty,'clients',id=>[id],part).activeEdges],['in','out','other','inline'],'the part itself keeps all its arrows');
   assert.deepEqual([...emphasis(empty,'events',id=>[id],part,member).activeEdges],['in'],'a declaration of another part changes nothing');
 });
 

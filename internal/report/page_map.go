@@ -1960,14 +1960,24 @@ func pageLane(lane groupindex.Lane, core bool) string {
 	return string(lane)
 }
 
-// pageEdgeCall is one relation behind an arrow: "caller calls callee" with
-// the link to where the call is made and to what is called.
+// pageEdgeCall is one relation behind an arrow, with the link to where the
+// call is made and to what is called. It is either a relation between two
+// named ends, its Kind and both names fields of their own (connectionCall),
+// or one said in words (Label: an arrow's own words, "implemented in" with
+// the Name of an input's handler); the page never reads names or a kind
+// out of words.
 type pageEdgeCall struct {
-	Label string `json:"label"`
-	From  string `json:"from,omitempty"`
-	To    string `json:"to,omitempty"`
-	// At is the call site in words, path:line, for a relation whose label
-	// names no caller and callee.
+	Label string `json:"label,omitempty"`
+	// Kind is the relation as the card says it between the two names, with
+	// underscores for spaces: calls, passes_callback, reads, connects_to.
+	// CallerName and CalleeName are the two ends' names as the report names
+	// a declaration, verbatim, spaces and all.
+	Kind       string `json:"kind,omitempty"`
+	CallerName string `json:"caller_name,omitempty"`
+	CalleeName string `json:"callee_name,omitempty"`
+	From       string `json:"from,omitempty"`
+	To         string `json:"to,omitempty"`
+	// At is where the call is written in words, path:line.
 	At string `json:"at,omitempty"`
 	// Name is the declaration at the far end when the near end is not a
 	// declaration: the function an input is handled by. To leads to it.

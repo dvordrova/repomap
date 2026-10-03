@@ -588,7 +588,7 @@ func TestAStartedProgramThisRepositoryBuildsIsThatProgram(t *testing.T) {
 		t.Fatalf("tiles %v: a program starting itself with no entry part drawn keeps its tile", tiles)
 	}
 	if !slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool {
-		return edge.From == "n-t2-g3" && edge.To == "system-component-cmd-litestream" && edge.FromSource == launch.Anchor && len(edge.Calls) == 1 && edge.Calls[0].Label == "runRestore calls os/exec.CommandContext"
+		return edge.From == "n-t2-g3" && edge.To == "system-component-cmd-litestream" && edge.FromSource == launch.Anchor && len(edge.Calls) == 1 && edge.Calls[0].Kind == "calls" && edge.Calls[0].CallerName == "runRestore" && edge.Calls[0].CalleeName == "os/exec.CommandContext"
 	}) {
 		t.Fatalf("no arrow from the launching part into cmd/litestream: %+v", got.Edges)
 	}
@@ -870,7 +870,7 @@ func TestAProgramDependencyAlreadyDrawnIsNotASecondArrow(t *testing.T) {
 func TestOperationArrowsSortTheSameWhateverOrderTheyArriveIn(t *testing.T) {
 	arrow := func(connection, caller string, possible bool) pageMapEdge {
 		return pageMapEdge{From: "op-put", To: "peer-server-g1", Label: "calls", Operations: "op-put", Possible: possible, ConnectionID: connection,
-			Calls: []pageEdgeCall{{Label: caller + " calls Put", Caller: caller, Callee: "server.go:154"}}}
+			Calls: []pageEdgeCall{{Kind: "calls", CallerName: caller, CalleeName: "Put", Caller: caller, Callee: "server.go:154"}}}
 	}
 	edges := []pageMapEdge{arrow("t1:c9", "AuthStatus", false), arrow("t1:c2", "AuthEnable", false), arrow("t1:c5", "AuthDisable", true),
 		arrow("t1:c7", "Txn", false), {From: "op-get", To: "g2", Label: "implemented in", Operations: "op-get"}}
@@ -883,7 +883,7 @@ func TestOperationArrowsSortTheSameWhateverOrderTheyArriveIn(t *testing.T) {
 		var calls []string
 		for _, edge := range collapseSystemMapEdges(shuffled) {
 			for _, call := range edge.Calls {
-				calls = append(calls, call.Label)
+				calls = append(calls, call.CallerName)
 			}
 		}
 		if round == 0 {
@@ -893,5 +893,23 @@ func TestOperationArrowsSortTheSameWhateverOrderTheyArriveIn(t *testing.T) {
 		if !slices.Equal(calls, want) {
 			t.Fatalf("round %d: calls %q, first round %q", round, calls, want)
 		}
+	}
+}
+
+// An outside call made by a callable written inline is listed like any
+// other: the card had read its one label "Start (inline, 2) calls
+// net/http.ListenAndServe" by its spaces and listed nothing (external
+// review, 2026-10-03). Its kind and two names are fields of their own.
+func TestAnOutsideCallMadeInlineIsACallOfItsOwnFields(t *testing.T) {
+	row := pageOutbound{Caller: "Start (inline, 2)", External: "net/http.ListenAndServe",
+		CallerAnchor: pageAnchor{Path: "proxy/proxy.go", Line: 40, Href: "https://github.com/o/r/blob/abc/proxy/proxy.go#L40", Text: "proxy/proxy.go:40"},
+		Anchor:       pageAnchor{Path: "proxy/proxy.go", Line: 52, Href: "https://github.com/o/r/blob/abc/proxy/proxy.go#L52", Text: "proxy/proxy.go:52"}}
+	call := outsideCall(row)
+	if call == nil || call.Label != "" || call.Kind != "calls" || call.CallerName != "Start (inline, 2)" || call.CalleeName != "net/http.ListenAndServe" ||
+		call.Caller != row.CallerAnchor.Href || call.To != row.Anchor.Href || call.At != "proxy/proxy.go:52" {
+		t.Fatalf("the outside call reads %+v", call)
+	}
+	if outsideCall(pageOutbound{Caller: "Start"}) != nil {
+		t.Fatal("a record naming no outside symbol is a call")
 	}
 }

@@ -40,11 +40,14 @@ func TestAPartsSharedNamespaceIsSaidOnce(t *testing.T) {
 }
 
 // A callable written inline is read by the name GroupsIndex gives it,
-// never by its compiler's number, and still stands on no tile.
+// never by its compiler's number, and still stands on no tile: GroupsIndex
+// says it is one (ObjectFacts.Anonymous). A name with a dollar sign is no
+// such word: JavaScript's `export function price$()` is a tile and a
+// member like any declaration (external review, 2026-10-03).
 func TestAnInlineCallableIsReadByItsInlineName(t *testing.T) {
 	builder := &pageBuilder{links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}}
 	closure := groupindex.Subject{ID: "n42", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{
-		Name: "Run$1", Kind: programindex.ObjectFunction, Inline: "ReplicateCommand.Run (inline)",
+		Name: "Run$1", Kind: programindex.ObjectFunction, Inline: "ReplicateCommand.Run (inline)", Anonymous: true,
 		Location: &programindex.Location{Path: "cmd/litestream/replicate.go", Line: 183, Column: 7}}}
 	if name, _ := builder.subjectDisplay(closure); name != "ReplicateCommand.Run (inline)" {
 		t.Fatalf("the closure reads %q", name)
@@ -56,5 +59,12 @@ func TestAnInlineCallableIsReadByItsInlineName(t *testing.T) {
 		Location: &programindex.Location{Path: "cmd/litestream/replicate.go", Line: 90, Column: 1}}}
 	if name, _ := builder.subjectDisplay(named); name != "Run" || builder.inline(named) {
 		t.Fatalf("a named method reads %q, inline %v", name, builder.inline(named))
+	}
+	for _, name := range []string{"price$", "active$", "price$1"} {
+		dollar := groupindex.Subject{ID: "n7", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Visibility: programindex.VisibilityPublic,
+			Location: &programindex.Location{Path: "src/price.js", Line: 1, Column: 17}}}
+		if builder.inline(dollar) {
+			t.Fatalf("JavaScript's %s stands on no tile", name)
+		}
 	}
 }

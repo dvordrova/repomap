@@ -482,7 +482,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   A module variable its file keeps only as its handle on the
   platform is no tile (GroupsIndex `PlatformHandles`: a standard-library
   call's result only its file's functions read, Python's module logger);
-  the reading still lists it. A tile keeps its link column, the longest
+  the reading still lists it. A callable written inline in another (a
+  lambda, a Go function literal: GroupsIndex `ObjectFacts.Anonymous`) is no
+  tile and no member of its part's reading; a name decides nothing, so
+  JavaScript's `export function price$()` and `export const _token` are
+  tiles and members like their neighbours (external review, 2026-10-03). A tile keeps its link column, the longest
   chain of calls, returns and takes leading to it, so a caller stands left
   of what it calls.
   Tiles stand by file, the files in the order their first declaration is
@@ -599,7 +603,9 @@ its map node, so links to it read it. The page data is written compactly in
 one `<script type="application/json" id="rm-page-data">`, each fact once,
 and the script reads every value back exactly as Go registered it
 (encoding: `page_data_table.go`); a test reads the compact data back through
-the page script on both GitHub and GitLab link shapes. An arrow whose calls say its words
+the page script on both GitHub and GitLab link shapes. A call's names and
+kind are left out only where its end declarations' names and "calls" say
+them; the script never composes or splits words. An arrow whose calls say its words
 carries only the relation an input's arrow reads by ("implemented in"), not
 every call's joined words.
 
@@ -1037,9 +1043,19 @@ that would only repeat its heading is not repeated, and ends of one name are
 one heading in column and card alike. A row wraps with its names whole. The
 page data names a call's two end declarations (`caller`, `callee`, keyed as
 the reading keys a declaration) apart from where the call is written and
-lands. A name whose part lists no such declaration is only named. The canvas's
-own card keeps its links. An input collection is named Inputs there, as on its
-canvas heading. A relation row is said through one closed vocabulary of the
+lands, and says a relation between two named ends by fields of its own: its
+`kind` (the card's word, "calls", "passes_callback", "connects_to") and the
+two names as the report names them (`caller_name`, `callee_name`, spaces and
+all: casdoor's "StartLdapServer (inline, 3)"). A call's `label` is words
+only, an arrow's own or "implemented in", and nothing reads names or a kind
+out of it: casdoor's LDAP connection had counted a call whose label the card
+split at its spaces and so never listed (external review, 2026-10-03). A
+call's kind is that word, never the native relation kind a reading's end
+carries (`invokes_external` is "calls" there). A name the report can read
+reads it; one it cannot (a callable written inline, an outside symbol) links
+to its code, the caller to where the call is written and the callee to
+where it lands, as the canvas's own card keeps its links. An input
+collection is named Inputs there, as on its canvas heading. A relation row is said through one closed vocabulary of the
 report's UI messages, chosen by its kind and filled with the two declarations'
 names ("{caller} passes {callee} as a callback"), never the stored kind
 ("passes_callback"); a C program's import is said as an include, and a joint

@@ -3,7 +3,6 @@ package report
 import (
 	"cmp"
 	"slices"
-	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -287,9 +286,12 @@ func (builder *pageBuilder) stepName(section *pageSection, subjectID string) pag
 	return step
 }
 
-// inline says a subject is a callable its compiler numbered inside another
-// (Go's Run$1): nobody's declaration to look for, so it is no tile, no key
-// and no member of a part's reading, whatever name it is read by.
+// inline says a subject is a callable written inline in another (a Go
+// function literal, a lambda), as GroupsIndex says (ObjectFacts.Anonymous):
+// nobody's declaration to look for, so it is no tile, no key and no member
+// of a part's reading, whatever name it is read by. A dollar sign in a name
+// says nothing: JavaScript's `export function price$()` is a declaration
+// like any other (external review, 2026-10-03).
 func (builder *pageBuilder) inline(subject groupindex.Subject) bool {
-	return subject.Object != nil && strings.Contains(subject.Object.Name, "$")
+	return subject.Object != nil && subject.Object.Anonymous
 }

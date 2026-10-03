@@ -279,8 +279,8 @@ func (view *pageView) SystemMap() *pageMap {
 							continue
 						}
 						edge := pageMapEdge{From: from, To: result.Nodes[to].ID, Scope: "structure", Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
-						if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
-							edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text, Caller: declarationKey(&row.CallerAnchor)}}
+						if call := outsideCall(row); call != nil {
+							edge.Calls = []pageEdgeCall{*call}
 						}
 						result.Edges = append(result.Edges, edge)
 						joined = true
@@ -323,11 +323,11 @@ func (view *pageView) SystemMap() *pageMap {
 				from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
 				if _, ok := positions[from]; row.MapGroup != "" && ok {
 					edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
-					if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
-						edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text, Caller: declarationKey(&row.CallerAnchor)}}
+					if call := outsideCall(row); call != nil {
 						if row.Side != nil {
-							edge.Calls[0].Sides = []pageCallSide{*row.Side}
+							call.Sides = []pageCallSide{*row.Side}
 						}
+						edge.Calls = []pageEdgeCall{*call}
 					}
 					result.Edges = append(result.Edges, edge)
 				}
@@ -840,6 +840,19 @@ func nameSharedOutside(result *pageMap, positions map[string]int, sections []*pa
 		result.Nodes[frame].FullTitle = strings.Join(names, ", ")
 		result.Nodes[frame].Title = mapTitle(result.Nodes[frame].FullTitle)
 	}
+}
+
+// outsideCall is an outside communication's call as its arrow's card lists
+// it: the declaration making it calls the outside symbol, each named as a
+// field of its own, spaces and all (a callable written inline is
+// "Start (inline, 2)"); nil when the record names no caller or no outside
+// symbol.
+func outsideCall(row pageOutbound) *pageEdgeCall {
+	if row.Caller == "" || row.External == "" {
+		return nil
+	}
+	return &pageEdgeCall{Kind: "calls", CallerName: row.Caller, CalleeName: row.External,
+		From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text, Caller: declarationKey(&row.CallerAnchor)}
 }
 
 func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {

@@ -29,10 +29,21 @@ func inlineHolders(program programindex.Index) map[string]string {
 	return inlineNamesBy(program, false)
 }
 
-func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
-	inline := func(object programindex.Object) bool {
-		return object.Kind == programindex.ObjectLambda || closureNumbered(object.Name)
+// writtenInline says an object is a callable written inline in another,
+// with no name of its own in the code: a lambda, or a Go function literal,
+// which the Go adapter numbers after the function holding it (Run$1). The
+// number is that adapter's naming alone: a JavaScript function may well be
+// called price$1, and a name with a dollar sign is no evidence of anything
+// in another language (external review, 2026-10-03).
+func writtenInline(program programindex.Index, object programindex.Object) bool {
+	if !object.Kind.Callable() {
+		return false
 	}
+	return object.Kind == programindex.ObjectLambda || program.Target.Language == "go" && closureNumbered(object.Name)
+}
+
+func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
+	inline := func(object programindex.Object) bool { return writtenInline(program, object) }
 	byID := make(map[string]programindex.Object, len(program.Objects))
 	var callables, closures []programindex.Object
 	for _, object := range program.Objects {

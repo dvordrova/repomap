@@ -582,3 +582,50 @@ func TestDeclarationsWithoutASourceLinkKeepTheirReadings(t *testing.T) {
 		})
 	}
 }
+
+// A declaration's name decides nothing about where it is read: JavaScript's
+// public `price$`, `active$` and `_token` stand on tiles and among the
+// part's members, while a callable written inline, which GroupsIndex says
+// is one (ObjectFacts.Anonymous), stands on neither, whatever its name
+// (external review, 2026-10-03: the report had hidden every name with "$").
+func TestNamesWithDollarsOrUnderscoresAreTilesAndMembers(t *testing.T) {
+	b := &pageBuilder{subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"},
+		byProgram: map[string]*pageSection{"t1": {ID: "t1"}}, groupTitles: map[groupindex.Endpoint]string{}}
+	object := func(id, name string, kind programindex.ObjectKind, line int, anonymous bool) {
+		b.subjects[subjectKey("t1", id)] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: name, Kind: kind, OwnerID: "module",
+			Visibility: programindex.VisibilityPublic, Anonymous: anonymous, Location: &programindex.Location{Path: "src/price.js", Line: line, Column: 17}}}}
+	}
+	object("module", "src/price.js", programindex.ObjectModule, 1, false)
+	object("dollar", "price$", programindex.ObjectFunction, 1, false)
+	object("plain", "price", programindex.ObjectFunction, 2, false)
+	object("underscore", "_token", programindex.ObjectVariable, 3, false)
+	object("active", "active$", programindex.ObjectFunction, 5, false)
+	object("closure", "active$$1", programindex.ObjectFunction, 6, true)
+	part := groupindex.Group{ID: "g1", Title: "Prices", MemberSubjectIDs: []string{"dollar", "plain", "underscore", "active", "closure"}}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{part}}
+	b.indexes = []groupindex.Index{index}
+	raw, _ := b.groupSymbols("t1", part)
+	var symbols []pageNodeSymbol
+	if err := json.Unmarshal([]byte(raw), &symbols); err != nil {
+		t.Fatal(err)
+	}
+	var tiles []string
+	for _, symbol := range symbols {
+		tiles = append(tiles, symbol.Name)
+	}
+	slices.Sort(tiles)
+	if want := []string{"_token", "active$", "price", "price$"}; !slices.Equal(tiles, want) {
+		t.Fatalf("tiles %q, want %q", tiles, want)
+	}
+	reading := decodeReading(t, b.groupReading(index, part, pageGroup{ID: "t1-g1", Title: part.Title}))
+	var members []string
+	for _, kind := range reading.Members {
+		for _, position := range kind.Decls {
+			members = append(members, kind.Kind+" "+reading.Decls[position].Name)
+		}
+	}
+	slices.Sort(members)
+	if want := []string{"function active$", "function price", "function price$", "variable _token"}; !slices.Equal(members, want) {
+		t.Fatalf("members %q, want %q", members, want)
+	}
+}

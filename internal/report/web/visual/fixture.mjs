@@ -46,14 +46,14 @@ if(options.has('symbols')){
     {name:'retryWithExponentialBackoffPolicy',kind:'function',text:'(job: Job, attempts: int)',path:'retry.go'}];
   worker.symbolCalls=[[0,3,'calls'],[0,4,'calls'],[3,1,'returns'],[0,1,'takes']];
   // The worker's arrows name the calls they carry, as the page's do.
-  relations.find(r=>r.from==='queue'&&r.to==='worker').calls=[{label:'dispatch calls processJob',from:'#queue.go-12',to:'#worker.go-3'}];
-  relations.find(r=>r.from==='worker'&&r.to==='save-jobs').calls=[{label:'save calls saveResult',from:'#worker.go-31',to:'#db.go-9'}];
+  relations.find(r=>r.from==='queue'&&r.to==='worker').calls=[{kind:'calls',caller_name:'dispatch',callee_name:'processJob',from:'#queue.go-12',to:'#worker.go-3'}];
+  relations.find(r=>r.from==='worker'&&r.to==='save-jobs').calls=[{kind:'calls',caller_name:'save',callee_name:'saveResult',from:'#worker.go-31',to:'#db.go-9'}];
 }
 
 // The request handler calls the worker's handler: the call names the two
 // declarations it joins, as the page data does, and the worker's tiles list
 // the callee.
-if(options.has('reading-names'))relations.find(r=>r.from==='routes'&&r.to==='worker').calls=[{label:'handleCreate calls processJob',from:'#routes.go-20',to:'#worker.go-3',at:'routes.go:20',caller:'#routes.go-5',callee:'#worker.go-3'}];
+if(options.has('reading-names'))relations.find(r=>r.from==='routes'&&r.to==='worker').calls=[{kind:'calls',caller_name:'handleCreate',callee_name:'processJob',from:'#routes.go-20',to:'#worker.go-3',at:'routes.go:20',caller:'#routes.go-5',callee:'#worker.go-3'}];
 
 // A service answering many commands, as Redis's server does: its input
 // collection holds more inputs than read at the scale it opens at.

@@ -60,21 +60,29 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 			FromLocation: &programindex.Location{Path: "anet.c", Line: 158, Column: 1}, ToLocation: &programindex.Location{Path: "anet.c", Line: 256, Column: 1}},
 		{ID: "x3", From: here, To: groupindex.Endpoint{TargetID: "server", GroupID: "lists"}, Label: "redis.c imports adlist.h", SourceKind: "native_imports", FromSubjectID: "main", ToSubjectID: "header"},
 	}}
+	// A callable written inline is named as GroupsIndex names it, spaces
+	// and all: casdoor's "StartLdapServer (inline, 3)".
+	builder.subjects[subjectKey("server", "closure")] = subjectRef{subject: groupindex.Subject{ID: "closure", Object: &groupindex.ObjectFacts{Name: "StartLdapServer$3",
+		Inline: "StartLdapServer (inline, 3)", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "ldap/server.go", Line: 50, Column: 13}}}}
+	server.Connections = append(server.Connections, groupindex.Connection{ID: "x4", From: here, To: groupindex.Endpoint{TargetID: "server", GroupID: "lists"},
+		Label: "StartLdapServer (inline, 3) calls initServer", SourceKind: "native_calls", FromSubjectID: "closure", ToSubjectID: "init",
+		FromLocation: &programindex.Location{Path: "ldap/server.go", Line: 57, Column: 3}})
 	builder.indexes = []groupindex.Index{server}
-	// The arrow's card reads a call as caller, relation and callee, three
-	// words with the relation's underscores read as spaces, and links the
-	// two names; a longer sentence showed neither name, and cmdTable's
+	// The arrow's card reads a call as caller, relation and callee, each a
+	// field of its own, the relation's underscores read as spaces, and links
+	// the two names; a longer sentence showed neither name, and cmdTable's
 	// callbacks read "Generic key commands redis.c:709". The joint names
-	// both functions there too, where "integrates with" named none.
-	cardCall := regexp.MustCompile(`^(\S+) (\S+) (\S+)$`)
-	for connection, want := range map[int][3]string{0: {"initServer", "passes callback", "acceptHandler"}, 1: {"anetTcpGenericConnect", "connects to", "anetAccept"}, 2: {"redis.c", "includes", "adlist.h"}} {
+	// both functions there too, where "integrates with" named none. A name
+	// with spaces is no sentence: the card had split the call's one label
+	// at its spaces and lost casdoor's LDAP call (review, 2026-10-03).
+	for connection, want := range map[int][3]string{0: {"initServer", "passes callback", "acceptHandler"}, 1: {"anetTcpGenericConnect", "connects to", "anetAccept"},
+		2: {"redis.c", "includes", "adlist.h"}, 3: {"StartLdapServer (inline, 3)", "calls", "initServer"}} {
 		call := builder.connectionCall(server.Connections[connection])
 		if call == nil {
 			t.Fatalf("connection %d has no call on its arrow", connection)
 		}
-		parts := cardCall.FindStringSubmatch(call.Label)
-		if parts == nil || parts[1] != want[0] || strings.ReplaceAll(parts[2], "_", " ") != want[1] || parts[3] != want[2] {
-			t.Fatalf("the arrow's card cannot read %q as %v", call.Label, want)
+		if call.Label != "" || call.CallerName != want[0] || strings.ReplaceAll(call.Kind, "_", " ") != want[1] || call.CalleeName != want[2] {
+			t.Fatalf("the arrow's card cannot read %+v as %v", call, want)
 		}
 	}
 }

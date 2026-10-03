@@ -5,7 +5,10 @@ import {callCard,reach,countWords,countsHandlers,countsInputs,headingRows,briefC
 const names={persist:'Persistence',clients:'Client connections',data:'Data structures',strings:'Strings',
   generic:'Generic key commands',lists:'List commands',get:'get',inputs:'Inputs'};
 const nameOf=id=>names[id]||id;
-const call=(label,at,extra={})=>({label,from:`h/${at}`,to:`d/${label.split(' ')[2]}`,at,...extra});
+// A relation between two named ends, as the page data restores it: its
+// kind and its two names are fields of their own. The tests write it as
+// "caller kind callee".
+const call=(said,at,extra={})=>{const [caller,kind,callee]=said.split(' ');return {kind,caller_name:caller,callee_name:callee,from:`h/${at}`,to:`d/${callee}`,at,...extra};};
 
 // Server runtime → Core infrastructure: calls grouped by the part they are
 // made from, then the part they go into, the bigger first, each group's
@@ -130,7 +133,7 @@ test('ends of one name are one heading, and a row naming only its heading is not
 // page data, never the call site (redis-cli's joint is written at
 // anet.c:158 and lands at anet.c:256, inside anetAccept declared at 248).
 test('a call names the declaration at each end and the part it is read in',()=>{
-  const joint={label:'anetTcpGenericConnect connects_to anetAccept',from:'h/anet.c:158',to:'h/anet.c:256',at:'anet.c:158',caller:'d/anet.c:128',callee:'d/anet.c:248'};
+  const joint={kind:'connects_to',caller_name:'anetTcpGenericConnect',callee_name:'anetAccept',from:'h/anet.c:158',to:'h/anet.c:256',at:'anet.c:158',caller:'d/anet.c:128',callee:'d/anet.c:248'};
   const card=callCard([
     {from:'sockets',to:'networking',calls:[joint,call('anetTcpConnect calls connect','anet.c:170')]},
     {from:'get',to:'strings',calls:[{label:'implemented in',name:'getCommand',to:'d/getCommand',callee:'d/getCommand'}]},
@@ -170,4 +173,41 @@ test('an arrow card names a call leaving its program by the functions on each si
   const relations=[{from:'clients',to:'data',calls:[call('anetTcpGenericConnect connects_to anetAccept','anet.c:158',{sides:[
     {program:'redis-cli',path:[{name:'cliConnect'},{name:'anetTcpConnect'}]},{program:'redis-server',path:[{name:'acceptHandler'},{name:'anetAccept'}]}]})]}];
   assert.deepEqual(briefCard(callCard(relations,{nameOf})).map(part=>part.names.map(entry=>entry.name)),[['cliConnect ⇢ acceptHandler']]);
+});
+
+// casdoor's LDAP part → Configuration: "StartLdapServer (inline, 3) calls
+// GetConfigString" (ldap/server.go:57) was counted and never listed: the
+// card had split the label at its spaces, read it as "other" and the
+// reading column dropped it (external review, 2026-10-03). The call's kind
+// and names are its own fields, the accepted name kept whole.
+test('a call whose names hold spaces is listed by its fields, its name whole',()=>{
+  const ldap={kind:'calls',caller_name:'StartLdapServer (inline, 3)',callee_name:'GetConfigString',caller:'d/ldap/server.go:50:13',callee:'d/conf/conf.go:44',
+    from:'h/ldap/server.go#L57',to:'h/conf/conf.go#L44',at:'ldap/server.go:57'};
+  const card=callCard([{from:'ldap',to:'config',calls:[ldap]}],{nameOf:id=>({ldap:'LDAP',config:'Configuration'})[id]});
+  assert.equal(card.total,1);
+  assert.deepEqual(card.kinds,[['calls',1]],'counted as the call it is');
+  const group=card.groups[0],rows=headingRows(group.pairs[0],group);
+  assert.deepEqual(rows.map(row=>[row.kind,row.caller,row.callee,row.site,row.calleeHref,row.at]),
+    [['calls','StartLdapServer (inline, 3)','GetConfigString','h/ldap/server.go#L57','h/conf/conf.go#L44','ldap/server.go:57']],'the reading column lists the call');
+  assert.deepEqual([rows[0].callerAt,rows[0].calleeAt],[{part:'ldap',key:'d/ldap/server.go:50:13'},{part:'config',key:'d/conf/conf.go:44'}]);
+  assert.deepEqual(briefCard(card).map(part=>part.names.map(entry=>entry.name)),[['GetConfigString']]);
+  // Calls of one caller to one callee from two sites are one call, by
+  // their declarations, whatever their names hold.
+  const again={...ldap,from:'h/ldap/server.go#L58',at:'ldap/server.go:58'};
+  assert.equal(callCard([{from:'ldap',to:'config',calls:[ldap,again]}]).total,1);
+});
+
+// Words are never read as a call: a model's sentence or a translated arrow
+// label of three words ("Сервер вызывает хранилище", "Server calls
+// storage") names no caller and no callee, in any language, and a call's
+// own fields are read whatever words stand beside them.
+test('an arrow\'s words are never split into a caller, a kind and a callee, in English or Russian',()=>{
+  for(const label of ['writes to disk','Server calls storage','Сервер вызывает хранилище','Сервер передаёт хранилищу обратный вызов']){
+    const card=callCard([{from:'server',to:'storage',calls:[{label,from:'h/a.go#L1',at:'a.go:1'}]}],{nameOf:id=>id});
+    const row=card.groups[0].pairs[0].rows[0];
+    assert.deepEqual([card.kinds,row.kind,row.caller,row.callee],[[['other',1]],'other','',''],label);
+  }
+  const card=callCard([{from:'server',to:'storage',calls:[{kind:'passes_callback',caller_name:'Сервер.Старт (inline)',callee_name:'обработчик',from:'h/a.go#L1',to:'h/b.go#L2',at:'a.go:1'}]}],{nameOf:id=>id});
+  const row=card.groups[0].pairs[0].rows[0];
+  assert.deepEqual([card.kinds,row.kind,row.caller,row.callee],[[['passes_callback',1]],'passes_callback','Сервер.Старт (inline)','обработчик']);
 });

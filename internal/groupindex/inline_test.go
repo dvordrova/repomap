@@ -29,7 +29,7 @@ func TestInlineCallablesAreNamedByTheirCalleeOrTheirHome(t *testing.T) {
 	}
 	run := object("run", "Run", programindex.ObjectMethod, 10, 40)
 	run.OwnerID = "command"
-	program := programindex.Index{Objects: []programindex.Object{
+	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		{ID: "command", Name: "ReplicateCommand", Kind: programindex.ObjectType, Location: at(5), EndLine: 8},
 		run,
 		object("metrics", "Run$1", programindex.ObjectFunction, 20, 25),
@@ -78,7 +78,7 @@ func TestCallablesOneFunctionWritesAlikeAreToldApart(t *testing.T) {
 	handed := func(from, to string, witnesses ...programindex.Witness) programindex.Relation {
 		return programindex.Relation{Kind: programindex.RelationPassesCallback, Resolution: programindex.ResolutionExact, FromID: from, ToIDs: []string{to}, Witnesses: witnesses}
 	}
-	program := programindex.Index{Objects: []programindex.Object{
+	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		function("main", "main", "cmd/hi/main.go", 20, 80),
 		function("doctor", "main$1", "cmd/hi/main.go", 28, 30),
 		function("networks", "main$2", "cmd/hi/main.go", 46, 48),
@@ -127,7 +127,7 @@ func TestCallablesOfSameNamedFunctionsAreNotCountedTogether(t *testing.T) {
 	startA.OwnerID = "serverA"
 	startB := object("startB", "Start", programindex.ObjectMethod, "b/server.go", 10, 30)
 	startB.OwnerID = "serverB"
-	program := programindex.Index{Objects: []programindex.Object{
+	program := programindex.Index{Target: programindex.Target{Language: "go"}, Objects: []programindex.Object{
 		object("a", "main", programindex.ObjectFunction, "cmd/a/main.go", 5, 20),
 		object("ac", "main$1", programindex.ObjectFunction, "cmd/a/main.go", 8, 10),
 		object("b", "main", programindex.ObjectFunction, "cmd/b/main.go", 5, 20),
@@ -150,5 +150,51 @@ func TestCallablesOfSameNamedFunctionsAreNotCountedTogether(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s = %v, want %v", name, got, want)
 		}
+	}
+}
+
+// A name is no evidence that a callable was written inline: the Go adapter
+// numbers a function literal after the function holding it (Run$1), and
+// only a Go program's numbered function is one; a lambda is one in any
+// language. JavaScript's `export function price$1()`, declared inside no
+// function, is a declaration like any other: it keeps its name and is not
+// Anonymous, which GroupsIndex compiles beside Inline for the report to read
+// (external review, 2026-10-03: the report had hidden every name with "$").
+func TestOnlyGosNumberedFunctionsAndLambdasAreWrittenInline(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "src/price.js", Line: line, Column: 1}
+	}
+	objects := []programindex.Object{
+		{ID: "holder", Name: "active", Kind: programindex.ObjectFunction, Location: at(1), EndLine: 9},
+		{ID: "numbered", Name: "price$1", Kind: programindex.ObjectFunction, Location: at(3), EndLine: 4},
+		{ID: "dollar", Name: "price$", Kind: programindex.ObjectFunction, Location: at(20), EndLine: 21},
+		{ID: "arrow", Name: "lambda@5:3", Kind: programindex.ObjectLambda, Location: at(5), EndLine: 5},
+	}
+	for _, language := range []string{"jsts", "python", "c", "clojure", "go"} {
+		program := programindex.Index{Target: programindex.Target{Language: language}, Objects: objects}
+		names, written := inlineNames(program), map[string]bool{}
+		for _, object := range objects {
+			written[object.ID] = writtenInline(program, object)
+		}
+		want := map[string]bool{"holder": false, "numbered": language == "go", "dollar": false, "arrow": true}
+		if !reflect.DeepEqual(written, want) {
+			t.Fatalf("%s: written inline %v, want %v", language, written, want)
+		}
+		if _, named := names["numbered"]; named != (language == "go") {
+			t.Fatalf("%s: price$1 is named %q", language, names["numbered"])
+		}
+		if _, named := names["dollar"]; named {
+			t.Fatalf("%s: price$ is renamed %q", language, names["dollar"])
+		}
+	}
+	// Compiled into GroupsIndex beside Inline, never persisted.
+	program := programindex.Index{Target: programindex.Target{Language: "jsts"}, Objects: objects}
+	retained := map[string]struct{}{"numbered": {}, "arrow": {}, "dollar": {}}
+	anonymous := map[string]bool{}
+	for _, subject := range compileRetainedSubjects(program, retained) {
+		anonymous[subject.ID] = subject.Object.Anonymous
+	}
+	if want := map[string]bool{"numbered": false, "arrow": true, "dollar": false}; !reflect.DeepEqual(anonymous, want) {
+		t.Fatalf("Anonymous %v, want %v", anonymous, want)
 	}
 }
