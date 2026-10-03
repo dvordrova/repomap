@@ -558,6 +558,19 @@ therefore leaves a previously usable answer available for another run. This
 classification does not make pathname eviction atomic against a later
 concurrent writer.
 
+A payload is named by the hash of its bytes and shared by every record,
+journal entry and window ref that used them, so saving never trusts a name
+alone (review A6, 2026-10-03). An existing file is reused only after its
+bytes are compared with the ones being saved; a file that differs, is a link
+or another special file, or cannot be opened or read is replaced atomically
+(temporary file, rename) by the exact bytes its name promises. Nothing is
+deleted and no owner's link changes: a damaged payload costs its request one
+live answer, whose save restores the file, and the next run is a cache hit
+for that request and for every other record sharing the file. An entry that
+cannot be inspected, or a directory in its place, fails the save (a
+`cache_write` issue; the answer stays accepted). Shared-store payloads are
+synced before the record that names them is written.
+
 - Persistent caches remain part of the ordinary path. Cache hits must be
   identity-bound and fully validated before use; `--no-cache` is the explicit
   live-provider bypass.

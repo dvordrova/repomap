@@ -1,5 +1,9 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Review A6–A8: payload restore, glossary cache notices, Jev on the shared gate (exec)
+
+- **A6, payloads:** a hash-named payload was reused after a bare `Stat`. A damaged one made the read evict its record, the next accepted answer rewrote the record over the same damaged file, and the request paid the provider on every run (the review's probe: calls 2, 3, 4). `savePayloadIn` now compares an existing file's bytes with the ones being saved and atomically replaces a file that differs, is a link or special file, or cannot be read; a directory in its place, or an entry that cannot be inspected, fails the save. Nothing is deleted, so every record, journal and window ref that shares the file keeps its link. Shared-store payloads are synced before their record (23 ms per new file measured on this laptop; records were already synced). Tests: `TestADamagedPayloadCostsOneAnswerAndTheNextRunHits` (request and response payload; same-size bytes, truncated, empty, unreadable, link), `TestARestoredPayloadServesEveryRecordThatSharesIt`, `TestAPayloadThatCannotBeRestoredIsAnError`; all three fail on the old `payload.go`. Record corruption stays `TestExecuteJSONEvictsUnsafeCacheAndRefetchesOnce`.
+
 ## 2026-10-03 — What a call runs under, and why a route ends (data 2)
 
 - **Control review, 21:34:** Lua 5.5's Main flow went on from forprep to the collector through luaG_runerror. That happens only when the step is zero, and the error message's allocation read as the outcome ("From main to sweeplist or luaD_hook"). The reader outcome is that the script is loaded, then the VM runs it; error and collector branches stay reachable, labelled, and each route says why it ends.
