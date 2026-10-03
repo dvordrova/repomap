@@ -161,7 +161,9 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 		{Name: "kind", Value: decl.Kind},
 	}
 	if decl.Signature != "" {
-		fields = append(fields, table.Field{Name: "signature", Value: cut(decl.Signature, maxSignature)})
+		// The complete signature: its last parameter or result type is as
+		// much the declaration's evidence as its first (review A5).
+		fields = append(fields, table.Field{Name: "signature", Value: decl.Signature})
 	}
 	if fileLine != "" {
 		fields = append(fields, table.Field{Name: "file_hypothesis", Value: fileLine})

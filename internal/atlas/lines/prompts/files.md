@@ -3,7 +3,7 @@
 You receive a table of code files from one repository. Each row is one file:
 its path, one line about the directory it lives in (`directory_hypothesis` is
 an earlier model description; `directory_facts` is an extracted description),
-facts about up to three files that call into it (`callers`: their paths and
+facts about the files that call into it (`callers`: their paths and
 `declarations`, the names of their declarations the graph saw making the
 calls; a caller without that list is known by its path alone), and its
 declarations (name, kind and signature). A name written `name$N` is the N-th
@@ -38,8 +38,8 @@ Rules:
   and caller context explain its surroundings; do not copy their responsibilities
   onto the file. A file containing one constant or data object should be described
   as that object, not as the surrounding module's behavior.
-- `declaration_count` is the total indexed declaration count; the list may show
-  only the leading declarations. An empty list means there is no declaration
+- `declaration_count` is the number of declarations, every one of them listed,
+  the most telling first. An empty list means there is no declaration
   evidence in this row. Say the purpose is unclear if the file has no own evidence;
   do not fill that gap with the directory's description.
 - Write English, plain and specific. No paths, internal refs or Markdown in prose cells.

@@ -33,8 +33,8 @@ func TestFileRowDescribesEvidenceWithoutDecidingArchitectureMembership(t *testin
 		t.Fatalf("a file without a sibling box was offered a placement: %+v", alone)
 	}
 	callers := alone["callers"].([]map[string]any)
-	if len(callers) != 2 || !reflect.DeepEqual(callers[0]["declarations"], []string{"Main", "Main$1", "run"}) || callers[0]["path"] != "pkg/a/x.go" {
-		t.Fatalf("calling declarations are not the graph's witnesses, bounded: %+v", callers)
+	if len(callers) != 2 || !reflect.DeepEqual(callers[0]["declarations"], []string{"Main", "Main$1", "run", "fourth"}) || callers[0]["path"] != "pkg/a/x.go" {
+		t.Fatalf("calling declarations are not every witness of the graph: %+v", callers)
 	}
 	if _, listed := callers[1]["declarations"]; listed || callers[1]["path"] != "pkg/a/z.go" {
 		t.Fatalf("a caller without witnesses borrowed leading declarations: %+v", callers[1])

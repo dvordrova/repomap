@@ -3,7 +3,9 @@
 // carries, what the model fills, and how the answer is applied. The row
 // context is one step up: a directory row carries its parent's fallback
 // line; a file row carries its directory's model line and deterministic
-// evidence from a few direct callers. Nothing transitive, nothing filled to a window.
+// evidence from every direct caller. Nothing transitive, nothing filled to a
+// window, and nothing cut: a row carries its complete evidence, and a row
+// larger than the packing target goes alone in its own request.
 package lines
 
 import (
@@ -32,13 +34,7 @@ const (
 	LineRunes  = 160
 	TitleRunes = 40
 
-	maxChildren  = 40
-	maxDecls     = 20
-	maxSignature = 160
-	maxDoc       = 200
-	maxCallers   = 3
-	// maxCallerDecls bounds the calling declarations named per caller file.
-	maxCallerDecls = 3
+	maxDoc = 200
 )
 
 //go:embed prompts/directories.md
@@ -104,8 +100,8 @@ func DirectoryRow(place atlas.Place) table.Row {
 	return table.Row{ID: place.ID, Fields: []table.Field{
 		{Name: "path", Value: place.Path},
 		{Name: "name", Value: displayName(place.Path)},
-		{Name: "dirs", Value: bounded(facts.Dirs, maxChildren)},
-		{Name: "files", Value: bounded(facts.Files, maxChildren)},
+		{Name: "dirs", Value: listed(facts.Dirs)},
+		{Name: "files", Value: listed(facts.Files)},
 		{Name: "file_count", Value: facts.FileCount},
 	}}
 }
@@ -164,43 +160,40 @@ func FileRow(
 	} else {
 		fields = append(fields, table.Field{Name: "directory_facts", Value: directoryFacts(directory)})
 	}
-	callers := make([]map[string]any, 0, maxCallers)
+	// Every caller with every calling declaration the graph saw: a fourth
+	// caller or calling declaration is evidence like the first three (review
+	// A5: 4 callers of 4 declarations each reached the model as 3 of 3).
+	callers := make([]map[string]any, 0, len(facts.Callers))
 	for _, callerID := range facts.Callers {
 		caller, known := places[callerID]
 		if !known || caller.File == nil {
 			continue
 		}
 		entry := map[string]any{"path": caller.Path}
-		if names := bounded(calling[callerID], maxCallerDecls); len(names) > 0 {
+		if names := calling[callerID]; len(names) > 0 {
 			entry["declarations"] = names
 		}
 		callers = append(callers, entry)
-		if len(callers) == maxCallers {
-			break
-		}
 	}
 	if len(callers) > 0 {
 		fields = append(fields, table.Field{Name: "callers", Value: callers})
 	}
 
-	decls := make([]map[string]any, 0, min(len(facts.Decls), maxDecls))
+	// Every declaration with its complete signature, most telling first.
+	decls := make([]map[string]any, 0, len(facts.Decls))
 	for _, decl := range rankedDecls(facts.Decls) {
 		entry := map[string]any{"name": decl.Name, "kind": decl.Kind}
 		if decl.Signature != "" {
-			entry["signature"] = cut(decl.Signature, maxSignature)
+			entry["signature"] = decl.Signature
 		}
 		decls = append(decls, entry)
-		if len(decls) == maxDecls {
-			break
-		}
 	}
 	fields = append(fields, table.Field{Name: "declaration_count", Value: len(facts.Decls)}, table.Field{Name: "declarations", Value: decls})
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
 // rankedDecls puts exported and documented declarations first, then the
-// rest by fan-in, so a file with more declarations than the row can carry
-// shows its most telling ones.
+// rest by fan-in, so a file's most telling declarations lead its list.
 func rankedDecls(decls []atlas.Decl) []atlas.Decl {
 	ranked := append([]atlas.Decl(nil), decls...)
 	sort.SliceStable(ranked, func(i, j int) bool {
@@ -239,13 +232,11 @@ func bounded(values []string, limit int) []string {
 	return values
 }
 
-func cut(text string, limit int) string {
-	if len(text) <= limit {
-		return text
+// listed is a complete list as a row writes it: an absent one is empty, [],
+// never null, so a row's bytes do not depend on how its facts were built.
+func listed(values []string) []string {
+	if values == nil {
+		return []string{}
 	}
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
-	}
-	return strings.TrimSpace(string(runes[:limit-1])) + "…"
+	return values
 }

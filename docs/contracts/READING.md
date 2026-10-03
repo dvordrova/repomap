@@ -87,7 +87,12 @@ report.
   target's role split, parts, placement, part description and areas requests
   use its position p+1 as their round, as the core does.
 - A row carries the place's own facts and its directory's line. File callers
-  contribute deterministic facts, never another file's model line. Description
+  contribute deterministic facts, never another file's model line. A row
+  carries its complete evidence: every child of a directory, every calling
+  file with every calling declaration the graph saw, and every declaration
+  with its complete signature, in a file row and a declaration row alike
+  (review A5, 2026-10-03: they were cut at 40 children, 3 callers of 3
+  declarations, 20 declarations and 160-rune signatures). Description
   candidates are every eligible declaration in authored code; visibility,
   documentation and callers order them without removing lower-ranked evidence.
   Generated declarations keep their source evidence but are no description
@@ -107,8 +112,10 @@ report.
   keeps its captions. Missing or refused decisions never close descendants.
 - Independent directory, file, callable, type and boundary tables pack
   consecutive complete rows toward a 64 KiB default input, with no row-count
-  cap; a larger complete row, with its shared context, runs alone, never
-  rejected. Explicit read-stage input and row budgets remain available. Other
+  cap; a larger complete row, with its shared context, runs alone and is
+  never cut. These tables define no lossless split of one row: a request over
+  the provider's real envelope is that window's refusal, and its rows keep
+  their fallback. Explicit read-stage input and row budgets remain available. Other
   tables keep their owning context and round bounds. Every prepared request
   obeys the shared transport envelope.
 - A row whose subject has an artifact identity uses that ID as its
