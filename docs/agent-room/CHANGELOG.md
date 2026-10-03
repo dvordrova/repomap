@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — Lua 5.1.5 walk after items 1-3, and the ternary callee already followed (data 2)
+
+- **Warm run:** `.bin/repomap` c5550809 from a `git archive` of 516bb0d9, ordinary serving run on lua-5.1.5, owner 20261003-103451, child exit 0 after Ctrl-C to its PID. Orientation made 1 live call (the overview, whose registration sentence changed, as measured) and 6 cached. Glossary 4 and documentation_reduce 1 were live from other agents' request changes. etc/all.c stays the explicit failure.
+- **Browser walk** (headless, on the run's loopback server):
+  - The lua box opens the Main flow under its only title, "Standalone interpreter → Core API and state → Runtime execution → Objects and memory or Standard libraries". No "From main to" line remains.
+  - handle_script reads "also calls: luaL_loadfile, lua_gc through docall" and "also hands over: laction to signal.h.signal through docall", then goes on as the way from lua_pcall through docall.
+  - lua_pcall goes on to luaD_call, whose "also calls:" names luaV_execute "only under a condition, src/ldo.c:377"; clicking it opens luaV_execute's declaration. The VM is still a passed call: the model's luaD_precall choice stands (item 1 refused).
+- **Ternary callee:** already followed natively since 75493c70: f_parser's `(c == LUA_SIGNATURE[0] ? luaU_undump : luaY_parser)(...)` is one `function_value` call with both as `alternatives` and a `c_conditional_callee` witness (`TestCFixtureACalleeChosenByAConditionCallsOneOfItsFunctions`, util/watch.c; Python and JS watch_tick, Go WatchTick's function value; Clojure a recorded gap). On the saved 5.1.5 page, f_parser's Calls read "one of these", which opens to luaU_undump() and luaY_parser(). No change made.
+
 ## 2026-10-03 — A callable a step hands over reads as handed, not called (data 2)
 
 - **Control review:** Lua 5.1.5's handle_script listed laction under "also calls:", although docall hands it to signal(). The walk had saved it as handed (`FlowBranch.Via` "handed to signal.h.signal", through docall), and the page dropped that word.
