@@ -311,16 +311,7 @@ func cacheNotices(issues []llm.Issue, progress func(state, detail string)) error
 		if !issue.Recoverable() {
 			return fmt.Errorf("glossary: %w", issue)
 		}
-		state := ""
-		switch issue.Kind {
-		case llm.IssueCacheRead:
-			state = "cache read failed"
-		case llm.IssueCacheWrite:
-			state = "cache write failed"
-		case llm.IssueCacheEvict:
-			state = "cache eviction failed"
-		}
-		if state != "" && progress != nil {
+		if state := issue.Notice(); state != "" && progress != nil {
 			progress(state, issue.Error())
 		}
 	}

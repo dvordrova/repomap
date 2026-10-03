@@ -338,6 +338,22 @@ func (issue Issue) Recoverable() bool {
 	return false
 }
 
+// Notice is the run output's state for a recoverable issue worth printing:
+// a cache read, write or eviction that failed. A refused cached answer and
+// clamped metrics print nothing, and neither does an issue that is not
+// recoverable, which its caller returns instead.
+func (issue Issue) Notice() string {
+	switch issue.Kind {
+	case IssueCacheRead:
+		return "cache read failed"
+	case IssueCacheWrite:
+		return "cache write failed"
+	case IssueCacheEvict:
+		return "cache eviction failed"
+	}
+	return ""
+}
+
 func (issue Issue) Error() string {
 	if issue.Err == nil {
 		return string(issue.Kind)

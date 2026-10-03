@@ -72,3 +72,26 @@ func TestAProviderOwnedControllerIsEveryCallersGate(t *testing.T) {
 		t.Fatal("a provider without its own controller left its executor's gate")
 	}
 }
+
+// Recoverable and Notice draw one line for every caller of an outcome's
+// issues: cache and metrics diagnostics go on, a failed cache read, write or
+// eviction is printed, and an unwritten journal or an unknown kind stops.
+func TestIssueRecoverableAndNotice(t *testing.T) {
+	for kind, want := range map[IssueKind]struct {
+		recoverable bool
+		notice      string
+	}{
+		IssueCacheRead:     {true, "cache read failed"},
+		IssueCacheWrite:    {true, "cache write failed"},
+		IssueCacheEvict:    {true, "cache eviction failed"},
+		IssueCacheValidate: {true, ""},
+		IssueMetrics:       {true, ""},
+		IssueObserver:      {false, ""},
+		"unknown":          {false, ""},
+	} {
+		issue := Issue{Kind: kind}
+		if issue.Recoverable() != want.recoverable || issue.Notice() != want.notice {
+			t.Errorf("%s: recoverable %v notice %q", kind, issue.Recoverable(), issue.Notice())
+		}
+	}
+}

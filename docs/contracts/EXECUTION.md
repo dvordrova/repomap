@@ -510,8 +510,9 @@ still fail their owning persistence operation. `llm.Issue.Recoverable` draws
 the same line for an outcome's issues: a failed cache read, validation,
 eviction or write and clamped metrics leave the call's result as it would be
 without the cache and are reported, while an observer issue (the run's
-`rejected.jsonl` was not written) and an unknown kind are not recoverable. The
-atlas reading and the optional glossary both follow it.
+`rejected.jsonl` was not written) and an unknown kind are not recoverable.
+`Issue.Notice` names the printed state of a failed cache read, write or
+eviction. The atlas reading's answers and the optional glossary both follow it.
 
 `repomap replay --file REQUEST.json [--debug-dir DIR]` sends the exact prepared
 provider payload through the existing configured client, always live. It keeps

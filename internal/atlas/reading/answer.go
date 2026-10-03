@@ -108,16 +108,11 @@ func (r *reader) readAnswers(ctx context.Context) error {
 			// Optional cache failures do not invalidate an accepted answer.
 			// Mandatory artifact and observer failures still stop the reading.
 			for _, issue := range outcome.Issues {
-				switch issue.Kind {
-				case llm.IssueCacheValidate, llm.IssueMetrics:
-				case llm.IssueCacheRead:
-					r.opts.State(lines.StageAnswer, "cache read failed", issue.Error())
-				case llm.IssueCacheWrite:
-					r.opts.State(lines.StageAnswer, "cache write failed", issue.Error())
-				case llm.IssueCacheEvict:
-					r.opts.State(lines.StageAnswer, "cache eviction failed", issue.Error())
-				default:
+				if !issue.Recoverable() {
 					return fmt.Errorf("answer: %w", issue)
+				}
+				if state := issue.Notice(); state != "" {
+					r.opts.State(lines.StageAnswer, state, issue.Error())
 				}
 			}
 			if failure != nil {
