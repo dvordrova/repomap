@@ -130,7 +130,7 @@ func TestAMainFlowIsWalkedByCodeAndAsksOneQuestionPerSplit(t *testing.T) {
 	if len(walk.asked) != 1 || !walk.asked[0].decided || walk.asked[0].lead < 0.59 {
 		t.Fatalf("the split's decision was not kept: %+v", walk.asked)
 	}
-	if walk.flow.Title != "From main to play" || walk.flow.Steps[1].Explanation != "Opens the window and registers its handlers." {
+	if walk.flow.Title != "" || walk.flow.Steps[1].Explanation != "Opens the window and registers its handlers." {
 		t.Fatalf("the flow's title or a step's accepted line is wrong: %+v", walk.flow)
 	}
 	// The decided split keeps the candidate it passed, as the step's own
@@ -171,7 +171,7 @@ func TestATornSplitPartsTheFlowIntoWays(t *testing.T) {
 	if got := flowNames(walk.flow); !slices.Equal(got, want) {
 		t.Fatalf("flow = %q\nwant %q", got, want)
 	}
-	if walk.flow.Title != "From main to play" || validFlowSteps(walk.flow.Steps) != nil {
+	if walk.flow.Title != "" || validFlowSteps(walk.flow.Steps) != nil {
 		t.Fatalf("title %q", walk.flow.Title)
 	}
 	// play calls on_click: the way from on_move goes on into the other
@@ -691,7 +691,7 @@ func TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops(t *testing.T) {
 	if steps[1].OpenAt == nil || steps[1].OpenAt.Line != 462 || steps[0].OpenAt != nil {
 		t.Fatalf("open calls: %+v, %+v", steps[0].OpenAt, steps[1].OpenAt)
 	}
-	if steps[1].Stop != StopFailureOnly || steps[0].Stop != "" || walk.flow.Title != "From execute to forprep" {
+	if steps[1].Stop != StopFailureOnly || steps[0].Stop != "" || walk.flow.Title != "" {
 		t.Fatalf("stops %q, %q; title %q", steps[0].Stop, steps[1].Stop, walk.flow.Title)
 	}
 	if _, err := Seal(Result{FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64), MainFlow: walk.flow}); err != nil {

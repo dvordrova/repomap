@@ -899,7 +899,7 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, map[string]bo
 	if orient == nil || len(orient.MainFlow.Steps) == 0 {
 		return nil, nil
 	}
-	flow := &pageFlow{Title: orient.MainFlow.Title}
+	flow := &pageFlow{}
 	here := false
 	shown := map[string]bool{}
 	previous := ""

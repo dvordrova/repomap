@@ -934,6 +934,39 @@ func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
 	}
 }
 
+// A saved flow's code title ("From main to <where the walk stopped>") is
+// never shown: the parts line is the flow's only title, in both languages,
+// and an orientation saved with one still renders (control review and
+// skeptic, 2026-10-03: "From main to propagatemark or lua_getfenv" read as
+// where the program goes).
+func TestAMainFlowIsTitledByItsPartsAlone(t *testing.T) {
+	builder, index := flowFixture()
+	builder.indexes = []groupindex.Index{index}
+	section := builder.byProgram["t1"]
+	section.programTargetID = "t1"
+	builder.data.Orientation = &orientation.Result{MainFlow: orientation.MainFlow{Title: "From serverCron to setCommand", Steps: []orientation.FlowStep{
+		{TargetID: "t1", SubjectID: "cron"}, {TargetID: "t1", SubjectID: "h2", Via: "called"}}}}
+	flow, _ := builder.flow(section)
+	if flow == nil || len(flow.Parts) != 2 {
+		t.Fatalf("flow = %+v", flow)
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: flow}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		if !strings.Contains(html, "Server lifecycle and cron</a> → <a") || !strings.Contains(html, ">String commands</a>") || strings.Contains(html, "From serverCron") ||
+			strings.Count(html, "flow-title") != 1 {
+			t.Fatalf("%v: the flow is not titled by its parts alone: %s", language, html)
+		}
+	}
+}
+
 // A way going on as others says each, with how the step reaches it: two
 // joins end a way as either, and a join beside a way of the step's own is
 // read after that way, in both languages (control review, 2026-10-03: H

@@ -392,7 +392,9 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   enters no Core part are not. One candidate is followed; two or more are one
   Jev choice, and a lead under the classifier margin (or no answer) ends the
   flow at a named fork, journaled under `flow_fork`
-  ([Reading](../contracts/READING.md) "Orientation").
+  ([Reading](../contracts/READING.md) "Orientation"). The page titles the
+  flow only by the parts its steps stand in; the walk writes no "From main
+  to …" title (2026-10-03).
 - **Glossary:** only accepted prose enters a separate p-ref
   generation/reduction pass. Generation is three steps, each one decision
   (owner, 2026-09-28): DeepSeek lists names, Jev decides per name domain

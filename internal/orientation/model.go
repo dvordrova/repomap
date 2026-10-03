@@ -173,6 +173,10 @@ func cloneLocation(location *programindex.Location) *programindex.Location {
 
 // MainFlow is the one end-to-end path the reader should follow first.
 type MainFlow struct {
+	// Title is written empty and read by no one: the page names the parts a
+	// flow passes through instead of "From main to <where the walk
+	// stopped>" (2026-10-03). It goes at the next version's change, so a
+	// saved version 4 artifact still decodes.
 	Title string     `json:"title"`
 	Steps []FlowStep `json:"steps"`
 }

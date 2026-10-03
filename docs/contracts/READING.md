@@ -2078,7 +2078,7 @@ ends (`FlowStep.Stop`): it parts into ways (`torn`), its split is left
 undecided (`unanswered`), its work reaches no further unit (`leaf`), only
 failing paths (`failure_only`), only units already on the path
 (`revisits`), or only into where other ways start, which it goes on as
-(`joins`; the title leaves such a way out); the page says it under the
+(`joins`); the page says it under the
 step, and each guard and loop with its place
 (`TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops`). A way may go on
 into where another way of the splits around it starts: that start is one
@@ -2095,14 +2095,16 @@ language's fixture flow test through `assertWaysJoin`, C's kvd in
 `TestCFixtureMainFlowWalksWhatMainHandsOver`;
 Lua 5.1.5's script way reaches lua_pcall, the REPL way's start, through
 docall: 5 uncached draws gave lua_pcall 0.65-0.70 over luaL_loadfile).
-Over the code's title the page names the parts the steps stand in, each
+Above the steps the page names the parts the steps stand in, each
 once in the order the path enters them; one way alone entering new parts
 reads as the path, a way only joining others adds none, and ways going
 on apart read as alternatives, the first new part each enters joined by
 "or", the line ending there; with fewer than two parts there is no line.
 The parts' own titles are its only words, none written for it
 (`TestAMainFlowNamesThePartsItPassesThrough`; Lua 5.5 "Standalone
-interpreter → Core API and state → Virtual machine"). Where the model
+interpreter → Core API and state → Virtual machine"). It is the flow's only
+title; a one-part flow has the part's box over its steps and no line
+(`TestAMainFlowIsTitledByItsPartsAlone`). Where the model
 prefers another call to the VM (5.1.5's luaD_call: luaD_precall 0.70-0.75
 over luaV_execute, 0.79-0.82 with luaV_execute's condition written out,
 0.61-0.73 with the ask saying the path never comes back), the VM stays
@@ -2202,9 +2204,10 @@ Candidates of one split sharing a name are told apart
 (`groupindex.TellApart`) by the first spelling that differs for each: the
 type (Worker.run), the folder (s3.ReplicaClient), the file, then the part
 ("handle in Commands"); the option's title and name term and the report's
-fork read the same spelling. The title is "From <first> to <last>", naming
-each end of a parted flow up to three ("From -main to timed-deepen or
-choose-at-depth"), past three the step where it parts and how many ways.
+fork read the same spelling. The walk writes no title (`MainFlow.Title`
+stays empty until the next orientation version removes it): "From <first>
+to <last>" named where the walk stopped as if the program went there, and
+the first and last steps are the list's own rows.
 Measured on the saved inputs with the cache off, five draws each
 (2026-09-30): redis main → aeMain → aeProcessEvents → readQueryFromClient →
 processInputBuffer → processCommand → call → setCommand, 5 of 5; freqtrade

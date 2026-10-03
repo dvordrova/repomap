@@ -69,7 +69,7 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 	}
 	// The Main flow is walked by code from alpha's entry: Serve calls Apply,
 	// its one candidate, so no question is asked and no prose is written.
-	if len(result.MainFlow.Steps) != 2 || result.MainFlow.Title != "From Serve to Apply" ||
+	if len(result.MainFlow.Steps) != 2 || result.MainFlow.Title != "" ||
 		result.MainFlow.Steps[0].SubjectID != fixture.subjectID("alpha", "inbound") || result.MainFlow.Steps[0].Via != "" ||
 		result.MainFlow.Steps[1].SubjectID != fixture.subjectID("alpha", "core") || result.MainFlow.Steps[1].Via != "called" ||
 		result.MainFlow.Steps[1].TargetID != fixture.targetID("alpha") {

@@ -14,7 +14,7 @@ func TestComponentPageLeadsWithPurpose(t *testing.T) {
 		Role: "Go web server", Purpose: "Serves the meetup pages and talks to PostgreSQL.",
 		Entrypoints: []pageEntrypoint{{Symbol: "main", Kind: "callable", Anchor: &pageAnchor{Text: "main.go:157"}}},
 		Map:         &pageMap{},
-		Flow:        &pageFlow{Title: "Serving the events page", Steps: []pageFlowStep{{Label: "main", Explanation: "Parses flags and starts Echo."}}},
+		Flow:        &pageFlow{Steps: []pageFlowStep{{Label: "main", Explanation: "Parses flags and starts Echo."}}},
 		Config:      []pageConfig{{Key: "PG_URL", Anchor: &pageAnchor{Text: "main.go:166"}}},
 	}
 	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")

@@ -370,13 +370,14 @@ type pageTodo struct {
 }
 
 type pageFlow struct {
-	TitleRef string
-	Title    string
-	Steps    []pageFlowStep
+	Steps []pageFlowStep
 	// Parts are the parts the flow's steps stand in, each once in the order
 	// the path enters them, ways going on apart read as alternatives
 	// (flowParts): "Standalone interpreter → Core API and state → Virtual
-	// machine", a reader's title beside the code's own.
+	// machine", the flow's only title. No code-built sentence is shown:
+	// "From main to propagatemark or lua_getfenv" named where the walk
+	// stopped as if the program went there, the first and last steps being
+	// the list's own rows (control review and skeptic, 2026-10-03).
 	Parts []pageFlowPart
 }
 

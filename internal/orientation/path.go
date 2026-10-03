@@ -147,7 +147,6 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 	}
 	walk.flow.Steps = walk.flowSteps(path, targetID, graph)
 	readRegistrations(walk.flow.Steps, nil, graph, input.Facts.OfKind(facts.KindRegistration))
-	walk.flow.Title = flowTitle(walk.flow.Steps, graph)
 	return walk, nil
 }
 
@@ -248,41 +247,6 @@ func (walk *flowWalk) stop(path groupindex.SpinePath, last groupindex.SpineStep)
 		return StopLeaf
 	}
 	return StopRevisits
-}
-
-// flowTitle is "From <first> to <last>", naming each end of a flow that
-// parts ("From main to DB.Pos or s3.ReplicaClient.LTXFiles"), or, past
-// three ends, the step where it parts and how many ways go on.
-func flowTitle(steps []FlowStep, graph *flowGraph) string {
-	var ends []string
-	var collect func([]FlowStep)
-	collect = func(steps []FlowStep) {
-		last := steps[len(steps)-1]
-		// A way that goes on as another way ends nowhere of its own.
-		if last.Stop == StopJoins {
-			return
-		}
-		if len(last.Paths) == 0 {
-			if name := graph.qualified(last.SubjectID); !slices.Contains(ends, name) {
-				ends = append(ends, name)
-			}
-			return
-		}
-		for _, path := range last.Paths {
-			collect(path.Steps)
-		}
-	}
-	collect(steps)
-	first := graph.qualified(steps[0].SubjectID)
-	switch {
-	case len(ends) == 0:
-		return fmt.Sprintf("From %s to %s", first, graph.qualified(steps[len(steps)-1].SubjectID))
-	case len(ends) == 1:
-		return fmt.Sprintf("From %s to %s", first, ends[0])
-	case len(ends) <= 3:
-		return fmt.Sprintf("From %s to %s or %s", first, strings.Join(ends[:len(ends)-1], ", "), ends[len(ends)-1])
-	}
-	return fmt.Sprintf("From %s to %s, then %d ways", first, graph.qualified(steps[len(steps)-1].SubjectID), len(ends))
 }
 
 // flowEntry is where a target's Main flow starts: its first seed that runs

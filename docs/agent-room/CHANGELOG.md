@@ -1,5 +1,11 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — The Main flow is titled by its parts alone (data 2)
+
+- **Skeptic:** neither restate the end in plain words (A) nor keep the code title where no parts line exists (B). "From main to propagatemark or lua_getfenv" named where the walk stopped (a leaf, a revisit, a failure path) as if the program went there. The first and last steps are already the list's rows, and each end prints its stop reason. Its Russian was written by the translator, since localization sent it as a label.
+- **Change:** the walk writes no title (`flowTitle` is gone; `MainFlow.Title` stays empty until the next orientation version removes it, so saved version 4 runs still decode). The page has no `Flow.Title`, `TitleRef` or catalogue entry for it. The parts line is the flow's only title, and a one-part flow has the part's box over its steps.
+- **Checks:** `TestAMainFlowIsTitledByItsPartsAlone` (en, ru) renders a saved flow whose title is set, across two parts: the parts line, none of the title's words. `repomap render` of the saved 5.1.5 owner 090413 and headscale 094959 exits 0 with no "From main to" left, 5.1.5 under "Standalone interpreter → Core API and state → Runtime execution → Objects and memory or Standard libraries". orientation and report tests and the flow contract tests pass, and vet is clean.
+
 ## 2026-10-03 — Why the VM loses at 5.1.5's luaD_call, and a registration's receiver may be the repository's own (data 2)
 
 - **The request** (`.llm-cache/payloads/1751fda6…`, key `t5.n104|next`): state "We trace the one path a newcomer follows from where src/lua starts to the work it exists for, once", item luaD_call with its signature and part, candidates c1 luaC_step, c2 luaD_precall, c3 luaV_execute in name order. Each criterion is name, signature, part and "reached: called". No option has a role line, because this C program has no atlas lines. The guards the walk holds (luaV_execute under ldo.c:377, luaC_step under ldo.c:380) and the order the body writes its calls never reach the request. Reading three equal names, the model takes luaD_precall as the call's work (5 uncached draws: 0.71-0.76).
