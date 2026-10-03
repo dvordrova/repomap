@@ -392,6 +392,10 @@ class Analyzer:
         self.variable_annotations = {}
         self.return_values = {}
         self.suspended_callables = set()
+        # The defs whose decorators resolve to typing.overload, every other
+        # one outside the repository: signatures of the implementation that
+        # follows, folded into it (fold_overloads).
+        self.overload_stubs = set()
         self.constructor_fields = {}
         self.field_write_counts = {}
         self.field_type_origins = {}
@@ -703,6 +707,7 @@ class Analyzer:
         self.attach_table_keys()
         self.hand_parameter_calls()
         self.type_field_parameters()
+        self.fold_overloads(decoded)
         for ref, rows in self.table_rows.items():
             value = self.objects_by_ref.get(ref)
             if rows and value is not None and value["kind"] == "variable":
@@ -792,6 +797,128 @@ class Analyzer:
             "objects": self.objects,
             "relations": self.relations,
         }
+
+    def fold_overloads(self, modules):
+        # A `@typing.overload` stub is a signature of the implementation of
+        # its name that follows it, the def that runs and that a call
+        # reaches, never a declaration of its own (PYTHON, ProgramIndex
+        # Overload): the first later def of its qualified name, no stub,
+        # written in the stub's own statement list or one enclosing it (a
+        # stub under `if TYPE_CHECKING:` folds into the def after the if; a
+        # stub in an if branch never into the else's). It keeps its
+        # signature, place, lines and typed values on the implementation;
+        # its parameters go with it, and what pointed at it points at the
+        # implementation. A stub with no implementation after it (a .pyi
+        # file, a Protocol) stays a declaration.
+        if not self.overload_stubs:
+            return
+        chains = {}
+
+        def walk(statements, chain):
+            for position, statement in enumerate(statements):
+                here = chain + ((id(statements), position),)
+                if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    ref = self.node_refs.get(id(statement))
+                    if ref:
+                        chains[ref] = here
+                for field in ("body", "orelse", "finalbody"):
+                    inner = getattr(statement, field, None)
+                    if isinstance(inner, list) and inner and isinstance(inner[0], ast.stmt):
+                        walk(inner, here)
+                for handler in getattr(statement, "handlers", None) or []:
+                    walk(handler.body, here)
+                for case in getattr(statement, "cases", None) or []:
+                    walk(case.body, here)
+
+        for module in modules:
+            walk(module["tree"].body, ())
+
+        def follows(stub, chain):
+            for depth in range(len(stub)):
+                if len(chain) == depth + 1 and chain[:depth] == stub[:depth] and \
+                        chain[depth][0] == stub[depth][0] and chain[depth][1] > stub[depth][1]:
+                    return True
+            return False
+
+        by_qname = {}
+        for ref in chains:
+            qname = self.qnames_by_ref.get(ref)
+            if qname:
+                by_qname.setdefault(qname, []).append(ref)
+        folded = {}
+        for stub in sorted(self.overload_stubs):
+            qname = self.qnames_by_ref.get(stub)
+            if stub not in chains or not qname:
+                continue
+            later = [
+                ref for ref in by_qname.get(qname, [])
+                if ref not in self.overload_stubs and follows(chains[stub], chains[ref])
+            ]
+            if later:
+                folded[stub] = min(later, key=lambda ref: location_key(self.objects_by_ref[ref].get("location")))
+        if not folded:
+            return
+        removed = set(folded)
+        changed = True
+        while changed:
+            changed = False
+            for value in self.objects:
+                ref = value["source_ref"]
+                if ref not in removed and (value.get("container_ref") in removed or value.get("owner_ref") in removed):
+                    removed.add(ref)
+                    changed = True
+        for stub, implementation in sorted(folded.items(), key=lambda item: location_key(self.objects_by_ref[item[0]].get("location"))):
+            value = self.objects_by_ref[stub]
+            overload = {"location": value["location"]}
+            for key in ("signature", "end_line", "code_lines", "parameters", "results"):
+                if value.get(key):
+                    overload[key] = value[key]
+            self.objects_by_ref[implementation].setdefault("overloads", []).append(overload)
+        for value in self.objects_by_ref.values():
+            if value.get("overloads"):
+                value["overloads"].sort(key=lambda overload: location_key(overload.get("location")))
+        self.objects = [value for value in self.objects if value["source_ref"] not in removed]
+        for ref in removed:
+            self.objects_by_ref.pop(ref, None)
+        for qname, ref in list(self.objects_by_qname.items()):
+            if ref in folded:
+                self.objects_by_qname[qname] = folded[ref]
+            elif ref in removed:
+                del self.objects_by_qname[qname]
+
+        # Relations are remapped in place: later passes reach them through
+        # relations_by_key too.
+        def remap(value):
+            if isinstance(value, list):
+                for position, item in enumerate(value):
+                    if isinstance(item, str):
+                        value[position] = folded.get(item, item)
+                    else:
+                        remap(item)
+            elif isinstance(value, dict):
+                for key, item in value.items():
+                    if isinstance(item, str):
+                        value[key] = folded.get(item, item)
+                    else:
+                        remap(item)
+
+        kept = []
+        for relation in self.relations:
+            source = relation.get("from_ref")
+            # A stub's own decorators (its overload, a staticmethod) are the
+            # implementation's to state; its parameters go with it.
+            if source in removed and (relation.get("kind") == "decorates" or source not in folded):
+                continue
+            targets = relation.get("to_refs", [])
+            if any(target in removed and target not in folded for target in targets):
+                relation["to_refs"] = [target for target in targets if target not in removed or target in folded]
+                if targets and not relation["to_refs"]:
+                    continue
+            remap(relation)
+            if "to_refs" in relation:
+                relation["to_refs"] = sorted(set(relation["to_refs"]))
+            kept.append(relation)
+        self.relations = kept
 
     def attach_comparisons(self):
         # A value one scope compares with two or more different non-empty
@@ -3204,6 +3331,7 @@ class RelationVisitor(ast.NodeVisitor):
             defined = self.object(defined_ref)
             defined["parameters"] = self.typed_parameters(node, defined["kind"])
             defined["results"] = self.typed_results(node)
+        overload, outside = False, True
         for decorator in node.decorator_list:
             target = decorator.func if isinstance(decorator, ast.Call) else decorator
             detail = self.expression_name(target)
@@ -3212,14 +3340,26 @@ class RelationVisitor(ast.NodeVisitor):
                 pattern, patterns_observed = self.relation_pattern(
                     decorator, "decorator_call", defined_ref,
                 )
+            resolved = self.resolve(target)
+            # A stub is known by what its decorator resolves to, never by
+            # the decorator's spelling (`ov`, `t.overload`).
+            decorator_object = self.analyzer.objects_by_ref.get(resolved[1]) if resolved[1] else None
+            if resolved[0] == "external" and decorator_object is not None and decorator_object.get("name") in ("typing.overload", "typing_extensions.overload"):
+                overload = True
+            elif resolved[0] != "external":
+                outside = False
             self.emit_decorator(
-                self.resolve(target), defined_ref, decorator,
+                resolved, defined_ref, decorator,
                 "decorator", detail, exact_authorities=("literal",),
                 pattern=pattern, patterns_observed=patterns_observed,
             )
             if isinstance(decorator, ast.Call):
                 for argument in list(decorator.args) + [value.value for value in decorator.keywords]:
                     self.visit(argument)
+        # A repository decorator on a stub runs at import and may keep it:
+        # such a stub stays a declaration.
+        if overload and outside and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            self.analyzer.overload_stubs.add(defined_ref)
         # Defaults and annotations execute in the defining scope, not in the
         # function body. They may contain calls, callbacks, and dynamic imports
         # and therefore must enter the same exact/possible/unresolved ledger.

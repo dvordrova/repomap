@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/places"
@@ -54,9 +55,10 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The compiler's tokens hold code lines; the JSDoc, the comment inside
-	// and the blank line do not. An overload signature is its one line.
+	// and the blank line do not. An overload signature is no declaration: it
+	// folds into its implementation (ProgramIndex Overload).
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/type-members.ts", map[string][]int{
-		"pick": {1, 1, 3}, "firstOf": {3},
+		"pick": {3}, "firstOf": {3},
 	})
 	// The graph records what a declaration reads: recordOrder reads the
 	// module's handledOrderIds, and takes an OrderEvent, the interface its
@@ -145,5 +147,75 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	}
 	if len(alternatives) != 0 {
 		t.Fatalf("relations of several alternatives that are no dispatch site: %v", alternatives)
+	}
+}
+
+// A function's, a method's and a constructor's overload signatures are no
+// declarations of their own: each folds into the implementation that
+// follows it, keeping its signature and place, and every call of the
+// overloaded name reaches the implementation alone (the checker's symbol
+// lists every signature; pickAll had called three alternatives of pick).
+func TestTypeScriptOverloadSignaturesFoldIntoTheirImplementation(t *testing.T) {
+	root := preparedCompilerProject(t)
+	tracked := []string{"package.json", "tsconfig.json", "src/type-members.ts"}
+	for _, path := range tracked {
+		contents, err := os.ReadFile(filepath.Join("..", "..", "testdata", "repositories", "jsts", filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, root, path, string(contents))
+	}
+	repository, err := corpus.New(t.Context(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	_, index, _, err := Build(t.Context(), repository, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string][]programindex.Object{}
+	names := map[string]string{}
+	for _, object := range index.Objects {
+		names[object.ID] = object.Name
+		if object.Location != nil && object.Location.Path == "src/type-members.ts" {
+			byName[object.Name] = append(byName[object.Name], object)
+		}
+	}
+	for name, lines := range map[string][]int{"pick": {47, 48}, "Picker.choose": {69, 70}, "Picker.constructor": {65, 66}} {
+		if len(byName[name]) != 1 {
+			t.Fatalf("%s is %d declarations, want one: %v", name, len(byName[name]), byName)
+		}
+		var at []int
+		for _, overload := range byName[name][0].Overloads {
+			if overload.Signature == "" {
+				t.Fatalf("%s overload at %d lost its signature", name, overload.Location.Line)
+			}
+			at = append(at, overload.Location.Line)
+		}
+		if !slices.Equal(at, lines) {
+			t.Fatalf("%s overloads at %v, want %v", name, at, lines)
+		}
+	}
+	var calls []string
+	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationCalls && names[relation.FromID] == "pickAll" {
+			var targets []string
+			for _, id := range relation.ToIDs {
+				targets = append(targets, names[id])
+			}
+			slices.Sort(targets)
+			calls = append(calls, strings.Join(targets, "|"))
+		}
+	}
+	slices.Sort(calls)
+	t.Logf("pickAll calls %q", calls)
+	for _, call := range calls {
+		if strings.Contains(call, "|") {
+			t.Fatalf("a call of an overloaded name reaches several declarations: %q", calls)
+		}
+	}
+	if !slices.Contains(calls, "pick") || !slices.Contains(calls, "Picker.choose") {
+		t.Fatalf("pickAll calls %q", calls)
 	}
 }

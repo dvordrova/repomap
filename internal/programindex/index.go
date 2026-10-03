@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 25
+	Version          = 26
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -499,6 +499,82 @@ type ObjectInput struct {
 	// Comparisons are, for a callable or a module body, the values it
 	// compares with two or more different words (see Comparison).
 	Comparisons []Comparison
+	// Overloads are, for a callable, the other signatures it is declared
+	// with before its implementation (see Overload).
+	Overloads []OverloadInput
+}
+
+// OverloadInput is one Overload as an adapter hands it, its values' types
+// by source ref.
+type OverloadInput struct {
+	Signature  string
+	Location   *Location
+	EndLine    int
+	CodeLines  int
+	Parameters []TypedNameInput
+	Results    []TypedNameInput
+}
+
+// Overload is one signature a callable is declared with besides its own:
+// a Python `@typing.overload` stub (its decorator resolving to
+// typing.overload) or a TypeScript overload signature, each written before
+// the implementation of the same name, which is what runs and what a call
+// reaches (PYTHON, JSTS). It keeps its own source place, lines and typed
+// values, and is no declaration of its own: beets's BeatportClient.search,
+// two stubs and an implementation, is one method. Overloads are in source
+// order, in the callable's file, before it.
+type Overload struct {
+	Signature  string      `json:"signature,omitempty"`
+	Location   *Location   `json:"location"`
+	EndLine    int         `json:"end_line,omitempty"`
+	CodeLines  int         `json:"code_lines,omitempty"`
+	Parameters []TypedName `json:"parameters,omitempty"`
+	Results    []TypedName `json:"results,omitempty"`
+}
+
+// validOverloads checks a callable's overloads: each located in the
+// callable's file before it, in source order, with its own lines.
+func validOverloads(kind ObjectKind, location *Location, overloads []Overload) bool {
+	if len(overloads) == 0 {
+		return true
+	}
+	if !callableKind(kind) || location == nil {
+		return false
+	}
+	var previous *Location
+	for _, overload := range overloads {
+		at := overload.Location
+		if at == nil || !validLocation(*at) || at.Path != location.Path || !locationBefore(*at, *location) || previous != nil && !locationBefore(*previous, *at) ||
+			!validOptionalText(overload.Signature) || !validEndLine(at, overload.EndLine) || !validCodeLines(at, overload.EndLine, overload.CodeLines) {
+			return false
+		}
+		for _, typed := range append(append([]TypedName(nil), overload.Parameters...), overload.Results...) {
+			if !validOptionalText(typed.Name) || !validOptionalText(typed.Type) || typed.Name == "" && typed.Type == "" || typed.TypeID != "" && !validCompactID(typed.TypeID, "n") {
+				return false
+			}
+		}
+		previous = at
+	}
+	return true
+}
+
+// locationBefore says a comes before b in one file.
+func locationBefore(a, b Location) bool {
+	return a.Line < b.Line || a.Line == b.Line && a.Column < b.Column
+}
+
+func cloneOverloads(values []Overload) []Overload {
+	if values == nil {
+		return nil
+	}
+	result := make([]Overload, len(values))
+	for position, value := range values {
+		result[position] = value
+		result[position].Location = cloneLocation(value.Location)
+		result[position].Parameters = slices.Clone(value.Parameters)
+		result[position].Results = slices.Clone(value.Results)
+	}
+	return result
 }
 
 // ParameterStore is a callable storing one of its own parameters, as it
@@ -846,6 +922,9 @@ type Object struct {
 	// Comparisons are the values a callable or a module body compares with
 	// two or more different words (see Comparison).
 	Comparisons []Comparison `json:"comparisons,omitempty"`
+	// Overloads are a callable's other signatures, written before it (see
+	// Overload).
+	Overloads []Overload `json:"overloads,omitempty"`
 }
 
 // Witness preserves one bounded local fact supporting a relation. Kind and
@@ -1662,6 +1741,25 @@ func New(input Input) (Index, error) {
 				*values.sealed = append(*values.sealed, TypedName{Name: typed.Name, Type: typed.Type, TypeID: typeID})
 			}
 		}
+		for _, overload := range value.Overloads {
+			sealed := Overload{Signature: overload.Signature, Location: cloneLocation(overload.Location), EndLine: overload.EndLine, CodeLines: overload.CodeLines}
+			for _, values := range []struct {
+				inputs []TypedNameInput
+				sealed *[]TypedName
+			}{{overload.Parameters, &sealed.Parameters}, {overload.Results, &sealed.Results}} {
+				for _, typed := range values.inputs {
+					typeID, err := resolveObjectRef(bindings, typed.TypeRef)
+					if err != nil {
+						return Index{}, fmt.Errorf("program index: object %q overload value type: %w", value.SourceRef, err)
+					}
+					*values.sealed = append(*values.sealed, TypedName{Name: typed.Name, Type: typed.Type, TypeID: typeID})
+				}
+			}
+			index.Objects[position].Overloads = append(index.Objects[position].Overloads, sealed)
+		}
+		if !validOverloads(index.Objects[position].Kind, index.Objects[position].Location, index.Objects[position].Overloads) {
+			return Index{}, fmt.Errorf("program index: object %q overloads are invalid", value.SourceRef)
+		}
 	}
 	sort.Slice(index.Objects, func(i, j int) bool { return compactIDLess(index.Objects[i].ID, index.Objects[j].ID, "n") })
 	for position := 1; position < len(index.Objects); position++ {
@@ -1860,6 +1958,7 @@ func (index Index) Snapshot() Index {
 		result.Objects[position].ParameterStores = canonicalParameterStores(index.Objects[position].ParameterStores)
 		result.Objects[position].Rows = cloneRows(index.Objects[position].Rows)
 		result.Objects[position].Comparisons = cloneComparisons(index.Objects[position].Comparisons)
+		result.Objects[position].Overloads = cloneOverloads(index.Objects[position].Overloads)
 	}
 	result.Relations = make([]Relation, len(index.Relations))
 	copy(result.Relations, index.Relations)
@@ -2497,7 +2596,7 @@ func validateObject(value Object) error {
 		!validAliases(value.Aliases) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) || value.Anonymous && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) ||
-		!validComparisons(value.Kind, value.Comparisons) {
+		!validComparisons(value.Kind, value.Comparisons) || !validOverloads(value.Kind, value.Location, value.Overloads) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {

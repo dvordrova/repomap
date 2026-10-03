@@ -159,9 +159,11 @@ func (r *reader) designView(targetID string) *designView {
 		row := &designFile{id: file.ID, path: file.Path, dir: path.Dir(file.Path), test: file.File.Test, generated: file.File.Generated}
 		decls := file.File.Decls
 		// named is the first unit of the file under each name: a declaration
-		// that repeats it (a second Go init, Python @overload stubs and their
-		// implementation, TS overload signatures, a Clojure declare and its
-		// defn) follows it, one unit shown with the first one's signature.
+		// that repeats it (a second Go init, a Clojure declare and its defn)
+		// follows it, one unit shown with the first one's signature. Python's
+		// @overload stubs and TS overload signatures are no declarations:
+		// they fold into their implementation (Decl.Overloads), whose unit
+		// shows the first overload's signature, the first one written.
 		named := map[string]string{}
 		for position, decl := range decls {
 			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
@@ -194,8 +196,12 @@ func (r *reader) designView(targetID string) *designView {
 			}
 			view.name[id] = decl.Name
 			view.text[id] = decl.Name
-			if decl.Exported && decl.Signature != "" {
-				view.text[id] += " " + decl.Signature
+			signature := decl.Signature
+			if len(decl.Overloads) > 0 && decl.Overloads[0].Signature != "" {
+				signature = decl.Overloads[0].Signature
+			}
+			if decl.Exported && signature != "" {
+				view.text[id] += " " + signature
 			}
 			switch decl.Kind {
 			case "type":

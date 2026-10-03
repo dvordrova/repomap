@@ -57,3 +57,22 @@ export function pick(items: Array<string | number>): string | number {
 // TODO: document count validation.
 
 // NOTE: count describes a quantity, not a list of levels.
+
+// A method's and a constructor's overload signatures fold into their
+// implementation as pick's do: one declaration each, and a call of the
+// overloaded name reaches the implementation alone.
+export class Picker {
+  constructor(prefix: string);
+  constructor(prefix: number);
+  constructor(readonly prefix: string | number) {}
+
+  choose(items: string[]): string;
+  choose(items: number[]): number;
+  choose(items: Array<string | number>): string | number {
+    return pick(items as string[]);
+  }
+}
+
+export function pickAll(picker: Picker): Array<string | number> {
+  return [picker.choose(["a"]), pick([1]), new Picker("p").prefix];
+}

@@ -980,15 +980,55 @@ function collectDeclarationNodes(sourceFile) {
   return found
 }
 
+// overloadImplementation is, for an overload signature (a function, method
+// or constructor declaration with no body), the implementation the
+// signatures of its name lead to: the first later declaration of the same
+// kind and name among its siblings that has a body. TypeScript writes the
+// signatures right before it; an ambient or abstract one has none and stays
+// a declaration.
+function overloadImplementation(node) {
+  const overloadable = (value) => ts.isFunctionDeclaration(value) || ts.isMethodDeclaration(value) || ts.isConstructorDeclaration(value)
+  if (!overloadable(node) || node.body || !node.parent) return undefined
+  const siblings = ts.isSourceFile(node.parent) || ts.isModuleBlock(node.parent) || ts.isBlock(node.parent) ? node.parent.statements : node.parent.members
+  if (!siblings) return undefined
+  const name = declarationName(node)
+  for (let position = siblings.indexOf(node) + 1; position < siblings.length; position++) {
+    const sibling = siblings[position]
+    if (!overloadable(sibling) || sibling.kind !== node.kind || declarationName(sibling) !== name) return undefined
+    if (sibling.body) return sibling
+  }
+  return undefined
+}
+
+// overloadsOf are, by implementation, its overload signatures in source
+// order: each keeps its signature, place, lines and typed values on the
+// implementation and is no declaration of its own; its node reads as the
+// implementation's, so a call of the overloaded name reaches the
+// implementation alone (ProgramIndex Overload).
+const overloadsOf = new Map()
+
 for (const { sourceFile, path: filePath } of sourceFiles) {
+  const stubs = []
   for (const { node, kind, name } of collectDeclarationNodes(sourceFile)) {
+    if (overloadImplementation(node)) {
+      stubs.push(node)
+      continue
+    }
     const loc = locationOf(node.name || node)
     const ref = `decl:${loc.file_ref}:${loc.line}:${loc.column}:${stablePart(kind)}:${stablePart(name)}`
     declarationRefByNode.set(node, ref)
     declarationNodeByRef.set(ref, node)
   }
+  for (const stub of stubs) {
+    const implementation = overloadImplementation(stub)
+    const ref = declarationRefByNode.get(implementation)
+    if (!ref) continue
+    declarationRefByNode.set(stub, ref)
+    if (!overloadsOf.has(ref)) overloadsOf.set(ref, [])
+    overloadsOf.get(ref).push(stub)
+  }
   const visit = (node) => {
-    if (declarationRefByNode.has(node)) {
+    if (declarationRefByNode.has(node) && declarationNodeByRef.get(declarationRefByNode.get(node)) === node) {
       const kind = declarationKind(node)
       const name = declarationName(node)
       const ownerNode = namedParent(node)
@@ -1008,6 +1048,15 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         end_line: node.getSourceFile().getLineAndCharacterOfPosition(node.getEnd()).line + 1,
         ...declarationCodeLines(node),
         ...(ts.isFunctionLike(node) ? typedSignature(node) : {}),
+        ...(overloadsOf.has(declarationRefByNode.get(node)) ? {
+          overloads: overloadsOf.get(declarationRefByNode.get(node)).map((stub) => ({
+            signature: signatureOf(stub),
+            location: locationOf(stub.name || stub),
+            end_line: stub.getSourceFile().getLineAndCharacterOfPosition(stub.getEnd()).line + 1,
+            ...declarationCodeLines(stub),
+            ...typedSignature(stub),
+          })),
+        } : {}),
       })
     }
     ts.forEachChild(node, visit)

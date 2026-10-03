@@ -478,6 +478,7 @@ func (b *builder) collectObjects(target TargetInput) {
 			Exported:  object.Visibility == programindex.VisibilityPublic,
 			Macro:     object.Macro,
 			Anonymous: object.Anonymous,
+			Overloads: declOverloads(object.Overloads),
 			ObjectID:  scopedID,
 		})
 		if owner := b.byID[object.OwnerID]; owner.Kind == programindex.ObjectType && owner.Location != nil {
@@ -1323,7 +1324,13 @@ func (b *builder) collectSymbolUses(rows map[string]map[atlas.SymbolUse]bool, ta
 		rows[from][use] = true
 	}
 	for _, object := range target.Index.Objects {
-		for _, parameter := range object.Parameters {
+		parameters := slices.Clone(object.Parameters)
+		// An overload's typed values are the callable's too: a Python
+		// implementation is often untyped where its stubs are typed.
+		for _, overload := range object.Overloads {
+			parameters = append(parameters, overload.Parameters...)
+		}
+		for _, parameter := range parameters {
 			if parameter.TypeID != "" {
 				add(b.symbolOf[object.ID], b.symbolOf[parameter.TypeID], atlas.SymbolUse{Kind: atlas.UseTakes, Resolution: string(programindex.ResolutionExact)})
 			}
@@ -2583,4 +2590,16 @@ func registrationWords(fact facts.Fact) []string {
 		words = appendUnique(words, fact.Path)
 	}
 	return words
+}
+
+// declOverloads are a callable's overloads as its declaration carries them.
+func declOverloads(overloads []programindex.Overload) []atlas.DeclOverload {
+	var result []atlas.DeclOverload
+	for _, overload := range overloads {
+		if overload.Location == nil {
+			continue
+		}
+		result = append(result, atlas.DeclOverload{Signature: overload.Signature, LineNo: overload.Location.Line, EndLine: overload.EndLine, CodeLines: overload.CodeLines})
+	}
+	return result
 }

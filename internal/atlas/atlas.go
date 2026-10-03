@@ -32,7 +32,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 25
+	GraphVersion = 26
 	Version      = 19
 
 	GraphFilename    = "places.json"
@@ -198,12 +198,25 @@ type Decl struct {
 	// its code, not a declaration of its own. Rows state it from this fact,
 	// never from a name's characters.
 	Anonymous bool `json:"anonymous,omitempty"`
+	// Overloads are a callable's other signatures, written before it and
+	// folded into it (ProgramIndex Overload): Python's `@typing.overload`
+	// stubs, TypeScript's overload signatures. Each keeps its signature,
+	// line and code lines; none is a declaration of its own.
+	Overloads []DeclOverload `json:"overloads,omitempty"`
 	// FanIn counts distinct callers of this declaration in the graph.
 	FanIn int `json:"fan_in"`
 	// ObjectID keeps the program-index identity for the page's anchors,
 	// qualified by its program (ScopedObjectID). It is never sent to the
 	// model.
 	ObjectID string `json:"object_id,omitempty"`
+}
+
+// DeclOverload is one signature a declaration is also written with.
+type DeclOverload struct {
+	Signature string `json:"signature,omitempty"`
+	LineNo    int    `json:"line_no"`
+	EndLine   int    `json:"end_line,omitempty"`
+	CodeLines int    `json:"code_lines,omitempty"`
 }
 
 // ScopedObjectID is a declaration's Decl.ObjectID: its program-index object

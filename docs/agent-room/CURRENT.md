@@ -509,7 +509,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 25, places graph 25, reading input 20, atlas 19,
+This wave uses ProgramIndex 26, places graph 26, reading input 20, atlas 19,
 GroupsIndex 26, dependency catalog 2, extraction artifact 2, facts 6, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`

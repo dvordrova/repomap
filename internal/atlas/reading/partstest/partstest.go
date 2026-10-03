@@ -758,9 +758,10 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 				t.Fatalf("%s lists the closure %s", place.Path, name)
 			}
 		}
-		// A name the file declares twice (a second Go init, overload stubs,
-		// a Clojure declare) is one unit: listed once and counted once, with
-		// the module body the only unit no list names.
+		// A name the file declares twice (a second Go init, a Clojure
+		// declare; overload stubs fold into their implementation) is one
+		// unit: listed once and counted once, with the module body the only
+		// unit no list names.
 		modules := 0
 		for i, decl := range place.File.Decls {
 			if decl.Kind == "module" && !children[i] {

@@ -190,6 +190,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			Signature: declaration.Signature, OwnerRef: declaration.OwnerRef, ContainerRef: container, Location: programLocation(declaration.Location),
 			EndLine: declaration.EndLine, CodeLines: declaration.CodeLines,
 			Parameters: typedInputs(declaration.Parameters, declarationByRef), Results: typedInputs(declaration.Results, declarationByRef),
+			Overloads: overloadInputs(declaration.Overloads, declarationByRef),
 		})
 	}
 	if len(result.Comparisons) > 0 {
@@ -667,6 +668,17 @@ func typedInputs(values []TypedName, declared map[string]Declaration) []programi
 			typed.TypeRef = value.TypeRef
 		}
 		result = append(result, typed)
+	}
+	return result
+}
+
+// overloadInputs are a declaration's overload signatures as ProgramIndex
+// takes them.
+func overloadInputs(values []DeclarationOverload, declared map[string]Declaration) []programindex.OverloadInput {
+	var result []programindex.OverloadInput
+	for _, value := range values {
+		result = append(result, programindex.OverloadInput{Signature: value.Signature, Location: programLocation(value.Location), EndLine: value.EndLine,
+			CodeLines: value.CodeLines, Parameters: typedInputs(value.Parameters, declared), Results: typedInputs(value.Results, declared)})
 	}
 	return result
 }

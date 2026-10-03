@@ -128,6 +128,20 @@ type Declaration struct {
 	// Parameters and Results carry the declaration each value's type names.
 	Parameters []TypedName `json:"parameters,omitempty"`
 	Results    []TypedName `json:"results,omitempty"`
+	// Overloads are a function's, method's or constructor's overload
+	// signatures, written before it (ProgramIndex Overload).
+	Overloads []DeclarationOverload `json:"overloads,omitempty"`
+}
+
+// DeclarationOverload is one overload signature folded into its
+// implementation.
+type DeclarationOverload struct {
+	Signature  string      `json:"signature,omitempty"`
+	Location   Location    `json:"location"`
+	EndLine    int         `json:"end_line,omitempty"`
+	CodeLines  int         `json:"code_lines,omitempty"`
+	Parameters []TypedName `json:"parameters,omitempty"`
+	Results    []TypedName `json:"results,omitempty"`
 }
 
 type TypedName struct {
@@ -403,6 +417,11 @@ func omitUnsafeOptionalMetadata(result *Result) {
 		if unsafeDeclarationSignature(signature, result.Declarations[index].SignatureIsSource) {
 			result.Declarations[index].Signature = ""
 		}
+		for position := range result.Declarations[index].Overloads {
+			if unsafeDeclarationSignature(result.Declarations[index].Overloads[position].Signature, false) {
+				result.Declarations[index].Overloads[position].Signature = ""
+			}
+		}
 	}
 	// Dropping one side of a chained call must not leave a receiver pointing
 	// at a producer pattern that no longer survives in the artifact.
@@ -563,6 +582,11 @@ func (result Result) Validate() error {
 		}
 		if !validLocation(declaration.Location, fileRefs) {
 			return fmt.Errorf("jsts project: invalid declaration location for %q", declaration.Ref)
+		}
+		for _, overload := range declaration.Overloads {
+			if !validLocation(overload.Location, fileRefs) || unsafeDeclarationSignature(overload.Signature, false) {
+				return fmt.Errorf("jsts project: invalid overload of %q", declaration.Ref)
+			}
 		}
 		if _, exists := declarations[declaration.Ref]; exists {
 			return fmt.Errorf("jsts project: duplicate declaration ref %q", declaration.Ref)

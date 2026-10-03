@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-10-03 — An overload stub is a signature of its implementation, not a declaration (data 2)
+
+- **Why:** beets's `BeatportClient.search` (two `@typing.overload` stubs and the implementation) listed "search" three times, and casdoor-style TS overloads did too. In TS a call of an overloaded name reached every signature as an alternative: `refsForSymbol` returned all three declarations of `pick`, and `ambiguity.tsx`'s `ambiguousHandler` was handed over as "alternatives".
+- **Rule (skeptic first):**
+  - **Python:** a def is a stub when its decorator resolves to `typing.overload` or `typing_extensions.overload`, whatever the import spelling, and every other decorator resolves outside the repository. It folds into the first later def of its qualified name in its own statement list or one enclosing it. A stub under `if TYPE_CHECKING:` folds into the def after the block; an `if` branch's stub never folds into the `else`'s. Its parameters go with it, and relations that named it name the implementation, remapped in place. Its decorations are dropped.
+  - **TS:** a function, method or constructor declaration with no body, followed by the implementation of its name among its siblings, is no declaration. Its node reads as the implementation's.
+  - **Kept as declarations:** stubs with no implementation after them (`.pyi`, Protocol, ambient or abstract).
+  - **Other languages:** Go has no overloading, C indexes only definitions with a body, and Clojure's multi-arity `defn` is one var.
+- **ProgramIndex 26, places graph 26:**
+  - `Object.Overloads`: each overload's signature, place, end line, code lines and typed values, in source order before the implementation, validated.
+  - The atlas `Decl.Overloads` carries them; the "takes" uses read overload parameters (often the only typed signature).
+  - The unit weight counts overload lines with the implementation, and the module body excludes them.
+  - The map of parts still shows the first overload's signature.
+  - The python-tutorial-game indexes are resealed at 26.
+- **Fixtures and tests:**
+  - **Python:** `Picker.choose`, a `TYPE_CHECKING` stub (`checked_pick`), and `pick_all` calling each. `TestCumulativePythonOverloadStubsFoldIntoTheirImplementation`: one declaration each with its overloads' lines and typed values; every call reaches one callee.
+  - **TS:** `Picker`'s constructor and `choose`, and `pickAll`. `TestTypeScriptOverloadSignaturesFoldIntoTheirImplementation`: one declaration each; `pickAll`'s calls reach `pick`, `Picker.choose` and `Picker.constructor` alone. `ambiguousHandler` is now handed over exactly.
+  - Code lines `pick: {1,1,3}` → `{3}` in both map-of-parts tests.
+
 ## 2026-10-03 — The overview's registration sentence matches the facts' rule (data 2)
 
 - **Wording:** following 0986036d (facts) and the owner's decision "a" of 2026-09-27, the overview prompt now defines a registration's receiver as outside code, or the repository's own code that keeps what it is handed (a parameter it stores, a row of a module-level table, a statement that starts it). A repository function that only runs what it is handed in place is none. c26fcf06 had said "a call that runs the function it is given".

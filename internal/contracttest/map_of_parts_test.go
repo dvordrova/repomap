@@ -348,9 +348,10 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 		t.Fatalf("exports.py declarations seen: %d", seen)
 	}
 	// tokenize counts code lines outside the docstring, the comment and the
-	// blank line; an overload stub is its one line.
+	// blank line; an overload stub is no declaration: it folds into its
+	// implementation (ProgramIndex Overload).
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/fixture_app/generic_types.py", map[string][]int{
-		"pick": {1, 1, 3}, "first": {2},
+		"pick": {3}, "first": {2},
 	})
 	// The graph records what a declaration reads, across files, what
 	// decorates it, a bare decorator name included, and the repository type

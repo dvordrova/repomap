@@ -1,4 +1,4 @@
-from typing import Annotated, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Annotated, Generic, TypeVar, overload
 
 T = TypeVar("T")
 
@@ -46,3 +46,27 @@ class Checked[T: Annotated[object, lambda value: value is not None]]:
 
 def first_checked[T: Annotated[object, lambda value: value is not None]](items: list[T]) -> T:
     return items[0]
+
+
+# A method's overload stubs are signatures of the method that follows them,
+# as pick's are of pick: one declaration each, and a call of either reaches
+# the implementation (beets's BeatportClient.search). A stub under
+# TYPE_CHECKING folds into the def after the block.
+class Picker:
+    @overload
+    def choose(self, items: list[str]) -> str: ...
+    @overload
+    def choose(self, items: list[int]) -> int: ...
+    def choose(self, items):
+        return pick(items)
+
+
+if TYPE_CHECKING:
+    @overload
+    def checked_pick(items: list[str]) -> str: ...
+def checked_pick(items):
+    return items[0]
+
+
+def pick_all(picker: Picker):
+    return picker.choose(["a"]), pick([1]), checked_pick(["b"])

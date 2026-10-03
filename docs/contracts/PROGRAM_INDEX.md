@@ -214,6 +214,19 @@ ProgramIndex retains:
   `strings.EqualFold`) stays that call's fact, asked on its own (READING).
   Validation refuses one on a declaration that runs no code, an unlocated
   or out-of-order one and one with fewer than two worded cases;
+- a callable's `overloads` (ProgramIndex 26): the other signatures it is
+  declared with, each written before it in its file, in source order, with
+  its own signature, place, end line, code lines and typed values. Python's
+  `@typing.overload` stub (its decorator resolving to `typing.overload` or
+  `typing_extensions.overload`, every other decorator outside the
+  repository) and TypeScript's overload signature (a function, method or
+  constructor declaration with no body, followed by its implementation)
+  are no objects of their own: each folds into the implementation that
+  follows it, which is what runs and what a call reaches (PYTHON, JSTS).
+  A stub with no implementation after it (a `.pyi` file, a Protocol, an
+  ambient or abstract signature) stays a declaration. Go has no
+  overloading, C indexes only function definitions with a body, and a
+  Clojure multi-arity `defn` is one var already;
 - source-anchored enclosing control statements on individual call patterns;
 - a call pattern's `same_value_as` (ProgramIndex 24): the pattern of an
   earlier call it is another spelling of, a call of the same callee from

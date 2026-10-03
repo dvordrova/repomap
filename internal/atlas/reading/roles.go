@@ -322,11 +322,12 @@ func (r *reader) unitFacts(view *designView) *roleFacts {
 	return facts
 }
 
-// unitLines is a unit's weight: its own code lines and those of every
-// follower whose source lies outside its range (a Go method, a repeated
-// name), never a lexical child or a class's own methods, which its range
-// already counts. A module body counts its file's code lines less those of
-// the file's other top-level declarations. Zero is unknown.
+// unitLines is a unit's weight: its own code lines, its overloads' (each
+// written before it, outside its range), and those of every follower whose
+// source lies outside its range (a Go method, a repeated name), never a
+// lexical child or a class's own methods, which its range already counts.
+// A module body counts its file's code lines less those of the file's other
+// top-level declarations and their overloads. Zero is unknown.
 func (r *reader) unitLines(unit string, followers []string) int {
 	place := r.places[unit]
 	decl := place.Symbol.Decl
@@ -341,18 +342,27 @@ func (r *reader) unitLines(unit string, followers []string) int {
 		lines := decl.CodeLines
 		for i, other := range file.File.Decls {
 			if other.Kind != "module" && !insideAnother(file.File.Decls, i) {
-				lines -= other.CodeLines
+				lines -= other.CodeLines + overloadLines(other)
 			}
 		}
 		return max(lines, 0)
 	}
-	lines := decl.CodeLines
+	lines := decl.CodeLines + overloadLines(decl)
 	for _, id := range followers {
 		follower := r.places[id]
 		if follower.Path == place.Path && within(follower.Symbol.Decl, decl) {
 			continue
 		}
 		lines += follower.Symbol.Decl.CodeLines
+	}
+	return lines
+}
+
+// overloadLines are the code lines of a declaration's overloads.
+func overloadLines(decl atlas.Decl) int {
+	lines := 0
+	for _, overload := range decl.Overloads {
+		lines += overload.CodeLines
 	}
 	return lines
 }

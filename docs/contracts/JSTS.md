@@ -139,8 +139,9 @@ a declaration's reads, hand-overs and decorations as its `uses` (READING);
 `handledOrderIds`. A callable named as a value is also a read of it: the
 function handed to a registration is both read and handed over. The role
 split's helper question (READING) counts reads of a callable, hand-overs and
-alternatives as users, so an overloaded handler stays asked; its placement
-counts neither. In the split check the unexported `processPendingJobs` and
+alternatives as users; its placement counts neither. An overloaded handler
+is one declaration: its overload signatures fold into the implementation
+(below), so `ambiguity.tsx`'s `ambiguousHandler` is handed over exactly. In the split check the unexported `processPendingJobs` and
 `handledOrderIds` are helpers and `handledOrderIds` goes with `recordOrder`;
 `shared/contracts.ts`'s `paintColor`, which that program only re-exports, is
 not asked. A JavaScript file
@@ -150,8 +151,14 @@ runs no decorator syntax.
 Every declaration carries `code_lines`: the lines from its name to its end that
 hold a compiler token, so JSDoc and other comment trivia and blank lines are
 not counted; a module counts its whole file. `src/type-members.ts`'s `pick`
-has two overload signatures and an implementation (3 code lines), one name the
-map of parts reads as one unit.
+has two overload signatures and an implementation (3 code lines): one
+declaration, the signatures its `overloads` (ProgramIndex 26). A function,
+method or constructor declaration with no body followed by the
+implementation of its name is no declaration of its own; its node reads as
+the implementation's, so a call of the overloaded name reaches the
+implementation alone where the checker's symbol had listed every signature
+as an alternative (`Picker`'s constructor and `choose`, `pickAll`;
+`TestTypeScriptOverloadSignaturesFoldIntoTheirImplementation`).
 
 ## Declared value references
 

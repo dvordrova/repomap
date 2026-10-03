@@ -242,10 +242,12 @@ even across files. A lexical child (inside the source range of a function or
 method of its file, by the adapter's positions and end lines: Go `f$1`
 closures, nested JS or Python functions) takes its parent's part and is no
 row, name or unit. A declaration repeating the name of an earlier unit of its
-file follows that unit: a second Go `init`, Python `@overload` stubs and
-implementation, TypeScript overload signatures are one unit and name, with
-the first signature (C has no such repeat, and a Clojure `declare` is no
-declaration).
+file follows that unit: a second Go `init` is one unit and name, with the
+first signature (C has no such repeat, and a Clojure `declare` is no
+declaration). Python `@overload` stubs and TypeScript overload signatures
+are no declarations: they fold into their implementation (ProgramIndex
+`overloads`), whose unit shows the first overload's signature and weighs
+the overloads' code lines with its own; the module body counts neither.
 
 `calls` counts, per exact call site, each distinct other listed row the site
 reaches (`"f3 -> c7 (12)"`), from the unit whose code holds the site (a

@@ -98,6 +98,18 @@ type parsedObject struct {
 	// writes them (PYTHON).
 	Rows        []programindex.TableRow   `json:"rows,omitempty"`
 	Comparisons []programindex.Comparison `json:"comparisons,omitempty"`
+	// Overloads are a callable's `@typing.overload` stubs, folded into the
+	// implementation they precede (PYTHON, ProgramIndex Overload).
+	Overloads []parsedOverload `json:"overloads,omitempty"`
+}
+
+type parsedOverload struct {
+	Signature  string                 `json:"signature,omitempty"`
+	Location   *programindex.Location `json:"location"`
+	EndLine    int                    `json:"end_line,omitempty"`
+	CodeLines  int                    `json:"code_lines,omitempty"`
+	Parameters []parsedTyped          `json:"parameters,omitempty"`
+	Results    []parsedTyped          `json:"results,omitempty"`
 }
 
 type parsedTyped struct {
@@ -817,13 +829,21 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 				}
 			}
 		}
+		var overloads []programindex.OverloadInput
+		for _, overload := range value.Overloads {
+			if err := validateHelperLocation(overload.Location, allowedPaths); err != nil {
+				return parsedGroup{}, fmt.Errorf("object %q overload: %w", value.SourceRef, err)
+			}
+			overloads = append(overloads, programindex.OverloadInput{Signature: overload.Signature, Location: cloneLocation(overload.Location), EndLine: overload.EndLine,
+				CodeLines: overload.CodeLines, Parameters: typedInputs(overload.Parameters), Results: typedInputs(overload.Results)})
+		}
 		objectRefs[value.SourceRef] = value
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
 			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Directory: value.Directory,
 			External: cloneParsedExternalSymbol(value.External), Parameters: typedInputs(value.Parameters), Results: typedInputs(value.Results),
-			Rows: value.Rows, Comparisons: value.Comparisons,
+			Rows: value.Rows, Comparisons: value.Comparisons, Overloads: overloads,
 		})
 	}
 	relations := make([]programindex.RelationInput, 0, len(response.Relations))

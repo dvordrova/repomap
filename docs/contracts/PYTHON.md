@@ -785,9 +785,19 @@ Functions and classes carry `code_lines`: the lines of `lineno..end_lineno`
 holding a `tokenize` token that is not a comment, outside every docstring
 statement's span (decorator lines are outside the range). A module counts its
 whole file; a module or class variable counts its assignment statement. The
-same file's `pick` has two `@overload` stubs and an implementation, three
-declarations of one name the map of parts reads as one unit; the
-implementation's docstring, comment and blank line leave it 3 code lines.
+same file's `pick` has two `@overload` stubs and an implementation: one
+declaration, the stubs its `overloads` with their own lines (ProgramIndex
+26). A stub is known by its decorator resolving to `typing.overload` (or
+`typing_extensions.overload`, however imported), every other decorator
+outside the repository, and folds into the first later def of its name in
+its own statement list or one enclosing it (a stub under `if TYPE_CHECKING:`
+into the def after the block, never an `if` branch's into the `else`'s);
+its parameters go with it, and what pointed at it points at the
+implementation, whose docstring, comment and blank line leave it 3 code
+lines. `Picker.choose` folds a method's stubs the same way, and `pick_all`'s
+calls reach `pick`, `Picker.choose` and `checked_pick` alone
+(`TestCumulativePythonOverloadStubsFoldIntoTheirImplementation`; beets's
+`BeatportClient.search` had listed three times).
 
 ## Framework-neutral registrations
 

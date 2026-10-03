@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -552,7 +553,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	mixedQueryOwnerRefs := refsForName("src/ambiguity.tsx", "mixedQueryKey")
 	fetchMethodOwnerRefs := refsForName("src/ambiguity.tsx", "fetchMethodAuthority")
 	if len(ambiguityCallerRefs) != 1 || len(ambiguousRouteCallerRefs) != 1 || len(mixedCallbackRefs) != 2 ||
-		len(requestMiddlewareRefs) != 1 || len(ambiguousHandlerRefs) < 2 ||
+		len(requestMiddlewareRefs) != 1 || len(ambiguousHandlerRefs) != 1 ||
 		len(mixedQueryOwnerRefs) != 1 || len(fetchMethodOwnerRefs) != 1 {
 		t.Fatalf("cumulative alternative declarations: consumer=%#v route=%#v mixed=%#v middleware=%#v handler=%#v",
 			ambiguityCallerRefs, ambiguousRouteCallerRefs, mixedCallbackRefs, requestMiddlewareRefs, ambiguousHandlerRefs)
@@ -639,7 +640,9 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	handlerArgument := ambiguousRouteCall.Pattern.Arguments[2]
 	if middlewareArgument.Resolution != "exact" || middlewareArgument.ObjectsObserved != 1 ||
 		!reflect.DeepEqual(middlewareArgument.ObjectRefs, requestMiddlewareRefs) ||
-		handlerArgument.Resolution != "alternatives" ||
+		// ambiguousHandler's two overload signatures fold into its
+		// implementation: the handler handed over is that one declaration.
+		handlerArgument.Resolution != "exact" ||
 		handlerArgument.ObjectsObserved != len(ambiguousHandlerRefs) ||
 		!reflect.DeepEqual(handlerArgument.ObjectRefs, ambiguousHandlerRefs) {
 		t.Fatalf("neutral Express callback arguments = middleware %#v handler %#v", middlewareArgument, handlerArgument)
@@ -3236,6 +3239,11 @@ func assertCumulativeJSTSTypeMembers(t *testing.T, result Result, index programi
 			continue
 		}
 		owner := declarations[declaration.OwnerRef]
+		// Only the interfaces' members are asserted here; a class's methods
+		// (Picker's, whose overloads fold into them) are members of their own.
+		if owner.Kind == "type" && strings.Contains(owner.Signature, "class ") {
+			continue
+		}
 		key := owner.Name + "." + declaration.Name
 		var expected *memberExpectation
 		for i := range want {
@@ -3276,6 +3284,18 @@ func assertCumulativeJSTSTypeMembers(t *testing.T, result Result, index programi
 			}
 			evidence := lines.AnchorEvidence(chunk, ref)["evidence"].([]map[string]any)[0]
 			members, _ := evidence["owned_declarations"].([]map[string]any)
+			// A class owns its methods, each one declaration whatever its
+			// overloads (Picker: its constructor and choose).
+			if strings.Contains(owner.Signature, "class ") {
+				var methods []string
+				for _, member := range members {
+					methods = append(methods, fmt.Sprint(member["name"], " ", member["line"]))
+				}
+				if anchor.Name == "Picker" && !slices.Equal(methods, []string{"Picker.constructor 67", "Picker.choose 71"}) {
+					t.Fatalf("question members of Picker = %q", methods)
+				}
+				continue
+			}
 			var expected []memberExpectation
 			for _, member := range want {
 				if member.owner == anchor.Name {

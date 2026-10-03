@@ -1039,6 +1039,9 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	}
 	for index := range output.Declarations {
 		rebaseLocation(&output.Declarations[index].Location)
+		for position := range output.Declarations[index].Overloads {
+			rebaseLocation(&output.Declarations[index].Overloads[position].Location)
+		}
 	}
 	for index := range output.Imports {
 		rebaseLocation(&output.Imports[index].Location)
