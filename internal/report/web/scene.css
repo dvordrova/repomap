@@ -48,6 +48,9 @@
 .scene-tip{position:absolute;display:flex;flex-direction:column;gap:2px;max-width:260px;padding:6px 9px;border-radius:7px;background:#fff;border:1px solid #d4dce6;box-shadow:0 4px 14px #24304422;font:13px/17px system-ui;color:#243044;white-space:nowrap}
 .scene-tip>b{font-weight:650;color:#52647d}
 .scene-tip>span{overflow:hidden;text-overflow:ellipsis}
+/* A chip's saved line ("one of these, depending on configuration"), whole,
+   in the tip's quiet colour. */
+.scene-tip>.scene-tip-note{color:#52647d;white-space:normal;overflow:visible}
 .scene-card{position:absolute;z-index:6}
 .scene-root .scene-scaled>*{margin:0}
 .scene-program-inside{list-style:none;padding:0;display:flex;flex-direction:column;font:500 13px/18px system-ui;color:#52647d}

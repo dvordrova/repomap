@@ -697,20 +697,24 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       style={{left:name.x,top:name.y,fontSize:name.font,maxWidth:name.room}}>{name.title}</div>);
   }
   // What a box pointed at is: a chip's callers, a bucket's systems, else,
-  // while its words are too small to read, its name and what it does.
+  // while its words are too small to read, its name and what it does. A
+  // chip says the line saved under its name, as its card and the program's
+  // catalogue do: a destination of several systems is "one of these,
+  // depending on configuration" (its subtitle, said in the page's language).
   function BoxTip({node,camera:v}){
     const item=model.nodes.get(node.id)?.item;
     let head=node.kind==='inputs'?t('Inputs'):node.kind==='outside'?t('Outside'):node.title,names=[],about='';
+    const note=node.display==='chip'?item?.subtitle||'':'';
     // A chip's name, drawn at twelve pixels, reads at nine and a half, as
     // every secondary word (scene.css --word).
     const faded=node.text*12*v.zoom<9.5;
-    if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x+6,top:Math.max(4,node.rect.y*v.zoom+v.y)}}><b>{head}</b></div>;
+    if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x+6,top:Math.max(4,node.rect.y*v.zoom+v.y)}}><b>{head}</b>{note&&<span className="scene-tip-note">{note}</span>}</div>;
     if(node.display==='chip')names=[...new Set([...(model.callers.get(node.id)||[])].map(part=>model.nodes.get(part)?.name||''))].map(name=>`← ${name}`);
     else if(node.display==='bucket')names=model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||'');
     else about=item?.role||item?.summary||'';
     const left=(node.rect.x+node.rect.width)*v.zoom+v.x+6,top=node.rect.y*v.zoom+v.y;
     return <div className={`scene-tip scene-box-tip ${names.length>12?'scene-tip-columns':''}`} style={{left,top:Math.max(4,top)}}>
-      <b>{head}</b>{about&&<span>{about}</span>}{names.map((name,i)=><span key={i}>{name}</span>)}</div>;
+      <b>{head}</b>{note&&<span className="scene-tip-note">{note}</span>}{about&&<span>{about}</span>}{names.map((name,i)=><span key={i}>{name}</span>)}</div>;
   }
   // What a marker or a port stands for, one name to a line, each whole,
   // wrapped where its side has no room for it: names told apart at their

@@ -1,5 +1,11 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A chip's hover says its saved qualifier; the reading's heading holds its words whole (report)
+
+- **Hover.** On casdoor 20261004-172050, the Outside chip "Microsoft SQL Server / MySQL / PostgreSQL / SQLite" saves the line "one of these, depending on configuration" (its subtitle, which Go writes in the page's language). Its card and the catalogue already showed it; its hover card showed only the name and "← Object data layer". `BoxTip` now shows that saved line under the name, in the tip's quiet colour (scene.css `.scene-tip-note`). It is display only and adds no data.
+- **Header overlap.** Cause: canvas.css (2026-09-14) capped `.map-inspector-heading` at `max-height:125px; overflow:auto`. The heading is a grid with `align-items:end`. With "Main flow" (16.8px), the 4.8px gap, a two-line "External communication" and a three-line name (120.9px), the cap squeezed the last row to 103.4px (16.8+4.8+103.4 = 125). The end-aligned heading then rose 17.6px over "Main flow" (heading part at 166–287 instead of 183.6). The cap is removed with no other number: the name now stands at 184–304 under "Main flow" (162–179), and the heading is 155px tall.
+- **Checks.** Render of that run from a clean HEAD export plus these files. Playwright hover and header screenshots, one step at a time. Web tests cards, model and scene pass. Bundle rebuilt and checked.
+
 ## 2026-10-04 — A call's destination evidence lists each end once (the window refused over the context)
 
 - **Why:** the ordinary casdoor run `20261004-170026-casdoor-0aea3cf343f2` sent one round-2 boundary window the provider refused (HTTP 400, context_tokens). It was not a packing gap. One row was 20 MB by itself: `object/ormer.go:265`'s `destination_chains` held 23,656 chains, and `object/avatar.go:42`'s held 77,299 (68 MB). The routes differed only on the way to 41 and 215 ends. A table cannot split one row, so no window holds it.

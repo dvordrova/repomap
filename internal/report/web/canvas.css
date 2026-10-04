@@ -5,7 +5,11 @@
 .flow-root{width:100%;height:100%;font-family:inherit;background:#fbfcfe}
 .flow-enabled .map-inspector{order:0!important;display:flex;flex-direction:column;position:relative!important;top:0!important;width:auto!important;height:100%!important;min-height:0!important;max-height:none!important;overflow:hidden;border:1px solid var(--line,#d4ddda);border-left:0;border-radius:0 8px 8px 0;padding:16px!important;background:white;box-sizing:border-box}
 .flow-enabled .map-inspector-content{min-height:0;max-height:none!important;overflow:auto;flex:1;padding:0!important}
-.flow-enabled .map-inspector-heading{flex:none;max-height:125px;overflow:auto;padding:0 0 12px}
+/* The reading's heading holds its words whole: a cap of 125px had squeezed
+   its grid's last row, and the end-aligned name of casdoor's "Microsoft SQL
+   Server / MySQL / PostgreSQL / SQLite" (three lines under a two-line
+   "External communication") had risen over "Main flow". */
+.flow-enabled .map-inspector-heading{flex:none;padding:0 0 12px}
 .flow-enabled .system-map-preview{inset:auto!important;position:static!important;padding:12px 0 0!important;overflow:auto;max-height:42%;flex:none;border-top:1px solid #d4dce6;font-size:14px}
 .flow-enabled .system-map-preview p{margin:10px 0}
 .flow-enabled .system-map-preview strong{font-size:16px}
