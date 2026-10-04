@@ -353,7 +353,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 					// writes that key: a key handed to it that the walk
 					// cannot read is no neighbour's key (get("KNOWN") beside
 					// get(dynamicKey)).
-					if len(keys) == 1 && writesKey(call.call, keys[0]) {
+					if len(keys) == 1 && d.writesKey(call.call, keys[0]) {
 						next.Address = "{env:" + keys[0] + "}"
 						result = append(result, next)
 						continue
@@ -543,17 +543,19 @@ func (d *DestinationReader) ownerAt(at sourcevalue.Anchor) (atlas.Place, bool) {
 	return found, ok
 }
 
-// writesKey says a call writes a key as one of its literals.
-func writesKey(call atlas.SymbolCall, key string) bool {
-	if slices.Contains(call.Values, key) {
-		return true
+// writesKey says a call writes a key as its key argument: the argument
+// decided to name what it reads, else its first, a literal of that key. A
+// call whose arguments carry no value is read by its one literal. Any other
+// literal (a default, os.getenv(key, "KNOWN")) proves no key.
+func (d *DestinationReader) writesKey(call atlas.SymbolCall, key string) bool {
+	argument := d.chosen(call)
+	if argument == nil {
+		argument = sourceArgument(call, 1)
 	}
-	for _, argument := range call.SourceArguments {
-		if origin := argument.Origin; origin != nil && origin.Kind == "literal" && origin.Text == key {
-			return true
-		}
+	if argument != nil {
+		return argument.Kind == "literal" && argument.Text == key
 	}
-	return false
+	return len(call.SourceArguments) == 0 && len(call.Values) == 1 && call.Values[0] == key
 }
 
 func anyAddress(paths []destinationPath) bool {

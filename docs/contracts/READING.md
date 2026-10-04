@@ -1296,9 +1296,11 @@ key a wrapper is handed (facts record a config read there per key its
 callers name) is read by the walk of its decided argument, bound to the
 caller the walk came through: an end that is a key read there is the
 setting `{env:KEY}`, any other end stays as walked, and a read none of
-whose ends is such a key keeps its one key only when the call writes it
-as a literal: a key handed to it that the walk cannot read is no
-neighbour's (`get("KNOWN")` beside `get(dynamicKey)`)
+whose ends is such a key keeps its one key only when its key argument (the
+decided one, else its first) is that key's literal: a key handed to it that
+the walk cannot read is no neighbour's (`get("KNOWN")` beside
+`get(dynamicKey)`), and a default the read writes is no key
+(`os.getenv(key, "KNOWN")`)
 (`TestAWrappersEnvironmentReadIsTheSettingItsCallerNames`): casdoor's
 data source reads `{env:dataSourceName}`, not the bare word.
 
