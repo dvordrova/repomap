@@ -1274,8 +1274,11 @@ at its site (the fmt.Sprintf formatting a query) says nothing of it.
 A walk through a function's result reads it for the call it walks
 (2026-10-04, casdoor): a value written in the branch of an `exclusive` case
 comparing one of the function's parameters with words (PROGRAM_INDEX) is no
-end of a call handing that parameter a word none of them, unless its line
-lies in a second case's branch too (Go's `} else if`). casdoor's
+end of a call handing that parameter a word none of them, unless it lies in
+a second case's branch too (Go's `} else if`). A value on a branch's first
+or last line is in or out of it by the branch's columns, and is kept when
+either side writes none (the Go fixture's one-line `pick`: pick("y") keeps
+its default). casdoor's
 `GetConfigString("dataSourceName")` ends at the setting, not at the URL its
 `key == "staticBaseUrl"` branch returns, and `sqlite` stays one written
 branch of the alternatives. A parameter the call hands no known word, a
@@ -1293,7 +1296,9 @@ key a wrapper is handed (facts record a config read there per key its
 callers name) is read by the walk of its decided argument, bound to the
 caller the walk came through: an end that is a key read there is the
 setting `{env:KEY}`, any other end stays as walked, and a read none of
-whose ends is such a key keeps its one written key, if it has one
+whose ends is such a key keeps its one key only when the call writes it
+as a literal: a key handed to it that the walk cannot read is no
+neighbour's (`get("KNOWN")` beside `get(dynamicKey)`)
 (`TestAWrappersEnvironmentReadIsTheSettingItsCallerNames`): casdoor's
 data source reads `{env:dataSourceName}`, not the bare word.
 
@@ -1316,8 +1321,11 @@ stays its address, chain and the published `Uses`. The exchange ends:
   it, as a CTE's), counting a call to no known function
   (`Trade.session.scalars`) and a call of its kind made on an object; a
   call of another kind (a logger's) sends nothing. Their receivers, else the call's own receiver,
-  are followed back: a parameter to each caller's argument, a field to the
-  value its one store gives it, a context manager's entered value to the
+  are followed back: a parameter to each caller's argument, a field to its
+  instance's field, else to each value its writes stored (its
+  `initializer`, each write read in the function that makes it, GO "What a
+  field holds") as a possible origin only (`initializer: X`, unresolved,
+  joining no other engine's destination), a context manager's entered value to the
   manager, a repository call to what its function returns, a call to no
   known function giving no words (`engine.begin()`) to its receiver, and an
   outside call never asked which argument names what it reaches and giving

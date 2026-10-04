@@ -374,7 +374,11 @@ only outside `__init__` is one more alternative, `unknown`. freqtrade's
 `Webhook._send_msg` posts to `self._url`, which `Webhook` stores at
 webhook.py:34 and `Discord` at discord.py:20: destination reading gives
 both addresses. `inherited_clients.py`'s `Webhook.send` and `Discord` check
-it (`TestCumulativePythonBaseReadTakesEachSubclassStore`).
+it (`TestCumulativePythonBaseReadTakesEachSubclassStore`). A field one
+class's `__init__` stores twice reads "reassigned field", and a write
+through another object (`obj.attr = v`) is no store: Go reads each write of
+a field as one alternative (GO "What a field holds", 2026-10-04), a
+recorded divergence.
 
 Native equivalents:
 

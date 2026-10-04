@@ -159,6 +159,7 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 	case *ssa.Alloc:
 		var stores []*ssa.Store
 		fields := make(map[int][]*ssa.Store)
+		handed := make(map[int]token.Pos)
 		if refs := v.Referrers(); refs != nil {
 			for _, ref := range *refs {
 				if store, ok := ref.(*ssa.Store); ok && store.Addr == v {
@@ -168,6 +169,13 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 					for _, reference := range *field.Referrers() {
 						if store, ok := reference.(*ssa.Store); ok && store.Addr == field {
 							fields[field.Field] = append(fields[field.Field], store)
+						}
+						// The field's address handed to a call: the callee may
+						// write it (flag.StringVar(&e.url, …)).
+						if call, ok := reference.(ssa.CallInstruction); ok && handsValue(call, field) {
+							if _, seen := handed[field.Field]; !seen {
+								handed[field.Field] = call.Pos()
+							}
 						}
 					}
 				}
@@ -182,8 +190,18 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 			if structure, ok := pointer.Elem().Underlying().(*types.Struct); ok {
 				result := &sourcevalue.Value{Kind: "record", Anchor: unknown.Anchor}
 				for i := 0; i < structure.NumFields(); i++ {
+					var held []*sourcevalue.Value
 					if stores := fields[i]; len(stores) > 0 {
-						result.Parts = append(result.Parts, sourcevalue.Value{Kind: "field_value", Text: structure.Field(i).Name(), Parts: []sourcevalue.Value{*a.initialStoreValue(v, stores, readAt, active)}})
+						held = append(held, a.initialStoreValue(v, stores, readAt, active))
+					}
+					if at, ok := handed[i]; ok {
+						held = append(held, &sourcevalue.Value{Kind: "unknown", Text: "written by a call it is handed to", Anchor: a.valueAnchor(at)})
+					}
+					switch len(held) {
+					case 1:
+						result.Parts = append(result.Parts, sourcevalue.Value{Kind: "field_value", Text: structure.Field(i).Name(), Parts: []sourcevalue.Value{*held[0]}})
+					case 2:
+						result.Parts = append(result.Parts, sourcevalue.Value{Kind: "field_value", Text: structure.Field(i).Name(), Parts: []sourcevalue.Value{{Kind: "alternatives", Parts: []sourcevalue.Value{*held[0], *held[1]}}}})
 					}
 				}
 				return result
@@ -224,7 +242,15 @@ func (a *analyzer) fieldSourceValue(receiver ssa.Value, field int, pos token.Pos
 		typ = pointer.Elem()
 	}
 	if fields, ok := typ.Underlying().(*types.Struct); ok && field < fields.NumFields() {
-		return &sourcevalue.Value{Kind: "field", Text: fields.Field(field).Name(), Anchor: a.valueAnchor(pos), Parts: []sourcevalue.Value{*a.sourceValue(receiver, active, readAt)}}
+		name := fields.Field(field).Name()
+		instance := a.sourceValue(receiver, active, readAt)
+		value := &sourcevalue.Value{Kind: "field", Text: name, Anchor: a.valueAnchor(pos), Parts: []sourcevalue.Value{*instance}}
+		// An instance the value names a record of already holds the field;
+		// any other may hold what any write of the field put there.
+		if !recordHoldsField(instance, name) {
+			value.Initializer = a.fieldInitializer(fields.Field(field).Origin())
+		}
+		return value
 	}
 	return &sourcevalue.Value{Kind: "unknown", Anchor: a.valueAnchor(pos)}
 }
@@ -488,4 +514,14 @@ func (a *analyzer) joinedVariableStores(phi *ssa.Phi) map[string]token.Pos {
 		delete(stores, text)
 	}
 	return stores
+}
+
+// handsValue reports whether a call hands value as one of its arguments.
+func handsValue(call ssa.CallInstruction, value ssa.Value) bool {
+	for _, argument := range call.Common().Args {
+		if unwrapInterface(argument) == value {
+			return true
+		}
+	}
+	return false
 }

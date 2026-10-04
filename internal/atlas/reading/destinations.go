@@ -42,8 +42,10 @@ type DestinationReader struct {
 	objects   bool
 	talks     map[string]string
 	exchanges *exchangeIndex
-	// order is the places walked, in graph order.
-	order []string
+	// order is the places walked, in graph order; byPath indexes them by
+	// file, built on first use (ownerAt).
+	order  []string
+	byPath map[string][]string
 }
 
 // DestinationChoices are what the reading decided that a walk reads.
@@ -271,19 +273,6 @@ func (d *DestinationReader) settingEnds(call destinationCall, use destinationPat
 	return ends, named
 }
 
-// writesKey says a call writes a key as one of its literals.
-func writesKey(call atlas.SymbolCall, key string) bool {
-	if slices.Contains(call.Values, key) {
-		return true
-	}
-	for _, argument := range call.SourceArguments {
-		if origin := argument.Origin; origin != nil && origin.Kind == "literal" && origin.Text == key {
-			return true
-		}
-	}
-	return false
-}
-
 func sourceArgument(call atlas.SymbolCall, position int) *sourcevalue.Value {
 	for _, argument := range call.SourceArguments {
 		if argument.Position == position {
@@ -441,14 +430,27 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		}
 		return result
 	case "field":
-		result := d.field(&value.Parts[0], value.Text, owner, use, active)
-		if value.Initializer != nil && len(result) == 1 && result[0].Address == "" {
-			result = d.value(storedValue(value.Initializer), owner, use, active)
-			for i := range result {
-				if result[i].Address != "" {
-					result[i].Frontier = "initializer: " + result[i].Address
-					result[i].Address = ""
+		result := d.field(&value.Parts[0], value.Text, owner, use, active, nil)
+		if value.Initializer != nil && !anyAddress(result) {
+			// The instance the walk could not follow may hold what any
+			// write of the field put there. Each write is read on from
+			// where the instance's walk ended, so a caller it passed
+			// still binds the write's parameters; an address it reaches is
+			// a possible source, not the call's established value.
+			var stored []destinationPath
+			for _, base := range result {
+				from := cloneDestinationPath(base)
+				from.Frontier, from.Unread = "", false
+				stored = append(stored, d.initializer(value.Initializer, owner, from, active, nil)...)
+			}
+			if len(stored) > 0 {
+				for i := range stored {
+					if stored[i].Address != "" {
+						stored[i].Frontier = "initializer: " + stored[i].Address
+						stored[i].Address = ""
+					}
 				}
+				result = stored
 			}
 		}
 		return result
@@ -462,7 +464,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		use.Frontier = "request value"
 	case "index":
 		if value.Parts[1].Kind == "literal" {
-			return d.field(&value.Parts[0], value.Parts[1].Text, owner, use, active)
+			return d.field(&value.Parts[0], value.Parts[1].Text, owner, use, active, nil)
 		}
 		use.Frontier = sourceValueExpression(value)
 	default:
@@ -481,23 +483,86 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 	return []destinationPath{use}
 }
 
-// storedValue is what a field initializer stores: the value of its one
-// store, or, when the field's class and the classes deriving from it each
-// store it (a Python base-class method reading self._url), the value of each
-// store as one alternative.
-func storedValue(initial *sourcevalue.Value) *sourcevalue.Value {
+// initializer reads on from what a field's writes stored (a field
+// initializer): each field_value is read from its write, in the function
+// that makes it, with a step at the write, and alternatives are each one;
+// leaf, when set, reads it as the object walk does.
+func (d *DestinationReader) initializer(initial *sourcevalue.Value, owner atlas.Place, use destinationPath, active map[string]bool, leaf fieldLeaf) []destinationPath {
 	switch initial.Kind {
 	case "field_value":
-		return &initial.Parts[0]
-	case "alternatives":
-		stored := *initial
-		stored.Parts = make([]sourcevalue.Value, len(initial.Parts))
-		for i := range initial.Parts {
-			stored.Parts[i] = *storedValue(&initial.Parts[i])
+		if len(initial.Parts) == 0 {
+			return nil
 		}
-		return &stored
+		writer := owner
+		next := cloneDestinationPath(use)
+		if initial.Anchor != nil {
+			if place, ok := d.ownerAt(*initial.Anchor); ok {
+				writer = place
+			}
+			next.Steps = appendDestinationStep(next.Steps, atlas.DestinationStep{SubjectID: writer.ID, Name: initial.Text, Path: initial.Anchor.Path, Line: initial.Anchor.Line, Column: initial.Anchor.Column})
+		}
+		if leaf != nil {
+			return leaf(&initial.Parts[0], writer, next)
+		}
+		return d.value(&initial.Parts[0], writer, next, active)
+	case "alternatives":
+		var result []destinationPath
+		for i := range initial.Parts {
+			result = append(result, d.initializer(&initial.Parts[i], owner, cloneDestinationPath(use), active, leaf)...)
+		}
+		return result
 	}
-	return initial
+	if leaf != nil {
+		return leaf(initial, owner, use)
+	}
+	return d.value(initial, owner, use, active)
+}
+
+// ownerAt is the innermost declaration of the walk's places whose lines
+// hold a site.
+func (d *DestinationReader) ownerAt(at sourcevalue.Anchor) (atlas.Place, bool) {
+	if d.byPath == nil {
+		d.byPath = make(map[string][]string)
+		for _, id := range d.order {
+			place := d.places[id]
+			d.byPath[place.Path] = append(d.byPath[place.Path], id)
+		}
+	}
+	var found atlas.Place
+	ok := false
+	for _, id := range d.byPath[at.Path] {
+		place := d.places[id]
+		end := place.Symbol.Decl.EndLine
+		if end < place.LineNo {
+			end = place.LineNo
+		}
+		if place.LineNo <= at.Line && at.Line <= end && (!ok || place.LineNo > found.LineNo) {
+			found, ok = place, true
+		}
+	}
+	return found, ok
+}
+
+// writesKey says a call writes a key as one of its literals.
+func writesKey(call atlas.SymbolCall, key string) bool {
+	if slices.Contains(call.Values, key) {
+		return true
+	}
+	for _, argument := range call.SourceArguments {
+		if origin := argument.Origin; origin != nil && origin.Kind == "literal" && origin.Text == key {
+			return true
+		}
+	}
+	return false
+}
+
+func anyAddress(paths []destinationPath) bool {
+	for _, path := range paths {
+		if path.Address != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *DestinationReader) parameterCallers(value *sourcevalue.Value, use destinationPath) []destinationCall {
@@ -683,10 +748,20 @@ func sourceValueExpression(value *sourcevalue.Value) string {
 	return "?"
 }
 
-func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owner atlas.Place, use destinationPath, active map[string]bool) []destinationPath {
+// fieldLeaf reads on from the value an instance's field holds, when the
+// walk found the instance: the value walk (nil) or the object walk.
+type fieldLeaf func(value *sourcevalue.Value, owner atlas.Place, use destinationPath) []destinationPath
+
+func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owner atlas.Place, use destinationPath, active map[string]bool, leaf fieldLeaf) []destinationPath {
 	raw, _ := json.Marshal(receiver)
 	key := "field:" + owner.ID + ":" + name + string(raw)
+	if leaf != nil {
+		key = "object " + key
+	}
 	if active[key] {
+		if leaf != nil {
+			return nil
+		}
 		use.Frontier = "cyclic field " + name
 		return []destinationPath{use}
 	}
@@ -698,6 +773,9 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 			if field.Text == name {
 				if field.Anchor != nil {
 					use.Steps = appendDestinationStep(use.Steps, atlas.DestinationStep{SubjectID: owner.ID, Name: field.Text, Path: field.Anchor.Path, Line: field.Anchor.Line, Column: field.Anchor.Column})
+				}
+				if leaf != nil {
+					return leaf(&field.Parts[0], owner, use)
 				}
 				return d.value(&field.Parts[0], owner, use, active)
 			}
@@ -736,7 +814,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 					continue
 				}
 				next.Steps = appendDestinationStep(next.Steps, destinationStep(call.place, call.call))
-				result = append(result, d.field(call.call.ReceiverValue, name, call.place, next, active)...)
+				result = append(result, d.field(call.call.ReceiverValue, name, call.place, next, active, leaf)...)
 			}
 		}
 		if len(result) > 0 {
@@ -755,7 +833,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 				continue
 			}
 			next.Steps = appendDestinationStep(next.Steps, destinationStep(call.place, call.call))
-			result = append(result, d.field(argument, name, call.place, next, active)...)
+			result = append(result, d.field(argument, name, call.place, next, active, leaf)...)
 		}
 		if len(result) > 0 {
 			return result
@@ -775,7 +853,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 						callee = place
 					}
 				}
-				result = append(result, d.field(call.call.ResultValue, name, callee, next, active)...)
+				result = append(result, d.field(call.call.ResultValue, name, callee, next, active, leaf)...)
 			}
 		}
 		if len(result) > 0 {
@@ -785,10 +863,13 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 		var result []destinationPath
 		for i, part := range receiver.Parts {
 			if branch, ok := chooseDestinationPart(receiver, i, owner, d.entryOf(use, owner), use); ok {
-				result = append(result, d.field(&part, name, owner, branch, active)...)
+				result = append(result, d.field(&part, name, owner, branch, active, leaf)...)
 			}
 		}
 		return result
+	}
+	if leaf != nil {
+		return nil
 	}
 	// A field of an object the walk cannot follow is part of that object:
 	// what the outside call with a decided argument that made the object

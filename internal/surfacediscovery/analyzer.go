@@ -77,6 +77,9 @@ type analyzer struct {
 	// fields knows which selectors name a field as written and which
 	// struct declarations of the target's packages hold each field.
 	fields *fieldSelections
+	// fieldStores are every write to each repository struct field, read
+	// once before any value (field_initializers.go).
+	fieldStores *fieldStores
 }
 
 // AnalyzeContextWithInput loads one sealed target boundary and projects all
@@ -426,6 +429,7 @@ func (a *analyzer) prepareTargetProgram() {
 	// Collect assignments before resolving any invocation, so declaration
 	// ordering cannot determine which possible receivers were observed.
 	a.dynamicHandoffCapture.collectInterfaceFieldStores(a, functions)
+	a.collectFieldStores(functions)
 	for index, function := range functions {
 		if a.ctx.Err() != nil {
 			return

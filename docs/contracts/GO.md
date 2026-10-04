@@ -72,6 +72,45 @@ with one) or, in a string switch, when the clause before it ends in no
 URL, `fetchStatic`'s `http.Get` keeps it
 (`TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven`).
 
+## What a field holds
+
+A read of a repository struct's field whose instance is not a record the
+same value already holds (`s.db` on a receiver, a parameter, a package
+variable) carries an `initializer` (2026-10-04): each write the program's
+code makes into that field, in source order, as a `field_value` at the
+write's site, and one alternative at a time, none chosen. A write is an
+SSA store into the field's address: `x.f = v` and a composite literal's
+element `T{f: v}` alike. A write of nil or another zero constant puts no
+value there; a compound write (`f += x`) is one, reading the field itself
+with no initializer. Where code the program does not show may write the
+field, an `unknown` alternative "written by a call it is handed to" stands
+at each such site: the field's address handed to a call
+(`flag.StringVar(&e.url, …)`), or the address of a value of its struct, or
+of a slice or map of them, handed to a call outside the repository
+(`json.Unmarshal(data, &cfg)`, `engine.Find(&ldaps)`). A record of a local
+allocation whose field's address a call is handed holds the same unknown
+beside its store. The walks follow the instance first and read the writes
+only when they cannot, and then as possible origins: an address the writes
+reach is an unresolved end at its site, never the call's address, so a
+field two configurations share joins no engine's destination (READING
+"Outside systems"). Recorded limits: a
+package variable is not followed through its own writes (casdoor's
+`ormer = NewAdapter(…)` reads every write of `Ormer.Engine`), so two
+instances of one type built from different settings share their fields'
+writes (casdoor's own database and its syncer's user database read as one
+destination of both); a field written through a pointer to it a repository
+function receives is that function's parameter store, not a field write.
+The cumulative fixture's `cmd/app/field_stores.go`
+(`TestGoFieldReadsHoldEveryWriteOfTheField`): the guarded count's instance
+is followed through the composite literal that copied its `db` to the items
+database, an address; `pingPool`'s configuration no caller names, so the
+pool database its writes stored is only a possible origin
+(`initializer: file:pool.db`, unresolved), the nil write storing nothing;
+the status endpoint's `url` is its default or the flag's unknown write. Python and JS/TS give a field read an initializer only from
+`self.x`/`this.x` writes in the class, a field written twice there being
+"reassigned field" (PYTHON, JSTS), a recorded divergence; C records its
+writes' values for files only; Clojure has no fields.
+
 ## Packages imported for their effect
 
 An import spec named `_` imports a package to run its `init`, which
@@ -726,9 +765,9 @@ adapter joins each access to the core object field by package, type and
 field name. The places graph keeps them as the declaration's `fields` and the
 report's readings list each field's writers and readers (READING, REPORT);
 the role split does not read them, so no model request changes with them.
-A write carries no stored value, where C records it (PROGRAM_INDEX), so a
-file read from a Go field has no established path (READING, files a program
-keeps; recorded in the 2026-09-29 files pass).
+A write carries no stored value, where C records it (PROGRAM_INDEX); what a
+field holds reaches the walks through its reads instead (below, "What a
+field holds").
 GroupsIndex reach takes a field read as a terminal read (READING, reach).
 
 The cumulative fixture's `internal/storefixture/server_state.go` is kvd's

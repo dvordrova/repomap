@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — Three controls on items 2 and A fixed; a Go field read holds its field's writes as possible origins (item 3, object joins)
+
+- **Controls (moderator, "Что делать сейчас"):**
+  - Branches on one line: a comparison case's branch now carries the columns it begins and ends at (Go, Python, JS/TS), and a value on a branch's first or last line whose place is not proven is kept. The Go fixture's one-line `pick` gives `pick("y")` its default alone.
+  - A neighbour's key: a configuration read with one key in its facts gives `{env:K}` only when the call writes K as a literal; `get(dynamicKey)` beside `get("KNOWN")` stays unresolved (`TestAWrappersEnvironmentReadIsTheSettingItsCallerNames`).
+  - The systems prompt says only "imported for its side effect (a blank import)".
+- **Object joins** (skeptic: accept with changes; owner: MVP):
+  - Go native (`field_initializers.go`): every SSA store into a repository struct's field (`x.f = v`, a composite literal's element) is indexed once per target. A read whose instance is not a record already holding the field carries them as its `initializer`, one `field_value` per write in source order. Nil and zero writes are left out. Each site where a call is handed the field's address, or an outside call the address of a value of its struct, is an `unknown` alternative. A local record whose field's address a call is handed holds the same unknown.
+  - Reading: the value and object walks follow the instance first (`field`, now also for the object walk), and read the writes only when it gives no address. Each write is read in the function that makes it (`ownerAt`), from where the instance's walk ended. An address so reached is a possible origin (`initializer: X`, unresolved), never the call's address, so a field two configurations share joins no engine's destination (moderator's control).
+  - Fixture `cmd/app/field_stores.go` (`TestGoFieldReadsHoldEveryWriteOfTheField`):
+    - the guarded count is followed to the items database, an address;
+    - the unrelated pool's ping reads `initializer: file:pool.db`, unresolved;
+    - the status ping reads its default and the flag's unknown write.
+  - Recorded limits: package variables are not followed through their writes, so casdoor's own and its syncer's databases share `Ormer.Engine`'s writes. Python and JS/TS read a field written twice in its class as "reassigned field" (GO, PYTHON, JSTS).
+- **Not measured on casdoor:** the native rebuild of 10:43 predates these native changes, and the owner's direction allows no new rebuild. The skeptic's source scan expected casdoor's 54 db destinations to fall to about 2. Under the possible-origin rule, those reads now end unresolved at the writes' sites instead of joining NewEngine's group.
+- **Tests:** sourcevalue, surfacediscovery, programindex, goadapter, pythonprogramindex, jstsproject (two halves), atlas, places, reading, lines, groupindex, orientation, facts and every contract file exit 0 (GOMAXPROCS=2, -p 1). `TestCumulativeGoInputsAreAskedPerCallAndCatalogued` expects the two new `http.Get` observations. The column commit (first above) had left it stale.
+
 ## 2026-10-04 — A `_` import is an effect import whatever else the importer names (facts, item 3 step A)
 
 - **Why:** the native rebuild of casdoor showed MySQL, its configured driver, in no catalogue entry. Package object imports go-sql-driver/mysql, lib/pq and go-mssqldb `_` in `ormer.go` but by name in `syncer_database.go` and `viaSSHDialer.go`, and the rule required every spec to be `_`.

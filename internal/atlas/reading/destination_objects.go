@@ -334,8 +334,28 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 			result = append(result, d.object(namedSourceArgument(caller.call, value.Position, value.Text), caller.place, next, itself, active)...)
 		}
 	case "field":
+		// The instance the walk follows first, as the value walk does;
+		// only an instance it cannot follow reads what the field's writes
+		// stored (its initializer), each from its write.
+		leaf := func(field *sourcevalue.Value, at atlas.Place, from destinationPath) []destinationPath {
+			return d.object(field, at, from, itself, active)
+		}
+		if found := d.field(&value.Parts[0], value.Text, owner, use, active, leaf); len(found) > 0 {
+			return found
+		}
 		if value.Initializer != nil {
-			return d.object(storedValue(value.Initializer), owner, use, itself, active)
+			// Which instance it is, the walk could not say: what any write
+			// of the field stored is a possible origin, an end at its site
+			// that establishes no address (two configurations' engines must
+			// not become one destination through a field they share).
+			possible := d.initializer(value.Initializer, owner, use, active, leaf)
+			for i := range possible {
+				if possible[i].Address != "" {
+					possible[i].Frontier = "initializer: " + possible[i].Address
+					possible[i].Address = ""
+				}
+			}
+			return possible
 		}
 	case "entered":
 		return d.object(&value.Parts[0], owner, use, itself, active)

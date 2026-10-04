@@ -531,7 +531,9 @@ Missing equivalents, recorded rather than fabricated:
 - A base-class method's `this.url` source value takes the enclosing class's
   constructor record only, not the stores of the classes extending it,
   which Python lists as alternatives (PYTHON, Inherited members and
-  fields).
+  fields); a field the class writes twice reads "reassigned field", where
+  Go reads each write of a field as one alternative (GO "What a field
+  holds", 2026-10-04).
 - With no table-row registration, the C rule that a row storing two
   callables is one input has nothing to apply to.
 - An incoming boundary's registration as written (`atlas.Boundary.Written`,
