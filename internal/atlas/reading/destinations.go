@@ -1176,14 +1176,44 @@ func canonicalDestinationUses(uses []atlas.DestinationUse) []atlas.DestinationUs
 	return result
 }
 
+// destinationEvidence is each place a call's value ends, once: its address
+// or unresolved expression, method and the step it ends at, with its
+// shortest chain from the call and, when several routes reach it, how many
+// (`routes`). The routes differ only on the way; where the value comes
+// from is the end. casdoor's avatar download had sent 77,299 chains
+// (68 MB) for 215 ends, a row no provider window holds.
 func destinationEvidence(uses []atlas.DestinationUse) []map[string]any {
-	var result []map[string]any
+	type end struct {
+		address, frontier, method string
+		last                      atlas.DestinationStep
+	}
+	var order []end
+	shortest := map[end]atlas.DestinationUse{}
+	routes := map[end]int{}
 	for _, use := range uses {
+		key := end{address: use.Address, frontier: use.Frontier, method: use.Method}
+		if n := len(use.Steps); n > 0 {
+			key.last = use.Steps[n-1]
+		}
+		if kept, seen := shortest[key]; !seen || len(use.Steps) < len(kept.Steps) {
+			if !seen {
+				order = append(order, key)
+			}
+			shortest[key] = use
+		}
+		routes[key]++
+	}
+	var result []map[string]any
+	for _, key := range order {
 		var steps []map[string]any
-		for _, step := range use.Steps {
+		for _, step := range shortest[key].Steps {
 			steps = append(steps, map[string]any{"name": step.Name, "path": step.Path, "line": step.Line})
 		}
-		result = append(result, map[string]any{"address": use.Address, "unresolved_expression": use.Frontier, "method": use.Method, "source_chain": steps})
+		evidence := map[string]any{"address": key.address, "unresolved_expression": key.frontier, "method": key.method, "source_chain": steps}
+		if routes[key] > 1 {
+			evidence["routes"] = routes[key]
+		}
+		result = append(result, evidence)
 	}
 	return result
 }

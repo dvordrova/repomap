@@ -867,3 +867,21 @@ func TestAFieldsWritesAreReusedOnlyWhenNothingDependsOnTheWalk(t *testing.T) {
 		}
 	}
 }
+
+// A call's value reaching one end by many routes is that end once in the
+// evidence, with its shortest chain and the number of routes.
+func TestDestinationEvidenceListsEachEndOnce(t *testing.T) {
+	step := func(name string, line int) atlas.DestinationStep {
+		return atlas.DestinationStep{Name: name, Path: "a.go", Line: line}
+	}
+	uses := []atlas.DestinationUse{
+		{Address: "https://x.example", Steps: []atlas.DestinationStep{step("get", 1), step("a", 2), step("set", 9)}},
+		{Address: "https://x.example", Steps: []atlas.DestinationStep{step("get", 1), step("set", 9)}},
+		{Address: "https://x.example", Steps: []atlas.DestinationStep{step("get", 1), step("b", 3), step("set", 9)}},
+		{Frontier: "c.URL", Steps: []atlas.DestinationStep{step("get", 1)}},
+	}
+	got := destinationEvidence(uses)
+	if len(got) != 2 || got[0]["routes"] != 3 || len(got[0]["source_chain"].([]map[string]any)) != 2 || got[1]["routes"] != nil {
+		t.Fatalf("evidence = %v", got)
+	}
+}

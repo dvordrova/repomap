@@ -1,5 +1,11 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A call's destination evidence lists each end once (the window refused over the context)
+
+- **Why:** the ordinary casdoor run `20261004-170026-casdoor-0aea3cf343f2` sent one round-2 boundary window the provider refused (HTTP 400, context_tokens). It was not a packing gap. One row was 20 MB by itself: `object/ormer.go:265`'s `destination_chains` held 23,656 chains, and `object/avatar.go:42`'s held 77,299 (68 MB). The routes differed only on the way to 41 and 215 ends. A table cannot split one row, so no window holds it.
+- **Now** (`destinationEvidence`): each place a call's value ends (address or unresolved expression, method, last step) is listed once with its shortest chain, plus `routes`, the number of routes, when several reach it. The `fixed_boundaries` prompt says so.
+- **Proof on the saved windows:** all 21 rows of the run's round-2 boundary windows, repacked with the grouped evidence, are each present exactly once; the largest request is 118,498 bytes. Test: `TestDestinationEvidenceListsEachEndOnce`.
+
 ## 2026-10-04 — A field's write along the walk's own path is read on (refinement of decision a)
 
 - The coordinator's refinement: a write made by a function the walk passed through (deliver writing `c.URL = u` before its request) is walked as any value, so each caller's request reads its own address again. Any other write is named by its site and value (fire reads `initializer: c.URL`). A reading of the writes is reused only under identical consulted bindings.

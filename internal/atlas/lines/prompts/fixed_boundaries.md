@@ -39,7 +39,9 @@ Fill only the columns in `fill`:
 - `address`, when requested: where the other end of this call is, as one
   `a*` ref from `address_catalog`, else `unknown`. The catalogue holds every
   value the code was seen to hand the call, and `destination_chains` where
-  each came from; a value is not an address because it is offered.
+  each came from: each place the value ends once, with its shortest chain
+  and, when several reach it, the number of `routes`; a value is not an
+  address because it is offered.
   - Answer the `a*` of a value that writes where the call connects, of the
     kind the call reaches: a URL whose host is written, whatever placeholders
     follow the host in its path or query (`https://login.example.com/%s/token`,
