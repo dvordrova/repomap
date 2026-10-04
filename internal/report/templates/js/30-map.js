@@ -542,11 +542,18 @@ function rmDeclarationRelations(map,node,key,nodes){
     // in the part being read kept the column where the last one stood, and
     // a click meant for a step hit another name).
     var savedConcept='',freshDeclaration=false;
-    function remember(){
+    // The last thing the reader clicked or pressed Enter on, anywhere: a
+    // reading left from a step of its Main flow is left from that step.
+    var leftFrom=null;
+    function noteLeaving(event){if(event.type==='keydown'&&event.key!=='Enter'&&event.key!==' ')return;leftFrom=event.target;}
+    document.addEventListener('click',noteLeaving,true);document.addEventListener('keydown',noteLeaving,true);
+    function remember(leaving){
       if(inspectionPending||!inspectedNode||card.classList.contains('map-card-connection'))return;
-      remembered.set(inspectionKey,{concept:map.explorerMember?.key,scroll:content.scrollTop,expanded:rmOpenFolds(card)});
+      var steps=leaving&&leftFrom&&card.contains(leftFrom)?rmMainFlowSteps(card):[],step=steps.findLastIndex(function(s){return s.contains(leftFrom);});
+      remembered.set(inspectionKey,{concept:map.explorerMember?.key,scroll:content.scrollTop,expanded:rmOpenFolds(card),
+        step:step,at:step>=0?steps[step].getBoundingClientRect().top-content.getBoundingClientRect().top-content.clientTop:0});
     }
-    content.addEventListener('scroll',remember);
+    content.addEventListener('scroll',function(){remember();});
     // A fold opened or closed is remembered at once: returning to the
     // reading by a click, not only by Back, finds it as it was left.
     card.addEventListener('toggle',function(){if(!inspectionPending)remember();rmExpandAllWord(card);},true);
@@ -555,7 +562,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // evidence come back only when the reader returns to it: Back, or
       // the same item shown again.
       var restoring=map.readingRestoring,returning=restoring||inspectedNode===node;
-      remember();inspectedNode=node;inspectionKey=node.id+'\0'+(map.inspectedOperation?.id||'');inspectionPending=true;
+      remember(true);inspectedNode=node;inspectionKey=node.id+'\0'+(map.inspectedOperation?.id||'');inspectionPending=true;
       map.explorerMember=null;
       // Its folds, scroll and declaration come back when the reader returns
       // to it (Back, or the same item shown again); reached anew, a reading
@@ -803,7 +810,14 @@ function rmDeclarationRelations(map,node,key,nodes){
         // A reading opened at one of its sections (an arrow end's connection,
         // an input's path) starts there, that section open.
         var anchor=card.querySelector('[data-reading-anchor]');
+        // The Main flow asked for again after a step of it was left for a
+        // declaration comes back at that step, its folds as they were (data
+        // 2's Lua walk: "the rest of this way" came back folded, the reader
+        // unfolding it again to find luaV_execute).
+        var flowBack=!returning&&anchor?.matches('[data-main-flow]')&&memory&&memory.step>=0?memory:null;
         if(saved&&!freshDeclaration)rmRestoreFolds(card,saved.expanded);
+        else if(flowBack)rmRestoreFolds(card,flowBack.expanded);
+        var backAt=flowBack&&rmMainFlowSteps(card)[flowBack.step];
         if(anchor?.matches('details'))anchor.open=true;
         content.scrollTop=freshDeclaration?0:saved?.scroll||0;
         // A declaration newly chosen with its part is read from its own
@@ -812,7 +826,12 @@ function rmDeclarationRelations(map,node,key,nodes){
         if(anchor&&!restoring)card.querySelectorAll('.map-frame-connections>details[open]').forEach(function(detail){if(detail!==anchor)detail.open=false;});
         var chosen=card.querySelector('.map-concepts:not([hidden])');
         if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))rmOpenAt(content,chosen,0);
-        if(anchor&&!restoring){rmOpenAt(content,anchor,8);anchor.removeAttribute('data-reading-anchor');}
+        if(anchor&&!restoring){
+          // A step returned to stands where it stood when left.
+          if(backAt)rmOpenAt(content,backAt,flowBack.at>=0&&flowBack.at<content.clientHeight?flowBack.at:8);
+          else rmOpenAt(content,anchor,8);
+          anchor.removeAttribute('data-reading-anchor');
+        }
         inspectionPending=false;rmExpandAllWord(card);
       }});
     }
@@ -1048,6 +1067,13 @@ function rmFoldKeys(card){
     var words=(detail.querySelector(':scope>summary')?.textContent||'').trim(),n=seen[words]=(seen[words]||0)+1;
     return {detail:detail,key:words+'#'+n};
   });
+}
+// The steps of a component's Main flow in its reading, in their order: a
+// step where the flow parts holds its ways' steps, the last one holding a
+// name the innermost; the code a step opens to in place is no step.
+function rmMainFlowSteps(card){
+  var flow=card.querySelector('[data-main-flow]');
+  return flow?Array.from(flow.querySelectorAll('li[data-step-part]')).filter(function(step){return !step.closest('.map-flow-step-code');}):[];
 }
 function rmOpenFolds(card){return rmFoldKeys(card).filter(function(fold){return fold.detail.open;}).map(function(fold){return fold.key;});}
 function rmRestoreFolds(card,keys){var open=new Set(keys||[]);rmFoldKeys(card).forEach(function(fold){fold.detail.open=open.has(fold.key);});}

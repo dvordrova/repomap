@@ -955,7 +955,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   // findable from a flow of client commands; page_flow_steps.go ownWork).
   var flow=details.querySelector(':scope>.component-flow'),own=details.querySelector(':scope>.component-own-work');
   if(flow){
-    var steps=rmEl('details','map-component-section'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('Main flow')));steps.appendChild(head);
+    var steps=rmEl('details','map-component-section'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('Main flow')));steps.appendChild(head);steps.dataset.mainFlow='';
     Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')).forEach(function(part){steps.appendChild(copy(part));});
     steps.open=true;place(steps);
     // A named fork's candidates stay folded under its line: a flow never

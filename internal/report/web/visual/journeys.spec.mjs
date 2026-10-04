@@ -139,6 +139,45 @@ for(const [index,file] of reports.entries()){
     expect(errors).toEqual([]);
   });
 
+  // A Main flow step left for its declaration is where the reader comes
+  // back to by "Main flow": its fold open again, the step where it stood
+  // (data 2's Lua walk, 2026-10-04: luaV_execute, read from "the rest of
+  // this way", came back folded, the reader unfolding it again).
+  test(`returning to a Main flow step of ${basename(file)}`,async({page})=>{
+    test.setTimeout(300_000);
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await open(page,index);
+    // A component whose Main flow folds the rest of a way, else any.
+    const owner=await page.evaluate(()=>{const owners=[...document.querySelectorAll('[id^="system-component-"]')].map(n=>n.dataset.owner).filter(id=>document.getElementById(id)?.querySelector(':scope>.component-flow'));
+      return owners.find(id=>document.getElementById(id).querySelector(':scope>.component-flow details.flow-way-rest[data-folded]'))||owners[0]||'';});
+    test.skip(!owner,'no component with a Main flow');
+    await page.evaluate(owner=>document.querySelector('[data-map]').readMainFlow(owner),owner);
+    await settleColumn(page);
+    // A step in a folded rest of a way when there is one, else the last.
+    const flow='.map-inspector-content [data-main-flow]';
+    const rest=page.locator(`${flow} details.flow-way-rest`).filter({has:page.locator('.map-flow-step-name[data-decl-key]')}).first();
+    if(await rest.count()){await rest.locator(':scope>summary').click();await settleColumn(page);}
+    const names=page.locator(`${flow} .map-flow-step-name[data-decl-key]`).filter({visible:true});
+    test.skip(!await names.count(),'no step reads a declaration');
+    const name=await rest.count()?rest.locator('.map-flow-step-name[data-decl-key]').first():names.last();
+    await name.evaluate(n=>n.scrollIntoView({block:'center'}));await settleColumn(page);
+    // Places are read from the column's top: scrolling a name into view
+    // moves the page too.
+    const look=()=>page.evaluate(()=>{const c=document.querySelector('.map-inspector-content');return {height:c.clientHeight,open:[...c.querySelectorAll('[data-main-flow] details')].map(d=>d.open)};});
+    const place=n=>{const c=n.closest('.map-inspector-content'),edge=c.getBoundingClientRect().top+c.clientTop,b=n.getBoundingClientRect();return {top:b.top-edge,bottom:b.bottom-edge};};
+    const before=await look(),left=(await name.evaluate(place)).top,nth=await name.evaluate(n=>[...n.closest('[data-main-flow]').querySelectorAll('.map-flow-step-name')].indexOf(n));
+    await name.click();await settleColumn(page);
+    expect(await page.locator(flow).count(),'the declaration is read').toBe(0);
+    await page.locator('.map-main-flow-link').first().click();await settleColumn(page);
+    const after=await look();
+    expect(after.open,'the Main flow folds as they were left').toEqual(before.open);
+    const back=page.locator(`${flow} .map-flow-step-name`).nth(nth);
+    const at=await back.evaluate(place);
+    expect(at.top>=0&&at.bottom<=after.height,'the step is in sight').toBe(true);
+    expect(Math.abs(at.top-left),'the step stands where it stood, a line the edge cut hidden whole').toBeLessThan(40);
+    expect(errors).toEqual([]);
+  });
+
   // A reading opens on whole lines: one opened at its section (an input's
   // path) stands at its first lines when that section is already in sight,
   // and the column's top edge never cuts a line (final journeys,

@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-10-05 — "Main flow" brings the reader back to the step they left it from (report)
+
+- **Why:** data 2's Lua walk (run 20261004-194807-lua-5-1-5-etc): the reader unfolded "the rest of this way", followed luaV_execute to its declaration, and pressed "Main flow". The way came back folded and the column stood at the Main flow's top, so they had to unfold it again to find their place.
+- **Now (30-map.js, 31-reading-column.js):**
+  - Leaving a reading records the Main flow step the last click or Enter stood in (the innermost step, never the code a step opens to in place), plus where the step stood in the column.
+  - When "Main flow" reads that component again, its folds come back as left and the step stands where it stood. `rmOpenAt` still hides a line the edge cuts.
+  - Left from anywhere else, the link opens at the Main flow's top as before.
+- **Test:** the journey "returning to a Main flow step of …" (journeys.spec.mjs) unfolds a folded way, follows a step's name, comes back by "Main flow", and checks the folds and the step's place. On the Lua render it fails without the fix (folds differ) and passes with it.
+
 ## 2026-10-05 — A boundary's walks are saved as ends plus one graph of their steps (atlas 22, GroupsIndex 30)
 
 - **The moderator's P1 on 5ab06397:** the save key merged ends with one address written at different source lines, and keeping only the shortest chain dropped the other routes' intermediate sources.

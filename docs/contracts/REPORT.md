@@ -858,7 +858,12 @@ The Main flow is read once, at the top of the component's reading; the
 component's page keeps it hidden as the column's source (owner, 2026-09-29).
 No other reading repeats or links it, save one small "Main flow" link above
 every reading of a part, declaration, input or frame of a component that has
-one, reading the component at that section without moving the camera. The
+one, reading the component at that section without moving the camera. When
+the reader left the Main flow from one of its steps (a name followed to its
+declaration, by click or Enter), that link brings them back to that step:
+the Main flow's folds as they were left ("the rest of this way" open again)
+and the step where it stood in the column, a line the edge cuts hidden whole;
+left from anywhere else, it opens at the Main flow's top. The
 model's main flow is the orientation's (READING): its order is the model's,
 read from each member's calls in written order. Two steps in a row naming
 one declaration are its one step, the later's words kept; a method is named
