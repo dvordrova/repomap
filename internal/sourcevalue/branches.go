@@ -12,12 +12,38 @@ type Compared struct {
 }
 
 // ComparedCase is one case: its words, the lines of the function's file its
-// branch selects, and whether the branch runs only for those words.
+// branch selects (with the columns it begins and ends at on them, when
+// known), and whether the branch runs only for those words.
 type ComparedCase struct {
 	Words     []string
 	Line      int
 	EndLine   int
+	Column    int
+	EndColumn int
 	Exclusive bool
+}
+
+// holds says whether a branch holds an anchor: in, out, or not proven. A
+// line strictly between its first and last is in; on its first or last
+// line it is in or out by the columns, and not proven when either side
+// writes none (another statement may share the line).
+func (item ComparedCase) holds(anchor *Anchor) (in, proven bool) {
+	if item.Line < 1 || anchor.Line < item.Line || anchor.Line > item.EndLine {
+		return false, true
+	}
+	if anchor.Line > item.Line && anchor.Line < item.EndLine {
+		return true, true
+	}
+	if anchor.Column < 1 || item.Column < 1 || item.EndColumn < 1 {
+		return false, false
+	}
+	if anchor.Line == item.Line && anchor.Column < item.Column {
+		return false, true
+	}
+	if anchor.Line == item.EndLine && anchor.Column > item.EndColumn {
+		return false, true
+	}
+	return true, true
 }
 
 // OutsideItsBranch says a value written at anchor, inside a function of the
@@ -25,7 +51,8 @@ type ComparedCase struct {
 // parameters the words supplied reports: the anchor lies in the branch of an
 // exclusive case comparing a parameter with words, the call supplies that
 // parameter a word none of them, and the anchor lies in no other case's
-// branch (Go's `} else if` line belongs to two). casdoor's
+// branch (by lines, and by columns on a branch's first and last line: a
+// value whose place on such a line is not known is kept). casdoor's
 // GetConfigString("dataSourceName") never returns the URL its
 // `key == "staticBaseUrl"` branch stores. A parameter the call supplies no
 // word for, a case not known exclusive or a value with no anchor keeps the
@@ -37,7 +64,13 @@ func OutsideItsBranch(anchor *Anchor, path string, comparisons []Compared, suppl
 	excluded := false
 	for _, comparison := range comparisons {
 		for _, item := range comparison.Cases {
-			if item.Line < 1 || anchor.Line < item.Line || anchor.Line > item.EndLine {
+			in, proven := item.holds(anchor)
+			if !proven {
+				// Whether the value is written in this branch is not
+				// known: it is kept.
+				return false
+			}
+			if !in {
 				continue
 			}
 			if !item.Exclusive || comparison.Position < 1 {

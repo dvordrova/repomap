@@ -211,7 +211,10 @@ ProgramIndex retains:
   and no earlier case falls into it (Go `fallthrough`, a JS/TS clause
   ending in no `break`, `return`, `throw` or `continue`); a Python `match`
   case is. False claims nothing. Go, Python and JS/TS record it; C and
-  Clojure record none yet (their cases claim nothing). A lone comparison, and one
+  Clojure record none yet (their cases claim nothing). Go, Python and
+  JS/TS also give the branch its `column` and `end_column`, where it
+  begins on its first line and ends on its last (2026-10-04), so branches
+  written on one line are told apart. A lone comparison, and one
   condition naming several words for one branch (`arg == "-h" || arg ==
   "-help"`), is none. Go (a string switch and `==`, the origin from SSA:
   litestream's `cmd, args = args[0], args[1:]` is element "0" of parameter

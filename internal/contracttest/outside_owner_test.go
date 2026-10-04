@@ -334,7 +334,7 @@ func TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven(t *testing.T) {
 	t.Run("go", func(t *testing.T) {
 		fixture := ownerGo(t)
 		exclusive(t, fixture, "settingOrDefault", "cmd/app/setting_lookup.go")
-		expectRows(t, "registrations", registered(fixture, "cmd/app/setting_lookup.go"), "58 Get https://cdn.example/static")
+		expectRows(t, "registrations", registered(fixture, "cmd/app/setting_lookup.go"), "58 Get https://cdn.example/static", "67 Get https://default.example")
 		expectRows(t, "config reads", configured(fixture, "cmd/app/setting_lookup.go"), "13 dataSourceName exact", "13 staticBaseUrl exact")
 	})
 	t.Run("python", func(t *testing.T) {

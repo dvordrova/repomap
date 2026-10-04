@@ -207,7 +207,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			for _, item := range comparison.Cases {
 				written := programindex.ComparisonCase{Form: programindex.ComparisonForm(item.Form), Words: append([]string(nil), item.Words...), Location: programLocation(item.Location), Exclusive: item.Exclusive}
 				if item.Branch != nil {
-					written.Branch = &programindex.LineRange{Line: item.Branch.Line, EndLine: item.Branch.EndLine}
+					written.Branch = &programindex.LineRange{Line: item.Branch.Line, EndLine: item.Branch.EndLine, Column: item.Branch.Column, EndColumn: item.Branch.EndColumn}
 				}
 				value.Cases = append(value.Cases, written)
 			}

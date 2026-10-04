@@ -271,8 +271,10 @@ type ComparisonCase struct {
 
 // ComparisonSpan is the lines a case selects, both included.
 type ComparisonSpan struct {
-	Line    int `json:"line"`
-	EndLine int `json:"end_line"`
+	Line      int `json:"line"`
+	EndLine   int `json:"end_line"`
+	Column    int `json:"column,omitempty"`
+	EndColumn int `json:"end_column,omitempty"`
 }
 
 // CallPattern retains only adapter-neutral syntax needed by later bounded

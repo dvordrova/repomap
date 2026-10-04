@@ -48,6 +48,17 @@ def code_lines_between(tree, first, last):
     return sum(1 for row in lines if first <= row <= last)
 
 
+
+def body_span(body):
+    """The span of a block's statements: its first statement's line and
+    column, its last one's end line and end column (inclusive, as a
+    location's one-based column counts), so two branches written on one
+    line are told apart."""
+    if not body:
+        return None
+    first, last = body[0], body[-1]
+    return (first.lineno, first.col_offset + 1, last.end_lineno, last.end_col_offset)
+
 def source_location(path, node):
     if getattr(node, "no_location", False):
         return None
@@ -979,7 +990,10 @@ class Analyzer:
                         continue
                     item = {"form": word["form"], "words": [word["word"]], "location": word["location"]}
                     if word["branch"]:
-                        item["branch"] = {"line": word["branch"][0], "end_line": word["branch"][1]}
+                        item["branch"] = {"line": word["branch"][0], "end_line": word["branch"][2]}
+                        if word["branch"][1] > 0 and word["branch"][3] > 0:
+                            item["branch"]["column"] = word["branch"][1]
+                            item["branch"]["end_column"] = word["branch"][3]
                     if word.get("exclusive"):
                         item["exclusive"] = True
                     by_case[word["case"]] = item
@@ -4081,7 +4095,7 @@ class RelationVisitor(ast.NodeVisitor):
     def visit_If(self, node):
         # A comparison in an if statement's condition, alone or joined by
         # and/or, selects the statement's block.
-        branch = (node.body[0].lineno, node.body[-1].end_lineno) if node.body else None
+        branch = body_span(node.body)
         pending = [node.test]
         while pending:
             test = pending.pop()
@@ -4140,7 +4154,7 @@ class RelationVisitor(ast.NodeVisitor):
                     values = []
                     break
             if values:
-                branch = (case.body[0].lineno, case.body[-1].end_lineno) if case.body else None
+                branch = body_span(case.body)
                 # A match case runs only for its values; there is no
                 # falling through.
                 self.compared_word(node.subject, values, "case", case, id(case), branch, True)

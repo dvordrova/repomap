@@ -197,6 +197,10 @@ type DirectCallComparisonCase struct {
 	Site       Location `json:"site"`
 	BranchLine int      `json:"branch_line,omitempty"`
 	BranchEnd  int      `json:"branch_end,omitempty"`
+	// BranchColumn and BranchEndColumn are where the branch begins on its
+	// first line and ends on its last.
+	BranchColumn    int `json:"branch_column,omitempty"`
+	BranchEndColumn int `json:"branch_end_column,omitempty"`
 	// Exclusive: the branch runs only when the value is one of Words
 	// (programindex.ComparisonCase.Exclusive).
 	Exclusive bool `json:"exclusive,omitempty"`

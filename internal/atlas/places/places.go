@@ -1389,6 +1389,7 @@ func atlasComparisons(values []programindex.Comparison) []atlas.Comparison {
 			written := atlas.ComparisonCase{Form: string(item.Form), Words: slices.Clone(item.Words), LineNo: item.Location.Line, Column: item.Location.Column, Exclusive: item.Exclusive}
 			if item.Branch != nil {
 				written.BranchLine, written.BranchEnd = item.Branch.Line, item.Branch.EndLine
+				written.BranchColumn, written.BranchEndColumn = item.Branch.Column, item.Branch.EndColumn
 			}
 			comparison.Cases = append(comparison.Cases, written)
 		}

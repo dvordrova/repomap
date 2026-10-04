@@ -167,6 +167,11 @@ type Location struct {
 type LineRange struct {
 	Line    int `json:"line"`
 	EndLine int `json:"end_line"`
+	// Column and EndColumn, when the adapter writes them, are where on its
+	// first and last lines the range begins and ends (a comparison case's
+	// branch: two cases on one line are told apart by them).
+	Column    int `json:"column,omitempty"`
+	EndColumn int `json:"end_column,omitempty"`
 }
 
 type TargetSource struct {

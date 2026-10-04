@@ -810,7 +810,7 @@ func (projection *goProjection) projectComparisons() error {
 			}
 			written := programindex.ComparisonCase{Form: programindex.ComparisonForm(item.Form), Words: slices.Clone(item.Words), Location: at, Exclusive: item.Exclusive}
 			if item.BranchLine > 0 {
-				written.Branch = &programindex.LineRange{Line: item.BranchLine, EndLine: item.BranchEnd}
+				written.Branch = &programindex.LineRange{Line: item.BranchLine, EndLine: item.BranchEnd, Column: item.BranchColumn, EndColumn: item.BranchEndColumn}
 			}
 			value.Cases = append(value.Cases, written)
 		}

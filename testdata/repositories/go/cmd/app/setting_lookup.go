@@ -57,3 +57,12 @@ func greeting() string {
 func fetchStatic() {
 	_, _ = http.Get(settingOrDefault("staticBaseUrl"))
 }
+
+// pick writes both of its branches and its default on one line: what
+// pick("y") returns is the default alone.
+func pick(key string) string { if key == "x" { return "https://x.example" } else if key == "z" { return "https://z.example" }; return "https://default.example" }
+
+// fetchPicked asks pick for a key neither branch compares with.
+func fetchPicked() {
+	_, _ = http.Get(pick("y"))
+}

@@ -3029,12 +3029,14 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
 // if statement's then-statement. A lone comparison is none.
 const comparisons = []
 {
+  // A span's lines and, as a location's one-based columns count, where it
+  // begins on its first and ends on its last (inclusive): two branches
+  // written on one line are told apart.
   const lineSpan = (node) => {
     const sourceFile = node.getSourceFile()
-    return {
-      line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile, false)).line + 1,
-      end_line: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-    }
+    const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile, false))
+    const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd())
+    return { line: start.line + 1, end_line: end.line + 1, column: start.character + 1, end_column: end.character }
   }
   const stringWord = (node) => {
     const value = node && unwrapPatternValue(node)
@@ -3089,7 +3091,8 @@ const comparisons = []
           stacked.push(clause)
           if (clause.statements.length === 0) continue
           const first = stacked[0]
-          const branch = { line: lineSpan(first).line, end_line: lineSpan(clause).end_line }
+          const opening = lineSpan(first), closing = lineSpan(clause)
+          const branch = { line: opening.line, end_line: closing.end_line, column: opening.column, end_column: closing.end_column }
           for (const member of stacked) {
             const word = stringWord(member.expression)
             if (word) add(owner, node.expression, word, "case", clause, branch, closed)

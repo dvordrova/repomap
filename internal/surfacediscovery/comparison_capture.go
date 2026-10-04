@@ -17,12 +17,13 @@ type comparedWord struct {
 	key, text string
 	// value is the compared operand's SSA value, nil when SSA wrote no
 	// comparison at the site.
-	value      ssa.Value
-	at         ssa.Instruction
-	word       string
-	pos        token.Pos
-	form       string
-	branch     [2]int
+	value ssa.Value
+	at    ssa.Instruction
+	word  string
+	pos   token.Pos
+	form  string
+	// branch is the case's branch: line, column, end line, end column.
+	branch     [4]int
 	caseSyntax ast.Node
 	// exclusive: the branch runs only when the value is one of the case's
 	// words (onlyWhenCompared).
@@ -116,12 +117,14 @@ func comparedKey(info *types.Info, expression ast.Expr) string {
 	return types.ExprString(expression)
 }
 
-func (a *analyzer) lines(from, to token.Pos) [2]int {
+// lines is the span from one position through another, inclusive: its
+// line, column, end line and end column.
+func (a *analyzer) lines(from, to token.Pos) [4]int {
 	first, last := a.location(from), a.location(to)
 	if first.Line < 1 || last.Line < first.Line || first.Path != last.Path {
-		return [2]int{}
+		return [4]int{}
 	}
-	return [2]int{first.Line, last.Line}
+	return [4]int{first.Line, first.Column, last.Line, last.Column}
 }
 
 // switchWords are a switch's words on a string tag: each case's constant
@@ -137,7 +140,7 @@ func (a *analyzer) switchWords(info *types.Info, compares map[token.Pos]*ssa.Bin
 		if !ok {
 			continue
 		}
-		branch := a.lines(clause.Case, clause.End())
+		branch := a.lines(clause.Case, clause.End()-1)
 		exclusive := !fallsInto(statement.Body.List, position)
 		for _, expression := range clause.List {
 			word, ok := constantWord(info, expression)
@@ -198,7 +201,7 @@ walk:
 		case *ast.CaseClause:
 			for _, listed := range parent.List {
 				if listed == child {
-					item.branch, item.caseSyntax = a.lines(parent.Case, parent.End()), parent
+					item.branch, item.caseSyntax = a.lines(parent.Case, parent.End()-1), parent
 					item.exclusive = true
 					for _, other := range parent.List {
 						item.exclusive = item.exclusive && onlyWhenCompared(info, other, item.key)
@@ -269,7 +272,7 @@ func (a *analyzer) recordComparedWords(callerID string, words []comparedWord) {
 			}
 			cases[word.caseSyntax] = len(comparison.Cases)
 			comparison.Cases = append(comparison.Cases, DirectCallComparisonCase{
-				Form: word.form, Words: []string{word.word}, Site: location, BranchLine: word.branch[0], BranchEnd: word.branch[1], Exclusive: word.exclusive,
+				Form: word.form, Words: []string{word.word}, Site: location, BranchLine: word.branch[0], BranchColumn: word.branch[1], BranchEnd: word.branch[2], BranchEndColumn: word.branch[3], Exclusive: word.exclusive,
 			})
 		}
 		a.directCallIndex.recordComparison(comparison)

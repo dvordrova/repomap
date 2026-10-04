@@ -482,6 +482,7 @@ func comparedOf(comparisons []programindex.Comparison) []sourcevalue.Compared {
 			written := sourcevalue.ComparedCase{Words: item.Words, Exclusive: item.Exclusive}
 			if item.Branch != nil {
 				written.Line, written.EndLine = item.Branch.Line, item.Branch.EndLine
+				written.Column, written.EndColumn = item.Branch.Column, item.Branch.EndColumn
 			}
 			compared.Cases = append(compared.Cases, written)
 		}
