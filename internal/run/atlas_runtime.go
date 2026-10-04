@@ -358,14 +358,32 @@ func externalDependencies(catalog *dependencies.Catalog) []reading.Dependency {
 	if catalog == nil {
 		return nil
 	}
-	seen := make(map[string]bool)
+	importers := make(map[string]string, len(catalog.Importers))
+	for _, importer := range catalog.Importers {
+		importers[importer.Ref] = importer.PackagePath
+	}
+	at := make(map[string]int)
 	var result []reading.Dependency
 	for _, dependency := range catalog.Dependencies {
-		if dependency.Kind != dependencies.KindExternal || dependency.PackagePath == "" || seen[dependency.PackagePath] {
+		if dependency.Kind != dependencies.KindExternal || dependency.PackagePath == "" {
 			continue
 		}
-		seen[dependency.PackagePath] = true
-		result = append(result, reading.Dependency{Package: dependency.PackagePath, Module: dependency.ModulePath, Version: dependency.ModuleVersion})
+		position, seen := at[dependency.PackagePath]
+		if !seen {
+			position = len(result)
+			at[dependency.PackagePath] = position
+			result = append(result, reading.Dependency{Package: dependency.PackagePath, Module: dependency.ModulePath, Version: dependency.ModuleVersion})
+		}
+		// The packages importing it only for its effect: one row of the
+		// systems question, though no call goes through it.
+		for _, ref := range dependency.EffectImporterRefs {
+			if by := importers[ref]; by != "" && !slices.Contains(result[position].EffectBy, by) {
+				result[position].EffectBy = append(result[position].EffectBy, by)
+			}
+		}
+	}
+	for position := range result {
+		slices.Sort(result[position].EffectBy)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Package < result[j].Package })
 	return result

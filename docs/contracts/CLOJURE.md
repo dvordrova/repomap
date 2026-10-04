@@ -142,6 +142,8 @@ keywords yet: recorded, not fabricated.
 
 ## Handler tables and stored callbacks
 
+A `(:require [ns])` with no alias loads a namespace for its effect, as metabase's `metabase.driver.init` loads its own driver namespaces; those are repository namespaces, and JDBC drivers load by class name, not by a require. The dependency catalogue records no effect imports for Clojure (a recorded gap beside Go's `_` imports, GO "Packages imported for their effect").
+
 A function of the program's own that keeps a handed function (`(swap! handlers conj f)`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the Clojure adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Go, Python and JS/TS. C records them (C "Callables the program's own functions keep").
 
 These are the Clojure equivalents of the C adapter's command table, its

@@ -596,6 +596,8 @@ checks each kind (`TestCumulativePythonACallSaysWhatItRunsUnder`).
 
 ## Handler tables and stored callbacks
 
+Python has no syntax for importing a package only for its effect. "A module-level import none of whose bindings the module reads" is no such fact: in freqtrade it finds 266 re-exports (`__init__`/`__all__` facades) and no registration, in beets none, so the dependency catalogue records no effect imports for Python (a recorded gap beside Go's `_` imports, GO "Packages imported for their effect").
+
 A function of the program's own that keeps a handed callable (`self.handlers.append(fn)`, `self.on_read = handler`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the Python adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Go, JS/TS and Clojure. C records them (C "Callables the program's own functions keep").
 
 These are the Python equivalents of the C adapter's command table, its

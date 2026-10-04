@@ -541,7 +541,10 @@ C has no statement that starts a function on its own, so no call carries the
 table row, compares an element of the client's argument vector it was handed
 with `nx`: set's sub-argument, never asked (READING, K3), as Redis's SORT,
 DEBUG and SLAVEOF words are.
-A C file has no dynamic execution: C has no builtin that evaluates code, so
+C has no import a package is brought in by for its effect (a library is
+linked, and a constructor attribute runs at load), so its dependency
+catalogue records no effect imports (GO "Packages imported for their
+effect"). A C file has no dynamic execution: C has no builtin that evaluates code, so
 a repository function named `eval` or `exec` is the repository's own code by
 its owner, as in every language (PROGRAM_INDEX: the callee decides, no
 longer the file's extension), and `system` and `popen` start another

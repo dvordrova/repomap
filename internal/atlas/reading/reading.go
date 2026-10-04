@@ -62,6 +62,11 @@ type Dependency struct {
 	Package string `json:"package"`
 	Module  string `json:"module,omitempty"`
 	Version string `json:"version,omitempty"`
+	// EffectBy are the target's packages that import it only for the
+	// effect of importing it (the catalogue's EffectImporterRefs): a driver
+	// or a plugin registering itself, called nowhere. The systems question
+	// asks of it as of a package the program calls.
+	EffectBy []string `json:"effect_by,omitempty"`
 }
 
 // Options is everything the reading needs.

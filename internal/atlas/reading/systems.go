@@ -114,10 +114,16 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 		}
 	}
 	dependencies := make(map[string][]string)
+	effects := make(map[string][]string)
 	for _, target := range r.opts.Targets {
 		for _, dependency := range target.Dependencies {
 			if record := strings.TrimSpace(dependency.Module + " " + dependency.Version); wanted[dependency.Package] && record != "" && !slices.Contains(dependencies[dependency.Package], record) {
 				dependencies[dependency.Package] = append(dependencies[dependency.Package], record)
+			}
+			for _, by := range dependency.EffectBy {
+				if wanted[dependency.Package] && !slices.Contains(effects[dependency.Package], by) {
+					effects[dependency.Package] = append(effects[dependency.Package], by)
+				}
 			}
 		}
 	}
@@ -161,9 +167,11 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 		}
 		records := dependencies[pkg]
 		sort.Strings(records)
+		by := effects[pkg]
+		sort.Strings(by)
 		id := fmt.Sprintf("pkg%d", i+1)
 		subjects[id] = rowSubject{id: "package:" + pkg, path: first.path, line: first.line}
-		rows = append(rows, lines.SystemRow(id, pkg, records, calls))
+		rows = append(rows, lines.SystemRow(id, pkg, records, calls, by))
 	}
 	r.opts.Stage(lines.StageSystems, fmt.Sprintf("naming the outside systems %d packages reach", len(rows)))
 	previous := r.rowSubjects

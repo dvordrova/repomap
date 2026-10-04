@@ -237,3 +237,46 @@ func importerRefsByPackage(catalog Catalog) map[string]string {
 	}
 	return result
 }
+
+// An importer that imports a package only for its effect is recorded among
+// its importers and in EffectImporterRefs; rows of one package merge both
+// lists, a subset keeps the kept importers' effect refs, and an effect ref
+// that is no importer of the package is refused.
+func TestEffectImportersAreASubsetOfImporters(t *testing.T) {
+	t.Parallel()
+	driverUser := Importer{Language: "go", Name: "store", ModulePath: "example.com/root", PackagePath: "example.com/root/store", RepositoryPath: "store"}
+	caller := Importer{Language: "go", Name: "sync", ModulePath: "example.com/root", PackagePath: "example.com/root/sync", RepositoryPath: "sync"}
+	sealed, err := BuildWithOmissions([]Importer{driverUser, caller}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := importerRefsByPackage(sealed)
+	driver := func(importer string, effect bool) Dependency {
+		value := Dependency{Language: "go", Kind: KindExternal, Name: "pq", ModulePath: "github.com/lib/pq", ModuleVersion: "v1.10.9", PackagePath: "github.com/lib/pq", ImporterRefs: []string{importer}}
+		if effect {
+			value.EffectImporterRefs = []string{importer}
+		}
+		return value
+	}
+	catalog, err := BuildWithOmissions(sealed.Importers, []Dependency{driver(refs[driverUser.PackagePath], true), driver(refs[caller.PackagePath], false)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pq := catalog.Dependencies[0]
+	if len(pq.ImporterRefs) != 2 || !reflect.DeepEqual(pq.EffectImporterRefs, []string{refs[driverUser.PackagePath]}) {
+		t.Fatalf("merged driver = %#v", pq)
+	}
+	subset, err := catalog.Subset(map[string]struct{}{refs[caller.PackagePath]: {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subset.Dependencies) != 1 || len(subset.Dependencies[0].EffectImporterRefs) != 0 {
+		t.Fatalf("subset kept another importer's effect import: %#v", subset.Dependencies)
+	}
+	broken := catalog
+	broken.Dependencies = []Dependency{snapshotDependency(pq)}
+	broken.Dependencies[0].EffectImporterRefs = []string{"i9"}
+	if err := broken.Validate(); err == nil {
+		t.Fatal("an effect importer that imports nothing was accepted")
+	}
+}

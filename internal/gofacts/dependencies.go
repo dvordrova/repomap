@@ -2,7 +2,11 @@ package gofacts
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/dependencies"
@@ -54,6 +58,7 @@ func buildDependencyCatalog(repoRoot string, loads []dependencyPackageLoad) (dep
 			if len(imports) == 0 {
 				continue
 			}
+			effect := effectOnlyImports(pkg)
 			importer, ok := dependencyImporter(repoRoot, pkg)
 			if ok {
 				importer, err = dependencies.SealImporter(importer)
@@ -93,6 +98,9 @@ func buildDependencyCatalog(repoRoot string, loads []dependencyPackageLoad) (dep
 					continue
 				}
 				value.ImporterRefs = []string{importer.Ref}
+				if effect[importedPath] {
+					value.EffectImporterRefs = []string{importer.Ref}
+				}
 				dependencyRows = append(dependencyRows, value)
 			}
 		}
@@ -265,4 +273,39 @@ func canonicalWarnings(values []string) []string {
 		write++
 	}
 	return values[:write]
+}
+
+// effectOnlyImports are the paths a package imports only for the effect of
+// importing them: every import of the path in the package's own source
+// files is named `_` (`import _ "github.com/go-sql-driver/mysql"`), so the
+// package uses nothing of it and imports it to run its init, which
+// registers a driver or a plugin. Only the files the build selected
+// (GoFiles, CgoFiles) count; a file that cannot be read makes no claim.
+func effectOnlyImports(pkg goListPackage) map[string]bool {
+	blank := make(map[string]bool)
+	named := make(map[string]bool)
+	files := token.NewFileSet()
+	for _, name := range append(append([]string(nil), pkg.GoFiles...), pkg.CgoFiles...) {
+		file, err := parser.ParseFile(files, filepath.Join(pkg.Dir, name), nil, parser.ImportsOnly)
+		if err != nil {
+			return nil
+		}
+		for _, spec := range file.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return nil
+			}
+			if spec.Name != nil && spec.Name.Name == "_" {
+				blank[path] = true
+			} else {
+				named[path] = true
+			}
+		}
+	}
+	for path := range blank {
+		if named[path] {
+			delete(blank, path)
+		}
+	}
+	return blank
 }

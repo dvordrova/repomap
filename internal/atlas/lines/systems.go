@@ -24,14 +24,14 @@ const (
 var systemsPrompt string
 
 // Systems asks, of each outside package the outgoing boundaries call
-// through, which outside systems its calls reach (repomap.atlas.systems.v2).
+// through, which outside systems its calls reach (repomap.atlas.systems.v3).
 // A name is text, so the text model answers; each package is its own row,
 // remembered on its own, with every distinct call of it, so a package whose
 // calls choose several systems (a driver name or a URL given to them) is
 // named by each, never by its first call. The boundaries table then chooses
 // among these names; no list of known systems is kept in code.
 func Systems() table.Definition {
-	return table.Definition{Stage: StageSystems, Contract: "repomap.atlas.systems.v2", System: systemsPrompt, Memoize: true,
+	return table.Definition{Stage: StageSystems, Contract: "repomap.atlas.systems.v3", System: systemsPrompt, Memoize: true,
 		Columns: []table.Column{{Name: SystemColumn, Kind: table.Text, MaxRunes: SystemsRunes,
 			Note: "every outside system calls through this package reach, each as a newcomer would name it, separated by \"; \", or none"}}}
 }
@@ -48,14 +48,20 @@ type PackageCall struct {
 }
 
 // SystemRow is one outside package: its path as the code names it, the
-// dependency lines the manifest records for it ("module version"), and
-// every symbol of it the program calls, with every distinct call of each.
-func SystemRow(id, pkg string, dependency []string, calls []PackageCall) table.Row {
+// dependency lines the manifest records for it ("module version"), every
+// symbol of it the program calls, with every distinct call of each, and
+// the program's packages that import it only for its effect (effectBy):
+// a database driver registering itself is called nowhere. A row without
+// effect importers keeps its bytes.
+func SystemRow(id, pkg string, dependency []string, calls []PackageCall, effectBy []string) table.Row {
 	fields := []table.Field{{Name: "package", Value: pkg}}
 	if len(dependency) > 0 {
 		fields = append(fields, table.Field{Name: "dependency", Value: dependency})
 	}
 	fields = append(fields, table.Field{Name: "calls", Value: calls})
+	if len(effectBy) > 0 {
+		fields = append(fields, table.Field{Name: "imported_for_effect_by", Value: effectBy})
+	}
 	return table.Row{ID: id, Fields: fields}
 }
 

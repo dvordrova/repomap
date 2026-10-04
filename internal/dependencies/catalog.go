@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -94,6 +95,12 @@ type Dependency struct {
 	RepositoryPath string       `json:"repository_path,omitempty"`
 	Replacement    *Replacement `json:"replacement,omitempty"`
 	ImporterRefs   []string     `json:"importer_refs"`
+	// EffectImporterRefs are the importers that import the package only for
+	// the effect of importing it, binding nothing of it they use (Go's
+	// `import _ "github.com/go-sql-driver/mysql"`, a JavaScript
+	// `import "x"`): a driver or a plugin registering itself. A subset of
+	// ImporterRefs; an adapter that cannot tell leaves it empty.
+	EffectImporterRefs []string `json:"effect_importer_refs,omitempty"`
 }
 
 // Catalog is the canonical dependency handoff shared by language adapters and
@@ -154,6 +161,14 @@ func BuildWithOmissions(importers []Importer, values []Dependency, omissions []O
 			value.ImporterRefs[position] = identity
 		}
 		value.ImporterRefs = canonicalStrings(value.ImporterRefs)
+		for position, ref := range value.EffectImporterRefs {
+			identity, ok := importerAlias[ref]
+			if !ok {
+				return Catalog{}, fmt.Errorf("dependencies: dependency has unknown effect importer ref %q", ref)
+			}
+			value.EffectImporterRefs[position] = identity
+		}
+		value.EffectImporterRefs = canonicalStrings(value.EffectImporterRefs)
 		value.ID = dependencyIdentity(value)
 		if err := validateDependencyShape(value); err != nil {
 			return Catalog{}, err
@@ -163,6 +178,9 @@ func BuildWithOmissions(importers []Importer, values []Dependency, omissions []O
 				return Catalog{}, fmt.Errorf("dependencies: conflicting dependency identity %q", value.ID)
 			}
 			previous.ImporterRefs = canonicalStrings(append(previous.ImporterRefs, value.ImporterRefs...))
+			if len(value.EffectImporterRefs) > 0 {
+				previous.EffectImporterRefs = canonicalStrings(append(previous.EffectImporterRefs, value.EffectImporterRefs...))
+			}
 			dependencyByID[value.ID] = previous
 			continue
 		}
@@ -183,6 +201,12 @@ func BuildWithOmissions(importers []Importer, values []Dependency, omissions []O
 			value.ImporterRefs[position] = compactImporterRef[ref]
 		}
 		value.ImporterRefs = canonicalCompactIDs(value.ImporterRefs, "i")
+		for position, ref := range value.EffectImporterRefs {
+			value.EffectImporterRefs[position] = compactImporterRef[ref]
+		}
+		if len(value.EffectImporterRefs) > 0 {
+			value.EffectImporterRefs = canonicalCompactIDs(value.EffectImporterRefs, "i")
+		}
 		catalog.Dependencies = append(catalog.Dependencies, value)
 	}
 	sort.Slice(catalog.Dependencies, func(i, j int) bool { return dependencyLess(catalog.Dependencies[i], catalog.Dependencies[j]) })
@@ -275,6 +299,11 @@ func (catalog Catalog) Validate() error {
 				return fmt.Errorf("dependencies: importer refs are not canonical")
 			}
 		}
+		for refIndex, ref := range value.EffectImporterRefs {
+			if !slices.Contains(value.ImporterRefs, ref) || refIndex > 0 && !compactIDLess(value.EffectImporterRefs[refIndex-1], ref, "i") {
+				return fmt.Errorf("dependencies: dependency %q has an effect importer ref %q that is no canonical importer of it", value.ID, ref)
+			}
+		}
 		seenDependencies[value.ID] = struct{}{}
 	}
 	if err := validateCoverage(catalog.Coverage, seenImporters, catalog.Dependencies); err != nil {
@@ -306,6 +335,12 @@ func (catalog Catalog) Subset(importerRefs map[string]struct{}) (Catalog, error)
 		for _, ref := range value.ImporterRefs {
 			if _, ok := kept[ref]; ok {
 				copyValue.ImporterRefs = append(copyValue.ImporterRefs, ref)
+			}
+		}
+		copyValue.EffectImporterRefs = nil
+		for _, ref := range value.EffectImporterRefs {
+			if _, ok := kept[ref]; ok {
+				copyValue.EffectImporterRefs = append(copyValue.EffectImporterRefs, ref)
 			}
 		}
 		if len(copyValue.ImporterRefs) > 0 {
@@ -549,6 +584,9 @@ func sameReplacement(left, right *Replacement) bool {
 func snapshotDependency(value Dependency) Dependency {
 	result := value
 	result.ImporterRefs = append([]string(nil), value.ImporterRefs...)
+	if len(value.EffectImporterRefs) > 0 {
+		result.EffectImporterRefs = append([]string(nil), value.EffectImporterRefs...)
+	}
 	if value.Replacement != nil {
 		copyReplacement := *value.Replacement
 		result.Replacement = &copyReplacement

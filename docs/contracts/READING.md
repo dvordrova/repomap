@@ -1193,7 +1193,7 @@ SQL facts, and 2 `func.count` whose `.label`, handed to `select`, had no
 ### Outside systems
 
 Which outside system an outgoing call reaches is asked once per outside
-package, never of a list in code (`repomap.atlas.systems.v2`, stage
+package, never of a list in code (`repomap.atlas.systems.v3`, stage
 `atlas_systems`, the text model). Code groups the boundaries table's outgoing
 rows by the outside package their own call goes through, as the facts record
 it at the site (a Go import path, a Python or JavaScript module, a C header, a
@@ -1219,8 +1219,15 @@ calls reach, each as a newcomer would say it, separated by `; `, or `none`
 when calls through the package reach no one outside system (criteria in
 `prompts/systems.md`). Each package is remembered on its own (`Memoize`); the
 cell is a decision, kept without captions. An undecided package has no name.
-A package named by several systems is listed under each in the destination
-catalogue, and a row through it takes no system in code: the destination
+A package a program imports only for the effect of importing it (the
+dependency catalogue's `effect_importer_refs`: Go's `import _
+"github.com/go-sql-driver/mysql"`) is asked too, though no row calls it: its
+row has no calls and lists the packages importing it under
+`imported_for_effect_by`, and its answer joins that program's destination
+catalogue (casdoor's `object/ormer.go` drivers give MySQL and SQLite entries
+beside the PostgreSQL its `pq.DialOpen` gave; control review, 2026-10-04,
+`TestAPackageImportedForItsEffectIsAskedAndOffered`). A package named by
+several systems is listed under each in the destination catalogue, and a row through it takes no system in code: the destination
 question names it by its own call, never by the package's first system
 (`packageSystem`, `TestAPackageWhoseCallsChooseSeveralSystemsIsNamedByEach`).
 

@@ -147,6 +147,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	}
 	assertProgramIndexRoundTrip(t, publishedIndex)
 	assertPublishedRootImportRemainsExternal(t, publishedAuthorities, publishedIndex)
+	assertGoEffectOnlyImports(t, publishedAuthorities)
 	library := analyzeGoFixture(t, repositoryPath, repository, goFixtureRootPackage, "cumulative-go-library-tests")
 	libraryIndex, err := goadapter.Build(repository, library.target, library.origins, library.direct, library.external, library.core, library.dynamic, library.tests)
 	if err != nil {
@@ -1543,8 +1544,19 @@ func PublishedRoot() string {
 	return "published root"
 }
 `,
+		// A package the published example imports only for its init, as
+		// casdoor's object/ormer.go imports its database drivers.
+		"driver/driver.go": `package driver
+
+var Registered []string
+
+func init() { Registered = append(Registered, "fixture") }
+`,
 	}
 	for name, content := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(publishedRoot, name)), 0o700); err != nil {
+			t.Fatalf("create published Go fixture module directory: %v", err)
+		}
 		if err := os.WriteFile(filepath.Join(publishedRoot, name), []byte(content), 0o600); err != nil {
 			t.Fatalf("write published Go fixture module %s: %v", name, err)
 		}
@@ -1715,5 +1727,35 @@ func assertGoExternalInterfaceImplementation(t *testing.T, index programindex.In
 	}
 	if !found {
 		t.Fatalf("(*sql.DB).QueryRowContext through rowQuerier was not projected")
+	}
+}
+
+// A package imported only for the effect of importing it, `import _ "..."`,
+// is recorded as its importer's effect import in the dependency catalogue;
+// a package the importer names and calls is not (casdoor's object/ormer.go
+// imports its database drivers so). The systems question then asks of it.
+func assertGoEffectOnlyImports(t *testing.T, authorities goFixtureAuthorities) {
+	t.Helper()
+	catalog := authorities.dependencies
+	if catalog == nil {
+		t.Fatal("the published example has no dependency catalogue")
+	}
+	main := ""
+	for _, importer := range catalog.Importers {
+		if importer.PackagePath == goFixturePublishedExamplePackage {
+			main = importer.Ref
+		}
+	}
+	effects := map[string][]string{}
+	kinds := map[string]dependencies.Kind{}
+	for _, dependency := range catalog.Dependencies {
+		effects[dependency.PackagePath] = dependency.EffectImporterRefs
+		kinds[dependency.PackagePath] = dependency.Kind
+	}
+	// External, so the reading's target dependencies keep it (an import of
+	// the program's own module would be workspace kind and asked nothing).
+	if main == "" || !slices.Equal(effects[goFixtureRootPackage+"/driver"], []string{main}) || len(effects[goFixtureRootPackage]) != 0 ||
+		kinds[goFixtureRootPackage+"/driver"] != dependencies.KindExternal {
+		t.Fatalf("effect imports = %v, kinds %v (main importer %q)", effects, kinds, main)
 	}
 }

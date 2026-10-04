@@ -359,6 +359,8 @@ into both launches (READING).
 
 ## Handler tables and stored callbacks
 
+A bare `import "x"` imports a package for its effect, but the JS/TS adapter records it as an ordinary import: in metabase's frontend such imports are stylesheets, polyfills and repository aliases, none reaching an outside system, and the cumulative fixture has none. The dependency catalogue records no effect imports for JS/TS yet (a recorded gap beside Go's `_` imports, GO "Packages imported for their effect").
+
 A function of the program's own that keeps a handed callable (`this.handlers.push(fn)`, `this.onRead = handler`) is a registration's receiver by the general rule (PROGRAM_INDEX), but the JS/TS adapter records no parameter stores, so such a call registers nothing: a recorded gap, as in Go, Python and Clojure. C records them (C "Callables the program's own functions keep").
 
 These are the JS/TS equivalents of the C adapter's command table, its

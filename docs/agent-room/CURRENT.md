@@ -464,6 +464,12 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   ([ProgramIndex](../contracts/PROGRAM_INDEX.md),
   [Reading](../contracts/READING.md) "Declarations",
   [Python](../contracts/PYTHON.md) "Builtins and class bodies").
+- **Packages imported for their effect are asked (2026-10-04, control
+  review B7 follow-up):** Go's `import _` packages are a dependency
+  catalogue fact and join the systems question and the destination
+  catalogue (casdoor now offers MySQL and SQLite). casdoor's xorm calls
+  being named one database stays open until a destination several entries
+  name with no deciding address is one destination of alternatives.
 - **Files a program keeps are its data (owner, 2026-09-29; skeptic: no
   role):** the calls of symbols answered `talks: file` are walked along their
   decided argument and grouped by where the path ends (a literal or template,
