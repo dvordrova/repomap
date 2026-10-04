@@ -74,16 +74,20 @@ URL, `fetchStatic`'s `http.Get` keeps it
 
 ## Packages imported for their effect
 
-An import spec named `_` imports a package only to run its `init`, which
+An import spec named `_` imports a package to run its `init`, which
 registers it with another library (a database driver with `database/sql`).
 The dependency catalogue records the importing package in the dependency's
-`effect_importer_refs` when every import of the path in the package's
-build-selected files (`GoFiles`, `CgoFiles`, read by `go/parser` imports
-only) is `_`; a file that cannot be read makes no claim. Only external
+`effect_importer_refs` when an import spec of the path in one of the
+package's build-selected files (`GoFiles`, `CgoFiles`, read by `go/parser`
+imports only) is `_`; a file that cannot be read makes no claim. A named
+import of the same path in another file takes nothing away (2026-10-04): Go
+runs the init once for the program however else the package imports it, and
+casdoor's package object imports its mysql, pq and go-mssqldb drivers both
+`_` (`ormer.go`) and by name (`syncer_database.go`, `viaSSHDialer.go`). Only external
 dependencies reach the systems question (the standard library's `_ "embed"`
 or `_ "time/tzdata"` and the repository's own packages do not). The
-published example imports its module's `driver` package so
-(`assertGoEffectOnlyImports`). A repository package that registers itself
+published example imports its module's `driver` package so in `main.go`
+and by name in `registered.go` (`assertGoEffectOnlyImports`). A repository package that registers itself
 through a blank import (caddy's `modules/standard`) reaches a system only if
 the program graph follows its `init`: a recorded gap.
 

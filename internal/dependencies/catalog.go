@@ -95,11 +95,11 @@ type Dependency struct {
 	RepositoryPath string       `json:"repository_path,omitempty"`
 	Replacement    *Replacement `json:"replacement,omitempty"`
 	ImporterRefs   []string     `json:"importer_refs"`
-	// EffectImporterRefs are the importers that import the package only for
-	// the effect of importing it, binding nothing of it they use (Go's
-	// `import _ "github.com/go-sql-driver/mysql"`, a JavaScript
-	// `import "x"`): a driver or a plugin registering itself. A subset of
-	// ImporterRefs; an adapter that cannot tell leaves it empty.
+	// EffectImporterRefs are the importers that import the package for the
+	// effect of importing it (Go's `import _ "github.com/go-sql-driver/mysql"`
+	// in one of the importer's files, whatever else they use of it): a driver
+	// or a plugin registering itself. A subset of ImporterRefs; an adapter
+	// that cannot tell leaves it empty.
 	EffectImporterRefs []string `json:"effect_importer_refs,omitempty"`
 }
 

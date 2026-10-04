@@ -50,7 +50,7 @@ type PackageCall struct {
 // SystemRow is one outside package: its path as the code names it, the
 // dependency lines the manifest records for it ("module version"), every
 // symbol of it the program calls, with every distinct call of each, and
-// the program's packages that import it only for its effect (effectBy):
+// the program's packages that import it for its effect (effectBy):
 // a database driver registering itself is called nowhere. A row without
 // effect importers keeps its bytes.
 func SystemRow(id, pkg string, dependency []string, calls []PackageCall, effectBy []string) table.Row {

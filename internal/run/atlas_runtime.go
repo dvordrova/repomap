@@ -374,7 +374,7 @@ func externalDependencies(catalog *dependencies.Catalog) []reading.Dependency {
 			at[dependency.PackagePath] = position
 			result = append(result, reading.Dependency{Package: dependency.PackagePath, Module: dependency.ModulePath, Version: dependency.ModuleVersion})
 		}
-		// The packages importing it only for its effect: one row of the
+		// The packages importing it for its effect: one row of the
 		// systems question, though no call goes through it.
 		for _, ref := range dependency.EffectImporterRefs {
 			if by := importers[ref]; by != "" && !slices.Contains(result[position].EffectBy, by) {

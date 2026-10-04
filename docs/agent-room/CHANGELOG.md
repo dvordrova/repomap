@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A `_` import is an effect import whatever else the importer names (facts, item 3 step A)
+
+- **Why:** the native rebuild of casdoor showed MySQL, its configured driver, in no catalogue entry. Package object imports go-sql-driver/mysql, lib/pq and go-mssqldb `_` in `ormer.go` but by name in `syncer_database.go` and `viaSSHDialer.go`, and the rule required every spec to be `_`.
+- **Now** (`gofacts.effectImports`; skeptic: accept with changes): a package imports a path for its effect when any of its import specs of it is `_`. Go runs the init once for the program, and the `_` spec is the author's statement that the file needs it. Standard-library and repository paths still reach no systems row (`run/atlas_runtime.go`, external only). The systems prompt drops "using nothing of it" (memo identity: every systems row is asked again, as with item 1's v3).
+- **Fixture:** `_examples/published/registered.go` names `driver` beside main.go's `_` import; `assertGoEffectOnlyImports` still expects main's effect import (it fails on the previous rule).
+- **Re-asked systems rows** (saved owner runs of 2026-10-03, every row, by the prompt change): casdoor 48, litestream 15, headscale 12, etcd 9, beets 9, freqtrade 7, redis 2; othello and lua ask none. Rows gained by this rule (skeptic's parse of ~/git, non-test files): casdoor +3 (mysql, pq, go-mssqldb gain `imported_for_effect_by` object), litestream +1 (modernc.org/sqlite), headscale, etcd, caddy, othello 0. Confirmed on the next native rebuild.
+- **Gaps recorded:** JS/TS `import "x"` and Python record no effect imports (GO, PYTHON).
+- **Tests:** gofacts, dependencies, atlas/lines, atlas/reading, run, and the Go repository, files and inputs contract tests exit 0.
+
 ## 2026-10-04 — Items 1–2 on a native rebuild of casdoor (measurement, no provider call)
 
 - **How:** binary from `git archive` of 1fd199e3 (`-trimpath`, GOMAXPROCS=2), `--no-model --target github.com/casdoor/casdoor@.::github.com/casdoor/casdoor` into the session scratchpad (exit 0, 550 s, native analysis 8 m). An offline run against a clone of the owner cache was refused by the permission guard, so the model's windows were not re-prepared. Instead, probes ran the current facts and destination walk over the rebuilt ProgramIndex and places. The destination walk took the saved run's decided arguments (`knowledge.json`, 206) and talks answers (`atlas.json`, 188).

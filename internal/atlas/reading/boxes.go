@@ -881,7 +881,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 					states = append(states, state)
 				}
 			}
-			// A package a program imports only for its effect (a database
+			// A package a program imports for its effect (a database
 			// driver registering itself) reaches a system though no row
 			// calls it: it is asked and offered like the ones rows call.
 			for _, target := range r.opts.Targets {

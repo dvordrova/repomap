@@ -1219,15 +1219,15 @@ calls reach, each as a newcomer would say it, separated by `; `, or `none`
 when calls through the package reach no one outside system (criteria in
 `prompts/systems.md`). Each package is remembered on its own (`Memoize`); the
 cell is a decision, kept without captions. An undecided package has no name.
-A package a program imports only for the effect of importing it (the
+A package a program imports for the effect of importing it (the
 dependency catalogue's `effect_importer_refs`: Go's `import _
-"github.com/go-sql-driver/mysql"`) is asked too, though no row calls it: its
+"github.com/go-sql-driver/mysql"`, whatever else the importer uses of it) is
+asked too, though no row may call it: its
 row has no calls and lists the packages importing it under
 `imported_for_effect_by`, and its answer joins that program's destination
-catalogue (casdoor's `_ "modernc.org/sqlite"` gives an SQLite entry beside
-the PostgreSQL its `pq.DialOpen` gave; its mysql, pq and go-mssqldb are
-imported by name too in package object, so they are not imported only for
-their effect and MySQL has no entry; control review, 2026-10-04,
+catalogue (casdoor's `object/ormer.go` drivers give MySQL, PostgreSQL, SQL
+Server and SQLite entries, though package object also names mysql, pq and
+go-mssqldb elsewhere; control review, 2026-10-04,
 `TestAPackageImportedForItsEffectIsAskedAndOffered`). A package named by
 several systems is listed under each in the destination catalogue, and a row through it takes no system in code: the destination
 question names it by its own call, never by the package's first system

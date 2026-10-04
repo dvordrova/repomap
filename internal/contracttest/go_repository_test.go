@@ -1732,10 +1732,11 @@ func assertGoExternalInterfaceImplementation(t *testing.T, index programindex.In
 	}
 }
 
-// A package imported only for the effect of importing it, `import _ "..."`,
-// is recorded as its importer's effect import in the dependency catalogue;
-// a package the importer names and calls is not (casdoor's object/ormer.go
-// imports its database drivers so). The systems question then asks of it.
+// A package imported for the effect of importing it, `import _ "..."`, is
+// recorded as its importer's effect import in the dependency catalogue,
+// though another file of the importer names it (registered.go), as
+// casdoor's package object imports its database drivers; a package the
+// importer only names and calls is not. The systems question then asks of it.
 func assertGoEffectOnlyImports(t *testing.T, authorities goFixtureAuthorities) {
 	t.Helper()
 	catalog := authorities.dependencies
