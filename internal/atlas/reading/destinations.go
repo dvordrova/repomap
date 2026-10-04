@@ -1186,40 +1186,87 @@ func canonicalDestinationUses(uses []atlas.DestinationUse) []atlas.DestinationUs
 }
 
 // destinationEnds are a call's walks as they are saved: each end once (its
-// address or frontier, whether unread, its method and targets), in the
-// order first reached, with its shortest chain and, when several reach it,
-// the number of routes. casdoor's avatar download had saved 77,299 chains
-// to 54 ends. The provider evidence (destinationEvidence) and the page list
-// ends alike.
-func destinationEnds(uses []atlas.DestinationUse) []atlas.DestinationUse {
+// address or frontier, whether unread, its method, targets and the source
+// location it ends at), in the order first reached, with its shortest
+// chain, when several reach it the number of routes, and the graph steps
+// on any of its routes; and the graph itself, every distinct step and
+// transition once. casdoor's avatar download had saved 77,299 chains to
+// 54 ends; its graph is a few hundred steps and a few thousand edges.
+func destinationEnds(uses []atlas.DestinationUse) ([]atlas.DestinationUse, *atlas.DestinationGraph) {
 	type end struct {
 		address, frontier, method, targets string
 		unread                             bool
+		at                                 string
+	}
+	graph := &atlas.DestinationGraph{}
+	stepAt := map[atlas.DestinationStep]int{}
+	edgeSeen := map[[2]int]bool{}
+	position := func(step atlas.DestinationStep) int {
+		if at, ok := stepAt[step]; ok {
+			return at
+		}
+		stepAt[step] = len(graph.Steps)
+		graph.Steps = append(graph.Steps, step)
+		return stepAt[step]
 	}
 	at := map[end]int{}
 	var result []atlas.DestinationUse
+	through := map[int]map[int]bool{}
 	for _, use := range uses {
-		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread}
+		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread, ""}
+		if n := len(use.Steps); n > 0 {
+			last := use.Steps[n-1]
+			key.at = fmt.Sprintf("%s:%d:%d", last.Path, last.Line, last.Column)
+		}
+		previous := -1
+		var onRoute []int
+		for _, step := range use.Steps {
+			current := position(step)
+			onRoute = append(onRoute, current)
+			if previous >= 0 && !edgeSeen[[2]int{previous, current}] {
+				edgeSeen[[2]int{previous, current}] = true
+				graph.Edges = append(graph.Edges, [2]int{previous, current})
+			}
+			previous = current
+		}
 		routes := max(1, use.Routes)
-		position, seen := at[key]
+		index, seen := at[key]
 		if !seen {
-			at[key] = len(result)
+			index = len(result)
+			at[key] = index
 			use.Routes = routes
 			result = append(result, use)
-			continue
+			through[index] = map[int]bool{}
+		} else {
+			result[index].Routes += routes
+			if len(use.Steps) < len(result[index].Steps) {
+				use.Routes = result[index].Routes
+				result[index] = use
+			}
 		}
-		result[position].Routes += routes
-		if len(use.Steps) < len(result[position].Steps) {
-			use.Routes = result[position].Routes
-			result[position] = use
+		for _, step := range onRoute {
+			through[index][step] = true
+		}
+		for _, step := range use.Through {
+			through[index][step] = true
 		}
 	}
 	for i := range result {
 		if result[i].Routes == 1 {
 			result[i].Routes = 0
 		}
+		result[i].Through = nil
+		if result[i].Routes > 1 {
+			for step := range through[i] {
+				result[i].Through = append(result[i].Through, step)
+			}
+			slices.Sort(result[i].Through)
+		}
 	}
-	return result
+	if len(graph.Steps) == 0 {
+		graph = nil
+	}
+	return result, graph
 }
 
 // destinationEvidence is each place a call's value ends, once: its address

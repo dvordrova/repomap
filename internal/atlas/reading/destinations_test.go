@@ -887,7 +887,10 @@ func TestDestinationEvidenceListsEachEndOnce(t *testing.T) {
 }
 
 // A call's walks are saved as their ends, each once in first-reached
-// order with its shortest chain and the routes reaching it.
+// order (by address and the source location it ends at) with its shortest
+// chain, the routes reaching it and the graph steps on any of them; the
+// graph keeps every distinct step and transition once. Two different
+// source lines writing one address stay two ends.
 func TestDestinationEndsAreSavedOnceWithTheirRoutes(t *testing.T) {
 	step := func(name string, line int) atlas.DestinationStep {
 		return atlas.DestinationStep{Name: name, Path: "a.go", Line: line}
@@ -897,9 +900,24 @@ func TestDestinationEndsAreSavedOnceWithTheirRoutes(t *testing.T) {
 		{Frontier: "c.URL", TargetIDs: []string{"t1"}, Steps: []atlas.DestinationStep{step("get", 1)}},
 		{Address: "https://x.example", TargetIDs: []string{"t1"}, Steps: []atlas.DestinationStep{step("get", 1), step("set", 9)}},
 		{Address: "https://x.example", TargetIDs: []string{"t1"}, Routes: 2, Steps: []atlas.DestinationStep{step("get", 1), step("b", 3), step("set", 9)}},
+		{Address: "https://x.example", TargetIDs: []string{"t1"}, Steps: []atlas.DestinationStep{step("get", 1), step("other", 12)}},
 	}
-	got := destinationEnds(uses)
-	if len(got) != 2 || got[0].Address != "https://x.example" || got[0].Routes != 4 || len(got[0].Steps) != 2 || got[1].Frontier != "c.URL" || got[1].Routes != 0 {
+	got, graph := destinationEnds(uses)
+	if len(got) != 3 || got[0].Address != "https://x.example" || got[0].Routes != 4 || len(got[0].Steps) != 2 || got[1].Frontier != "c.URL" || got[1].Routes != 0 || got[2].Steps[1].Line != 12 {
 		t.Fatalf("ends = %+v", got)
+	}
+	// get, a, set, b, other: five steps; get→a, a→set, get→set, get→b,
+	// b→set, get→other: six transitions, each once.
+	if graph == nil || len(graph.Steps) != 5 || len(graph.Edges) != 6 {
+		t.Fatalf("graph = %+v", graph)
+	}
+	// The first end's routes pass get, a, set and b: every source stays.
+	var names []string
+	for _, at := range got[0].Through {
+		names = append(names, graph.Steps[at].Name)
+	}
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"a", "b", "get", "set"}) {
+		t.Fatalf("sources through the first end = %q", names)
 	}
 }

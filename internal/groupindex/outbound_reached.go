@@ -189,6 +189,7 @@ func cloneOutbound(calls []OutboundCall) []OutboundCall {
 	for i := range result {
 		result[i].Values = cloneStrings(calls[i].Values)
 		result[i].Uses = cloneDestinationUses(calls[i].Uses)
+		result[i].Graph = cloneDestinationGraph(calls[i].Graph)
 		result[i].ReachedFrom = cloneOutboundCallers(calls[i].ReachedFrom)
 	}
 	return result

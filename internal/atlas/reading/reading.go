@@ -1343,9 +1343,10 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				uses = append(uses, cloneDestinationUse(use))
 			}
 		}
-		uses = destinationEnds(uses)
+		uses, graph := destinationEnds(uses)
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{
 			Uses:     uses,
+			Graph:    graph,
 			ObjectID: objectID,
 			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,

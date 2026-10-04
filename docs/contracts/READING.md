@@ -1286,14 +1286,19 @@ by them joined with " / "; spellings fold per system; followers copy the set
 `TestAChoiceCellMayNameSeveral`). A call whose ends show nothing stays
 asked as before: no rule fills it with every driver.
 
-A boundary's saved walks (`uses`, atlas 21, GroupsIndex 29) are its ends:
-each place its value ends once (address or frontier, whether unread, method
-and targets), in the order first reached, with its shortest chain and, when
-several reach it, `routes`, how many do (2026-10-04: casdoor's avatar
-download had saved 77,299 chains to 54 ends, and atlas.json, groups-index.json
-and report.json had grown to 130–139 MB). The provider's
-`destination_chains` and the page list ends alike; no reader uses a route
-list.
+A boundary's saved walks (`uses`, atlas 22, GroupsIndex 30) are its ends:
+each place its value ends once (address or frontier, whether unread, method,
+targets and the source location it ends at, so two lines writing one
+address stay two ends), in the order first reached, with its shortest chain,
+when several reach it `routes`, how many do, and `through`, the steps of the
+boundary's `graph` on any of its routes. The `graph` keeps every distinct
+step and transition of the walks once (2026-10-04/05: casdoor's avatar
+download had saved 77,299 chains, now 215 ends over 339 steps and 5,625
+edges; atlas.json, groups-index.json and report.json had grown to 130–139
+MB). Every source a walk passed stays reachable; no combined route is
+listed. The provider's `destination_chains` and the page show each end's
+shortest chain and routes, and the page lists an end's other sources when
+the reader expands it.
 
 A walk through a function's result reads it for the call it walks
 (2026-10-04, casdoor): a value written in the branch of an `exclusive` case

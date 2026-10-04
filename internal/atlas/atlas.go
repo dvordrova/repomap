@@ -33,7 +33,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 27
-	Version      = 21
+	Version      = 22
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -967,17 +967,20 @@ type Arrow struct {
 // Boundary is one integration point drawn beside its box. BoxID is empty
 // when the boundary's file is off the map; the boundary is still read.
 type Boundary struct {
-	Uses      []DestinationUse `json:"uses,omitempty"`
-	ID        string           `json:"id"`
-	ObjectID  string           `json:"object_id,omitempty"`
-	BoxID     string           `json:"box_id"`
-	Path      string           `json:"path"`
-	LineNo    int              `json:"line_no"`
-	Column    int              `json:"column,omitempty"`
-	Caller    string           `json:"caller"`
-	Direction string           `json:"direction"`
-	Kind      string           `json:"kind"`
-	External  string           `json:"external,omitempty"`
+	Uses []DestinationUse `json:"uses,omitempty"`
+	// Graph is every distinct step and transition of Uses' routes (atlas
+	// 22).
+	Graph     *DestinationGraph `json:"graph,omitempty"`
+	ID        string            `json:"id"`
+	ObjectID  string            `json:"object_id,omitempty"`
+	BoxID     string            `json:"box_id"`
+	Path      string            `json:"path"`
+	LineNo    int               `json:"line_no"`
+	Column    int               `json:"column,omitempty"`
+	Caller    string            `json:"caller"`
+	Direction string            `json:"direction"`
+	Kind      string            `json:"kind"`
+	External  string            `json:"external,omitempty"`
 	// Source preserves whether the anchor is a native fact or an interpretation.
 	Source string `json:"source,omitempty"`
 	// Destination and Basis are MODEL. Address is one original observed value
@@ -1068,17 +1071,28 @@ type DeclaredOn struct {
 // established from code, and the frontier is only the expression written
 // there.
 //
-// A saved use is one end of a call's value: Routes, when more than one, is
-// how many routes through the code reach that end, its Steps the shortest
-// of them (atlas 21).
+// A saved use is one end of a call's value, by its address or frontier and
+// the source location it ends at: Routes, when more than one, is how many
+// routes through the code reach that end, its Steps the shortest of them,
+// and Through every step of the boundary's Graph on any of its routes
+// (atlas 22).
 type DestinationUse struct {
 	Address   string            `json:"address,omitempty"`
 	Frontier  string            `json:"frontier,omitempty"`
 	Unread    bool              `json:"unread,omitempty"`
 	Method    string            `json:"method,omitempty"`
 	Routes    int               `json:"routes,omitempty"`
+	Through   []int             `json:"through,omitempty"`
 	TargetIDs []string          `json:"target_ids,omitempty"`
 	Steps     []DestinationStep `json:"steps"`
+}
+
+// DestinationGraph is every distinct step and transition a boundary's walks
+// observed, once: the routes to its ends without listing each combined
+// route. Edges are pairs of Steps positions, from and to.
+type DestinationGraph struct {
+	Steps []DestinationStep `json:"steps"`
+	Edges [][2]int          `json:"edges,omitempty"`
 }
 
 type DestinationStep struct {

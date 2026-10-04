@@ -37,6 +37,7 @@ var russianUI = map[string]string{
 	"Files":                            "Файлы",
 	"Path not established":             "Путь не установлен",
 	"one of these, depending on configuration": "одна из них, в зависимости от настроек",
+	"Other sources on its routes":              "Другие источники на путях к нему",
 	"Read or written by":                       "Читают или пишут",
 	"set by the setting":                       "задаётся настройкой",
 	"set in":                                   "задаётся в",

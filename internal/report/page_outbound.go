@@ -3,6 +3,7 @@ package report
 import (
 	"cmp"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -121,8 +122,11 @@ type pageOutboundUse struct {
 	Unread bool
 	Steps  []pageOutboundStep
 	// Routes is how many saved chains reach this end, Steps the shortest
-	// of them: each end stands once (outboundEnds).
-	Routes int
+	// of them: each end stands once (outboundEnds). Sources are the other
+	// steps on its routes (GroupsIndex OutboundCall.Graph), read when the
+	// reader expands the end.
+	Routes  int
+	Sources []pageOutboundStep
 }
 
 // FrontierName is the frontier the address passes through, or "" when it
@@ -265,7 +269,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		ends, routes := outboundEnds(call.Uses)
 		for position, use := range ends {
 			value := pageOutboundUse{Value: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method, Routes: routes[position]}
-			for _, step := range use.Steps {
+			named := func(step atlas.DestinationStep) (string, pageAnchor) {
 				name := step.Name
 				// A declaration reads by its report name: a method with its
 				// type, a callable written inline as a reader names it, never
@@ -286,14 +290,28 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 						break
 					}
 				}
+				return name, builder.links.anchor(step.Path, step.Line, step.Column)
+			}
+			onChain := map[atlas.DestinationStep]bool{}
+			for _, step := range use.Steps {
+				onChain[step] = true
+				name, anchor := named(step)
 				// Two steps in one declaration on one line read as one:
 				// freqtrade's start_install_ui and its dl_url both read
 				// "install-ui".
-				anchor := builder.links.anchor(step.Path, step.Line, step.Column)
 				if last := len(value.Steps) - 1; last >= 0 && value.Steps[last].Name == name && value.Steps[last].Anchor.Href == anchor.Href && value.Steps[last].Anchor.Text == anchor.Text {
 					continue
 				}
 				value.Steps = append(value.Steps, pageOutboundStep{Name: name, Anchor: anchor})
+			}
+			if call.Graph != nil {
+				for _, at := range use.Through {
+					if at < 0 || at >= len(call.Graph.Steps) || onChain[call.Graph.Steps[at]] {
+						continue
+					}
+					name, anchor := named(call.Graph.Steps[at])
+					value.Sources = append(value.Sources, pageOutboundStep{Name: name, Anchor: anchor})
+				}
 			}
 			row.Uses = append(row.Uses, value)
 		}
@@ -777,12 +795,17 @@ func outboundEnds(uses []atlas.DestinationUse) ([]atlas.DestinationUse, []int) {
 	type end struct {
 		value, frontier, method, targets string
 		unread                           bool
+		at                               string
 	}
 	at := map[end]int{}
 	var ends []atlas.DestinationUse
 	var routes []int
 	for _, use := range uses {
-		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread}
+		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread, ""}
+		if n := len(use.Steps); n > 0 {
+			last := use.Steps[n-1]
+			key.at = fmt.Sprintf("%s:%d:%d", last.Path, last.Line, last.Column)
+		}
 		// A saved end carries how many routes reach it (atlas 21).
 		count := max(1, use.Routes)
 		position, seen := at[key]

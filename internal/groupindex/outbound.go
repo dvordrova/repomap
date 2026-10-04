@@ -13,14 +13,17 @@ import (
 // containing group's lane. A request handler can both receive and send work.
 // Values are source observations, not a claim that every literal is an address.
 type OutboundCall struct {
-	Uses        []atlas.DestinationUse `json:"uses,omitempty"`
-	ID          string                 `json:"id"`
-	SubjectID   string                 `json:"subject_id,omitempty"`
-	GroupID     string                 `json:"group_id,omitempty"`
-	FactID      string                 `json:"fact_id,omitempty"`
-	Kind        string                 `json:"kind"`
-	External    string                 `json:"external,omitempty"`
-	Destination string                 `json:"destination,omitempty"`
+	Uses []atlas.DestinationUse `json:"uses,omitempty"`
+	// Graph is every distinct step and transition of Uses' routes (atlas
+	// Boundary.Graph), its steps' subjects local.
+	Graph       *atlas.DestinationGraph `json:"graph,omitempty"`
+	ID          string                  `json:"id"`
+	SubjectID   string                  `json:"subject_id,omitempty"`
+	GroupID     string                  `json:"group_id,omitempty"`
+	FactID      string                  `json:"fact_id,omitempty"`
+	Kind        string                  `json:"kind"`
+	External    string                  `json:"external,omitempty"`
+	Destination string                  `json:"destination,omitempty"`
 	// Alternatives are the systems the destination reaches one of depending
 	// on configuration (atlas Boundary.Alternatives), a model choice;
 	// Destination is them joined by " / ".
@@ -84,9 +87,15 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 				uses[i].Steps[j].SubjectID = localSymbols[uses[i].Steps[j].SubjectID]
 			}
 		}
+		graph := cloneDestinationGraph(boundary.Graph)
+		if graph != nil {
+			for j := range graph.Steps {
+				graph.Steps[j].SubjectID = localSymbols[graph.Steps[j].SubjectID]
+			}
+		}
 		calls = append(calls, OutboundCall{
-			Uses: uses,
-			ID:   boundary.ID, SubjectID: local[sourceRefs[boundary.ObjectID]], GroupID: groups[boundary.BoxID],
+			Uses: uses, Graph: graph,
+			ID: boundary.ID, SubjectID: local[sourceRefs[boundary.ObjectID]], GroupID: groups[boundary.BoxID],
 			FactID: boundary.FactID, Kind: boundary.Kind, External: boundary.External,
 			Destination: boundary.Destination, Alternatives: cloneStrings(boundary.Alternatives), DestinationTarget: boundary.DestinationTarget, Address: boundary.Address, Basis: boundary.Basis,
 			Method: boundary.Method, Values: cloneStrings(boundary.Values), Summary: boundary.Line, Source: source,
@@ -124,8 +133,16 @@ func cloneDestinationUses(uses []atlas.DestinationUse) []atlas.DestinationUse {
 	for i := range result {
 		result[i].Steps = append([]atlas.DestinationStep(nil), uses[i].Steps...)
 		result[i].TargetIDs = append([]string(nil), uses[i].TargetIDs...)
+		result[i].Through = append([]int(nil), uses[i].Through...)
 	}
 	return result
+}
+
+func cloneDestinationGraph(graph *atlas.DestinationGraph) *atlas.DestinationGraph {
+	if graph == nil {
+		return nil
+	}
+	return &atlas.DestinationGraph{Steps: append([]atlas.DestinationStep(nil), graph.Steps...), Edges: append([][2]int(nil), graph.Edges...)}
 }
 
 // communicationKind is the same closed list the boundaries table offers an
