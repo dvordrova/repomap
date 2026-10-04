@@ -24,6 +24,9 @@ type comparedWord struct {
 	form       string
 	branch     [2]int
 	caseSyntax ast.Node
+	// exclusive: the branch runs only when the value is one of the case's
+	// words (onlyWhenCompared).
+	exclusive bool
 }
 
 // recordComparisons records each value the body of function compares with
@@ -129,18 +132,19 @@ func (a *analyzer) switchWords(info *types.Info, compares map[token.Pos]*ssa.Bin
 	}
 	key, text := comparedKey(info, statement.Tag), types.ExprString(ast.Unparen(statement.Tag))
 	var result []comparedWord
-	for _, clause := range statement.Body.List {
+	for position, clause := range statement.Body.List {
 		clause, ok := clause.(*ast.CaseClause)
 		if !ok {
 			continue
 		}
 		branch := a.lines(clause.Case, clause.End())
+		exclusive := !fallsInto(statement.Body.List, position)
 		for _, expression := range clause.List {
 			word, ok := constantWord(info, expression)
 			if !ok {
 				continue
 			}
-			item := comparedWord{key: key, text: text, word: word, pos: expression.Pos(), form: "case", branch: branch, caseSyntax: clause}
+			item := comparedWord{key: key, text: text, word: word, pos: expression.Pos(), form: "case", branch: branch, caseSyntax: clause, exclusive: exclusive}
 			if op := compares[expression.Pos()]; op != nil {
 				item.value, item.at = op.X, op
 			}
@@ -188,12 +192,26 @@ walk:
 		case *ast.IfStmt:
 			if parent.Cond == child {
 				item.branch, item.caseSyntax = a.lines(parent.Body.Lbrace, parent.Body.Rbrace), parent
+				item.exclusive = onlyWhenCompared(info, parent.Cond, item.key)
 			}
 			break walk
 		case *ast.CaseClause:
 			for _, listed := range parent.List {
 				if listed == child {
 					item.branch, item.caseSyntax = a.lines(parent.Case, parent.End()), parent
+					item.exclusive = true
+					for _, other := range parent.List {
+						item.exclusive = item.exclusive && onlyWhenCompared(info, other, item.key)
+					}
+					if position > 0 {
+						if body, ok := parents[position-1].(*ast.BlockStmt); ok {
+							for at, clause := range body.List {
+								if clause == parent && fallsInto(body.List, at) {
+									item.exclusive = false
+								}
+							}
+						}
+					}
 				}
 			}
 			break walk
@@ -251,9 +269,47 @@ func (a *analyzer) recordComparedWords(callerID string, words []comparedWord) {
 			}
 			cases[word.caseSyntax] = len(comparison.Cases)
 			comparison.Cases = append(comparison.Cases, DirectCallComparisonCase{
-				Form: word.form, Words: []string{word.word}, Site: location, BranchLine: word.branch[0], BranchEnd: word.branch[1],
+				Form: word.form, Words: []string{word.word}, Site: location, BranchLine: word.branch[0], BranchEnd: word.branch[1], Exclusive: word.exclusive,
 			})
 		}
 		a.directCallIndex.recordComparison(comparison)
 	}
+}
+
+// onlyWhenCompared says a condition holds only when the value keyed key
+// equals one of the words it is compared with: an == of the value with a
+// constant, such comparisons joined by ||, or a conjunction one of whose
+// sides is one. Anything else (`len(v) != 2 || v == "nu"`, a call) may hold
+// for other values.
+func onlyWhenCompared(info *types.Info, condition ast.Expr, key string) bool {
+	switch expression := ast.Unparen(condition).(type) {
+	case *ast.BinaryExpr:
+		switch expression.Op {
+		case token.LOR:
+			return onlyWhenCompared(info, expression.X, key) && onlyWhenCompared(info, expression.Y, key)
+		case token.LAND:
+			return onlyWhenCompared(info, expression.X, key) || onlyWhenCompared(info, expression.Y, key)
+		case token.EQL:
+			for _, pair := range [][2]ast.Expr{{expression.X, expression.Y}, {expression.Y, expression.X}} {
+				if _, word := constantWord(info, pair[1]); word && info.Types[pair[0]].Value == nil && comparedKey(info, pair[0]) == key {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// fallsInto says the clause before the one at position ends in fallthrough,
+// so that clause's values run this one's body too.
+func fallsInto(clauses []ast.Stmt, position int) bool {
+	if position == 0 {
+		return false
+	}
+	previous, ok := clauses[position-1].(*ast.CaseClause)
+	if !ok || len(previous.Body) == 0 {
+		return false
+	}
+	branch, ok := previous.Body[len(previous.Body)-1].(*ast.BranchStmt)
+	return ok && branch.Tok == token.FALLTHROUGH
 }

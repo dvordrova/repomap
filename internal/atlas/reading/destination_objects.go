@@ -341,7 +341,7 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 		return d.object(&value.Parts[0], owner, use, itself, active)
 	case "alternatives":
 		for i, part := range value.Parts {
-			if branch, ok := chooseDestinationPart(value, i, owner, use); ok {
+			if branch, ok := chooseDestinationPart(value, i, owner, d.entryOf(use, owner), use); ok {
 				result = append(result, d.object(&part, owner, branch, itself, active)...)
 			}
 		}

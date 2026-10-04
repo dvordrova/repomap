@@ -204,7 +204,14 @@ ProgramIndex retains:
   and its cases in source order, each with a closed `form` (`case`: an arm
   of a switch, match or case; `equals`: `==`, or membership in a written
   list of words), its `words` and the `branch` it selects (the case's
-  lines, or the block an if condition guards). A lone comparison, and one
+  lines, or the block an if condition guards) and whether it is
+  `exclusive` (2026-10-04): the branch runs only when the value is one of
+  the words. A case is exclusive when its condition holds only for them
+  (`key == "w"`; `a || b` when both sides do; `a && b` when either does)
+  and no earlier case falls into it (Go `fallthrough`, a JS/TS clause
+  ending in no `break`, `return`, `throw` or `continue`); a Python `match`
+  case is. False claims nothing. Go, Python and JS/TS record it; C and
+  Clojure record none yet (their cases claim nothing). A lone comparison, and one
   condition naming several words for one branch (`arg == "-h" || arg ==
   "-help"`), is none. Go (a string switch and `==`, the origin from SSA:
   litestream's `cmd, args = args[0], args[1:]` is element "0" of parameter

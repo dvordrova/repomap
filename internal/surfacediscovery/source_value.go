@@ -393,7 +393,9 @@ func (a *analyzer) sourceReturn(fn *ssa.Function) *sourcevalue.Value {
 // variable of the same name in another block is another. A word stored
 // twice has no one place, and a variable ever assigned another variable's
 // value (`res = x`) has none at all: the join's edge may carry x's word
-// from where x was stored, which no syntax of res names.
+// from where x was stored, which no syntax of res names. A store of a
+// call's or an operation's result (casdoor's `res, _ :=
+// web.AppConfig.String(key)`) carries no word and leaves the others theirs.
 func (a *analyzer) joinedVariableStores(phi *ssa.Phi) map[string]token.Pos {
 	function := phi.Parent()
 	if function == nil || !phi.Pos().IsValid() {
@@ -423,7 +425,14 @@ func (a *analyzer) joinedVariableStores(phi *ssa.Phi) map[string]token.Pos {
 		}
 		word, ok := info.Types[value]
 		if !ok || word.Value == nil || word.Value.Kind() != constant.String {
-			copied = true
+			// Only another variable's value can carry a word the join's
+			// edge holds as a constant; a call's or an operation's result
+			// (`res, _ := web.AppConfig.String(key)`) carries none.
+			if name, ok := ast.Unparen(value).(*ast.Ident); ok {
+				if _, ok := info.ObjectOf(name).(*types.Var); ok {
+					copied = true
+				}
+			}
 			return
 		}
 		text := constant.StringVal(word.Value)
@@ -450,13 +459,9 @@ func (a *analyzer) joinedVariableStores(phi *ssa.Phi) map[string]token.Pos {
 						store(name, statement.Rhs[i])
 					}
 				}
-			} else {
-				for _, left := range statement.Lhs {
-					if name, ok := left.(*ast.Ident); ok && info.ObjectOf(name) == variable {
-						copied = true
-					}
-				}
 			}
+			// A multiple assignment from one call, map index, receive or
+			// type assertion stores that expression's results, no word.
 		case *ast.ValueSpec:
 			for i, name := range statement.Names {
 				if i < len(statement.Values) {

@@ -347,6 +347,9 @@ type ComparisonCase struct {
 	Column     int      `json:"column,omitempty"`
 	BranchLine int      `json:"branch_line,omitempty"`
 	BranchEnd  int      `json:"branch_end,omitempty"`
+	// Exclusive: the branch runs only when the value is one of Words
+	// (ProgramIndex ComparisonCase.Exclusive).
+	Exclusive bool `json:"exclusive,omitempty"`
 }
 
 // RowLiteral is one string literal a row writes, with the field it fills.

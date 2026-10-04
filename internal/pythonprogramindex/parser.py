@@ -311,6 +311,38 @@ def pass_subscripts(body):
     return reached
 
 
+def compared_operand(test):
+    """The expression one comparison with words compares, or None."""
+    if len(test.ops) != 1:
+        return None
+    left, right, operator = test.left, test.comparators[0], test.ops[0]
+    def text(value):
+        return isinstance(value, ast.Constant) and isinstance(value.value, str)
+    if isinstance(operator, ast.Eq):
+        if text(right) and not isinstance(left, ast.Constant):
+            return left
+        if text(left) and not isinstance(right, ast.Constant):
+            return right
+    if isinstance(operator, ast.In) and isinstance(right, (ast.Tuple, ast.List, ast.Set)) and right.elts and \
+            all(text(value) for value in right.elts) and not isinstance(left, ast.Constant):
+        return left
+    return None
+
+
+def only_when_compared(test, key):
+    """A condition that holds only when the expression dumped as key equals
+    one of the words it is compared with: such comparisons joined by or, or
+    an and one of whose operands is one. `len(v) != 2 or v == "nu"` may
+    hold for other values."""
+    if isinstance(test, ast.BoolOp):
+        results = [only_when_compared(value, key) for value in test.values]
+        return all(results) if isinstance(test.op, ast.Or) else any(results)
+    if isinstance(test, ast.Compare):
+        compared = compared_operand(test)
+        return compared is not None and ast.dump(compared) == key
+    return False
+
+
 class Scope:
     def __init__(self, ref, qname, kind, parent=None, class_ref="", class_qname=""):
         self.ref = ref
@@ -948,6 +980,8 @@ class Analyzer:
                     item = {"form": word["form"], "words": [word["word"]], "location": word["location"]}
                     if word["branch"]:
                         item["branch"] = {"line": word["branch"][0], "end_line": word["branch"][1]}
+                    if word.get("exclusive"):
+                        item["exclusive"] = True
                     by_case[word["case"]] = item
                     cases.append(item)
                 first = group[0]
@@ -4023,7 +4057,7 @@ class RelationVisitor(ast.NodeVisitor):
             return None
         return [{"literals": row} for row in rows]
 
-    def compared_word(self, compared, literals, form, node, case=None, branch=None):
+    def compared_word(self, compared, literals, form, node, case=None, branch=None, exclusive=None):
         # One word or several a scope compares a value with, in one case:
         # the if statement whose condition holds the comparison, or a match
         # case (attach_comparisons).
@@ -4031,6 +4065,8 @@ class RelationVisitor(ast.NodeVisitor):
             return
         if case is None:
             case, branch = getattr(node, "repomap_case", (id(node), None))
+        if exclusive is None:
+            exclusive = getattr(node, "repomap_exclusive", False)
         origin = self.source_value(compared)
         for item in literals:
             location = source_location(self.module["path"], item)
@@ -4039,6 +4075,7 @@ class RelationVisitor(ast.NodeVisitor):
             self.analyzer.compared_words.setdefault(self.scope.ref, []).append({
                 "key": ast.dump(compared), "text": bounded_text(ast.unparse(compared)), "origin": origin,
                 "word": item.value, "location": location, "form": form, "case": case, "branch": branch,
+                "exclusive": exclusive,
             })
 
     def visit_If(self, node):
@@ -4052,6 +4089,10 @@ class RelationVisitor(ast.NodeVisitor):
                 pending.extend(test.values)
             elif isinstance(test, ast.Compare):
                 test.repomap_case = (id(node), branch)
+                compared = compared_operand(test)
+                # The block runs only for the compared words when the whole
+                # condition says so (only_when_compared).
+                test.repomap_exclusive = compared is not None and only_when_compared(node.test, ast.dump(compared))
         # Each arm starts from the bindings before the statement, and a name
         # an arm binds is joined after it (join_branches).
         self.visit(node.test)
@@ -4100,7 +4141,9 @@ class RelationVisitor(ast.NodeVisitor):
                     break
             if values:
                 branch = (case.body[0].lineno, case.body[-1].end_lineno) if case.body else None
-                self.compared_word(node.subject, values, "case", case, id(case), branch)
+                # A match case runs only for its values; there is no
+                # falling through.
+                self.compared_word(node.subject, values, "case", case, id(case), branch, True)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node):

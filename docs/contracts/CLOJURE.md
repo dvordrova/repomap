@@ -294,7 +294,9 @@ words in two or more cases are one comparison of the enclosing var
 result's last line, its value's origin the form as written; `run-command`'s `(case (first args) "serve" …
 ("check" "verify") …)` is two cases, while `=` stays a call asked on its
 own; serve's case calls `shout`, so run-command handles serve there
-(READING).
+(READING). No case is marked `exclusive` yet (2026-10-04), so a walk keeps
+every branch's value; `case` runs one branch only and the fixture has no
+setting getter whose key a caller hands, a recorded gap (READING).
 
 A call's argument written as its function's own parameter carries that
 parameter (clj-kondo's locals, linked to the parameter vectors of the

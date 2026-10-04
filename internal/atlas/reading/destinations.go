@@ -381,7 +381,10 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 	case "alternatives":
 		var result []destinationPath
 		for i, part := range value.Parts {
-			if branch, ok := chooseDestinationPart(value, i, owner, use); ok {
+			if d.outsideItsBranch(&part, owner, use) {
+				continue
+			}
+			if branch, ok := chooseDestinationPart(value, i, owner, d.entryOf(use, owner), use); ok {
 				result = append(result, d.value(&part, owner, branch, active)...)
 			}
 		}
@@ -525,18 +528,75 @@ func matchesDestinationOwner(call atlas.SymbolCall, callees []string, formal *so
 
 // Two parameters of the same invocation must use that same caller row.
 // Independent expansion would invent cross-products of URL bases and suffixes
-// that were never passed together by any source call.
+// that were never passed together by any source call. The row is the
+// innermost call the walk entered the callee through: one value made of two
+// calls of one function (dataSourceName + GetConfigString("dbName")) reads
+// each call's own parameter, never the earlier call's.
 func (d *DestinationReader) chosenCallers(use destinationPath, callees []string, formal *sourcevalue.Anchor) map[sourcevalue.Anchor]bool {
 	chosen := make(map[sourcevalue.Anchor]bool)
-	for _, step := range use.Steps {
+	for position := len(use.Steps) - 1; position >= 0; position-- {
+		step := use.Steps[position]
 		anchor := sourcevalue.Anchor{Path: step.Path, Line: step.Line, Column: step.Column}
 		for _, call := range d.callSites[anchor] {
 			if matchesDestinationOwner(call.call, callees, formal) {
 				chosen[anchor] = true
 			}
 		}
+		if len(chosen) > 0 {
+			return chosen
+		}
 	}
 	return chosen
+}
+
+// entryOf is the innermost call the walk entered owner through, as text,
+// empty when it read owner's body from the start: a branch of a join is
+// chosen once per entry, so two calls of one function may take two.
+func (d *DestinationReader) entryOf(use destinationPath, owner atlas.Place) string {
+	for anchor := range d.chosenCallers(use, []string{owner.ID}, nil) {
+		return fmt.Sprintf("%s:%d:%d", anchor.Path, anchor.Line, anchor.Column)
+	}
+	return ""
+}
+
+// outsideItsBranch says a part of a join in owner's body is no value of the
+// call the walk entered owner through: it lies in the branch of a case
+// comparing a parameter with words and that call supplies the parameter
+// another word (sourcevalue.OutsideItsBranch).
+func (d *DestinationReader) outsideItsBranch(part *sourcevalue.Value, owner atlas.Place, use destinationPath) bool {
+	if part.Anchor == nil || owner.Symbol == nil || len(owner.Symbol.Comparisons) == 0 {
+		return false
+	}
+	chosen := d.chosenCallers(use, []string{owner.ID}, nil)
+	if len(chosen) != 1 {
+		return false
+	}
+	var call atlas.SymbolCall
+	for anchor := range chosen {
+		for _, site := range d.callSites[anchor] {
+			if matchesDestinationOwner(site.call, []string{owner.ID}, nil) {
+				call = site.call
+			}
+		}
+	}
+	var compared []sourcevalue.Compared
+	for _, comparison := range owner.Symbol.Comparisons {
+		item := sourcevalue.Compared{}
+		if origin := comparison.Origin; origin != nil && origin.Kind == "parameter" {
+			item.Position, item.Name = origin.Position, origin.Text
+		}
+		for _, written := range comparison.Cases {
+			item.Cases = append(item.Cases, sourcevalue.ComparedCase{Words: written.Words, Line: written.BranchLine, EndLine: written.BranchEnd, Exclusive: written.Exclusive})
+		}
+		compared = append(compared, item)
+	}
+	return sourcevalue.OutsideItsBranch(part.Anchor, owner.Path, compared, func(position int, name string) (string, bool) {
+		supplied := namedSourceArgument(call, position, name)
+		if supplied == nil || supplied.Kind != "literal" {
+			return "", false
+		}
+		return supplied.Text, true
+	})
 }
 
 // templatePart is how a template writes a part whose walk established no
@@ -672,7 +732,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 	case "alternatives":
 		var result []destinationPath
 		for i, part := range receiver.Parts {
-			if branch, ok := chooseDestinationPart(receiver, i, owner, use); ok {
+			if branch, ok := chooseDestinationPart(receiver, i, owner, d.entryOf(use, owner), use); ok {
 				result = append(result, d.field(&part, name, owner, branch, active)...)
 			}
 		}
@@ -735,13 +795,13 @@ func cloneDestinationUse(use atlas.DestinationUse) atlas.DestinationUse {
 	return use
 }
 
-func chooseDestinationPart(value *sourcevalue.Value, part int, owner atlas.Place, use destinationPath) (destinationPath, bool) {
+func chooseDestinationPart(value *sourcevalue.Value, part int, owner atlas.Place, entry string, use destinationPath) (destinationPath, bool) {
 	branch := cloneDestinationPath(use)
 	if value.Anchor == nil {
 		return branch, true
 	}
 	encoded, _ := json.Marshal(value)
-	key := owner.ID + string(encoded)
+	key := owner.ID + "\x00" + entry + "\x00" + string(encoded)
 	if chosen, ok := branch.choices[key]; ok && chosen != part {
 		return branch, false
 	}

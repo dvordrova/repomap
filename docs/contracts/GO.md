@@ -56,13 +56,21 @@ where the code stores it in the variable: the one `name = "word"` (or `:=`,
 `var`) whose left side is the variable the join's position declares, so a
 same-named variable of another block is another. A word stored twice has no
 one place, and a variable ever assigned another variable's value (`res =
-x`), a compound assignment, a multiple assignment from a call, a range
-target or its address taken anchors none of its words. A word returned as
+x`), a compound assignment, a range target or its address taken anchors
+none of its words. A store of a call's or an operation's result carries no
+word and leaves the others theirs (2026-10-04: casdoor's `res, _ :=
+web.AppConfig.String(key)` had left GetConfigString's URL unanchored). A word returned as
 written is anchored at its `return`. Python, JS/TS and C already anchor
 their literals where written. `cmd/app/setting_lookup.go`'s
 `settingOrDefault` and `languageOf` are the fixture
 (`assertGoWordsAnchoredWhereWritten`). This is what lets a walk tell which
-branch of a function a word comes from (READING "Outside systems").
+branch of a function a word comes from (READING "Outside systems"). A
+comparison case is `exclusive` when its `if` condition or every expression
+of its tagless `case` holds only for its words (`==`, `||` of such, `&&`
+with one) or, in a string switch, when the clause before it ends in no
+`fallthrough`: `openStore`'s `settingOrDefault("dataSourceName")` reaches no
+URL, `fetchStatic`'s `http.Get` keeps it
+(`TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven`).
 
 ## Packages imported for their effect
 

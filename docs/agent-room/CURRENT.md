@@ -470,6 +470,13 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   catalogue (casdoor now offers MySQL and SQLite). casdoor's xorm calls
   being named one database stays open until a destination several entries
   name with no deciding address is one destination of alternatives.
+- **A setting getter's branch is read by the key it is given (2026-10-04,
+  item 2):** a value written in an `exclusive` comparison case on a
+  parameter is no value of a call handing that parameter another known
+  word (one rule for the facts and destination walks; Go, Python, JS/TS);
+  unknown keys, non-exclusive cases and unanchored values keep every branch.
+  The setting form of an unresolved getter key (`{env:...}`) is not yet done
+  ([Reading](../contracts/READING.md) "Outside systems").
 - **Files a program keeps are its data (owner, 2026-09-29; skeptic: no
   role):** the calls of symbols answered `talks: file` are walked along their
   decided argument and grouped by where the path ends (a literal or template,

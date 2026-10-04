@@ -46,6 +46,9 @@ type routeLiteral struct {
 	evidence []Anchor
 	possible bool
 	bindings map[sourcevalue.Anchor]routeSourceCall
+	// owner is the function whose returned value the walk is reading, by
+	// its anchor, so a join inside it can be read with its comparisons.
+	owner *sourcevalue.Anchor
 }
 
 func newRouteValueReader(target *targetContext) *routeValueReader {
@@ -142,6 +145,9 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 	case "alternatives":
 		var result []routeLiteral
 		for i := range value.Parts {
+			if r.outsideItsBranch(&value.Parts[i], branch) {
+				continue
+			}
 			next := cloneRouteLiteral(branch)
 			next.possible = true
 			result = append(result, r.value(&value.Parts[i], fields, next, active, addresses)...)
@@ -172,7 +178,14 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 				if returned == nil {
 					continue
 				}
-				next := r.bind(branch, call, returned.Owner)
+				owner := returned.Owner
+				if owner == nil {
+					// Python writes no owner on what a function returns: the
+					// call's one repository callee is the function.
+					owner = r.calleeAnchor(call)
+				}
+				next := r.bind(branch, call, owner)
+				next.owner = owner
 				result = append(result, r.value(returned, fields, next, active, addresses)...)
 			}
 			return result
@@ -182,7 +195,7 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 			return nil
 		}
 		var calls []routeSourceCall
-		if call, bound := branch.bindings[*value.Owner]; bound {
+		if call, bound := r.boundCall(branch, *value.Owner); bound {
 			calls = []routeSourceCall{call}
 		} else if owner := r.ownerID(*value.Owner); owner != "" {
 			calls = r.callers[owner]
@@ -190,6 +203,8 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 		var result []routeLiteral
 		for _, call := range calls {
 			next := r.bind(branch, call, value.Owner)
+			// The supplied value is read in the caller's body.
+			next.owner = nil
 			result = append(result, r.value(suppliedValue(value, call), fields, next, active, addresses)...)
 		}
 		return result
@@ -427,4 +442,92 @@ func mergeRouteEvidence(a, b []Anchor) []Anchor {
 		return result[i].Column < result[j].Column
 	})
 	return result
+}
+
+// outsideItsBranch says a part of a join inside the function the walk is
+// reading is no value of the call the walk is bound to: it lies in the
+// branch of a case comparing a parameter with words, and the call supplies
+// that parameter another word (sourcevalue.OutsideItsBranch).
+func (r *routeValueReader) outsideItsBranch(part *sourcevalue.Value, branch routeLiteral) bool {
+	if branch.owner == nil || part.Anchor == nil {
+		return false
+	}
+	call, bound := r.boundCall(branch, *branch.owner)
+	if !bound {
+		return false
+	}
+	id := r.ownerID(*branch.owner)
+	object, ok := r.target.object(id)
+	if !ok || object.Location == nil || len(object.Comparisons) == 0 {
+		return false
+	}
+	return sourcevalue.OutsideItsBranch(part.Anchor, object.Location.Path, comparedOf(object.Comparisons), func(position int, name string) (string, bool) {
+		supplied := suppliedValue(&sourcevalue.Value{Kind: "parameter", Position: position, Text: name}, call)
+		if supplied == nil || supplied.Kind != "literal" {
+			return "", false
+		}
+		return supplied.Text, true
+	})
+}
+
+// comparedOf are a function's comparisons as the walks read them.
+func comparedOf(comparisons []programindex.Comparison) []sourcevalue.Compared {
+	var result []sourcevalue.Compared
+	for _, comparison := range comparisons {
+		compared := sourcevalue.Compared{}
+		if origin := comparison.Origin; origin != nil && origin.Kind == "parameter" {
+			compared.Position, compared.Name = origin.Position, origin.Text
+		}
+		for _, item := range comparison.Cases {
+			written := sourcevalue.ComparedCase{Words: item.Words, Exclusive: item.Exclusive}
+			if item.Branch != nil {
+				written.Line, written.EndLine = item.Branch.Line, item.Branch.EndLine
+			}
+			compared.Cases = append(compared.Cases, written)
+		}
+		result = append(result, compared)
+	}
+	return result
+}
+
+// calleeAnchor is where the one repository function a call reaches is
+// declared, nil for any other call.
+func (r *routeValueReader) calleeAnchor(call routeSourceCall) *sourcevalue.Anchor {
+	if len(call.relation.ToIDs) != 1 || !r.target.ownsObject(call.relation.ToIDs[0]) {
+		return nil
+	}
+	object, ok := r.target.object(call.relation.ToIDs[0])
+	if !ok || object.Location == nil || !isCallable(object) {
+		return nil
+	}
+	return &sourcevalue.Anchor{Path: object.Location.Path, Line: object.Location.Line, Column: object.Location.Column}
+}
+
+// boundCall is the call the branch bound to the function declared at owner:
+// at its anchor, or on its line when one side writes no column the other
+// does (an owner's declaration and its parameters' owner may differ in
+// column, as ownerID allows).
+func (r *routeValueReader) boundCall(branch routeLiteral, owner sourcevalue.Anchor) (routeSourceCall, bool) {
+	if call, bound := branch.bindings[owner]; bound {
+		return call, true
+	}
+	if r.ownerID(owner) == "" {
+		return routeSourceCall{}, false
+	}
+	var found []routeSourceCall
+	for anchor, call := range branch.bindings {
+		if anchor.Path == owner.Path && anchor.Line == owner.Line && r.ownerID(anchor) == r.ownerID(owner) {
+			found = append(found, call)
+		}
+	}
+	// Two bindings of one function that disagree bind none.
+	if len(found) == 0 {
+		return routeSourceCall{}, false
+	}
+	for _, call := range found[1:] {
+		if call.pattern.ID != found[0].pattern.ID {
+			return routeSourceCall{}, false
+		}
+	}
+	return found[0], true
 }

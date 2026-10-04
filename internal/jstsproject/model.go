@@ -264,6 +264,9 @@ type ComparisonCase struct {
 	Words    []string        `json:"words"`
 	Location Location        `json:"location"`
 	Branch   *ComparisonSpan `json:"branch,omitempty"`
+	// Exclusive: the branch runs only when the value is one of Words
+	// (programindex.ComparisonCase.Exclusive).
+	Exclusive bool `json:"exclusive,omitempty"`
 }
 
 // ComparisonSpan is the lines a case selects, both included.

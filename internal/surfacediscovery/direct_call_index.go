@@ -197,6 +197,9 @@ type DirectCallComparisonCase struct {
 	Site       Location `json:"site"`
 	BranchLine int      `json:"branch_line,omitempty"`
 	BranchEnd  int      `json:"branch_end,omitempty"`
+	// Exclusive: the branch runs only when the value is one of Words
+	// (programindex.ComparisonCase.Exclusive).
+	Exclusive bool `json:"exclusive,omitempty"`
 }
 
 // DirectCallNodeFrontier is closed per-caller accounting for call

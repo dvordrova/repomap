@@ -1764,8 +1764,10 @@ func assertGoEffectOnlyImports(t *testing.T, authorities goFixtureAuthorities) {
 
 // A word a join or a return carries is anchored where the code writes it
 // (cmd/app/setting_lookup.go), as the other languages anchor their
-// literals: settingOrDefault's stored URL at line 16, its log file at 18,
-// languageOf's returns at their return statements. A shared walker can then
+// literals: settingOrDefault's stored URL at line 19, its log file at 21,
+// languageOf's returns at their return statements. Its first store is a
+// call's result (casdoor's `res, _ := web.AppConfig.String(key)`): it
+// carries no word and leaves the literals their anchors. A shared walker can then
 // tell which of a function's branches each word comes from.
 func assertGoWordsAnchoredWhereWritten(t *testing.T, index programindex.Index) {
 	t.Helper()
@@ -1789,7 +1791,7 @@ func assertGoWordsAnchoredWhereWritten(t *testing.T, index programindex.Index) {
 			}
 		}
 	}
-	want := map[string]int{"https://cdn.example/static": 16, "logs/app.log": 18, "": 14, "russian": 27, "english": 29, "unknown": 31}
+	want := map[string]int{"https://cdn.example/static": 19, "logs/app.log": 21, "russian": 37, "english": 39, "unknown": 41}
 	if !reflect.DeepEqual(anchors, want) {
 		t.Fatalf("anchored words = %v, want %v", anchors, want)
 	}

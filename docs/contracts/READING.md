@@ -1269,6 +1269,25 @@ both asking `"/health"` stay apart; `?.DB` at `main.go:55` is one origin). A
 row with no reaching call is its own destination; the walk of another call
 at its site (the fmt.Sprintf formatting a query) says nothing of it.
 
+A walk through a function's result reads it for the call it walks
+(2026-10-04, casdoor): a value written in the branch of an `exclusive` case
+comparing one of the function's parameters with words (PROGRAM_INDEX) is no
+end of a call handing that parameter a word none of them, unless its line
+lies in a second case's branch too (Go's `} else if`). casdoor's
+`GetConfigString("dataSourceName")` ends at the setting, not at the URL its
+`key == "staticBaseUrl"` branch returns, and `sqlite` stays one written
+branch of the alternatives. A parameter the call hands no known word, a
+case not known exclusive or a value with no anchor keeps the value: unknown
+stays unknown. A parameter binds to the innermost caller step that hands it
+(`chosenCallers`), and the alternative a destination keeps is chosen per
+function, entry and value. The rule is one (`sourcevalue.OutsideItsBranch`),
+and the registration value walk of facts applies it to the paths it reads
+(`facts/route_values.go`, binding a result to the call that returned it).
+Go, Python and JS/TS fixtures (`setting_lookup`) prove it
+(`TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven`,
+`TestASettingGettersBranchIsReadByTheKeyItIsGiven`); C and Clojure mark no
+case exclusive, so their walks keep every branch.
+
 **The object an exchange goes through** (owner, 2026-09-30: calls reaching
 the same session or engine are one destination; skeptic-reviewed). A row's
 destination key and its destination's `ends` are where its exchange ends

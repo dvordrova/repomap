@@ -300,7 +300,13 @@ not. Not recorded yet:
   the source value (`src/dispatch.ts`'s `switch (process.argv[2])` with
   its default's help check, one comparison of three cases; `isDefault`'s
   lone `===` is none); a case whose branch calls the program's own code is
-  handled there (READING: `build`, whose case runs `runBuild`);
+  handled there (READING: `build`, whose case runs `runBuild`). A case is
+  `exclusive` when its `if` condition holds only for its words or no
+  clause with statements falls into it (one ending in no `break`,
+  `return`, `throw` or `continue`): `src/setting-lookup.ts`'s
+  `settingOrDefault` returns its URL only for `"staticBaseUrl"`, so
+  `fetchData`'s `fetch` reaches no URL and `fetchStatic`'s keeps it
+  (READING);
 - the object an input is declared on (K2) and the join of a word entry
   with the hand-over made on its result (J1): commander's
   `program.command("init").action(initProject)` is that shape, and so is

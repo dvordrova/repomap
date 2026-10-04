@@ -905,7 +905,12 @@ all read before any is bound (`command, rest = argv[0], argv[1:]`: element
 class body's are none. The fixture's `src/fixture_app/dispatch.py` holds
 `dispatch` (three cases), `describe` (`match`) and `is_default`'s lone
 comparison, which is none; init's case calls `run_init`, so dispatch handles
-init there (READING). `levels.py`'s route handler `level_title` calls
+init there (READING). An `if` case whose condition holds only for its words
+(`==`/`in`, `or` of such, `and` with one) and every `match` case is
+`exclusive`: `setting_lookup.py`'s `setting_or_default` returns its URL only
+for `"staticBaseUrl"`, so `open_store`'s `setting_or_default("dataSourceName")`
+reaches no URL and `fetch_static`'s `httpx.get` keeps it (READING,
+`TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven`). `levels.py`'s route handler `level_title` calls
 `LEVEL_TITLES.get(request.path_params["level"])`: easy and hard are values
 of GET /levels/{level} (READING, tables a handler looks up with what it was
 handed); a subscript `T[key]` is no call and lists none.

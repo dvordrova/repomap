@@ -650,6 +650,12 @@ type ComparisonCase struct {
 	Words    []string       `json:"words"`
 	Location *Location      `json:"location"`
 	Branch   *LineRange     `json:"branch,omitempty"`
+	// Exclusive says the adapter knows Branch runs only when the value is
+	// one of Words: its condition is comparisons of the value joined by ||,
+	// or one of them joined by && to anything, and no case falls through
+	// into it. A condition such as `len(v) != 2 || v == "nu"`, or a case
+	// another falls into, is not. False claims nothing.
+	Exclusive bool `json:"exclusive,omitempty"`
 }
 
 func cloneComparisons(values []Comparison) []Comparison {
@@ -661,7 +667,7 @@ func cloneComparisons(values []Comparison) []Comparison {
 		result[i] = Comparison{Value: value.Value, Origin: sourcevalue.Clone(value.Origin), Location: cloneLocation(value.Location)}
 		result[i].Cases = make([]ComparisonCase, len(value.Cases))
 		for j, item := range value.Cases {
-			result[i].Cases[j] = ComparisonCase{Form: item.Form, Words: slices.Clone(item.Words), Location: cloneLocation(item.Location), Branch: cloneLineRange(item.Branch)}
+			result[i].Cases[j] = ComparisonCase{Form: item.Form, Words: slices.Clone(item.Words), Location: cloneLocation(item.Location), Branch: cloneLineRange(item.Branch), Exclusive: item.Exclusive}
 		}
 	}
 	return result

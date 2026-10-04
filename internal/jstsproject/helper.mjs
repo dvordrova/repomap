@@ -3046,20 +3046,44 @@ const comparisons = []
       [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(value.kind)
   }
   const groups = new Map()
-  const add = (owner, compared, word, form, caseKey, branch) => {
+  const add = (owner, compared, word, form, caseKey, branch, exclusive) => {
     if (!owner) return
     const key = `${owner}\0${expressionText(compared)}`
     if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push({ owner, compared, word, form, caseKey, branch })
+    groups.get(key).push({ owner, compared, word, form, caseKey, branch, exclusive })
+  }
+  // A condition holds only when the compared expression equals one of the
+  // words it is compared with: such comparisons joined by ||, or an && one
+  // of whose sides is one. `x.length !== 2 || x === "nu"` may hold for
+  // other values.
+  const onlyWhenCompared = (condition, text) => {
+    while (ts.isParenthesizedExpression(condition)) condition = condition.expression
+    if (!ts.isBinaryExpression(condition)) return false
+    const kind = condition.operatorToken.kind
+    if (kind === ts.SyntaxKind.BarBarToken) return onlyWhenCompared(condition.left, text) && onlyWhenCompared(condition.right, text)
+    if (kind === ts.SyntaxKind.AmpersandAmpersandToken) return onlyWhenCompared(condition.left, text) || onlyWhenCompared(condition.right, text)
+    if (kind !== ts.SyntaxKind.EqualsEqualsEqualsToken && kind !== ts.SyntaxKind.EqualsEqualsToken) return false
+    if (stringWord(condition.right) && !literalLike(condition.left)) return expressionText(condition.left) === text
+    if (stringWord(condition.left) && !literalLike(condition.right)) return expressionText(condition.right) === text
+    return false
+  }
+  // A clause whose statements end in a jump lets no value fall into the next.
+  const endsInJump = (clause) => {
+    const last = clause.statements[clause.statements.length - 1]
+    return !!last && (ts.isBreakStatement(last) || ts.isReturnStatement(last) || ts.isThrowStatement(last) || ts.isContinueStatement(last))
   }
   for (const { sourceFile } of sourceFiles) {
     const visit = (node) => {
       if (ts.isSwitchStatement(node) && !literalLike(node.expression)) {
         const owner = readOwner(node)
         let stacked = []
+        // Whether the statements before this case's end in a jump: a case
+        // the previous one falls into also runs for that one's values.
+        let closed = true
         for (const clause of node.caseBlock.clauses) {
           if (!ts.isCaseClause(clause)) {
             stacked = []
+            closed = clause.statements.length === 0 ? closed : endsInJump(clause)
             continue
           }
           stacked.push(clause)
@@ -3068,9 +3092,10 @@ const comparisons = []
           const branch = { line: lineSpan(first).line, end_line: lineSpan(clause).end_line }
           for (const member of stacked) {
             const word = stringWord(member.expression)
-            if (word) add(owner, node.expression, word, "case", clause, branch)
+            if (word) add(owner, node.expression, word, "case", clause, branch, closed)
           }
           stacked = []
+          closed = endsInJump(clause)
         }
         for (const member of stacked) {
           const word = stringWord(member.expression)
@@ -3088,7 +3113,8 @@ const comparisons = []
             if (ts.isIfStatement(parent) && parent.expression === child) { caseKey = parent; branch = lineSpan(parent.thenStatement) }
             break
           }
-          add(readOwner(node), compared, word, "equals", caseKey, branch)
+          const exclusive = ts.isIfStatement(caseKey) && onlyWhenCompared(caseKey.expression, expressionText(compared))
+          add(readOwner(node), compared, word, "equals", caseKey, branch, exclusive)
         }
       }
       ts.forEachChild(node, visit)
@@ -3107,7 +3133,7 @@ const comparisons = []
         byCase.get(item.caseKey).words.push(item.word.text)
         continue
       }
-      const value = { form: item.form, words: [item.word.text], location: locationOf(item.word), ...(item.branch ? { branch: item.branch } : {}) }
+      const value = { form: item.form, words: [item.word.text], location: locationOf(item.word), ...(item.branch ? { branch: item.branch } : {}), ...(item.exclusive ? { exclusive: true } : {}) }
       byCase.set(item.caseKey, value)
       cases.push(value)
     }

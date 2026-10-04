@@ -622,3 +622,57 @@ func TestDestinationNamesEqualButForCaseAreOneSpelling(t *testing.T) {
 		t.Fatalf("spellings %v, want %v", got, want)
 	}
 }
+
+// A setting getter's join is read by the key each call gives it
+// (casdoor's conf.GetConfigString): the URL its exclusive
+// `key == "staticBaseUrl"` branch stores is no value of
+// get("dataSourceName"), and each of two calls of the getter in one value
+// reads its own key; a case not known exclusive keeps every value.
+func TestASettingGettersBranchIsReadByTheKeyItIsGiven(t *testing.T) {
+	at := func(path string, line, column int) *sourcevalue.Anchor {
+		return &sourcevalue.Anchor{Path: path, Line: line, Column: column}
+	}
+	literal := func(text string, anchor *sourcevalue.Anchor) sourcevalue.Value {
+		return sourcevalue.Value{Kind: "literal", Text: text, Anchor: anchor}
+	}
+	returned := &sourcevalue.Value{Kind: "alternatives", Anchor: at("conf.go", 10, 1), Owner: at("conf.go", 10, 1), Parts: []sourcevalue.Value{
+		{Kind: "alternatives", Anchor: at("conf.go", 14, 2), Parts: []sourcevalue.Value{
+			literal("https://cdn.example/static", at("conf.go", 16, 9)), literal("logs/app.log", at("conf.go", 18, 9)),
+		}},
+		{Kind: "parameter", Text: "key", Position: 1, Anchor: at("conf.go", 10, 23), Owner: at("conf.go", 10, 1)},
+	}}
+	cases := func(exclusive bool) []atlas.Comparison {
+		return []atlas.Comparison{{Value: "key", Origin: &sourcevalue.Value{Kind: "parameter", Text: "key", Position: 1, Owner: at("conf.go", 10, 1)}, LineNo: 15, Cases: []atlas.ComparisonCase{
+			{Form: "equals", Words: []string{"staticBaseUrl"}, LineNo: 15, BranchLine: 15, BranchEnd: 17, Exclusive: exclusive},
+			{Form: "equals", Words: []string{"logConfig"}, LineNo: 17, BranchLine: 17, BranchEnd: 19, Exclusive: exclusive},
+		}}}
+	}
+	keyed := func(key string, line, column int) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "calls", Name: "get", Line: line, Column: column, Resolution: "exact", CalleeIDs: []string{"get"}, ResultValue: returned,
+			SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: key}}}}
+	}
+	open := atlas.SymbolCall{Kind: "invokes_external", Name: "Open", Line: 3, Column: 5, API: &atlas.CallAPI{Package: "database/sql", Name: "Open"},
+		SourceArguments: []atlas.SourceArgument{{Position: 2, Origin: &sourcevalue.Value{Kind: "concat", Parts: []sourcevalue.Value{
+			{Kind: "call_result", Anchor: at("main.go", 3, 20)}, {Kind: "call_result", Anchor: at("main.go", 3, 40)}}}}}}
+	read := func(exclusive bool) []string {
+		get := atlas.Place{ID: "get", Path: "conf.go", LineNo: 10, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "get", Column: 1}, Comparisons: cases(exclusive)}}
+		main := atlas.Place{ID: "main", Path: "main.go", LineNo: 1, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "main"}, Calls: []atlas.SymbolCall{
+			keyed("dataSourceName", 3, 20), keyed("staticBaseUrl", 3, 40), open}}}
+		reader := NewDestinationReader([]atlas.Place{main, get}, DestinationChoices{Arguments: map[string]ArgumentChoice{"database/sql.Open": {Position: 2}}})
+		var ends []string
+		for _, use := range reader.Read(main, open) {
+			ends = append(ends, use.Address+"|"+use.Frontier)
+		}
+		slices.Sort(ends)
+		return ends
+	}
+	// dataSourceName's part is its key (the parameter the call gives it),
+	// never a stored URL or log file; staticBaseUrl's is its key or its
+	// URL, never the log file.
+	if got, want := read(true), []string{"dataSourceNamehttps://cdn.example/static|", "dataSourceNamestaticBaseUrl|"}; !slices.Equal(got, want) {
+		t.Fatalf("exclusive cases: ends %q, want %q", got, want)
+	}
+	if got := read(false); len(got) <= 2 {
+		t.Fatalf("a case not known exclusive pruned values: %q", got)
+	}
+}
