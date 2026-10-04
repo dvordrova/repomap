@@ -773,8 +773,10 @@ func TestADestinationOfSeveralSystemsIsEachOfThem(t *testing.T) {
 			t.Fatalf("a set naming a program was accepted as %q", got)
 		}
 	}
-	if got, err := table.NormalizeCell(column, context, row, "d4"); err != nil || got != "d4" {
-		t.Fatalf("a program alone = %q, %v", got, err)
+	for _, cell := range []string{"d4", "d4;", "d4; d4", "d4; d9"} {
+		if got, err := table.NormalizeCell(column, context, row, cell); err != nil || got != "d4" {
+			t.Fatalf("a program alone, written %q = %q, %v", cell, got, err)
+		}
 	}
 	states := []*boundaryState{
 		{place: atlas.Place{ID: "b1"}, destinations: map[string]string{"app": "Mysql"}},

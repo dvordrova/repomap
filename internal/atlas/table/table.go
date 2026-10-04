@@ -510,14 +510,20 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 				if err != nil || member == "" || seen[member] {
 					continue
 				}
-				if column.OnlyAlone != nil && column.OnlyAlone(context, member) {
-					return "", fmt.Errorf("cell %q is %q: %q is valid only alone", column.Name, text, member)
-				}
 				seen[member] = true
 				members = append(members, member)
 			}
 			if len(members) == 0 {
 				return "", fmt.Errorf("cell %q is %q, none of whose members is one of the options", column.Name, text)
+			}
+			// One member however written ("d4;", "d4; d4") is a lone answer.
+			if len(members) == 1 {
+				return members[0], nil
+			}
+			for _, member := range members {
+				if column.OnlyAlone != nil && column.OnlyAlone(context, member) {
+					return "", fmt.Errorf("cell %q is %q: %q is valid only alone", column.Name, text, member)
+				}
 			}
 			slices.Sort(members)
 			return strings.Join(members, column.Several), nil
