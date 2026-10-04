@@ -1,5 +1,9 @@
 # Implementation and acceptance journal
 
+## 2026-10-05 — A Python field's class stores are read in place of the unresolved instance again
+
+- `TestCumulativePythonBaseReadTakesEachSubclassStore` failed after 10c00ada, which kept every unresolved instance beside a field's writes. That rule is right for Go's `field_writes` (writes anywhere, plus unknown outside writers). A Python field's inline initializer is instead the instance's own class stores, one alternative per class it may be, so `self.url` read beside Webhook's and Discord's addresses. The inline initializer is again read in place of the instance, which stays only where it gives nothing. Unlike the original rule, this holds for every unresolved base, not only a lone one.
+
 ## 2026-10-04 — Where a route ends, the Main flow goes back to the step's later calls (orientation 5)
 
 - **Why:** Lua 5.1.5's flow went lua_pcall → luaD_call → luaD_precall and never reached luaV_execute; the reader was left in the collector (control review, `reviews/claude-ui-lua-control-2026-10-02.md`). A reader reads luaD_call as "first luaD_precall, then, only if its result says so, luaV_execute": the body in written order, a code fact.

@@ -471,11 +471,13 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 			// field that walk reaches again is named by its write sites and
 			// values, followed no further (owner, 2026-10-04: one hop, as a
 			// reader follows where a field is set; field-to-field chains
-			// are what multiplied). A field initializer kept inline
-			// (Python's __init__ store) is read on as before. An address it
-			// reaches is a possible source, not the call's established
-			// value.
-			var stored []destinationPath
+			// are what multiplied). A field initializer kept inline is the
+			// instance's own class's stores, one alternative per class it
+			// may be (Python's __init__ stores): it is read on in place of
+			// the unresolved instance, which stays only where it gives
+			// nothing. An address it reaches is a possible source, not the
+			// call's established value.
+			var stored, kept []destinationPath
 			for _, base := range result {
 				from := cloneDestinationPath(base)
 				from.Frontier, from.Unread = "", false
@@ -487,13 +489,20 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 					}
 					continue
 				}
-				stored = append(stored, d.initializer(value.Initializer, owner, from, active, writesWalk{})...)
+				found := d.initializer(value.Initializer, owner, from, active, writesWalk{})
+				if len(found) == 0 {
+					kept = append(kept, base)
+				}
+				stored = append(stored, found...)
 			}
 			for i := range stored {
 				if stored[i].Address != "" {
 					stored[i].Frontier = "initializer: " + stored[i].Address
 					stored[i].Address = ""
 				}
+			}
+			if value.Initializer.Kind != "field_writes" {
+				result = kept
 			}
 			result = append(result, stored...)
 		}
