@@ -1,5 +1,23 @@
 # Implementation and acceptance journal
 
+## 2026-10-05 — A boundary's walks are saved as ends plus one graph of their steps (atlas 22, GroupsIndex 30)
+
+- **The moderator's P1 on 5ab06397:** the save key merged ends with one address written at different source lines, and keeping only the shortest chain dropped the other routes' intermediate sources.
+- **Now (911f43fb):**
+  - Ends are keyed by address or frontier, method, targets, unread *and* the source location they end at.
+  - Each boundary saves a `graph` holding every distinct step and transition of its walks once. Each end keeps its shortest chain, `routes` and `through` (its graph steps on any route).
+  - The page shows the shortest chain and "routes to it: n" by default. An expandable "Other sources on its routes" (ru "Другие источники на путях к нему") lists the rest.
+- **Measured on run 172050's saved files, with the same grouping and graph:**
+
+  | File | Before | After |
+  |---|---|---|
+  | atlas.json | 131.2 MB | 5.5 MB |
+  | groups-index.json | 130.3 MB | 7.6 MB |
+  | report.json | 139.2 MB | 13.7 MB |
+
+  116,719 chains became 4,303 ends (more than 5ab06397's 2,649, since ends now split by source line). The avatar download keeps 215 ends over 339 steps and 5,625 edges.
+- **Tests:** `TestDestinationEndsAreSavedOnceWithTheirRoutes` (two lines, one address, two ends; the graph's steps and edges; every source through an end). Atlas, reading, groupindex and report pass.
+
 ## 2026-10-05 — A Python field's class stores are read in place of the unresolved instance again
 
 - `TestCumulativePythonBaseReadTakesEachSubclassStore` failed after 10c00ada, which kept every unresolved instance beside a field's writes. That rule is right for Go's `field_writes` (writes anywhere, plus unknown outside writers). A Python field's inline initializer is instead the instance's own class stores, one alternative per class it may be, so `self.url` read beside Webhook's and Discord's addresses. The inline initializer is again read in place of the instance, which stays only where it gives nothing. Unlike the original rule, this holds for every unresolved base, not only a lone one.
