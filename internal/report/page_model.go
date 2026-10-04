@@ -1144,7 +1144,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		if name, ok := builder.flowName(step.TargetID, step.Resumes); ok {
 			row.Back = &name
 			if row.ViaKey == "called (a Main flow step)" {
-				row.ViaKey = ""
+				row.Via, row.ViaKey = "", ""
 			}
 			if step.Guard != nil && step.Guard.Kind == programindex.GuardBranch && row.Guard.At != nil {
 				row.BackIf, row.Guard = row.Guard.At, nil
