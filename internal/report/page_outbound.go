@@ -120,6 +120,9 @@ type pageOutboundUse struct {
 	// value is not established from code (atlas DestinationUse Unread).
 	Unread bool
 	Steps  []pageOutboundStep
+	// Routes is how many saved chains reach this end, Steps the shortest
+	// of them: each end stands once (outboundEnds).
+	Routes int
 }
 
 // FrontierName is the frontier the address passes through, or "" when it
@@ -259,8 +262,9 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		}
 		sort.Strings(inputs)
 		row.Operations = strings.Join(inputs, " ")
-		for _, use := range call.Uses {
-			value := pageOutboundUse{Value: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method}
+		ends, routes := outboundEnds(call.Uses)
+		for position, use := range ends {
+			value := pageOutboundUse{Value: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method, Routes: routes[position]}
 			for _, step := range use.Steps {
 				name := step.Name
 				// A declaration reads by its report name: a method with its
@@ -760,4 +764,35 @@ func (row pageOutbound) BasisLabel() string {
 	default:
 		return ""
 	}
+}
+
+// outboundEnds lists each end of a call's value once, in the order the
+// chains first reach it, with the shortest chain reaching it and how many
+// do: the routes through one value's code multiply (casdoor's avatar
+// Client.Get had 77,299 chains to 54 ends over 326 steps, 255 MB of the
+// page), and its reader asks where the value comes from and how one route
+// gets there, as the reading's own request lists it (atlas reading
+// destinations.go, c839c34b).
+func outboundEnds(uses []atlas.DestinationUse) ([]atlas.DestinationUse, []int) {
+	type end struct {
+		value, frontier, method, targets string
+		unread                           bool
+	}
+	at := map[end]int{}
+	var ends []atlas.DestinationUse
+	var routes []int
+	for _, use := range uses {
+		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread}
+		position, seen := at[key]
+		if !seen {
+			at[key] = len(ends)
+			ends, routes = append(ends, use), append(routes, 1)
+			continue
+		}
+		routes[position]++
+		if len(use.Steps) < len(ends[position].Steps) {
+			ends[position] = use
+		}
+	}
+	return ends, routes
 }

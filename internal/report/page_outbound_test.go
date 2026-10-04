@@ -590,3 +590,28 @@ func TestADestinationThatIsOneOfTheRepositorysProgramsJoinsIt(t *testing.T) {
 		t.Fatalf("records reach %v\nwant %v", got, want)
 	}
 }
+
+// Each end of a call's value stands once, with the shortest chain reaching
+// it and how many do: casdoor's avatar Client.Get had carried 77,299
+// chains to 54 ends, 255 MB of its page (review, 2026-10-04).
+func TestEachEndOfACallsValueStandsOnceWithItsShortestChain(t *testing.T) {
+	step := func(name string, line int) atlas.DestinationStep {
+		return atlas.DestinationStep{Name: name, Path: "object/avatar.go", Line: line}
+	}
+	uses := []atlas.DestinationUse{
+		{Address: "https://cdn.casbin.org", Steps: []atlas.DestinationStep{step("getAvatar", 40), step("getUrl", 10), step("conf", 3)}},
+		{Frontier: "?.Avatar", Steps: []atlas.DestinationStep{step("getAvatar", 40), step("user", 20)}},
+		{Address: "https://cdn.casbin.org", Steps: []atlas.DestinationStep{step("getAvatar", 40), step("conf", 3)}},
+		{Address: "https://cdn.casbin.org", Steps: []atlas.DestinationStep{step("getAvatar", 40), step("a", 1), step("b", 2), step("conf", 3)}},
+	}
+	ends, routes := outboundEnds(uses)
+	if len(ends) != 2 || ends[0].Address != "https://cdn.casbin.org" || ends[1].Frontier != "?.Avatar" || !slices.Equal(routes, []int{3, 1}) || len(ends[0].Steps) != 2 {
+		t.Fatalf("ends %+v, routes %v", ends, routes)
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		said, err := uiText(language, "routes to it: {0}", 3)
+		if err != nil || !strings.Contains(said, "3") {
+			t.Fatalf("%s: %q %v", language, said, err)
+		}
+	}
+}

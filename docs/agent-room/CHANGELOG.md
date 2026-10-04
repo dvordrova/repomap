@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A call's destination sources list each end once: casdoor's page from 276 MB to 18 MB (report)
+
+- **What grew.** casdoor report.html went from 23,909,387 bytes (152441, 72bd6c07) to 276,468,536 bytes (172050, c839c34b).
+  - The script blocks did not grow: rm-page-data 10.08 → 10.14 MB (decls 2.15, values 6.75, shared 1.23), app JS 1.56, term mentions 0.28 → 0.37, rm-scene 0.19 → 0.20, vocabulary 0.06.
+  - The HTML outside scripts grew 11.7 → 263 MB, almost all of it in one section, `t1-external` (255.1 MB). Its attributes alone: href 119 MB, class 9.4 MB, target 6.9 MB.
+  - That section's 1,013 call records printed 116,702 destination chains (4,424 before) with 1,143,615 steps. One record printed 77,299 chains (avatar Client.Get, object/avatar.go:42: 54 distinct ends, 326 distinct steps, 5,581 edges). Another printed 23,656 (NewEngine, ormer.go:265: 8 ends).
+  - These are every route through a value's code. The saved analysis carries them too (atlas.json 7.6 → 131 MB, groups-index.json 6.9 → 130 MB, report.json 15 → 139 MB). c839c34b already lists each end once in the provider request.
+- **Fix** (`outboundEnds`, page_outbound.go). Each end (method, value or frontier, unread, programs reached) stands once, in first-reached order, with its shortest chain and "routes to it: {n}" when several reach it (ru "путей к нему: {n}").
+  - Steps are named only for the chains kept.
+  - Same render of 172050: 18,301,897 bytes. The HTML outside scripts is now about 6 MB, and the section holds 2,632 chains (at most 58 for one record).
+  - All 1,013 records and all 2,626 record ends are kept (none missing). 3,919 of 5,786 distinct steps remain: the other routes' middle steps are counted, not printed.
+  - Load in headless Chromium: 89.9 s before, 16.6 s after.
+  - Database walk: Outside → "Microsoft SQL Server / MySQL / PostgreSQL / SQLite" → NewEngine (object/adapter.go:192). It reads "Made in", "Called from" and "Destination sources" with each end once (dataSourceName · routes to it: 6, … not established from code · routes to it: 1620). No page errors. Before, the same reading held 3,672 chains (378,890 characters); after, 22,400 characters.
+- **Not changed here.** The saved analysis still carries every route (atlas, groups-index, report.json about 130 MB each). Render takes 156 s, most of it reading those files. That size belongs to the analysis side.
+
 ## 2026-10-04 — A chip's hover says its saved qualifier; the reading's heading holds its words whole (report)
 
 - **Hover.** On casdoor 20261004-172050, the Outside chip "Microsoft SQL Server / MySQL / PostgreSQL / SQLite" saves the line "one of these, depending on configuration" (its subtitle, which Go writes in the page's language). Its card and the catalogue already showed it; its hover card showed only the name and "← Object data layer". `BoxTip` now shows that saved line under the name, in the tip's quiet colour (scene.css `.scene-tip-note`). It is display only and adds no data.

@@ -1667,7 +1667,13 @@ opening its full purpose, its accepted address (the boundary's `Address`,
 none when the decision said unknown), basis and call/source chains. A
 chain's walked value is the argument's, read "Argument value", never
 "Address" (2026-10-03: casdoor's oss Put had printed its object key `%s/%s`
-as "Address" eleven times, from its chains and its destination group). The section count and first screen count destination groups; a
+as "Address" eleven times, from its chains and its destination group).
+Each end of a call's value (its method, walked value or frontier, and the
+programs it reaches) stands once, with the shortest of the saved chains
+reaching it and, when several do, "routes to it: {n}", as the reading's own
+request lists them (2026-10-04: the routes through one value's code
+multiply, and casdoor's avatar Client.Get had printed 77,299 chains to 58
+ends, 255 MB of a 276 MB page). The section count and first screen count destination groups; a
 destination text is still no proof of one remote system. Dependency/import
 groups stay in collapsed code reference and supply no integration count.
 Empty observations do not prove that the service contacts nothing.
