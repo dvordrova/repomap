@@ -175,7 +175,12 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := files(graph, index, []string{"os.Create", "os.ReadFile"}, map[string]reading.ArgumentChoice{"os.Create": {Position: 1}, "os.ReadFile": {Position: 1}})
+		// settingFile reads a file per key its callers hand it
+		// (cmd/app/setting_lookup.go), each walked to its own key.
+		settingFile := fixtureLine(t, "go", "cmd/app/setting_lookup.go", `os.ReadFile(key + ".conf")`)
 		want := []string{
+			fmt.Sprintf("dataSourceName.conf: os.ReadFile settingFile@%d", settingFile),
+			fmt.Sprintf("staticBaseUrl.conf: os.ReadFile settingFile@%d", settingFile),
 			fmt.Sprintf("fixture-state.db: os.Create createFixtureState@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", `os.Create("fixture-state.db")`)),
 			fmt.Sprintf("{path}-journal: os.ReadFile ReadFixtureJournal@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", "os.ReadFile(store.journalPath())")),
 			fmt.Sprintf("{path}.tmp: os.ReadFile ReadFirstStagedJournal@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", `os.ReadFile(stagedJournals()[0].path + ".tmp")`)),

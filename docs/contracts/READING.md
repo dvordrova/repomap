@@ -1286,7 +1286,14 @@ and the registration value walk of facts applies it to the paths it reads
 Go, Python and JS/TS fixtures (`setting_lookup`) prove it
 (`TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven`,
 `TestASettingGettersBranchIsReadByTheKeyItIsGiven`); C and Clojure mark no
-case exclusive, so their walks keep every branch.
+case exclusive, so their walks keep every branch. An environment read whose
+key a wrapper is handed (facts record a config read there per key its
+callers name) is read by the walk of its decided argument, bound to the
+caller the walk came through: an end that is a key read there is the
+setting `{env:KEY}`, any other end stays as walked, and a read none of
+whose ends is such a key keeps its one written key, if it has one
+(`TestAWrappersEnvironmentReadIsTheSettingItsCallerNames`): casdoor's
+data source reads `{env:dataSourceName}`, not the bare word.
 
 **The object an exchange goes through** (owner, 2026-09-30: calls reaching
 the same session or engine are one destination; skeptic-reviewed). A row's

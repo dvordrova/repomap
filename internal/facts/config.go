@@ -56,16 +56,34 @@ func (b *builder) addConfigReads(target *targetContext) {
 			if len(read.classes) > 0 && !target.derivesFrom(relation.FromID, read.classes) {
 				continue
 			}
-			key, value, ok := configKey(read, pattern)
-			if !ok {
-				continue
-			}
 			anchor := target.patternAnchor(relation, pattern)
 			if anchor == nil {
 				continue
 			}
 			symbol, _ := target.enclosingSymbol(relation.FromID)
-			b.addConfigRead(target, *anchor, key, value, symbol, resolution)
+			if key, value, ok := configKey(read, pattern); ok {
+				b.addConfigRead(target, *anchor, key, value, symbol, resolution, nil)
+				continue
+			}
+			// A key the call is handed rather than written there is the
+			// one its callers name: casdoor's GetConfigString(key) reads
+			// os.LookupEnv(key) for each key a caller gives it. Each such
+			// key is read at this call, the walk's literals its evidence;
+			// a key no walk reaches is no fact.
+			argument, found := configKeyArgument(read, pattern)
+			if !found {
+				continue
+			}
+			for _, literal := range target.values().argument(argument) {
+				if literal.text == "" {
+					continue
+				}
+				walked := resolution
+				if literal.possible {
+					walked = ResolutionPossible
+				}
+				b.addConfigRead(target, *anchor, literal.text, defaultLiteral(pattern), symbol, walked, literal.evidence)
+			}
 		}
 	}
 }
@@ -79,7 +97,7 @@ func configReadOf(function outsideFunction) configRead {
 	return configRead{function: function}
 }
 
-func (b *builder) addConfigRead(target *targetContext, anchor Anchor, key, value, symbol string, resolution Resolution) {
+func (b *builder) addConfigRead(target *targetContext, anchor Anchor, key, value, symbol string, resolution Resolution, evidence []Anchor) {
 	if !b.once(strings.Join([]string{string(KindConfigRead), anchor.Path, itoa(anchor.Line), key}, "\x00")) {
 		return
 	}
@@ -91,16 +109,14 @@ func (b *builder) addConfigRead(target *targetContext, anchor Anchor, key, value
 		Value:      value,
 		Symbol:     symbol,
 		Resolution: resolution,
+		Evidence:   evidence,
 	}, key)
 }
 
 // configKey reads the literal key a reading call writes, with the literal
 // default it gives beside it.
 func configKey(read configRead, pattern programindex.RelationPattern) (key, value string, ok bool) {
-	argument, found := positionalArgument(pattern, 1)
-	if len(read.keywords) > 0 {
-		argument, found = keywordArgument(pattern, read.keywords...)
-	}
+	argument, found := configKeyArgument(read, pattern)
 	if !found {
 		return "", "", false
 	}
@@ -127,4 +143,12 @@ func defaultLiteral(pattern programindex.RelationPattern) string {
 
 func itoa(value int) string {
 	return strconv.Itoa(value)
+}
+
+// configKeyArgument is the argument a reading call writes its key in.
+func configKeyArgument(read configRead, pattern programindex.RelationPattern) (programindex.PatternArgument, bool) {
+	if len(read.keywords) > 0 {
+		return keywordArgument(pattern, read.keywords...)
+	}
+	return positionalArgument(pattern, 1)
 }

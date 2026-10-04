@@ -475,8 +475,11 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   parameter is no value of a call handing that parameter another known
   word (one rule for the facts and destination walks; Go, Python, JS/TS);
   unknown keys, non-exclusive cases and unanchored values keep every branch.
-  The setting form of an unresolved getter key (`{env:...}`) is not yet done
-  ([Reading](../contracts/READING.md) "Outside systems").
+  An environment read handed its key is a config read of each key its
+  callers name (casdoor: 47 settings at `conf.go:45`), and a destination
+  walk through it ends at `{env:KEY}` for the key its caller names
+  ([ProgramIndex](../contracts/PROGRAM_INDEX.md) facts,
+  [Reading](../contracts/READING.md) "Outside systems").
 - **Files a program keeps are its data (owner, 2026-09-29; skeptic: no
   role):** the calls of symbols answered `talks: file` are walked along their
   decided argument and grouped by where the path ends (a literal or template,

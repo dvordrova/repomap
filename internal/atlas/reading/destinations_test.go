@@ -676,3 +676,55 @@ func TestASettingGettersBranchIsReadByTheKeyItIsGiven(t *testing.T) {
 		t.Fatalf("a case not known exclusive pruned values: %q", got)
 	}
 }
+
+// A getter's own environment read is handed its key (casdoor's
+// GetConfigString(key) reads os.LookupEnv(key)): facts record a config read
+// there for each key a caller names, and the walk of the read's decided
+// argument, bound to the caller it came through, ends at that caller's key,
+// the setting `{env:KEY}`. An end that is no key read there stays as walked.
+func TestAWrappersEnvironmentReadIsTheSettingItsCallerNames(t *testing.T) {
+	at := func(path string, line, column int) *sourcevalue.Anchor {
+		return &sourcevalue.Anchor{Path: path, Line: line, Column: column}
+	}
+	key := sourcevalue.Value{Kind: "parameter", Text: "key", Position: 1, Anchor: at("conf.go", 10, 15), Owner: at("conf.go", 10, 1)}
+	lookup := atlas.SymbolCall{Kind: "invokes_external", Name: "LookupEnv", Line: 11, Column: 9, API: &atlas.CallAPI{Package: "os", Name: "LookupEnv"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &key}}}
+	returned := &sourcevalue.Value{Kind: "call_result", Anchor: at("conf.go", 11, 9), Owner: at("conf.go", 10, 1)}
+	keyed := func(word string, column int) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "calls", Name: "get", Line: 3, Column: column, Resolution: "exact", CalleeIDs: []string{"get"}, ResultValue: returned,
+			SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: word}}}}
+	}
+	open := atlas.SymbolCall{Kind: "invokes_external", Name: "Open", Line: 3, Column: 5, API: &atlas.CallAPI{Package: "database/sql", Name: "Open"},
+		SourceArguments: []atlas.SourceArgument{{Position: 2, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: at("main.go", 3, 20)}}}}
+	setting := func(id, word string) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "conf.go", LineNo: 11, Column: 9, TargetIDs: []string{"app"},
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryConfig, Values: []string{word}}}
+	}
+	read := func(keys ...string) []string {
+		get := atlas.Place{ID: "get", Path: "conf.go", LineNo: 10, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "get", Column: 1}, Calls: []atlas.SymbolCall{lookup}}}
+		main := atlas.Place{ID: "main", Path: "main.go", LineNo: 1, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "main"}, Calls: []atlas.SymbolCall{
+			keyed("dataSourceName", 20), keyed("staticBaseUrl", 40), open}}}
+		all := []atlas.Place{main, get}
+		for i, word := range keys {
+			all = append(all, setting(fmt.Sprintf("b%d", i), word))
+		}
+		reader := NewDestinationReader(all, DestinationChoices{Arguments: map[string]ArgumentChoice{"database/sql.Open": {Position: 2}, "os.LookupEnv": {Position: 1}}})
+		var ends []string
+		for _, use := range reader.Read(main, open) {
+			ends = append(ends, use.Address+"|"+use.Frontier)
+		}
+		slices.Sort(ends)
+		return ends
+	}
+	if got, want := read("dataSourceName", "staticBaseUrl"), []string{"{env:dataSourceName}|"}; !slices.Equal(got, want) {
+		t.Fatalf("keys its callers name: ends %q, want %q", got, want)
+	}
+	// One key read there is that setting, as a key written at the read is.
+	if got, want := read("dataSourceName"), []string{"{env:dataSourceName}|"}; !slices.Equal(got, want) {
+		t.Fatalf("one key: ends %q, want %q", got, want)
+	}
+	// A key the walk reaches that the facts name nowhere stays a word.
+	if got, want := read("staticBaseUrl", "logConfig"), []string{"dataSourceName|"}; !slices.Equal(got, want) {
+		t.Fatalf("a key not read there: ends %q, want %q", got, want)
+	}
+}

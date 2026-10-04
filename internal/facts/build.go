@@ -200,6 +200,17 @@ type targetContext struct {
 	// producers indexes call patterns by site, so a value read as "the result
 	// of the call at this anchor" can be followed to that call.
 	producers map[sourcevalue.Anchor][]programindex.Relation
+	// routeValues is the target's value walk, built once for the facts
+	// that read a value through its callers (routeValueReader).
+	routeValues *routeValueReader
+}
+
+// values is the target's value walk, built on first use.
+func (t *targetContext) values() *routeValueReader {
+	if t.routeValues == nil {
+		t.routeValues = newRouteValueReader(t)
+	}
+	return t.routeValues
 }
 
 func newTargetContext(input TargetInput) (*targetContext, error) {

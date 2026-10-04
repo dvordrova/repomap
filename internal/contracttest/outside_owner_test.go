@@ -288,9 +288,22 @@ func TestEveryLanguageDecidesByTheCalleeAStatedPrefixAndAnonymity(t *testing.T) 
 // staticBaseUrl and a log file only for logConfig, from an exclusive case
 // of its comparison. The call asking for dataSourceName registers no
 // address; the call asking for staticBaseUrl keeps the URL and never the
-// log file. C's comparisons are character cases and Clojure's values have
-// no anchored joins: neither has the shape.
+// log file. The getter's own environment read is handed its key: it reads
+// each key a caller names, a config_read fact at that read per key (JS/TS
+// reads process.env[key] as a property, which is no call and no fact). C's
+// comparisons are character cases and Clojure's values have no anchored
+// joins: neither has the shape.
 func TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven(t *testing.T) {
+	configured := func(fixture ownerFixture, path string) []string {
+		var rows []string
+		for _, fact := range fixture.layer.OfKind(facts.KindConfigRead) {
+			if fact.Anchor != nil && fact.Anchor.Path == path {
+				rows = append(rows, fmt.Sprintf("%d %s %s", fact.Anchor.Line, fact.Key, fact.Resolution))
+			}
+		}
+		sort.Strings(rows)
+		return rows
+	}
 	registered := func(fixture ownerFixture, path string) []string {
 		var rows []string
 		for _, fact := range fixture.layer.OfKind(facts.KindRegistration) {
@@ -322,15 +335,18 @@ func TestEveryLanguageReadsASettingGetterByTheKeyItIsGiven(t *testing.T) {
 		fixture := ownerGo(t)
 		exclusive(t, fixture, "settingOrDefault", "cmd/app/setting_lookup.go")
 		expectRows(t, "registrations", registered(fixture, "cmd/app/setting_lookup.go"), "58 Get https://cdn.example/static")
+		expectRows(t, "config reads", configured(fixture, "cmd/app/setting_lookup.go"), "13 dataSourceName exact", "13 staticBaseUrl exact")
 	})
 	t.Run("python", func(t *testing.T) {
 		fixture := ownerPython(t)
 		exclusive(t, fixture, "setting_or_default", "src/fixture_app/setting_lookup.py")
 		expectRows(t, "registrations", registered(fixture, "src/fixture_app/setting_lookup.py"), "26 get https://cdn.example/static")
+		expectRows(t, "config reads", configured(fixture, "src/fixture_app/setting_lookup.py"), "11 dataSourceName exact", "11 staticBaseUrl exact")
 	})
 	t.Run("jsts", func(t *testing.T) {
 		fixture := ownerJSTS(t)
 		exclusive(t, fixture, "settingOrDefault", "src/setting-lookup.ts")
 		expectRows(t, "registrations", registered(fixture, "src/setting-lookup.ts"), "20 fetch https://cdn.example/static")
+		expectRows(t, "config reads", configured(fixture, "src/setting-lookup.ts"))
 	})
 }

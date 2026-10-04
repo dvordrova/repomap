@@ -31,7 +31,7 @@ import (
 // callable handed over, and the external symbol behind the call.
 
 func (b *builder) addRegistrations(target *targetContext) {
-	values := newRouteValueReader(target)
+	values := target.values()
 	originsByValue := target.routeValueOrigins()
 	prefixes := target.prefixesByObject()
 	starts := target.newStartReader()
