@@ -271,6 +271,19 @@ func (d *DestinationReader) settingEnds(call destinationCall, use destinationPat
 	return ends, named
 }
 
+// writesKey says a call writes a key as one of its literals.
+func writesKey(call atlas.SymbolCall, key string) bool {
+	if slices.Contains(call.Values, key) {
+		return true
+	}
+	for _, argument := range call.SourceArguments {
+		if origin := argument.Origin; origin != nil && origin.Kind == "literal" && origin.Text == key {
+			return true
+		}
+	}
+	return false
+}
+
 func sourceArgument(call atlas.SymbolCall, position int) *sourcevalue.Value {
 	for _, argument := range call.SourceArguments {
 		if argument.Position == position {
@@ -347,7 +360,11 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 						result = append(result, ends...)
 						continue
 					}
-					if len(keys) == 1 {
+					// The read's one key is its setting only when the call
+					// writes that key: a key handed to it that the walk
+					// cannot read is no neighbour's key (get("KNOWN") beside
+					// get(dynamicKey)).
+					if len(keys) == 1 && writesKey(call.call, keys[0]) {
 						next.Address = "{env:" + keys[0] + "}"
 						result = append(result, next)
 						continue
@@ -620,7 +637,8 @@ func (d *DestinationReader) outsideItsBranch(part *sourcevalue.Value, owner atla
 			item.Position, item.Name = origin.Position, origin.Text
 		}
 		for _, written := range comparison.Cases {
-			item.Cases = append(item.Cases, sourcevalue.ComparedCase{Words: written.Words, Line: written.BranchLine, EndLine: written.BranchEnd, Exclusive: written.Exclusive})
+			item.Cases = append(item.Cases, sourcevalue.ComparedCase{Words: written.Words, Line: written.BranchLine, EndLine: written.BranchEnd,
+				Column: written.BranchColumn, EndColumn: written.BranchEndColumn, Exclusive: written.Exclusive})
 		}
 		compared = append(compared, item)
 	}

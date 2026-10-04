@@ -723,6 +723,22 @@ func TestAWrappersEnvironmentReadIsTheSettingItsCallerNames(t *testing.T) {
 	if got, want := read("dataSourceName"), []string{"{env:dataSourceName}|"}; !slices.Equal(got, want) {
 		t.Fatalf("one key: ends %q, want %q", got, want)
 	}
+	// A key handed to the read that the walk cannot read is no setting,
+	// though one key is read there: get(dynamicKey) beside get("KNOWN").
+	dynamic := lookup
+	dynamic.SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "unknown", Text: "dynamicKey", Anchor: at("conf.go", 11, 19)}}}
+	alone := atlas.Place{ID: "alone", Path: "conf.go", LineNo: 10, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "alone", Column: 1}, Calls: []atlas.SymbolCall{dynamic}}}
+	reader := NewDestinationReader([]atlas.Place{alone, setting("b0", "KNOWN")}, DestinationChoices{Arguments: map[string]ArgumentChoice{"os.LookupEnv": {Position: 1}, "database/sql.Open": {Position: 1}}})
+	unread := reader.Read(alone, atlas.SymbolCall{Kind: "invokes_external", Name: "Open", Line: 12, Column: 5, API: &atlas.CallAPI{Package: "database/sql", Name: "Open"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: at("conf.go", 11, 9)}}}})
+	if len(unread) == 0 {
+		t.Fatal("the unread key's walk ended nowhere")
+	}
+	for _, use := range unread {
+		if use.Address != "" {
+			t.Fatalf("an unread key took the read's one key: %+v", use)
+		}
+	}
 	// A key the walk reaches that the facts name nowhere stays a word.
 	if got, want := read("staticBaseUrl", "logConfig"), []string{"dataSourceName|"}; !slices.Equal(got, want) {
 		t.Fatalf("a key not read there: ends %q, want %q", got, want)
