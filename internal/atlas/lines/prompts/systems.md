@@ -12,11 +12,8 @@ present, is what the project's manifest records for it: the module and its
 version. `calls` lists every symbol of the package the program calls, each
 with every distinct call of it as the repository wrote it.
 `imported_for_effect_by`, when present, lists the program's packages that
-import this package for the effect of importing it, whatever else they use
-of it: the package registers itself with another library when it loads, as
-a database driver registers with a database library or a plugin with its
-host. Such a package reaches the system it registers for: a database driver
-reaches its database.
+import this package for its side effect (a blank import, `import _`),
+whatever else they use of it.
 
 Fill `system` with the outside systems that calls through this package
 reach, as a newcomer would name each:
