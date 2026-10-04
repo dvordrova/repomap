@@ -49,6 +49,21 @@ fixture's library exports `PublishedRoot`, `ReadAliasedImports`,
   outside the launch tree. Positive values are explicit user-requested
   narrowing controls. Dynamic and unresolved call frontiers remain represented separately. Repository scale is neither a warning nor an implicit narrowing option.
 
+## Words a join or a return carries
+
+A word that reaches a control-flow join (an SSA phi of a local) is anchored
+where the code stores it in the variable: the one `name = "word"` (or `:=`,
+`var`) whose left side is the variable the join's position declares, so a
+same-named variable of another block is another. A word stored twice has no
+one place, and a variable ever assigned another variable's value (`res =
+x`), a compound assignment, a multiple assignment from a call, a range
+target or its address taken anchors none of its words. A word returned as
+written is anchored at its `return`. Python, JS/TS and C already anchor
+their literals where written. `cmd/app/setting_lookup.go`'s
+`settingOrDefault` and `languageOf` are the fixture
+(`assertGoWordsAnchoredWhereWritten`). This is what lets a walk tell which
+branch of a function a word comes from (READING "Outside systems").
+
 ## Packages imported for their effect
 
 An import spec named `_` imports a package only to run its `init`, which

@@ -1,5 +1,12 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — Go anchors the words a join or a return carries where they are written (facts, item 2 step 1)
+
+- **Why:** casdoor's `conf.GetConfigString(key)` returns `"https://cdn.casbin.org"` only when `key == "staticBaseUrl"`; the value walkers follow it for every key, so `xorm.NewEngine`'s data source read that URL. The native comparison on `key` gives the case's lines (51-53), but the Go adapter gave the join's word no anchor, so nothing could place it in that case (skeptic: Python, JS/TS and C already anchor literals).
+- **Now** (`surfacediscovery/source_value.go`): a join's word is anchored at the one assignment of it to the variable the join's position declares (by the variable's identity, not its name); none when stored twice, or when the variable is ever given another variable's value, a compound or multiple assignment, a range target or its address. A returned word is anchored at its `return`. Pruning by the comparison is the next step; this one prunes nothing.
+- **Effect:** ProgramIndex bytes change for Go repositories with such words (skeptic's count of unanchored join/return literals: casdoor 259 in 137 functions, headscale 78, litestream 41, etcd 83); a registration through a join gains that anchor in its evidence; destination ends and their `written` do not change. No version bump: an older index without the anchors only keeps every branch.
+- **Tests:** `assertGoWordsAnchoredWhereWritten` (new `cmd/app/setting_lookup.go`); surfacediscovery, goadapter and the Go and every-language contract tests exit 0 (GOMAXPROCS=2, -p 1).
+
 ## 2026-10-04 — Packages a program imports only for their effect are asked which system they reach (facts)
 
 - **Cause** (casdoor 20261003-152441, b705/b776 → d14): the destination catalogue is built from the systems of the packages outgoing calls go through. casdoor imports its database drivers only for their effect (`object/ormer.go:30-36`, `_ "github.com/go-sql-driver/mysql"`, `_ "modernc.org/sqlite"`, ...), so MySQL (its configured driver) and SQLite had no entry, and the model named the xorm calls after the one database offered, PostgreSQL (from an incidental `pq.DialOpen`).

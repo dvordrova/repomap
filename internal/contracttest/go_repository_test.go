@@ -21,6 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
@@ -148,6 +149,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertProgramIndexRoundTrip(t, publishedIndex)
 	assertPublishedRootImportRemainsExternal(t, publishedAuthorities, publishedIndex)
 	assertGoEffectOnlyImports(t, publishedAuthorities)
+	assertGoWordsAnchoredWhereWritten(t, index)
 	library := analyzeGoFixture(t, repositoryPath, repository, goFixtureRootPackage, "cumulative-go-library-tests")
 	libraryIndex, err := goadapter.Build(repository, library.target, library.origins, library.direct, library.external, library.core, library.dynamic, library.tests)
 	if err != nil {
@@ -1757,5 +1759,38 @@ func assertGoEffectOnlyImports(t *testing.T, authorities goFixtureAuthorities) {
 	if main == "" || !slices.Equal(effects[goFixtureRootPackage+"/driver"], []string{main}) || len(effects[goFixtureRootPackage]) != 0 ||
 		kinds[goFixtureRootPackage+"/driver"] != dependencies.KindExternal {
 		t.Fatalf("effect imports = %v, kinds %v (main importer %q)", effects, kinds, main)
+	}
+}
+
+// A word a join or a return carries is anchored where the code writes it
+// (cmd/app/setting_lookup.go), as the other languages anchor their
+// literals: settingOrDefault's stored URL at line 16, its log file at 18,
+// languageOf's returns at their return statements. A shared walker can then
+// tell which of a function's branches each word comes from.
+func assertGoWordsAnchoredWhereWritten(t *testing.T, index programindex.Index) {
+	t.Helper()
+	anchors := map[string]int{}
+	var walk func(value *sourcevalue.Value)
+	walk = func(value *sourcevalue.Value) {
+		if value == nil {
+			return
+		}
+		if value.Kind == "literal" && value.Anchor != nil && value.Anchor.Path == "cmd/app/setting_lookup.go" {
+			anchors[value.Text] = value.Anchor.Line
+		}
+		for i := range value.Parts {
+			walk(&value.Parts[i])
+		}
+	}
+	for _, relation := range index.Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.Selector == "settingOrDefault" || pattern.Selector == "languageOf" {
+				walk(pattern.ResultValue)
+			}
+		}
+	}
+	want := map[string]int{"https://cdn.example/static": 16, "logs/app.log": 18, "": 14, "russian": 27, "english": 29, "unknown": 31}
+	if !reflect.DeepEqual(anchors, want) {
+		t.Fatalf("anchored words = %v, want %v", anchors, want)
 	}
 }

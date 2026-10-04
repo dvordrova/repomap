@@ -2,6 +2,7 @@ package surfacediscovery
 
 import (
 	"encoding/json"
+	"go/ast"
 	"go/constant"
 	"go/token"
 	"go/types"
@@ -139,9 +140,20 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 	case *ssa.Phi:
 		// A control-flow join is each incoming value, in edge order: none is
 		// picked, and an edge whose value is not followed stays its unknown.
+		// A word an edge carries is anchored where the code stores it in
+		// the variable, as other languages anchor their literals.
+		stores := a.joinedVariableStores(v)
 		values := make([]*sourcevalue.Value, 0, len(v.Edges))
 		for _, edge := range v.Edges {
-			values = append(values, a.sourceValue(edge, active, readAt))
+			value := a.sourceValue(edge, active, readAt)
+			if value.Kind == "literal" && value.Anchor == nil {
+				if at := stores[value.Text]; at.IsValid() {
+					anchored := *value
+					anchored.Anchor = a.valueAnchor(at)
+					value = &anchored
+				}
+			}
+			values = append(values, value)
 		}
 		return orderedAlternatives(values, unknown.Anchor)
 	case *ssa.Alloc:
@@ -341,6 +353,13 @@ func (a *analyzer) sourceReturn(fn *ssa.Function) *sourcevalue.Value {
 		for _, instruction := range block.Instrs {
 			if result, ok := instruction.(*ssa.Return); ok && len(result.Results) > 0 {
 				value := a.sourceValue(result.Results[0], make(map[ssa.Value]bool), result)
+				// A word returned as written is anchored at its return,
+				// as a join's stored word is where it is stored.
+				if constant, ok := result.Results[0].(*ssa.Const); ok && value.Kind == "literal" && value.Anchor == nil && constant.Pos() == token.NoPos {
+					anchored := *value
+					anchored.Anchor = a.valueAnchor(result.Pos())
+					value = &anchored
+				}
 				if errorReturn(result) {
 					failures = append(failures, value)
 					continue
@@ -365,4 +384,103 @@ func (a *analyzer) sourceReturn(fn *ssa.Function) *sourcevalue.Value {
 		result.Owner = a.valueAnchor(fn.Syntax().Pos())
 	}
 	return result
+}
+
+// joinedVariableStores are, for the variable a join merges, the one place
+// each word is stored in it, by the word: `res = "https://cdn.casbin.org"`
+// stores that word at its literal. The variable is the one the join's
+// position declares (go/ssa lifts a local to joins at its declaration), so a
+// variable of the same name in another block is another. A word stored
+// twice has no one place, and a variable ever assigned another variable's
+// value (`res = x`) has none at all: the join's edge may carry x's word
+// from where x was stored, which no syntax of res names.
+func (a *analyzer) joinedVariableStores(phi *ssa.Phi) map[string]token.Pos {
+	function := phi.Parent()
+	if function == nil || !phi.Pos().IsValid() {
+		return nil
+	}
+	facts := a.packageFacts[functionPackagePath(function)]
+	if facts == nil || facts.TypesInfo == nil || function.Syntax() == nil {
+		return nil
+	}
+	info := facts.TypesInfo
+	var variable types.Object
+	ast.Inspect(function.Syntax(), func(node ast.Node) bool {
+		if ident, ok := node.(*ast.Ident); ok && ident.Pos() == phi.Pos() {
+			variable = info.Defs[ident]
+		}
+		return variable == nil
+	})
+	if variable == nil {
+		return nil
+	}
+	stores := make(map[string]token.Pos)
+	twice := make(map[string]bool)
+	copied := false
+	store := func(name *ast.Ident, value ast.Expr) {
+		if name == nil || value == nil || info.ObjectOf(name) != variable {
+			return
+		}
+		word, ok := info.Types[value]
+		if !ok || word.Value == nil || word.Value.Kind() != constant.String {
+			copied = true
+			return
+		}
+		text := constant.StringVal(word.Value)
+		if _, seen := stores[text]; seen {
+			twice[text] = true
+		}
+		stores[text] = value.Pos()
+	}
+	ast.Inspect(function.Syntax(), func(node ast.Node) bool {
+		switch statement := node.(type) {
+		case *ast.AssignStmt:
+			if statement.Tok != token.ASSIGN && statement.Tok != token.DEFINE {
+				// res += "x" stores no word of its own.
+				for _, left := range statement.Lhs {
+					if name, ok := left.(*ast.Ident); ok && info.ObjectOf(name) == variable {
+						copied = true
+					}
+				}
+				return true
+			}
+			if len(statement.Lhs) == len(statement.Rhs) {
+				for i, left := range statement.Lhs {
+					if name, ok := left.(*ast.Ident); ok {
+						store(name, statement.Rhs[i])
+					}
+				}
+			} else {
+				for _, left := range statement.Lhs {
+					if name, ok := left.(*ast.Ident); ok && info.ObjectOf(name) == variable {
+						copied = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for i, name := range statement.Names {
+				if i < len(statement.Values) {
+					store(name, statement.Values[i])
+				}
+			}
+		case *ast.RangeStmt:
+			for _, left := range []ast.Expr{statement.Key, statement.Value} {
+				if name, ok := left.(*ast.Ident); ok && info.ObjectOf(name) == variable {
+					copied = true
+				}
+			}
+		case *ast.UnaryExpr:
+			if name, ok := statement.X.(*ast.Ident); ok && statement.Op == token.AND && info.ObjectOf(name) == variable {
+				copied = true
+			}
+		}
+		return true
+	})
+	if copied {
+		return nil
+	}
+	for text := range twice {
+		delete(stores, text)
+	}
+	return stores
 }
