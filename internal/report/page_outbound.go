@@ -611,12 +611,14 @@ func (row pageOutbound) Line() string {
 // step. A chain of one step at the record's own location says nothing the
 // record's anchor does not, nor does a frontier that is the record's own
 // callable: "Address passes through netdb.h.gethostbyname" under
-// gethostbyname's record named the call a second time.
+// gethostbyname's record named the call a second time. An end with saved
+// sources of other routes stands too: dropped, they had no other place in
+// Destination sources (moderator review, 2026-10-05).
 func (row pageOutbound) InformativeUses() []pageOutboundUse {
 	var uses []pageOutboundUse
 	for _, use := range row.Uses {
 		frontier := use.FrontierName() != "" && (row.External == "" || displayCallable(use.Frontier) != row.External)
-		if use.Value != "" || frontier || len(use.Steps) > 1 {
+		if use.Value != "" || frontier || len(use.Steps) > 1 || len(use.Sources) > 0 {
 			uses = append(uses, use)
 		}
 	}

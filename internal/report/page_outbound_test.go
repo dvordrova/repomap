@@ -437,6 +437,23 @@ func TestOutboundLineFallsBackToTheCallingFunction(t *testing.T) {
 	}
 }
 
+// An end whose frontier is the record's own callable, of one step, still
+// stands when it saved sources of its other routes: they are read nowhere
+// else.
+func TestOutboundEndWithOtherRouteSourcesIsInformative(t *testing.T) {
+	primary := pageOutboundStep{Name: "dial", Anchor: pageAnchor{Text: "client.go:10"}}
+	alternate := pageOutboundStep{Name: "redial", Anchor: pageAnchor{Text: "retry.go:42"}}
+	row := pageOutbound{External: "net.Connect", Uses: []pageOutboundUse{{Frontier: "net.Connect", Steps: []pageOutboundStep{primary}}}}
+	if len(row.InformativeUses()) != 0 {
+		t.Fatal("a one-step end at the record's own callable, with no other sources, is not informative")
+	}
+	row.Uses[0].Sources = []pageOutboundStep{alternate}
+	uses := row.InformativeUses()
+	if len(uses) != 1 || len(uses[0].Sources) != 1 || uses[0].Sources[0].Anchor.Text != "retry.go:42" {
+		t.Fatalf("an end with an alternate source was dropped: %+v", uses)
+	}
+}
+
 func TestOutboundLinesKeepTheTypeWhenAMemberRepeatsAcrossTypes(t *testing.T) {
 	rows := []pageOutbound{
 		{ID: "a", Destination: "Kubernetes API server", External: "v1.PodInterface.Patch"},
