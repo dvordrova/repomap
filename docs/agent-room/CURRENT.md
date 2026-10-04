@@ -467,7 +467,7 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
 - **Packages imported for their effect are asked (2026-10-04, control
   review B7 follow-up):** Go's `import _` packages are a dependency
   catalogue fact and join the systems question and the destination
-  catalogue (casdoor now offers MySQL and SQLite). casdoor's xorm calls
+  catalogue (casdoor now offers SQLite; MySQL is still in none, since package object also imports its driver by name). casdoor's xorm calls
   being named one database stays open until a destination several entries
   name with no deciding address is one destination of alternatives.
 - **A setting getter's branch is read by the key it is given (2026-10-04,
