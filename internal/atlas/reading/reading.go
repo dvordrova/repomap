@@ -1343,6 +1343,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				uses = append(uses, cloneDestinationUse(use))
 			}
 		}
+		uses = destinationEnds(uses)
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{
 			Uses:     uses,
 			ObjectID: objectID,

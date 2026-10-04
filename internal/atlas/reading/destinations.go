@@ -1176,6 +1176,43 @@ func canonicalDestinationUses(uses []atlas.DestinationUse) []atlas.DestinationUs
 	return result
 }
 
+// destinationEnds are a call's walks as they are saved: each end once (its
+// address or frontier, whether unread, its method and targets), in the
+// order first reached, with its shortest chain and, when several reach it,
+// the number of routes. casdoor's avatar download had saved 77,299 chains
+// to 54 ends. The provider evidence (destinationEvidence) and the page list
+// ends alike.
+func destinationEnds(uses []atlas.DestinationUse) []atlas.DestinationUse {
+	type end struct {
+		address, frontier, method, targets string
+		unread                             bool
+	}
+	at := map[end]int{}
+	var result []atlas.DestinationUse
+	for _, use := range uses {
+		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread}
+		routes := max(1, use.Routes)
+		position, seen := at[key]
+		if !seen {
+			at[key] = len(result)
+			use.Routes = routes
+			result = append(result, use)
+			continue
+		}
+		result[position].Routes += routes
+		if len(use.Steps) < len(result[position].Steps) {
+			use.Routes = result[position].Routes
+			result[position] = use
+		}
+	}
+	for i := range result {
+		if result[i].Routes == 1 {
+			result[i].Routes = 0
+		}
+	}
+	return result
+}
+
 // destinationEvidence is each place a call's value ends, once: its address
 // or unresolved expression, method and the step it ends at, with its
 // shortest chain from the call and, when several routes reach it, how many

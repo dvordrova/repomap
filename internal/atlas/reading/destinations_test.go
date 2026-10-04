@@ -885,3 +885,21 @@ func TestDestinationEvidenceListsEachEndOnce(t *testing.T) {
 		t.Fatalf("evidence = %v", got)
 	}
 }
+
+// A call's walks are saved as their ends, each once in first-reached
+// order with its shortest chain and the routes reaching it.
+func TestDestinationEndsAreSavedOnceWithTheirRoutes(t *testing.T) {
+	step := func(name string, line int) atlas.DestinationStep {
+		return atlas.DestinationStep{Name: name, Path: "a.go", Line: line}
+	}
+	uses := []atlas.DestinationUse{
+		{Address: "https://x.example", TargetIDs: []string{"t1"}, Steps: []atlas.DestinationStep{step("get", 1), step("a", 2), step("set", 9)}},
+		{Frontier: "c.URL", TargetIDs: []string{"t1"}, Steps: []atlas.DestinationStep{step("get", 1)}},
+		{Address: "https://x.example", TargetIDs: []string{"t1"}, Steps: []atlas.DestinationStep{step("get", 1), step("set", 9)}},
+		{Address: "https://x.example", TargetIDs: []string{"t1"}, Routes: 2, Steps: []atlas.DestinationStep{step("get", 1), step("b", 3), step("set", 9)}},
+	}
+	got := destinationEnds(uses)
+	if len(got) != 2 || got[0].Address != "https://x.example" || got[0].Routes != 4 || len(got[0].Steps) != 2 || got[1].Frontier != "c.URL" || got[1].Routes != 0 {
+		t.Fatalf("ends = %+v", got)
+	}
+}

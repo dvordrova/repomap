@@ -1286,6 +1286,15 @@ by them joined with " / "; spellings fold per system; followers copy the set
 `TestAChoiceCellMayNameSeveral`). A call whose ends show nothing stays
 asked as before: no rule fills it with every driver.
 
+A boundary's saved walks (`uses`, atlas 21, GroupsIndex 29) are its ends:
+each place its value ends once (address or frontier, whether unread, method
+and targets), in the order first reached, with its shortest chain and, when
+several reach it, `routes`, how many do (2026-10-04: casdoor's avatar
+download had saved 77,299 chains to 54 ends, and atlas.json, groups-index.json
+and report.json had grown to 130–139 MB). The provider's
+`destination_chains` and the page list ends alike; no reader uses a route
+list.
+
 A walk through a function's result reads it for the call it walks
 (2026-10-04, casdoor): a value written in the branch of an `exclusive` case
 comparing one of the function's parameters with words (PROGRAM_INDEX) is no

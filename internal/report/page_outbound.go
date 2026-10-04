@@ -783,13 +783,15 @@ func outboundEnds(uses []atlas.DestinationUse) ([]atlas.DestinationUse, []int) {
 	var routes []int
 	for _, use := range uses {
 		key := end{use.Address, use.Frontier, use.Method, strings.Join(use.TargetIDs, " "), use.Unread}
+		// A saved end carries how many routes reach it (atlas 21).
+		count := max(1, use.Routes)
 		position, seen := at[key]
 		if !seen {
 			at[key] = len(ends)
-			ends, routes = append(ends, use), append(routes, 1)
+			ends, routes = append(ends, use), append(routes, count)
 			continue
 		}
-		routes[position]++
+		routes[position] += count
 		if len(use.Steps) < len(ends[position].Steps) {
 			ends[position] = use
 		}

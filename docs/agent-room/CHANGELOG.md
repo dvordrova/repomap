@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A boundary's walks are saved as their ends (atlas 21, GroupsIndex 29)
+
+- **Why:** casdoor run 172050's saved analysis kept every route: atlas.json grew from 7.6 to 131 MB, groups-index.json from 6.9 to 130 MB, report.json from 15 to 139 MB, against run 152441. Render spent most of its 156 s reading them. The avatar `Client.Get` alone had 77,299 chains to 54 ends.
+- **Now:** the reading saves each end once (`destinationEnds`: address or frontier, unread, method, targets), in first-reached order, with its shortest chain and `routes` when several reach it. The page adds saved routes when it groups ends (`outboundEnds`).
+- **Readers checked:**
+  - GroupsIndex copies the ends, and its test-path filter drops an end whose kept chain passes through a test.
+  - The page lists ends and reads the first step's name and the last step's anchor.
+  - The provider evidence was already per end.
+- **Measured on run 172050's saved files,** with the same grouping applied:
+
+  | File | Before | After |
+  |---|---|---|
+  | atlas.json | 131.2 MB | 3.7 MB |
+  | groups-index.json | 130.3 MB | 6.1 MB |
+  | report.json | 139.2 MB | 11.8 MB |
+
+  116,719 chains became 2,649 ends, and no end was lost. The render time was not re-measured: the saved files carry the old versions and seals, so `render` refuses them, and a fresh run is needed to time it.
+- **Tests:** `TestDestinationEndsAreSavedOnceWithTheirRoutes`; atlas, reading, groupindex and report pass.
+
 ## 2026-10-04 — A call's destination sources list each end once: casdoor's page from 276 MB to 18 MB (report)
 
 - **What grew.** casdoor report.html went from 23,909,387 bytes (152441, 72bd6c07) to 276,468,536 bytes (172050, c839c34b).

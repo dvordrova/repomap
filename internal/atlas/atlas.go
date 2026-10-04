@@ -33,7 +33,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 27
-	Version      = 20
+	Version      = 21
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -1067,11 +1067,16 @@ type DeclaredOn struct {
 // kind unknown, such as C's `(struct sockaddr*)&sa`): the address is not
 // established from code, and the frontier is only the expression written
 // there.
+//
+// A saved use is one end of a call's value: Routes, when more than one, is
+// how many routes through the code reach that end, its Steps the shortest
+// of them (atlas 21).
 type DestinationUse struct {
 	Address   string            `json:"address,omitempty"`
 	Frontier  string            `json:"frontier,omitempty"`
 	Unread    bool              `json:"unread,omitempty"`
 	Method    string            `json:"method,omitempty"`
+	Routes    int               `json:"routes,omitempty"`
 	TargetIDs []string          `json:"target_ids,omitempty"`
 	Steps     []DestinationStep `json:"steps"`
 }

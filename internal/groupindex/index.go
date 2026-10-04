@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 28
+	Version          = 29
 	ArtifactFilename = "groups-index.json"
 )
 
