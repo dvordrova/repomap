@@ -49,6 +49,9 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 		return slices.Compact(result)
 	}
 	found := map[string][]string{}
+	// callers are, by the deliverBoth line a walk passed, the addresses
+	// deliver's write read there.
+	callers := map[int][]string{}
 	for _, place := range graph.Places {
 		if place.Symbol == nil || place.Path != "cmd/app/field_stores.go" {
 			continue
@@ -59,7 +62,17 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 			}
 			switch call.API.Name {
 			case "Get":
-				found[place.Symbol.Decl.Name] = ends(reader.Read(place, call))
+				uses := reader.Read(place, call)
+				found[place.Symbol.Decl.Name] = ends(uses)
+				if place.Symbol.Decl.Name == "deliver" {
+					for _, use := range uses {
+						for _, step := range use.Steps {
+							if step.Name == "deliverBoth" && strings.HasPrefix(use.Frontier, "initializer: ") {
+								callers[step.Line] = append(callers[step.Line], strings.TrimPrefix(use.Frontier, "initializer: "))
+							}
+						}
+					}
+				}
 			case "DB.Exec", "Exec":
 				found["count"] = ends(reader.Exchange(place, call, "db"))
 			case "DB.Ping", "Ping":
@@ -73,12 +86,22 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 	if !slices.Contains(found["pingPool"], "|initializer: file:pool.db") || slices.ContainsFunc(found["pingPool"], func(end string) bool { return !strings.HasPrefix(end, "|") }) {
 		t.Fatalf("the unrelated pool's ping = %q, want the pool database as a possible origin only", found["pingPool"])
 	}
-	// A field the address walk reaches lists its writes as possible
-	// origins, each its site and value as written, read no further: the
-	// field deliver writes from its parameter, the webhook's Endpoint from a
-	// serviceConfig's URL. The unknown instance stays.
-	if !slices.Equal(found["deliver"], []string{"|initializer: u", "|main.endpoints[\"a\"].URL", "|main.endpoints[\"b\"].URL"}) {
+	// A write of a field the address walk reaches, made by a function the
+	// walk passed through, is walked as any value: deliver's write reads its
+	// parameter, so each caller's request reads its own address and never
+	// the other's, beside the unknown instances. A write made anywhere else
+	// is named by its site and value: fire's Endpoint is c.URL, written in
+	// copyEndpoint, not followed further.
+	if !slices.Equal(found["deliver"], []string{"|initializer: https://a.example", "|initializer: https://b.example", "|main.endpoints[\"a\"].URL", "|main.endpoints[\"b\"].URL"}) {
 		t.Fatalf("deliver = %q", found["deliver"])
+	}
+	for line, addresses := range callers {
+		if slices.Sort(addresses); len(slices.Compact(addresses)) != 1 {
+			t.Fatalf("deliverBoth line %d reads %q, want its own address alone", line, addresses)
+		}
+	}
+	if len(callers) != 2 {
+		t.Fatalf("deliver's addresses by caller = %v", callers)
 	}
 	if !slices.Equal(found["fire"], []string{"|initializer: c.URL", "|w.Endpoint"}) {
 		t.Fatalf("fire = %q", found["fire"])

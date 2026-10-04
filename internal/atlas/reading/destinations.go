@@ -46,6 +46,9 @@ type DestinationReader struct {
 	// file, built on first use (ownerAt).
 	order  []string
 	byPath map[string][]string
+	// inWriteValue counts the write values being walked (writeValues): a
+	// field met there is named by its write sites alone.
+	inWriteValue int
 	// fieldWrites are the graph's field writes by field key; writesMemo
 	// what reading them gave, by field and walk, each under the bindings
 	// and choices the reading consulted (pushConsults); frames are the
@@ -462,20 +465,26 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		if value.Initializer != nil && !anyAddress(result) {
 			// The instance the walk could not follow may hold what any
 			// write of the field put there. Each unresolved instance walk
-			// stays. A field whose writes the graph keeps (field_writes)
-			// lists each write as a possible origin, its site and value as
-			// written, read no further: where the address comes from is
-			// that field, written there (owner, 2026-10-04). A write's own
-			// chains are the object walk's alone (which engine or client).
-			// A field initializer kept inline (Python's __init__ store) is
-			// read on as before. An address it reaches is a possible
-			// source, not the call's established value.
+			// stays. A field whose writes the graph keeps (field_writes):
+			// from each write the written value is walked as any value
+			// (parameters to callers, literals, setting reads), and a
+			// field that walk reaches again is named by its write sites and
+			// values, followed no further (owner, 2026-10-04: one hop, as a
+			// reader follows where a field is set; field-to-field chains
+			// are what multiplied). A field initializer kept inline
+			// (Python's __init__ store) is read on as before. An address it
+			// reaches is a possible source, not the call's established
+			// value.
 			var stored []destinationPath
 			for _, base := range result {
 				from := cloneDestinationPath(base)
 				from.Frontier, from.Unread = "", false
 				if value.Initializer.Kind == "field_writes" {
-					stored = append(stored, d.writeSites(value.Initializer.Text, from)...)
+					if d.inWriteValue > 0 {
+						stored = append(stored, d.writeSites(value.Initializer.Text, from)...)
+					} else {
+						stored = append(stored, d.writeValues(value.Initializer.Text, from, active)...)
+					}
 					continue
 				}
 				stored = append(stored, d.initializer(value.Initializer, owner, from, active, writesWalk{})...)
@@ -596,6 +605,78 @@ func (d *DestinationReader) initializer(initial *sourcevalue.Value, owner atlas.
 		return leaf(initial, owner, use)
 	}
 	return d.value(initial, owner, use, active)
+}
+
+// writeValues walk the value each write of a field stored, from the write
+// in the function that makes it, each its own targets', with a step at its
+// site: a field that walk reaches is named by its write sites alone
+// (writeSites).
+func (d *DestinationReader) writeValues(field string, use destinationPath, active map[string]bool) []destinationPath {
+	// What the writes' values give is the same for every walk binding the
+	// functions the walk consulted alike (writesMemo): read once for them.
+	memoKey := "values\x00" + field + "\x00" + use.kind
+	if paths, ok := d.reuseWrites(memoKey, use); ok {
+		return paths
+	}
+	d.inWriteValue++
+	frame := d.pushConsults()
+	defer func() { d.inWriteValue-- }()
+	var result []destinationPath
+	for i, write := range d.fieldWrites[field] {
+		path := cloneDestinationPath(use)
+		path.TargetIDs = intersectTargets(use.TargetIDs, write.TargetIDs)
+		if len(path.TargetIDs) == 0 || write.Value.Kind != "field_value" || len(write.Value.Parts) == 0 {
+			continue
+		}
+		writer := atlas.Place{}
+		if anchor := write.Value.Anchor; anchor != nil {
+			if place, ok := d.ownerAt(*anchor); ok {
+				writer = place
+			}
+			path.Steps = appendDestinationStep(path.Steps, atlas.DestinationStep{SubjectID: writer.ID, Name: write.Value.Text, Path: anchor.Path, Line: anchor.Line, Column: anchor.Column})
+		}
+		// A write made by a function this walk passed through (deliver
+		// writing c.URL = u before its own request) is read on, so its
+		// caller binds what it wrote; a write made anywhere else is named
+		// by its site and value (writeSites): a reader follows a field's
+		// write along the path at hand, and lists the others.
+		if !onPath(path, writer.ID) {
+			result = append(result, d.siteOf(&d.fieldWrites[field][i], path)...)
+			continue
+		}
+		result = append(result, d.value(&d.fieldWrites[field][i].Value.Parts[0], writer, path, active)...)
+	}
+	d.popConsults(frame, memoKey, use, result)
+	return result
+}
+
+// onPath says a walk passed through a declaration.
+func onPath(use destinationPath, id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, step := range use.Steps[:max(0, len(use.Steps)-1)] {
+		if step.SubjectID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// siteOf is one write as a possible origin, its step already on path: its
+// value as written, read no further.
+func (d *DestinationReader) siteOf(write *atlas.FieldWrite, path destinationPath) []destinationPath {
+	stored := &write.Value.Parts[0]
+	switch stored.Kind {
+	case "literal":
+		path.Address = stored.Text
+	case "unknown":
+		path.Frontier = stored.Text
+		path.Unread = true
+	default:
+		path.Frontier = "initializer: " + sourceValueExpression(stored)
+	}
+	return []destinationPath{path}
 }
 
 // writeSites are a field's writes as possible origins of a value walk that

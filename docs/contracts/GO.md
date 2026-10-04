@@ -101,9 +101,10 @@ possible origin: an address it reaches is an unresolved end at its site,
 never the call's address, so a field two configurations share joins no
 engine's destination. The address walk ("where does the address come
 from") ends at the unresolved field and lists its writes as possible
-origins, each its site and its value as written (`initializer: u`,
-`initializer: https://service.example`), read no further (READING
-"Outside systems"). Recorded limits: a
+origins: a write made by a function the walk passed through is walked as any
+value (deliver's `c.URL = u` reads each caller's own address), any other
+write is its site and its value as written (`initializer: c.URL`), read no
+further (READING "Outside systems"). Recorded limits: a
 package variable is not followed through its own writes (casdoor's
 `ormer = NewAdapter(…)` reads every write of `Ormer.Engine`), so two
 instances of one type built from different settings share their fields'

@@ -1,5 +1,10 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A field's write along the walk's own path is read on (refinement of decision a)
+
+- The coordinator's refinement: a write made by a function the walk passed through (deliver writing `c.URL = u` before its request) is walked as any value, so each caller's request reads its own address again. Any other write is named by its site and value (fire reads `initializer: c.URL`). A reading of the writes is reused only under identical consulted bindings.
+- The broader rule (walk every write's value one hop) did not finish casdoor's avatar walk within 4 minutes. Writes along the path finish: discovery on the native rebuild took 12 s for 1,149 calls.
+
 ## 2026-10-04 — The address walk lists a field's write sites; only the object walk follows them (owner decision a)
 
 - **Decision (owner via coordinator):** a reader asks "which engine or client does this go through" and "where does the address come from". The honest answer to the second is "from the field X, written at these sites". The object walk follows field writes to the engine or client. The address walk ends at the unresolved field and lists each write as a possible origin, its site and its value as written, with no onward chains. Nothing is merged, and unknown stays unknown.
