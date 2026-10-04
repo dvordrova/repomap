@@ -1,5 +1,28 @@
 # Implementation and acceptance journal
 
+## 2026-10-05 — MVP acceptance on 95c71b11: casdoor and Lua 5.1.5, ordinary runs and browser walks
+
+- **Binary:** `.bin/repomap` from `git archive 95c71b11`, sha256 `60b74e50060334f070a371d8f6fe6b62ab38adba6332a1fff01051f67fea9bac`. Runs with GOMAXPROCS=2, one heavy step at a time.
+- **casdoor, served** (`20261004-203039-casdoor-d4e32b57901e`): `rc=0`, analysis 16m33s, then served and stopped with SIGINT to its PID. report.json 13,666,223 B; report.html (the single HTML) 20,188,243 B; run_manifest.json 300 B; atlas.json 5.5 MB; groups-index.json 7.6 MB. `repomap render` of it: 86 s, rc=0, 0 provider requests, same bytes.
+- **casdoor, GitHub mode** (`--no-serve`, warm, `20261004-211122-casdoor-aadd18b6a05e`): `rc=0`, 898 s, provider time 0 s. report.html 24,186,343 B, report.json 13,665,302 B; manifest names `https://github.com/casdoor/casdoor` at 2b9a0523. A served run opens sources in the local editor, so the GitHub step uses this run.
+- **casdoor walk** (headless Chromium, 1440×900):
+  1. Outside opens the casdoor destinations list, and "Microsoft SQL Server / MySQL / PostgreSQL / SQLite" is in it.
+  2. Hovering its card reads "one of these, depending on configuration ← Object data layer".
+  3. Its reading has Made in (Object data layer: Adapter.InitAdapter, Ormer.open, …) and Called from (HTTP controllers, Misc).
+  4. NewEngine under "Its calls" has Destination sources: "Argument value: dataSourceName · routes to it: 6".
+  5. Its "Other sources on its routes · 3" opens with Adapter.InitAdapter (object/adapter.go:188) and ReplaceDataSourceNameByDocker (conf/conf.go:91 and :93).
+  6. The source link opens `github.com/casdoor/casdoor/blob/2b9a0523…/object/adapter.go#L192`: HTTP 200, the title names that file.
+  7. Home returns to `#overview`.
+- **casdoor database rows:** 527 report.json outbound rows whose destination is a database (MySQL, Casdoor database, Database, the four-way one, Redis, PostgreSQL, Microsoft SQL Server). None has a URL, CDN or log address. The only "log" text is the provider category value "Log" in a WHERE argument.
+- **Lua 5.1.5, served** (`20261004-212834-lua-5-1-5-etc-544be307f887` and its siblings): `rc=0` after SIGINT to its PID; analysis 2m15s. report.html 7,485,249 B; report.json 18,383,224 B; run_manifest.json 304 B. The only error is the known etc/all.c clang failure.
+- **Lua walk:**
+  1. lua → Main flow.
+  2. The script way's "the rest of this way" reads luaD_call, then luaD_precall's two ways, then "then, back in luaD_call, only if (src/ldo.c:377): luaV_execute".
+  3. Opening luaV_execute shows its declaration (`#n-t5-g9`).
+  4. "Main flow" returns with that way's fold still open and the step in view.
+- **Checks:** `make vet` rc=0. `make test` (package parallelism 1) rc=2: contracttest and jstsproject hit the 5-minute bound under GOMAXPROCS=2, and the other 53 packages pass. Run in groups of ten under the same bound, all 87 contracttest and 90 jstsproject tests pass (longest group 146 s).
+- **Screenshots:** the session scratchpad `mvp-final/`: c1–c7 (casdoor, GitHub-mode walk in `casdoor-gh/`) and l1–l4 (Lua).
+
 ## 2026-10-05 — "Main flow" brings the reader back to the step they left it from (report)
 
 - **Why:** data 2's Lua walk (run 20261004-194807-lua-5-1-5-etc): the reader unfolded "the rest of this way", followed luaV_execute to its declaration, and pressed "Main flow". The way came back folded and the column stood at the Main flow's top, so they had to unfold it again to find their place.
