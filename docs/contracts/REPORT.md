@@ -177,7 +177,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   chip per destination its records name, every chip one size, in rows in
   the order "Scene model" gives (its buckets included), naming it in at
   most two lines, its whole name on hover, and the records naming none in
-  one muted "not established" chip last.
+  one muted "not established" chip last. A destination the code shows is
+  one of several systems depending on configuration (GroupsIndex 28
+  `alternatives`, 2026-10-04) is one chip named by them all, "MySQL /
+  PostgreSQL / SQLite", whose card and catalogue line say "one of these,
+  depending on configuration": never one chip or connection per system.
   A destination's calls are read in the column when its chip is clicked,
   the camera staying; no call tile is drawn, and the program's arrows to
   its destinations are one arrow to its Outside frame, the calls behind it

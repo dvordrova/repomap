@@ -335,7 +335,15 @@ func (view *pageView) SystemMap() *pageMap {
 			if len(children) > 0 {
 				id := "system-" + group.Rows[0].ID + "-destination"
 				written, at := destinationWritten(group.Rows)
-				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == "", ArgumentValue: written, Source: at, DestinationKind: destinationKind(group.Rows)})
+				node := pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == "", ArgumentValue: written, Source: at, DestinationKind: destinationKind(group.Rows)}
+				// A destination of several systems is one of them, depending
+				// on configuration: its card says so under their names.
+				if len(group.Alternatives) > 1 {
+					if text, err := uiText(view.Language, "one of these, depending on configuration"); err == nil {
+						node.Subtitle = text
+					}
+				}
+				add(node)
 				destinations = append(destinations, id)
 			}
 		}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
@@ -746,5 +747,41 @@ func TestAWrappersEnvironmentReadIsTheSettingItsCallerNames(t *testing.T) {
 	// A key the walk reaches that the facts name nowhere stays a word.
 	if got, want := read("staticBaseUrl", "logConfig"), []string{"dataSourceName|"}; !slices.Equal(got, want) {
 		t.Fatalf("a key not read there: ends %q, want %q", got, want)
+	}
+}
+
+// A destination answer naming several systems (casdoor's xorm engine: one
+// of its configured drivers' databases) is each of them, by its catalogue
+// value or its own name, sorted and once. A program is a destination only
+// alone: a set naming one, programs only or among systems, refuses its
+// cell, and so names nothing. An answer naming one is no set. Spellings fold per system, and the
+// destination is them joined by " / ".
+func TestADestinationOfSeveralSystemsIsEachOfThem(t *testing.T) {
+	def := lines.DestinationNames()
+	catalog := []lines.Destination{{Ref: "d1", Value: "PostgreSQL"}, {Ref: "d2", Value: "MySQL"}, {Ref: "d3", Value: "SQLite"}, {Ref: "d4", Value: "casdoor", Program: true, Target: "t2"}}
+	if got := destinationSystems(def, catalog, "d1; d2; d3; other: CockroachDB"); !slices.Equal(got, []string{"CockroachDB", "MySQL", "PostgreSQL", "SQLite"}) {
+		t.Fatalf("systems = %q", got)
+	}
+	if got := destinationSystems(def, catalog, "d1"); got != nil {
+		t.Fatalf("one system read as a set: %q", got)
+	}
+	column := def.Columns[0]
+	context := lines.DestinationFields(append(catalog, lines.Destination{Ref: "d5", Value: "casdoor-web", Program: true, Target: "t3"}))
+	row := table.Row{ID: "g1"}
+	for _, cell := range []string{"d4; d5", "d1; d4"} {
+		if got, err := table.NormalizeCell(column, context, row, cell); err == nil {
+			t.Fatalf("a set naming a program was accepted as %q", got)
+		}
+	}
+	if got, err := table.NormalizeCell(column, context, row, "d4"); err != nil || got != "d4" {
+		t.Fatalf("a program alone = %q, %v", got, err)
+	}
+	states := []*boundaryState{
+		{place: atlas.Place{ID: "b1"}, destinations: map[string]string{"app": "Mysql"}},
+		{place: atlas.Place{ID: "b2"}, destinations: map[string]string{"app": "MySQL / PostgreSQL"}, alternatives: map[string][]string{"app": {"MySQL", "PostgreSQL"}}},
+	}
+	foldDestinationSpellings(states)
+	if got := states[1].destinations["app"]; got != "Mysql / PostgreSQL" {
+		t.Fatalf("a set's systems fold each: %q", got)
 	}
 }

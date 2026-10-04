@@ -33,7 +33,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 26
-	Version      = 19
+	Version      = 20
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -965,7 +965,11 @@ type Boundary struct {
 	// selected by a closed ref; empty means its runtime address is unknown.
 	// DestinationTarget is MODEL: the target of this repository's program
 	// the destination is, when the destination question chose one.
-	Destination       string   `json:"destination,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	// Alternatives are MODEL: the systems the destination reaches one of
+	// depending on configuration, when the destination question named
+	// several (two or more, sorted); Destination is them joined by " / ".
+	Alternatives      []string `json:"alternatives,omitempty"`
 	DestinationTarget string   `json:"destination_target,omitempty"`
 	Address           string   `json:"address,omitempty"`
 	Basis             string   `json:"basis,omitempty"`
@@ -1798,6 +1802,14 @@ func Validate(value Atlas) error {
 			}
 			if invalidText(boundary.Destination) || (boundary.Basis != "" && boundary.Basis != "dispatch" && boundary.Basis != "configuration") {
 				return fmt.Errorf("atlas: boundary %q has invalid runtime relationship", boundary.ID)
+			}
+			if len(boundary.Alternatives) == 1 || len(boundary.Alternatives) > 1 && (boundary.DestinationTarget != "" || boundary.Destination != strings.Join(boundary.Alternatives, " / ")) {
+				return fmt.Errorf("atlas: boundary %q has invalid alternatives", boundary.ID)
+			}
+			for _, alternative := range boundary.Alternatives {
+				if alternative == "" || invalidText(alternative) {
+					return fmt.Errorf("atlas: boundary %q has an invalid alternative", boundary.ID)
+				}
 			}
 			if boundary.Source != "" && boundary.Source != "fact" && boundary.Source != "model" && boundary.Source != "external_call" {
 				return fmt.Errorf("atlas: boundary %q has invalid source %q", boundary.ID, boundary.Source)

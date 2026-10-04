@@ -643,6 +643,10 @@ type boundaryState struct {
 	// program's destination is named (destination_groups.go); a program
 	// not listed takes destination.
 	destinations map[string]string
+	// alternatives are, by program, the systems a destination reaches one
+	// of depending on configuration, when its answer named several (two or
+	// more, sorted); its destination is them joined by " / ".
+	alternatives map[string][]string
 	// destinationTargets are, by program, the target of this repository's
 	// program an outgoing row's destination is (programDestinations).
 	destinationTargets map[string]string
@@ -1101,6 +1105,28 @@ func destinationChoice(def table.Definition, catalog []lines.Destination, cell s
 		}
 	}
 	return lines.DestinationValue(catalog, cell)
+}
+
+// destinationSystems are the systems a destination answer naming several
+// reaches one of (lines.DestinationSeparator), each by its catalogue value
+// or its own name, sorted and each once. A set holding a program's ref was
+// refused at its cell (lines programRef). Nil for an answer naming one.
+func destinationSystems(def table.Definition, catalog []lines.Destination, cell string) []string {
+	if !strings.Contains(cell, strings.TrimSpace(lines.DestinationSeparator)) {
+		return nil
+	}
+	seen := map[string]bool{}
+	var systems []string
+	for _, member := range strings.Split(cell, strings.TrimSpace(lines.DestinationSeparator)) {
+		name := destinationChoice(def, catalog, strings.TrimSpace(member))
+		if name == "" || seen[strings.ToLower(name)] {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		systems = append(systems, name)
+	}
+	slices.SortFunc(systems, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
+	return systems
 }
 
 // handsResultOf reports a call given, as its receiver or an argument, what

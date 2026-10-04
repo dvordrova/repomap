@@ -42,10 +42,14 @@ type pageOutbound struct {
 	CallerAnchor                pageAnchor
 	ID                          string
 	Destination, DestinationRef string
-	Summary, SummaryRef         string
-	Address, NativeLabel        string
-	External, Basis, Source     string
-	Method                      string
+	// Alternatives are the systems the destination is one of, depending on
+	// configuration (GroupsIndex OutboundCall.Alternatives); Destination
+	// names them all.
+	Alternatives            []string
+	Summary, SummaryRef     string
+	Address, NativeLabel    string
+	External, Basis, Source string
+	Method                  string
 	// LineWithType keeps the callable's type on the line because another
 	// record of the same destination has the same member on another type:
 	// "PodInterface.Patch" and "DeploymentInterface.Patch", not "Patch, Patch".
@@ -213,7 +217,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			MapGroup:    call.GroupID,
 			KindLabel:   outboundKindLabel(call.Kind),
 			ID:          section.ID + "-out-" + call.ID,
-			Destination: call.Destination, Summary: call.Summary,
+			Destination: call.Destination, Alternatives: slices.Clone(call.Alternatives), Summary: call.Summary,
 			Address: call.Address, External: displayCallable(call.External), Basis: call.Basis, Source: call.Source, Method: call.Method,
 			Anchor: builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column),
 		}
@@ -515,7 +519,10 @@ func reachedReading(rows []pageOutbound) string {
 // values (casdoor's Object Storage had read "%s/%s", an object key).
 type pageOutboundGroup struct {
 	Destination, NativeLabel, KindLabel string
-	Basis, Source                       string
+	// Alternatives are the systems the destination is one of, depending on
+	// configuration: it reads as one of them, never as several connections.
+	Alternatives  []string
+	Basis, Source string
 	// Program marks the programs a component starts: Destination is the
 	// word naming one as written, ProgramLabel stands for one no word names.
 	Program      bool
@@ -673,7 +680,7 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 		if !known {
 			at = len(groups)
 			position[key] = at
-			groups = append(groups, pageOutboundGroup{Destination: destination, NativeLabel: row.NativeLabel,
+			groups = append(groups, pageOutboundGroup{Destination: destination, Alternatives: row.Alternatives, NativeLabel: row.NativeLabel,
 				KindLabel: row.KindLabel, Basis: row.Basis, Source: row.Source, Program: row.Program, ProgramLabel: row.ProgramLabel()})
 		}
 		group := &groups[at]

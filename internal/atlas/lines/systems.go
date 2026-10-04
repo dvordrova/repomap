@@ -193,6 +193,24 @@ func Destinations(names map[string][]string) []Destination {
 
 // DestinationFields are a window's closed catalogue and its refs, the
 // options of the destination column.
+// programRef says a destination answer's member is one of this
+// repository's programs, which a destination is only alone: a set of
+// systems names no program.
+func programRef(context []table.Field, choice string) bool {
+	for _, field := range context {
+		catalog, ok := field.Value.([]Destination)
+		if field.Name != "destination_catalog" || !ok {
+			continue
+		}
+		for _, entry := range catalog {
+			if entry.Ref == choice {
+				return entry.Program
+			}
+		}
+	}
+	return false
+}
+
 func DestinationFields(catalog []Destination) []table.Field {
 	refs := make([]string, 0, len(catalog))
 	for _, entry := range catalog {

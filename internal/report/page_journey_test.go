@@ -440,3 +440,25 @@ func TestCodeRowsFindOpensStandBelowTheToolbar(t *testing.T) {
 	}
 	t.Fatal("an off-map declaration or source index line Find opens has no scroll margin below the toolbar")
 }
+
+// A database the code shows is one of several, depending on configuration
+// (casdoor's xorm engine), is one Outside chip named by them all, whose
+// card says it is one of them: never one connection per system.
+func TestADestinationOfSeveralSystemsIsOneChipSayingItIsOneOfThem(t *testing.T) {
+	m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Core data models"}}}
+	scopeTargetMapIDs(m, "t1")
+	systems := []string{"MySQL", "PostgreSQL", "SQLite"}
+	view := pageView{Language: English, Sections: []*pageSection{{ID: "t1", programTargetID: "t1", ShortLabel: "casdoor", Map: m, Outbound: []pageOutbound{
+		{ID: "t1-out-b1", Destination: "MySQL / PostgreSQL / SQLite", Alternatives: systems, External: "xorm.NewEngine", MapGroup: "g1", Source: "model", KindLabel: "Database", Anchor: pageAnchor{Text: "object/adapter.go:192"}},
+		{ID: "t1-out-b2", Destination: "MySQL / PostgreSQL / SQLite", Alternatives: systems, External: "xorm.NewEngine", MapGroup: "g1", Source: "model", KindLabel: "Database", Anchor: pageAnchor{Text: "object/ormer.go:265"}},
+	}}}}
+	var destinations []pageMapNode
+	for _, node := range view.SystemMap().Nodes {
+		if node.Branch == "communication" {
+			destinations = append(destinations, node)
+		}
+	}
+	if len(destinations) != 1 || destinations[0].FullTitle != "MySQL / PostgreSQL / SQLite" || destinations[0].Subtitle != "one of these, depending on configuration" {
+		t.Fatalf("destinations: %+v", destinations)
+	}
+}

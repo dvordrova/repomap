@@ -300,12 +300,28 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 			if program != "" {
 				chosen = named
 			}
+			// One of several systems, depending on configuration: the
+			// destination is them all, never a program (B7, 2026-10-04).
+			systems := destinationSystems(def, question.catalog, answer["destination"])
+			switch len(systems) {
+			case 0:
+			case 1:
+				chosen, program = systems[0], ""
+			default:
+				chosen, program = strings.Join(systems, " / "), ""
+			}
 			all := slices.Clone(question.members)
 			for _, follower := range orderedFollowers[i] {
 				all = append(all, follower.members...)
 			}
 			for _, member := range all {
 				name(member, chosen)
+				if len(systems) > 1 {
+					if member.state.alternatives == nil {
+						member.state.alternatives = make(map[string][]string)
+					}
+					member.state.alternatives[member.target] = slices.Clone(systems)
+				}
 				if program != "" {
 					if member.state.destinationTargets == nil {
 						member.state.destinationTargets = make(map[string]string)
@@ -348,7 +364,27 @@ func foldDestinationSpellings(states []*boundaryState) {
 		}
 	}
 	for _, state := range ordered {
+		for _, systems := range state.alternatives {
+			for _, name := range systems {
+				if _, seen := first[strings.ToLower(name)]; !seen && name != "" {
+					first[strings.ToLower(name)] = name
+				}
+			}
+		}
+	}
+	for _, state := range ordered {
 		for target, name := range state.destinations {
+			// A destination of several systems folds each and is them
+			// joined again; its joined name is never folded whole.
+			if systems := state.alternatives[target]; len(systems) > 1 {
+				for i, system := range systems {
+					if spelled := first[strings.ToLower(system)]; spelled != "" {
+						systems[i] = spelled
+					}
+				}
+				state.destinations[target] = strings.Join(systems, " / ")
+				continue
+			}
 			if spelled := first[strings.ToLower(name)]; spelled != "" {
 				state.destinations[target] = spelled
 			}

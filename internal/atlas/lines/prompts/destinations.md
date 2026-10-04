@@ -40,7 +40,11 @@ while it runs: the requests it serves and the addresses it listens on.
 Choose the entry that is the system these calls reach; when they reach a
 running copy of one of those programs, choose that program's ref. When no
 entry is, write `other: ` and that system's short name, written as a
-proper name: a capital first letter and no article. Name it by what it is
+proper name: a capital first letter and no article. When the code shows the
+calls reach one of several systems depending on configuration, such as
+connection strings or drivers of several databases among the `ends` or
+`calls`, write each one, its ref or `other: ` and its name, separated by
+`; `. Write one when the code shows one, and a program's ref only alone. Name it by what it is
 to this program: a vendor's service by its product name, any other system
 by its role for this program, such as the server a client sends its
 commands to or the primary a replica copies from. A package, a protocol, a

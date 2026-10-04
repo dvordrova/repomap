@@ -64,7 +64,7 @@
 
 {{define "outbound-group"}}<li data-integration-item data-source-kind="{{.Source}}">
 <strong class="input-title">{{if .Program}}{{if .Destination}}<code>{{.Destination}}</code>{{else}}{{t .ProgramLabel}}{{end}}{{else if .Destination}}{{.Destination}}{{else if .NativeLabel}}<code>{{.NativeLabel}}</code>{{else}}{{t .KindLabel}}{{end}} <span class="meta">· {{len .Rows}}</span></strong>
-<div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
+<div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}{{if .Alternatives}} · {{t "one of these, depending on configuration"}}{{end}}</div>
 <ul class="plain outbound-calls">{{range .Rows}}{{template "outbound-row" .}}{{end}}</ul></li>{{end}}
 
 {{define "outbound-catalog"}}{{$model := false}}{{$fact := false}}{{range .}}{{if eq .Source "fact"}}{{$fact = true}}{{else}}{{$model = true}}{{end}}{{end}}<p class="input-provenance meta">{{if $fact}}{{t "Observed in source"}}{{end}}{{if and $fact $model}} · {{end}}{{if $model}}{{t "Model interpretation"}}{{end}}</p>

@@ -371,8 +371,8 @@ const DestinationOther = "other: "
 // packages were given (Destinations), or names a system none of them
 // covers.
 func destinationColumn() table.Column {
-	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, Alone: true,
-		Note: "the d* ref of the system these calls reach from context.destination_catalog, or other: and that system's short name when no entry is it; never a package, protocol, host or URL"}
+	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, Alone: true, Several: DestinationSeparator, OnlyAlone: programRef,
+		Note: "the d* ref of the system these calls reach from context.destination_catalog, or other: and that system's short name when no entry is it, several separated by ; when the code shows one of several depending on configuration; never a package, protocol, host or URL"}
 }
 
 // addressColumn is asked only where the row carries address candidates: a

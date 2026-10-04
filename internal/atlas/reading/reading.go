@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1348,7 +1349,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
 			Values: append([]string{}, facts.Values...), Name: state.name, Line: state.writtenLine(), FactID: factID,
-			Source: facts.Source, Destination: state.destinationOf(meta.ID), DestinationTarget: state.destinationTargets[meta.ID], Address: state.address, Basis: state.basis,
+			Source: facts.Source, Destination: state.destinationOf(meta.ID), Alternatives: slices.Clone(state.alternatives[meta.ID]), DestinationTarget: state.destinationTargets[meta.ID], Address: state.address, Basis: state.basis,
 			HandlerUnknown: state.handlerUnknown, ProgramNotNamed: state.programNotNamed, BranchLine: state.branch[0], BranchEnd: state.branch[1],
 			DeclaredOn: state.on, Written: state.asWritten, ValueOf: state.valueOf, Names: append([]string(nil), state.names...), AliasOf: state.aliasOf,
 		})

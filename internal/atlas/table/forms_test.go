@@ -231,3 +231,25 @@ func TestFilledInAbsenceIsNoAnswer(t *testing.T) {
 		t.Fatalf("a row of filled-in absences was accepted, or a neighbour lost: %+v", result.Answers)
 	}
 }
+
+// A choice cell that may name several (a destination one of several
+// systems depending on configuration) keeps each member it can read, as a
+// lone choice would read it, sorted and once: a free name among them, and
+// an unlisted ref dropped. One member is a lone choice; no readable member
+// refuses the cell.
+func TestAChoiceCellMayNameSeveral(t *testing.T) {
+	column := Column{Name: "destination", Kind: Choice, OptionsFrom: "options", Free: "other: ", Several: "; "}
+	row := Row{ID: "g1", Fields: []Field{{Name: "options", Value: []string{"d1", "d2", "d3"}}}}
+	for input, want := range map[string]string{
+		"d3; other: CockroachDB; d1; d9; `d1`": "d1; d3; other: CockroachDB",
+		"d2":                                   "d2",
+		"d2; d2":                               "d2",
+	} {
+		if got, err := normalizeCell(column, nil, row, input); err != nil || got != want {
+			t.Fatalf("%q = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	if got, err := normalizeCell(column, nil, row, "d8; d9"); err == nil {
+		t.Fatalf("no readable member was accepted as %q", got)
+	}
+}

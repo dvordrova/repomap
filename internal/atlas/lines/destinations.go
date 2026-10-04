@@ -11,7 +11,11 @@ var destinationsPrompt string
 
 // DestinationsContract names the question asking what the outgoing calls
 // of one destination reach.
-const DestinationsContract = "repomap.atlas.destinations.v2"
+const DestinationsContract = "repomap.atlas.destinations.v3"
+
+// DestinationSeparator joins the systems of a destination the code shows
+// reaches one of several depending on configuration, in its answer.
+const DestinationSeparator = "; "
 
 // DestinationNames asks, of each destination of the outgoing calls, which
 // outside system it is, or which of this repository's other programs

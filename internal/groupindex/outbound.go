@@ -21,6 +21,10 @@ type OutboundCall struct {
 	Kind        string                 `json:"kind"`
 	External    string                 `json:"external,omitempty"`
 	Destination string                 `json:"destination,omitempty"`
+	// Alternatives are the systems the destination reaches one of depending
+	// on configuration (atlas Boundary.Alternatives), a model choice;
+	// Destination is them joined by " / ".
+	Alternatives []string `json:"alternatives,omitempty"`
 	// DestinationTarget is the target of this repository's program the
 	// destination is (atlas Boundary.DestinationTarget), a model choice.
 	DestinationTarget string   `json:"destination_target,omitempty"`
@@ -84,7 +88,7 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 			Uses: uses,
 			ID:   boundary.ID, SubjectID: local[sourceRefs[boundary.ObjectID]], GroupID: groups[boundary.BoxID],
 			FactID: boundary.FactID, Kind: boundary.Kind, External: boundary.External,
-			Destination: boundary.Destination, DestinationTarget: boundary.DestinationTarget, Address: boundary.Address, Basis: boundary.Basis,
+			Destination: boundary.Destination, Alternatives: cloneStrings(boundary.Alternatives), DestinationTarget: boundary.DestinationTarget, Address: boundary.Address, Basis: boundary.Basis,
 			Method: boundary.Method, Values: cloneStrings(boundary.Values), Summary: boundary.Line, Source: source,
 			Location:        programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)},
 			ProgramNotNamed: boundary.ProgramNotNamed,

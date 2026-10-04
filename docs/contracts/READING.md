@@ -1271,6 +1271,21 @@ both asking `"/health"` stay apart; `?.DB` at `main.go:55` is one origin). A
 row with no reaching call is its own destination; the walk of another call
 at its site (the fmt.Sprintf formatting a query) says nothing of it.
 
+A destination answer may name several systems, separated by `; `
+(`repomap.atlas.destinations.v3`, 2026-10-04, owner: several targets are
+alternatives): the prompt asks for each system the code shows the calls
+reach one of depending on configuration (connection strings or drivers of
+several databases among the ends or calls), and one when it shows one. Each
+member is read as a lone answer is (a catalogue ref, or `other: ` and a name:
+casdoor's CockroachDB DSN names a system no catalogue entry has); an
+unlisted ref is dropped, a program's ref is no member of a set, and a set
+names no program. The destination is its systems, sorted and each once,
+saved as the boundary's `alternatives` (atlas 20, GroupsIndex 28) and named
+by them joined with " / "; spellings fold per system; followers copy the set
+(`TestADestinationOfSeveralSystemsIsEachOfThem`,
+`TestAChoiceCellMayNameSeveral`). A call whose ends show nothing stays
+asked as before: no rule fills it with every driver.
+
 A walk through a function's result reads it for the call it walks
 (2026-10-04, casdoor): a value written in the branch of an `exclusive` case
 comparing one of the function's parameters with words (PROGRAM_INDEX) is no

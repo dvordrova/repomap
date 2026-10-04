@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A destination may be one of several systems depending on configuration (reading and report, item 3 step B)
+
+- **Why:** a reader of casdoor's `object/adapter.go` sees a switch on the driver (mysql, mssql, postgres, CockroachDB, sqlite) and says "one of these databases, depending on configuration". The destination question allowed one system, so every xorm destination read PostgreSQL alone.
+- **Now** (`repomap.atlas.destinations.v3`; skeptic: accept with changes; owner: several targets are alternatives):
+  - The destination cell may name several systems separated by `; `: refs, or `other: ` and a name (CockroachDB has no catalogue entry). The prompt asks for each system the ends or calls show, and one when they show one.
+  - The table decoder (`Column.Several`) reads each member as a lone answer would, drops unlisted refs, and keeps the members sorted, each once. A set naming a program is refused at its cell (`OnlyAlone`, the moderator's control): a program ref is valid only alone.
+  - The destination's systems are saved as the boundary's `alternatives`, and the destination is named by them joined with " / ". Spellings fold per system and followers copy the set.
+- **Report:** one Outside chip named by the systems; its card and catalogue line say "one of these, depending on configuration" (ru "одна из них, в зависимости от настроек"). It is never one chip or connection per system, and has no new colours or arrows.
+- **Formats:** atlas 19 → 20 and GroupsIndex 27 → 28 (checked with `git log -S`), since `render` refuses incompatible saved inputs. Every destination question is asked again.
+- **Tests:** `TestAChoiceCellMayNameSeveral`, `TestADestinationOfSeveralSystemsIsEachOfThem` (including program refs refused in a set), `TestADestinationOfSeveralSystemsIsOneChipSayingItIsOneOfThem`; atlas, lines, places, reading, table, groupindex and report, plus the inputs, preset, outside-owner, field-store and source-store contract files exit 0.
+- **The live measurement** is one ordinary online casdoor run from a clean `git archive` binary (next entry). The hand-assembled draws were dropped on the moderator's note.
+
 ## 2026-10-04 — Three controls on items 2 and A fixed; a Go field read holds its field's writes as possible origins (item 3, object joins)
 
 - **Controls (moderator, "Что делать сейчас"):**

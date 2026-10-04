@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -113,6 +114,16 @@ type Column struct {
 	// option: the model chose it and spelled it by what it says. A value two
 	// options share names neither. A decoder rule like Missing.
 	ValuesFrom string `json:"-"`
+	// Several, on a Choice, lets the cell hold more than one choice, joined
+	// by this separator ("; "): the calls reach one of several systems.
+	// Each member is read as a lone choice would be; a member that is no
+	// choice is dropped, an identical repeat is one, and the cell fails only
+	// when no member survives. The members are kept sorted.
+	Several string `json:"several,omitempty"`
+	// OnlyAlone, when set, says a choice is valid only as a lone answer
+	// (a program a destination is): a set holding it refuses the cell. A
+	// decoder rule like Missing.
+	OnlyAlone func(context []Field, choice string) bool `json:"-"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
@@ -489,6 +500,28 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 		// asked: keeping the first N would be the code choosing.
 		return strings.Join(selected, " "), nil
 	case Choice:
+		if separator := strings.TrimSpace(column.Several); separator != "" && strings.Contains(text, separator) {
+			single := column
+			single.Several = ""
+			seen := make(map[string]bool)
+			var members []string
+			for _, part := range strings.Split(text, separator) {
+				member, err := normalizeCell(single, context, row, part)
+				if err != nil || member == "" || seen[member] {
+					continue
+				}
+				if column.OnlyAlone != nil && column.OnlyAlone(context, member) {
+					return "", fmt.Errorf("cell %q is %q: %q is valid only alone", column.Name, text, member)
+				}
+				seen[member] = true
+				members = append(members, member)
+			}
+			if len(members) == 0 {
+				return "", fmt.Errorf("cell %q is %q, none of whose members is one of the options", column.Name, text)
+			}
+			slices.Sort(members)
+			return strings.Join(members, column.Several), nil
+		}
 		options := column.Options
 		if column.OptionsFrom != "" {
 			options = optionsFrom(context, row, column.OptionsFrom)
@@ -533,6 +566,12 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 	default:
 		return "", fmt.Errorf("column %q has kind %q", column.Name, column.Kind)
 	}
+}
+
+// NormalizeCell reads one cell as a response's decoder does, for an owner's
+// check of its own column.
+func NormalizeCell(column Column, context []Field, row Row, cell string) (string, error) {
+	return normalizeCell(column, context, row, cell)
 }
 
 // choiceText strips the formatting a written choice may carry: surrounding
