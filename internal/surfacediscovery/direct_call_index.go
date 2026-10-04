@@ -31,7 +31,9 @@ const (
 	// struct's field a node's body names, with the path the code reaches it by.
 	// Version 17 adds Comparisons: each value a node's body compares with two
 	// or more different words, a switch's cases or == comparisons.
-	DirectCallIndexVersion = 17
+	// Version 18 adds FieldWrites: once per field a source value references,
+	// every write the code makes into it.
+	DirectCallIndexVersion = 18
 )
 
 type DirectCallIndexState string
@@ -184,6 +186,14 @@ type DirectCallComparison struct {
 	Origin   *sourcevalue.Value         `json:"origin,omitempty"`
 	Site     Location                   `json:"site"`
 	Cases    []DirectCallComparisonCase `json:"cases"`
+}
+
+// DirectCallFieldWrites is one field's writes by its key (package path,
+// type and field), as one source value: a field_value per write, or their
+// alternatives.
+type DirectCallFieldWrites struct {
+	Field string            `json:"field"`
+	Value sourcevalue.Value `json:"value"`
 }
 
 // DirectCallComparisonCase is one case of a comparison: Form is "case" for a
@@ -339,6 +349,10 @@ type DirectCallIndex struct {
 	FieldAccesses []DirectCallFieldAccess `json:"field_accesses,omitempty"`
 	// Comparisons, like field accesses, are recorded where a node's calls are.
 	Comparisons []DirectCallComparison  `json:"comparisons,omitempty"`
+	// FieldWrites are, once per repository struct field a source value's
+	// read references (kind field_writes), every write the code makes into
+	// it: what a read whose instance cannot be followed may hold.
+	FieldWrites []DirectCallFieldWrites `json:"field_writes,omitempty"`
 	Coverage    DirectCallIndexCoverage `json:"coverage"`
 	SHA256      string                  `json:"sha256"`
 	// CallGuards are the target's call sites' guards by position
@@ -379,6 +393,10 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 		for at := range comparison.Cases {
 			comparison.Cases[at].Words = cloneDirectCallSlice(comparison.Cases[at].Words)
 		}
+	}
+	snapshot.FieldWrites = cloneDirectCallSlice(index.FieldWrites)
+	for position := range snapshot.FieldWrites {
+		snapshot.FieldWrites[position].Value = *sourcevalue.Clone(&snapshot.FieldWrites[position].Value)
 	}
 	snapshot.initializeNodeLookup()
 	return snapshot
@@ -695,6 +713,8 @@ type directCallIndexBuilder struct {
 	edges         map[string]DirectCallEdge
 	frontiers     map[string]DirectCallNodeFrontier
 	fieldAccesses map[string]DirectCallFieldAccess
+	// fieldWrites is the target's field writes table, set before finish.
+	fieldWrites []DirectCallFieldWrites
 	comparisons   map[string]DirectCallComparison
 	functionNode  map[*ssa.Function]string
 	functionsSeen map[*ssa.Function]struct{}
@@ -1005,6 +1025,7 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		sort.Slice(index.Comparisons, func(i, j int) bool {
 			return directCallComparisonKey(index.Comparisons[i]) < directCallComparisonKey(index.Comparisons[j])
 		})
+		index.FieldWrites = builder.fieldWrites
 		sort.Slice(index.Modules, func(i, j int) bool {
 			return directCallModuleKey(index.Modules[i]) < directCallModuleKey(index.Modules[j])
 		})

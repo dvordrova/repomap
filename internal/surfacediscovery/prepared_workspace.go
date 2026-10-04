@@ -467,6 +467,9 @@ func analyzePreparedTarget(a *analyzer) (Result, error) {
 	}
 	finishIndex(len(a.allFunctions), len(a.allFunctions))
 
+	if a.directCallIndex != nil {
+		a.directCallIndex.fieldWrites = a.fieldWrites()
+	}
 	direct := a.directCallIndex.finish()
 	if a.callGuards == nil {
 		a.buildCallGuards()

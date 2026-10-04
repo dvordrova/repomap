@@ -32,7 +32,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 26
+	GraphVersion = 27
 	Version      = 20
 
 	GraphFilename    = "places.json"
@@ -674,7 +674,26 @@ type Graph struct {
 	// in, where the launch fact names one: a file's endpoint may be several
 	// parts when the file's code is split between them.
 	SeedDecls []string `json:"seed_decls"`
-	SHA256    string   `json:"sha256"`
+	// FieldWrites are, by field key, every write the programs' code makes
+	// into a field a source value references (kind field_writes), once
+	// (ProgramIndex FieldWrites).
+	FieldWrites []FieldWrites `json:"field_writes,omitempty"`
+	SHA256      string        `json:"sha256"`
+}
+
+// FieldWrites is one field's writes by its key, each with the targets
+// whose code makes it: a target reads only its own writes of a field its
+// programs share.
+type FieldWrites struct {
+	Field  string       `json:"field"`
+	Writes []FieldWrite `json:"writes"`
+}
+
+// FieldWrite is one write of a field, a field_value at its site, and the
+// targets whose code makes it.
+type FieldWrite struct {
+	TargetIDs []string          `json:"target_ids"`
+	Value     sourcevalue.Value `json:"value"`
 }
 
 // Atlas is atlas.json: the one artifact the page reads.

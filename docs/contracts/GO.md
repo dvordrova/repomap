@@ -76,9 +76,14 @@ URL, `fetchStatic`'s `http.Get` keeps it
 
 A read of a repository struct's field whose instance is not a record the
 same value already holds (`s.db` on a receiver, a parameter, a package
-variable) carries an `initializer` (2026-10-04): each write the program's
-code makes into that field, in source order, as a `field_value` at the
-write's site, and one alternative at a time, none chosen. A write is an
+variable) carries an `initializer` (2026-10-04) that references the field's
+writes by key (`field_writes`, `example.com/app/object.Ormer.Engine`); the
+ProgramIndex keeps each field's writes once (`field_writes`, ProgramIndex
+27), however many reads name it: each write the program's code makes into
+that field, in source order, as a `field_value` at the write's site, and
+one alternative at a time, none chosen. (Copying the writes into every read
+had grown casdoor's ProgramIndex from 21 MB to 288 MB and stalled the
+destination walk.) A write is an
 SSA store into the field's address: `x.f = v` and a composite literal's
 element `T{f: v}` alike. A write of nil or another zero constant puts no
 value there; a compound write (`f += x`) is one, reading the field itself

@@ -365,7 +365,7 @@ func (r *reader) fileSymbols() []string {
 // reading's decisions; the walk is built once for every program.
 func (r *reader) filesForTarget(id string) []atlas.DataRecord {
 	if r.fileReader == nil {
-		r.fileReader = NewFileReader(r.opts.Graph.Places, r.fileSymbols(), DestinationChoices{Arguments: r.arguments, Options: r.optionNames()},
+		r.fileReader = NewFileReader(r.opts.Graph.Places, r.fileSymbols(), DestinationChoices{Arguments: r.arguments, Options: r.optionNames(), FieldWrites: r.opts.Graph.FieldWrites},
 			func(place atlas.Place) bool { return r.testFile(place.Parent) })
 	}
 	return r.fileReader.Files(id)

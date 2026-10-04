@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — A field's writes are kept once and read with the walk's bindings; casdoor's destination walk still does not finish (item 3 object joins, continued)
+
+- **The stopped ordinary run:** `.bin/repomap` f267073c on casdoor (`~/Library/Caches/repomap/runs/20261004-130829-casdoor-abbc7d99704a`, kept). It sat 57 minutes in local work after "asking which argument names what the calls of 163 outside symbols reach". It ignored SIGINT and SIGTERM, was killed with SIGKILL (my own PID 86742), and the wrapper recorded exit 1.
+  - Cause: every field read carried a copy of all its field's writes, nested. The ProgramIndex grew from 21.2 MB to 287.6 MB and places from 36.0 MB to 302.4 MB, which the moderator measured. Of that, 490 MB of initializer bytes sat in reads such as `Controller` (1,229 reads, 139 KB each).
+- **Representation** (ProgramIndex 27, places graph 27, direct call index 18, reading input 22): a field read's `initializer` is a reference by field key (`field_writes`). The index keeps each field's writes once, and the graph keeps each write with the targets whose code makes it, so a target never reads another's write (the moderator's A/B leak control).
+  - Native rebuild of casdoor (no model, scratch): index 25.9 MB, places 25.1 MB.
+  - The saved python-tutorial-game indexes moved to version 27 with nothing else changed.
+- **Walk:**
+  - Every unresolved instance walk stays, and each write is read on from it with that walk's caller bindings (the moderator's `send(a,b)` and `deliver` controls).
+  - Nested writes are followed, with cycles stopped by the walk's active set (the `copyEndpoint`/`fire` control).
+  - What a field's writes give is reused only under identical consulted bindings, choices and targets (`destination_memo.go`). A reading that cut a cycle anywhere, or heard an undecided call, is never reused (`TestAFieldsWritesAreReusedOnlyWhenNothingDependsOnTheWalk`).
+  - Discovery (`readArguments`) walks without publishing paths.
+- **Not done: casdoor's walk still does not finish.** On the real roots (calls of symbols whose talks answer reaches by argument), measured on the rebuild with 4-minute test bounds, `notification/custom_http.go:85` `Client.Do` does not finish. Its endpoint's writes lead through `NewCustomHttpProvider`'s callers into user email fields, which have many writes each. The distinct chains are themselves combinatorial: `idp.UserInfo.Email`'s reading was reused 19,528 times in 60 seconds. Keeping every chain cannot finish without a rule for what a possible origin keeps. That is an owner decision, so it is not taken here.
+- **Tests:** sourcevalue, surfacediscovery, programindex, goadapter, places, reading, facts, groupindex and orientation, plus the Go repository, field-store, source-store, files, inputs, outside-owner and Python repository contract files, exit 0.
+
 ## 2026-10-04 — A destination may be one of several systems depending on configuration (reading and report, item 3 step B)
 
 - **Why:** a reader of casdoor's `object/adapter.go` sees a switch on the driver (mysql, mssql, postgres, CockroachDB, sqlite) and says "one of these databases, depending on configuration". The destination question allowed one system, so every xorm destination read PostgreSQL alone.

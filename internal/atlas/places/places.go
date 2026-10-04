@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -165,6 +166,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolFields(target)
 		b.collectTableReads(target)
 		b.collectScriptImports(target)
+		b.collectFieldWrites(target)
 	}
 	b.releaseTargetObjects()
 	b.joinPackageUses()
@@ -234,20 +236,24 @@ type boundaryState struct {
 }
 
 type builder struct {
-	input             Input
-	files             map[string]*fileState
-	dirs              map[string]*dirState
-	byID              map[string]programindex.Object
-	symbolOf          map[string]string // native object -> shared, compiler-located symbol place
-	factSubjects      map[string]string // only native object IDs requested by saved facts
-	fileOf            map[string]string
-	fanIn             map[string]int
-	edges             map[edgeKey]*atlas.Edge
-	docs              map[string][]claims.Claim
-	readmes           map[string]corpus.Entry
-	entries           map[string]corpus.Entry
-	seeds             map[string]struct{}
-	seedDecls         map[string]struct{}            // symbol places of seed declarations
+	input        Input
+	files        map[string]*fileState
+	dirs         map[string]*dirState
+	byID         map[string]programindex.Object
+	symbolOf     map[string]string // native object -> shared, compiler-located symbol place
+	factSubjects map[string]string // only native object IDs requested by saved facts
+	fileOf       map[string]string
+	fanIn        map[string]int
+	edges        map[edgeKey]*atlas.Edge
+	docs         map[string][]claims.Claim
+	readmes      map[string]corpus.Entry
+	entries      map[string]corpus.Entry
+	seeds        map[string]struct{}
+	seedDecls    map[string]struct{} // symbol places of seed declarations
+	// fieldWrites are every target's field writes by field key, each
+	// write once with the targets whose code makes it (ProgramIndex
+	// FieldWrites).
+	fieldWrites       map[string][]atlas.FieldWrite
 	seedTargets       map[string]map[string]struct{} // symbol place -> targets it is the seed of
 	tableRows         map[string][]atlas.TableRow    // symbol place of a table variable -> its word rows
 	tableReadRows     map[string]map[atlas.TableRead]bool
@@ -2366,7 +2372,47 @@ func (b *builder) graph() (atlas.Graph, error) {
 		}
 	}
 	sort.Strings(graph.SeedDecls)
+	fields := make([]string, 0, len(b.fieldWrites))
+	for field := range b.fieldWrites {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		graph.FieldWrites = append(graph.FieldWrites, atlas.FieldWrites{Field: field, Writes: b.fieldWrites[field]})
+	}
 	return graph, nil
+}
+
+// collectFieldWrites keeps a target's field writes by field, each write
+// once with every target whose code makes it: the writes of a field two
+// targets share are each its own targets', never another target's.
+func (b *builder) collectFieldWrites(target TargetInput) {
+	if b.fieldWrites == nil {
+		b.fieldWrites = make(map[string][]atlas.FieldWrite)
+	}
+	targetID := target.Index.Target.ID
+	for _, writes := range target.Index.FieldWrites {
+		parts := []sourcevalue.Value{writes.Value}
+		if writes.Value.Kind == "alternatives" {
+			parts = writes.Value.Parts
+		}
+		for _, part := range parts {
+			kept := b.fieldWrites[writes.Field]
+			known := false
+			for i := range kept {
+				if reflect.DeepEqual(kept[i].Value, part) {
+					kept[i].TargetIDs = appendUnique(kept[i].TargetIDs, targetID)
+					sort.Strings(kept[i].TargetIDs)
+					known = true
+					break
+				}
+			}
+			if !known {
+				kept = append(kept, atlas.FieldWrite{TargetIDs: []string{targetID}, Value: *sourcevalue.Clone(&part)})
+			}
+			b.fieldWrites[writes.Field] = kept
+		}
+	}
 }
 
 // directoryGiven is the fallback line of a directory: its README's first

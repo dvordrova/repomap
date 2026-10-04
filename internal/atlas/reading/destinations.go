@@ -46,6 +46,13 @@ type DestinationReader struct {
 	// file, built on first use (ownerAt).
 	order  []string
 	byPath map[string][]string
+	// fieldWrites are the graph's field writes by field key; writesMemo
+	// what reading them gave, by field and walk, each under the bindings
+	// and choices the reading consulted (pushConsults); frames are the
+	// readings in progress, each recording what it consults.
+	fieldWrites map[string][]atlas.FieldWrite
+	writesMemo  map[string][]writesReading
+	frames      []*consults
 }
 
 // DestinationChoices are what the reading decided that a walk reads.
@@ -59,6 +66,9 @@ type DestinationChoices struct {
 	// Talks is, by outside symbol, its talks answer: an object an outside
 	// call answered another kind made is no exchange's (Exchange).
 	Talks map[string]string
+	// FieldWrites are the graph's field writes (atlas.Graph.FieldWrites):
+	// what a field read's field_writes reference names.
+	FieldWrites []atlas.FieldWrites
 }
 
 // ArgumentChoice is which value of a call names what it reaches: its
@@ -173,6 +183,10 @@ type destinationPath struct {
 // whose every walk ran through a test.
 func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *DestinationReader {
 	d := &DestinationReader{places: make(map[string]atlas.Place), callers: make(map[string][]destinationCall), callSites: make(map[sourcevalue.Anchor][]destinationCall), owners: make(map[sourcevalue.Anchor][]atlas.Place), ownerLines: make(map[sourcevalue.Anchor][]atlas.Place), parameterCalls: make(map[sourcevalue.Anchor][]destinationCall), environment: make(map[sourcevalue.Anchor][]string), choices: choices, talks: choices.Talks}
+	d.fieldWrites = make(map[string][]atlas.FieldWrite, len(choices.FieldWrites))
+	for _, writes := range choices.FieldWrites {
+		d.fieldWrites[writes.Field] = writes.Writes
+	}
 	tests := make(map[string]bool)
 	for _, place := range places {
 		if place.Kind == atlas.PlaceFile && place.File != nil && place.File.Test {
@@ -224,6 +238,16 @@ func (d *DestinationReader) Read(place atlas.Place, call atlas.SymbolCall) []atl
 	}
 	initial.Frontier = call.Name
 	return []atlas.DestinationUse{initial.DestinationUse}
+}
+
+// discover walks what Read walks, for its undecided hearing alone: the
+// paths it reaches are neither published nor ordered, which only the
+// boundaries and files that read them need.
+func (d *DestinationReader) discover(place atlas.Place, call atlas.SymbolCall) {
+	if value := d.chosen(call); value != nil {
+		initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{destinationStep(place, call)}}}
+		d.value(value, place, initial, make(map[string]bool))
+	}
 }
 
 // chosen is the value the decided argument of an outside call names, nil
@@ -302,6 +326,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 	raw, _ := json.Marshal(value)
 	key := owner.ID + string(raw)
 	if active[key] {
+		d.consultCut()
 		use.Frontier = "cyclic value"
 		return []destinationPath{use}
 	}
@@ -365,6 +390,9 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 						continue
 					}
 					if _, decided := d.choices.Arguments[apiName(*call.call.API)]; !decided && d.undecided != nil {
+						// A reading that heard this is not reused: a later
+						// consumer must hear it too.
+						d.consultCut()
 						d.undecided(apiName(*call.call.API), call.place, call.call)
 					}
 					next.Frontier = call.call.Name + "()"
@@ -424,7 +452,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 			if d.outsideItsBranch(&part, owner, use) {
 				continue
 			}
-			if branch, ok := chooseDestinationPart(value, i, owner, d.entryOf(use, owner), use); ok {
+			if branch, ok := d.chooseDestinationPart(value, i, owner, d.entryOf(use, owner), use); ok {
 				result = append(result, d.value(&part, owner, branch, active)...)
 			}
 		}
@@ -433,25 +461,24 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		result := d.field(&value.Parts[0], value.Text, owner, use, active, nil)
 		if value.Initializer != nil && !anyAddress(result) {
 			// The instance the walk could not follow may hold what any
-			// write of the field put there. Each write is read on from
-			// where the instance's walk ended, so a caller it passed
-			// still binds the write's parameters; an address it reaches is
-			// a possible source, not the call's established value.
+			// write of the field put there. Each unresolved instance walk
+			// stays, and each write is read on from where it ended, so a
+			// caller it passed still binds the write's parameters; an
+			// address a write reaches is a possible source, not the call's
+			// established value.
 			var stored []destinationPath
 			for _, base := range result {
 				from := cloneDestinationPath(base)
 				from.Frontier, from.Unread = "", false
-				stored = append(stored, d.initializer(value.Initializer, owner, from, active, nil)...)
+				stored = append(stored, d.initializer(value.Initializer, owner, from, active, writesWalk{})...)
 			}
-			if len(stored) > 0 {
-				for i := range stored {
-					if stored[i].Address != "" {
-						stored[i].Frontier = "initializer: " + stored[i].Address
-						stored[i].Address = ""
-					}
+			for i := range stored {
+				if stored[i].Address != "" {
+					stored[i].Frontier = "initializer: " + stored[i].Address
+					stored[i].Address = ""
 				}
-				result = stored
 			}
+			result = append(result, stored...)
 		}
 		return result
 	case "record":
@@ -487,8 +514,53 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 // initializer): each field_value is read from its write, in the function
 // that makes it, with a step at the write, and alternatives are each one;
 // leaf, when set, reads it as the object walk does.
-func (d *DestinationReader) initializer(initial *sourcevalue.Value, owner atlas.Place, use destinationPath, active map[string]bool, leaf fieldLeaf) []destinationPath {
+// writesWalk is how a field's writes are read on: by the value walk (the
+// zero value), or by the object walk, with its itself setting.
+type writesWalk struct {
+	object, itself bool
+}
+
+func (walk writesWalk) leaf(d *DestinationReader, active map[string]bool) fieldLeaf {
+	if !walk.object {
+		return nil
+	}
+	return func(field *sourcevalue.Value, at atlas.Place, from destinationPath) []destinationPath {
+		return d.object(field, at, from, walk.itself, active)
+	}
+}
+
+func (d *DestinationReader) initializer(initial *sourcevalue.Value, owner atlas.Place, use destinationPath, active map[string]bool, walk writesWalk) []destinationPath {
 	switch initial.Kind {
+	case "field_writes":
+		// A reference to the field's writes, kept once in the graph: each
+		// write its own targets' and read on with this walk's bindings, so
+		// a caller the walk passed still binds the write's parameters. A
+		// field this walk is already reading is not read again (a cycle).
+		// What the writes give is read once for every walk with the same
+		// bindings where the reading consulted them (writesMemo).
+		key := "writes:" + initial.Text
+		if active[key] {
+			d.consultCut()
+			return nil
+		}
+		memoKey := fmt.Sprintf("%s\x00%s\x00%t\x00%t", initial.Text, use.kind, walk.object, walk.itself)
+		if paths, ok := d.reuseWrites(memoKey, use); ok {
+			return paths
+		}
+		active[key] = true
+		frame := d.pushConsults()
+		var result []destinationPath
+		for i, write := range d.fieldWrites[initial.Text] {
+			path := cloneDestinationPath(use)
+			path.TargetIDs = intersectTargets(use.TargetIDs, write.TargetIDs)
+			if len(path.TargetIDs) == 0 {
+				continue
+			}
+			result = append(result, d.initializer(&d.fieldWrites[initial.Text][i].Value, owner, path, active, walk)...)
+		}
+		delete(active, key)
+		d.popConsults(frame, memoKey, use, result)
+		return result
 	case "field_value":
 		if len(initial.Parts) == 0 {
 			return nil
@@ -501,18 +573,18 @@ func (d *DestinationReader) initializer(initial *sourcevalue.Value, owner atlas.
 			}
 			next.Steps = appendDestinationStep(next.Steps, atlas.DestinationStep{SubjectID: writer.ID, Name: initial.Text, Path: initial.Anchor.Path, Line: initial.Anchor.Line, Column: initial.Anchor.Column})
 		}
-		if leaf != nil {
+		if leaf := walk.leaf(d, active); leaf != nil {
 			return leaf(&initial.Parts[0], writer, next)
 		}
 		return d.value(&initial.Parts[0], writer, next, active)
 	case "alternatives":
 		var result []destinationPath
 		for i := range initial.Parts {
-			result = append(result, d.initializer(&initial.Parts[i], owner, cloneDestinationPath(use), active, leaf)...)
+			result = append(result, d.initializer(&initial.Parts[i], owner, cloneDestinationPath(use), active, walk)...)
 		}
 		return result
 	}
-	if leaf != nil {
+	if leaf := walk.leaf(d, active); leaf != nil {
 		return leaf(initial, owner, use)
 	}
 	return d.value(initial, owner, use, active)
@@ -651,6 +723,13 @@ func matchesDestinationOwner(call atlas.SymbolCall, callees []string, formal *so
 // calls of one function (dataSourceName + GetConfigString("dbName")) reads
 // each call's own parameter, never the earlier call's.
 func (d *DestinationReader) chosenCallers(use destinationPath, callees []string, formal *sourcevalue.Anchor) map[sourcevalue.Anchor]bool {
+	chosen := d.bindingOf(use, callees, formal)
+	d.consultBinding(callees, formal, chosen)
+	return chosen
+}
+
+// bindingOf is chosenCallers without recording the consult.
+func (d *DestinationReader) bindingOf(use destinationPath, callees []string, formal *sourcevalue.Anchor) map[sourcevalue.Anchor]bool {
 	chosen := make(map[sourcevalue.Anchor]bool)
 	for position := len(use.Steps) - 1; position >= 0; position-- {
 		step := use.Steps[position]
@@ -761,6 +840,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 		key = "object " + key
 	}
 	if active[key] {
+		d.consultCut()
 		if leaf != nil {
 			return nil
 		}
@@ -864,7 +944,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 	case "alternatives":
 		var result []destinationPath
 		for i, part := range receiver.Parts {
-			if branch, ok := chooseDestinationPart(receiver, i, owner, d.entryOf(use, owner), use); ok {
+			if branch, ok := d.chooseDestinationPart(receiver, i, owner, d.entryOf(use, owner), use); ok {
 				result = append(result, d.field(&part, name, owner, branch, active, leaf)...)
 			}
 		}
@@ -930,14 +1010,16 @@ func cloneDestinationUse(use atlas.DestinationUse) atlas.DestinationUse {
 	return use
 }
 
-func chooseDestinationPart(value *sourcevalue.Value, part int, owner atlas.Place, entry string, use destinationPath) (destinationPath, bool) {
+func (d *DestinationReader) chooseDestinationPart(value *sourcevalue.Value, part int, owner atlas.Place, entry string, use destinationPath) (destinationPath, bool) {
 	branch := cloneDestinationPath(use)
 	if value.Anchor == nil {
 		return branch, true
 	}
 	encoded, _ := json.Marshal(value)
 	key := owner.ID + "\x00" + entry + "\x00" + string(encoded)
-	if chosen, ok := branch.choices[key]; ok && chosen != part {
+	chosen, ok := branch.choices[key]
+	d.consultChoice(key, chosen, ok)
+	if ok && chosen != part {
 		return branch, false
 	}
 	branch.choices[key] = part

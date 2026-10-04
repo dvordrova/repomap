@@ -136,7 +136,7 @@ func (r *reader) readArguments(ctx context.Context, symbols []*apiSymbol, talks 
 		// The symbols whose results the decided arguments carry, not yet
 		// asked, are the next round's.
 		consumer := ""
-		tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: options})
+		tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: options, FieldWrites: r.opts.Graph.FieldWrites})
 		tracer.undecided = func(symbol string, at atlas.Place, call atlas.SymbolCall) {
 			if asked[symbol] || r.testFile(at.Parent) {
 				return
@@ -153,7 +153,7 @@ func (r *reader) readArguments(ctx context.Context, symbols []*apiSymbol, talks 
 		for _, name := range reaching {
 			consumer = name + " (" + talks[name] + ")"
 			for _, call := range calls[name] {
-				tracer.Read(call.place, call.call)
+				tracer.discover(call.place, call.call)
 			}
 		}
 	}
@@ -163,7 +163,7 @@ func (r *reader) readArguments(ctx context.Context, symbols []*apiSymbol, talks 
 	fmt.Fprintf(&r.tables, "atlas_api arguments: %d of %d outside symbols decided which argument names what their calls reach\n\n", decided, total)
 	// What each call of a file symbol reaches, as the walk reads it; the
 	// files each program keeps are gathered from the same walk (files.go).
-	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: options})
+	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: options, FieldWrites: r.opts.Graph.FieldWrites})
 	for _, name := range reaching {
 		if talks[name] != lines.APIFile {
 			continue

@@ -224,6 +224,12 @@ ProgramIndex retains:
   `strings.EqualFold`) stays that call's fact, asked on its own (READING).
   Validation refuses one on a declaration that runs no code, an unlocated
   or out-of-order one and one with fewer than two worded cases;
+- the index's `field_writes` (ProgramIndex 27, Go): once per field a source
+  value references by key (an `initializer` of kind `field_writes`, the
+  field's package path, type and field), every write the code makes into it
+  as one source value (GO "What a field holds"); the places graph keeps
+  every target's, a field two targets see being their union (places graph
+  27), and the destination walk reads a reference there;
 - a callable's `overloads` (ProgramIndex 26): the other signatures it is
   declared with, each written before it in its file, in source order, with
   its own signature, place, end line, code lines and typed values. Python's

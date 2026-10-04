@@ -755,7 +755,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	for symbol, role := range r.api {
 		talks[symbol] = role.talks
 	}
-	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: r.optionNames(), Talks: talks})
+	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: r.optionNames(), Talks: talks, FieldWrites: r.opts.Graph.FieldWrites})
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
 		// A started program has no address: the word naming it is its

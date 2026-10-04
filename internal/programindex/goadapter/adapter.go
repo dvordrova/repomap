@@ -155,6 +155,10 @@ func BuildInput(
 		return programindex.Input{}, fmt.Errorf("Go program index adapter: relation coverage: %w", err)
 	}
 
+	var fieldWrites []programindex.FieldWrites
+	for _, writes := range direct.FieldWrites {
+		fieldWrites = append(fieldWrites, programindex.FieldWrites{Field: writes.Field, Value: writes.Value})
+	}
 	return programindex.Input{
 		ScenarioSHA256: scenarioSHA256,
 		SourceSHA256:   sourceSHA256,
@@ -164,6 +168,7 @@ func BuildInput(
 		Coverage: programindex.CoverageInput{
 			Measured: true, ObjectsObserved: objectsObserved, RelationsObserved: relationsObserved,
 		},
+		FieldWrites: fieldWrites,
 	}, nil
 }
 

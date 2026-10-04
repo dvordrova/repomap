@@ -273,6 +273,7 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 	raw, _ := json.Marshal(value)
 	key := "object:" + owner.ID + string(raw)
 	if active[key] {
+		d.consultCut()
 		return nil
 	}
 	active[key] = true
@@ -348,7 +349,7 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 			// of the field stored is a possible origin, an end at its site
 			// that establishes no address (two configurations' engines must
 			// not become one destination through a field they share).
-			possible := d.initializer(value.Initializer, owner, use, active, leaf)
+			possible := d.initializer(value.Initializer, owner, use, active, writesWalk{object: true, itself: itself})
 			for i := range possible {
 				if possible[i].Address != "" {
 					possible[i].Frontier = "initializer: " + possible[i].Address
@@ -361,7 +362,7 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 		return d.object(&value.Parts[0], owner, use, itself, active)
 	case "alternatives":
 		for i, part := range value.Parts {
-			if branch, ok := chooseDestinationPart(value, i, owner, d.entryOf(use, owner), use); ok {
+			if branch, ok := d.chooseDestinationPart(value, i, owner, d.entryOf(use, owner), use); ok {
 				result = append(result, d.object(&part, owner, branch, itself, active)...)
 			}
 		}

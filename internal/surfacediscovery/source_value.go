@@ -246,9 +246,11 @@ func (a *analyzer) fieldSourceValue(receiver ssa.Value, field int, pos token.Pos
 		instance := a.sourceValue(receiver, active, readAt)
 		value := &sourcevalue.Value{Kind: "field", Text: name, Anchor: a.valueAnchor(pos), Parts: []sourcevalue.Value{*instance}}
 		// An instance the value names a record of already holds the field;
-		// any other may hold what any write of the field put there.
+		// any other may hold what any write of the field put there: a
+		// reference to the field's writes, stored once for the target
+		// (DirectCallIndex.FieldWrites).
 		if !recordHoldsField(instance, name) {
-			value.Initializer = a.fieldInitializer(fields.Field(field).Origin())
+			value.Initializer = a.fieldWritesRef(fields.Field(field).Origin())
 		}
 		return value
 	}

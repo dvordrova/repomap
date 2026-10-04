@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 26
+	Version          = 27
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -1434,6 +1434,16 @@ type Input struct {
 	Objects        []ObjectInput
 	Relations      []RelationInput
 	Coverage       CoverageInput
+	FieldWrites    []FieldWrites
+}
+
+// FieldWrites is, once per field a source value references by key (kind
+// field_writes: package path, type and field), every write the code makes
+// into it as one source value: what a read whose instance cannot be followed
+// may hold (ProgramIndex 27, Go).
+type FieldWrites struct {
+	Field string            `json:"field"`
+	Value sourcevalue.Value `json:"value"`
 }
 
 // Index is the canonical, bounded and SHA-sealed language-neutral handoff.
@@ -1446,6 +1456,7 @@ type Index struct {
 	Relations      []Relation      `json:"relations"`
 	Coverage       Coverage        `json:"coverage,omitzero"`
 	Categorization *Categorization `json:"categorization,omitempty"`
+	FieldWrites    []FieldWrites   `json:"field_writes,omitempty"`
 	SHA256         string          `json:"sha256"`
 }
 
@@ -1675,6 +1686,10 @@ func New(input Input) (Index, error) {
 		Objects:   make([]Object, 0, len(input.Objects)),
 		Relations: make([]Relation, 0, len(input.Relations)),
 	}
+	for _, writes := range input.FieldWrites {
+		index.FieldWrites = append(index.FieldWrites, FieldWrites{Field: writes.Field, Value: *sourcevalue.Clone(&writes.Value)})
+	}
+	slices.SortFunc(index.FieldWrites, func(x, y FieldWrites) int { return strings.Compare(x.Field, y.Field) })
 	sort.Strings(index.Target.TestSources)
 	index.Target.TestSources = slices.Compact(index.Target.TestSources)
 	if len(input.Target.Executables) > 0 {
@@ -1981,6 +1996,12 @@ func (index Index) Snapshot() Index {
 		result.Relations[position].Value = sourcevalue.Clone(index.Relations[position].Value)
 	}
 	result.Categorization = cloneCategorization(index.Categorization)
+	if index.FieldWrites != nil {
+		result.FieldWrites = make([]FieldWrites, len(index.FieldWrites))
+		for position, writes := range index.FieldWrites {
+			result.FieldWrites[position] = FieldWrites{Field: writes.Field, Value: *sourcevalue.Clone(&writes.Value)}
+		}
+	}
 	return result
 }
 
@@ -1995,6 +2016,14 @@ func (index Index) Validate() error {
 	}
 	if err := index.Target.Validate(); err != nil {
 		return err
+	}
+	for position, writes := range index.FieldWrites {
+		if !validText(writes.Field) || position > 0 && index.FieldWrites[position-1].Field >= writes.Field {
+			return fmt.Errorf("program index: field writes %q out of order or invalid", writes.Field)
+		}
+		if err := sourcevalue.Validate(&writes.Value); err != nil {
+			return fmt.Errorf("program index: field writes %q: %w", writes.Field, err)
+		}
 	}
 	for position, object := range index.Objects {
 		if err := validateObject(object); err != nil {

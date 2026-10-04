@@ -64,6 +64,12 @@ func Validate(value *Value) error {
 		if len(value.Parts) != 0 {
 			return fmt.Errorf("source value: leaf has parts")
 		}
+	case "field_writes":
+		// A reference to what every write of a field stored, by the field's
+		// key, kept once beside the values (ProgramIndex field_writes).
+		if value.Text == "" || len(value.Parts) != 0 {
+			return fmt.Errorf("source value: invalid field writes reference")
+		}
 	case "parameter":
 		if value.Position < 1 || value.Owner == nil || len(value.Parts) != 0 {
 			return fmt.Errorf("source value: invalid parameter")

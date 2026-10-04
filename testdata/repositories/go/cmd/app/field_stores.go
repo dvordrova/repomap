@@ -73,3 +73,55 @@ func (e *statusEndpoint) ping() {
 func pingStatus() {
 	configuredStatus().ping()
 }
+
+// serviceConfig's URL is written by set; send reads it from one of two
+// configurations no caller names: each possible write stays beside each
+// unresolved configuration, never the call's address.
+type serviceConfig struct {
+	URL string
+}
+
+func set(c *serviceConfig) {
+	c.URL = "https://service.example"
+}
+
+func send(a, b *serviceConfig, choose bool) {
+	c := a
+	if choose {
+		c = b
+	}
+	_, _ = http.Get(c.URL)
+}
+
+// endpointConfig's URL is written by the very function that reads it, from
+// the argument each caller hands: each caller's request reads its own
+// address, never the other caller's.
+type endpointConfig struct {
+	URL string
+}
+
+var endpoints = map[string]*endpointConfig{}
+
+func deliver(c *endpointConfig, u string) {
+	c.URL = u
+	_, _ = http.Get(c.URL)
+}
+
+func deliverBoth() {
+	deliver(endpoints["a"], "https://a.example")
+	deliver(endpoints["b"], "https://b.example")
+}
+
+// webhook's Endpoint copies a serviceConfig's URL: the field's write reads
+// another field, whose own write is followed too.
+type webhook struct {
+	Endpoint string
+}
+
+func copyEndpoint(w *webhook, c *serviceConfig) {
+	w.Endpoint = c.URL
+}
+
+func fire(w *webhook) {
+	_, _ = http.Get(w.Endpoint)
+}

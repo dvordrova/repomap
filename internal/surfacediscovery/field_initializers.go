@@ -28,16 +28,15 @@ type fieldOutsideWrite struct {
 
 // fieldStores indexes, once for the target, every write to each field of a
 // repository struct and every site where code outside the program may write
-// one. A field read whose instance the walk cannot follow reads one of them
-// (fieldInitializer).
+// one. A field read whose instance the walk cannot follow references them
+// (fieldWritesRef); the target's table holds them once (fieldWrites).
 type fieldStores struct {
 	writes  map[*types.Var][]storedField
 	outside map[*types.Var][]fieldOutsideWrite
-	// memo holds each field's initializer once computed without cutting a
-	// cycle through another field; expanding is the fields being computed.
-	memo      map[*types.Var]*sourcevalue.Value
-	expanding map[*types.Var]bool
-	cut       map[*types.Var]bool
+	// keys are the fields a read referenced, by key; pending those whose
+	// writes are not yet in the table (fieldWrites).
+	keys    map[string]*types.Var
+	pending []*types.Var
 }
 
 // collectFieldStores reads every repository function's stores and calls
@@ -45,8 +44,7 @@ type fieldStores struct {
 // cannot change what a field holds.
 func (a *analyzer) collectFieldStores(functions []*ssa.Function) {
 	selections := a.fieldSelections()
-	stores := &fieldStores{writes: make(map[*types.Var][]storedField), outside: make(map[*types.Var][]fieldOutsideWrite),
-		memo: make(map[*types.Var]*sourcevalue.Value), expanding: make(map[*types.Var]bool), cut: make(map[*types.Var]bool)}
+	stores := &fieldStores{writes: make(map[*types.Var][]storedField), outside: make(map[*types.Var][]fieldOutsideWrite), keys: make(map[string]*types.Var)}
 	a.fieldStores = stores
 	holderFields := make(map[types.Type][]*types.Var)
 	for field, holder := range selections.holders {
@@ -193,68 +191,83 @@ func unwrapInterface(value ssa.Value) ssa.Value {
 	}
 }
 
-// fieldInitializer is what a read of field holds when its instance cannot be
-// followed: each write the code makes into it, in source order, as a
-// field_value at the write's site, and, at each site where code the program
-// does not show may write it, an unknown alternative. One write is that
-// write; several are alternatives, none chosen (owner: several values are
-// alternatives). A write of nil or another zero constant puts no value
-// there. A field read inside its own writes (`f += x`, a cycle through
-// other fields) reads the field with no initializer.
-func (a *analyzer) fieldInitializer(field *types.Var) *sourcevalue.Value {
+// fieldWritesRef is what a read of field holds when its instance cannot be
+// followed: a reference, by the field's key, to every write the code makes
+// into it (fieldWrites), stored once for the target however many reads
+// name it. Nil for a field no write and no outside writer reaches.
+func (a *analyzer) fieldWritesRef(field *types.Var) *sourcevalue.Value {
 	stores := a.fieldStores
-	if stores == nil || field == nil {
+	if stores == nil || field == nil || len(stores.writes[field]) == 0 && len(stores.outside[field]) == 0 {
 		return nil
 	}
-	if value, known := stores.memo[field]; known {
-		return value
-	}
-	if stores.expanding[field] {
-		stores.cut[field] = true
+	key := a.fieldKey(field)
+	if key == "" {
 		return nil
 	}
-	stores.expanding[field] = true
-	outer := stores.cut
-	stores.cut = make(map[*types.Var]bool)
-	var parts []sourcevalue.Value
-	for _, write := range stores.writes[field] {
-		if constantValue, ok := write.store.Val.(*ssa.Const); ok && (constantValue.Value == nil || zeroConstant(constantValue.Value)) {
-			continue
+	if _, known := stores.keys[key]; !known {
+		stores.keys[key] = field
+		stores.pending = append(stores.pending, field)
+	}
+	return &sourcevalue.Value{Kind: "field_writes", Text: key}
+}
+
+// fieldKey names a repository struct's field as package path, type and
+// field: example.com/app/object.Ormer.Engine.
+func (a *analyzer) fieldKey(field *types.Var) string {
+	holder, known := a.fieldSelections().holders[field]
+	if !known {
+		return ""
+	}
+	return holder.pkg + "." + holder.typeName + "." + field.Name()
+}
+
+// fieldWrites are, once per field a read referenced, every write the code
+// makes into it, in source order, each a field_value at the write's site,
+// and, at each site where code the program does not show may write it, an
+// unknown alternative: one write is that write, several are alternatives,
+// none chosen. A write of nil or another zero constant puts no value there.
+// A write's own field reads reference their fields in turn, which join the
+// table.
+func (a *analyzer) fieldWrites() []DirectCallFieldWrites {
+	stores := a.fieldStores
+	if stores == nil {
+		return nil
+	}
+	var result []DirectCallFieldWrites
+	for len(stores.pending) > 0 {
+		field := stores.pending[0]
+		stores.pending = stores.pending[1:]
+		var parts []sourcevalue.Value
+		for _, write := range stores.writes[field] {
+			if constantValue, ok := write.store.Val.(*ssa.Const); ok && (constantValue.Value == nil || zeroConstant(constantValue.Value)) {
+				continue
+			}
+			value := a.sourceValue(write.store.Val, make(map[ssa.Value]bool), write.store)
+			site := write.site
+			parts = append(parts, sourcevalue.Value{Kind: "field_value", Text: field.Name(),
+				Anchor: &sourcevalue.Anchor{Path: site.Path, Line: site.Line, Column: site.Column}, Parts: []sourcevalue.Value{*value}})
 		}
-		value := a.sourceValue(write.store.Val, make(map[ssa.Value]bool), write.store)
-		site := write.site
-		parts = append(parts, sourcevalue.Value{Kind: "field_value", Text: field.Name(),
-			Anchor: &sourcevalue.Anchor{Path: site.Path, Line: site.Line, Column: site.Column}, Parts: []sourcevalue.Value{*value}})
-	}
-	for position, written := range stores.outside[field] {
-		if position > 0 && written.site == stores.outside[field][position-1].site {
-			continue
+		for position, written := range stores.outside[field] {
+			if position > 0 && written.site == stores.outside[field][position-1].site {
+				continue
+			}
+			site := written.site
+			anchor := &sourcevalue.Anchor{Path: site.Path, Line: site.Line, Column: site.Column}
+			parts = append(parts, sourcevalue.Value{Kind: "field_value", Text: field.Name(), Anchor: anchor,
+				Parts: []sourcevalue.Value{{Kind: "unknown", Text: "written by a call it is handed to", Anchor: anchor}}})
 		}
-		site := written.site
-		anchor := &sourcevalue.Anchor{Path: site.Path, Line: site.Line, Column: site.Column}
-		parts = append(parts, sourcevalue.Value{Kind: "field_value", Text: field.Name(), Anchor: anchor,
-			Parts: []sourcevalue.Value{{Kind: "unknown", Text: "written by a call it is handed to", Anchor: anchor}}})
-	}
-	var result *sourcevalue.Value
-	switch len(parts) {
-	case 0:
-	case 1:
-		result = &parts[0]
-	default:
-		result = &sourcevalue.Value{Kind: "alternatives", Parts: parts}
-	}
-	delete(stores.expanding, field)
-	cutElsewhere := false
-	for other := range stores.cut {
-		if other != field {
-			cutElsewhere = true
-			outer[other] = true
+		var value sourcevalue.Value
+		switch len(parts) {
+		case 0:
+			value = sourcevalue.Value{Kind: "unknown", Text: "no write stores a value"}
+		case 1:
+			value = parts[0]
+		default:
+			value = sourcevalue.Value{Kind: "alternatives", Parts: parts}
 		}
+		result = append(result, DirectCallFieldWrites{Field: a.fieldKey(field), Value: value})
 	}
-	stores.cut = outer
-	if !cutElsewhere {
-		stores.memo[field] = result
-	}
+	slices.SortFunc(result, func(x, y DirectCallFieldWrites) int { return cmp.Compare(x.Field, y.Field) })
 	return result
 }
 

@@ -2,7 +2,9 @@ package contracttest
 
 import (
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -35,8 +37,9 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 		t.Fatal(err)
 	}
 	reader := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{
-		Arguments: map[string]reading.ArgumentChoice{"net/http.Get": {Position: 1}, "database/sql.Open": {Position: 2}},
-		Talks:     map[string]string{"database/sql.Open": "db", "database/sql.DB.Exec": "db", "database/sql.DB.Ping": "db", "net/http.Get": "client_request"},
+		Arguments:   map[string]reading.ArgumentChoice{"net/http.Get": {Position: 1}, "database/sql.Open": {Position: 2}},
+		FieldWrites: graph.FieldWrites,
+		Talks:       map[string]string{"database/sql.Open": "db", "database/sql.DB.Exec": "db", "database/sql.DB.Ping": "db", "net/http.Get": "client_request"},
 	})
 	ends := func(uses []atlas.DestinationUse) []string {
 		var result []string
@@ -46,6 +49,9 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 		slices.Sort(result)
 		return slices.Compact(result)
 	}
+	// callerOf is the deliverBoth line a walk passed, by the address its
+	// argument writes there.
+	callers := map[string]string{}
 	found := map[string][]string{}
 	for _, place := range graph.Places {
 		if place.Symbol == nil || place.Path != "cmd/app/field_stores.go" {
@@ -57,7 +63,17 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 			}
 			switch call.API.Name {
 			case "Get":
-				found["ping"] = ends(reader.Read(place, call))
+				uses := reader.Read(place, call)
+				found[place.Symbol.Decl.Name] = ends(uses)
+				if place.Symbol.Decl.Name == "deliver" {
+					for _, use := range uses {
+						for _, step := range use.Steps {
+							if step.Name == "deliverBoth" && strings.HasPrefix(use.Frontier, "initializer: ") {
+								callers[fmt.Sprint(step.Line)] += strings.TrimPrefix(use.Frontier, "initializer: ") + " "
+							}
+						}
+					}
+				}
 			case "DB.Exec", "Exec":
 				found["count"] = ends(reader.Exchange(place, call, "db"))
 			case "DB.Ping", "Ping":
@@ -68,10 +84,24 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 	if !slices.Equal(found["count"], []string{"file:items.db|"}) {
 		t.Fatalf("the guarded count's exchange = %q, want the items database it was connected to", found["count"])
 	}
-	if !slices.Equal(found["pingPool"], []string{"|initializer: file:pool.db"}) {
+	if !slices.Contains(found["pingPool"], "|initializer: file:pool.db") || slices.ContainsFunc(found["pingPool"], func(end string) bool { return !strings.HasPrefix(end, "|") }) {
 		t.Fatalf("the unrelated pool's ping = %q, want the pool database as a possible origin only", found["pingPool"])
 	}
-	if !slices.Equal(found["ping"], []string{"http://localhost:8080/status|", "|written by a call it is handed to"}) {
-		t.Fatalf("the status ping = %q, want its default and the flag's unknown write", found["ping"])
+	// Each caller's request reads its own address as the write's value,
+	// never the other caller's.
+	if len(callers) != 2 || !slices.ContainsFunc(slices.Collect(maps.Values(callers)), func(v string) bool { return v == "https://a.example " }) ||
+		!slices.ContainsFunc(slices.Collect(maps.Values(callers)), func(v string) bool { return v == "https://b.example " }) {
+		t.Fatalf("deliver's writes by caller = %q", callers)
+	}
+	// The webhook's Endpoint is a serviceConfig's URL, whose write is read
+	// on too; the unknown webhook stays.
+	if !slices.Contains(found["fire"], "|initializer: https://service.example") || !slices.ContainsFunc(found["fire"], func(end string) bool { return strings.HasPrefix(end, "|w.Endpoint") }) {
+		t.Fatalf("fire = %q", found["fire"])
+	}
+	if !slices.Contains(found["send"], "|initializer: https://service.example") || len(found["send"]) < 2 {
+		t.Fatalf("send's URL = %q, want the possible write beside its unresolved configurations", found["send"])
+	}
+	if !slices.Equal(found["statusEndpoint.ping"], []string{"http://localhost:8080/status|", "|written by a call it is handed to"}) {
+		t.Fatalf("the status ping = %q, want its default and the flag's unknown write", found["statusEndpoint.ping"])
 	}
 }
