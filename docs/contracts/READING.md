@@ -1342,7 +1342,8 @@ stays its address, chain and the published `Uses`. The exchange ends:
   instance's field, else to each value its writes stored (its
   `initializer`, each write read in the function that makes it, GO "What a
   field holds") as a possible origin only (`initializer: X`, unresolved,
-  joining no other engine's destination), a context manager's entered value to the
+  joining no other engine's destination; the address walk instead lists the
+  writes' sites and values, read no further), a context manager's entered value to the
   manager, a repository call to what its function returns, a call to no
   known function giving no words (`engine.begin()`) to its receiver, and an
   outside call never asked which argument names what it reaches and giving

@@ -462,14 +462,22 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		if value.Initializer != nil && !anyAddress(result) {
 			// The instance the walk could not follow may hold what any
 			// write of the field put there. Each unresolved instance walk
-			// stays, and each write is read on from where it ended, so a
-			// caller it passed still binds the write's parameters; an
-			// address a write reaches is a possible source, not the call's
-			// established value.
+			// stays. A field whose writes the graph keeps (field_writes)
+			// lists each write as a possible origin, its site and value as
+			// written, read no further: where the address comes from is
+			// that field, written there (owner, 2026-10-04). A write's own
+			// chains are the object walk's alone (which engine or client).
+			// A field initializer kept inline (Python's __init__ store) is
+			// read on as before. An address it reaches is a possible
+			// source, not the call's established value.
 			var stored []destinationPath
 			for _, base := range result {
 				from := cloneDestinationPath(base)
 				from.Frontier, from.Unread = "", false
+				if value.Initializer.Kind == "field_writes" {
+					stored = append(stored, d.writeSites(value.Initializer.Text, from)...)
+					continue
+				}
 				stored = append(stored, d.initializer(value.Initializer, owner, from, active, writesWalk{})...)
 			}
 			for i := range stored {
@@ -588,6 +596,40 @@ func (d *DestinationReader) initializer(initial *sourcevalue.Value, owner atlas.
 		return leaf(initial, owner, use)
 	}
 	return d.value(initial, owner, use, active)
+}
+
+// writeSites are a field's writes as possible origins of a value walk that
+// reached the field: each write its own targets', a step at its site, and
+// its value as written (a literal's text, any other value's expression),
+// never read further.
+func (d *DestinationReader) writeSites(field string, use destinationPath) []destinationPath {
+	var result []destinationPath
+	for _, write := range d.fieldWrites[field] {
+		path := cloneDestinationPath(use)
+		path.TargetIDs = intersectTargets(use.TargetIDs, write.TargetIDs)
+		if len(path.TargetIDs) == 0 || write.Value.Kind != "field_value" || len(write.Value.Parts) == 0 {
+			continue
+		}
+		stored := &write.Value.Parts[0]
+		if anchor := write.Value.Anchor; anchor != nil {
+			writer := atlas.Place{}
+			if place, ok := d.ownerAt(*anchor); ok {
+				writer = place
+			}
+			path.Steps = appendDestinationStep(path.Steps, atlas.DestinationStep{SubjectID: writer.ID, Name: write.Value.Text, Path: anchor.Path, Line: anchor.Line, Column: anchor.Column})
+		}
+		switch stored.Kind {
+		case "literal":
+			path.Address = stored.Text
+		case "unknown":
+			path.Frontier = stored.Text
+			path.Unread = true
+		default:
+			path.Frontier = "initializer: " + sourceValueExpression(stored)
+		}
+		result = append(result, path)
+	}
+	return result
 }
 
 // ownerAt is the innermost declaration of the walk's places whose lines

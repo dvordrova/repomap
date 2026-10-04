@@ -95,9 +95,14 @@ of a slice or map of them, handed to a call outside the repository
 (`json.Unmarshal(data, &cfg)`, `engine.Find(&ldaps)`). A record of a local
 allocation whose field's address a call is handed holds the same unknown
 beside its store. The walks follow the instance first and read the writes
-only when they cannot, and then as possible origins: an address the writes
-reach is an unresolved end at its site, never the call's address, so a
-field two configurations share joins no engine's destination (READING
+only when they cannot (owner decision, 2026-10-04). The object walk ("which
+engine or client does this go through") follows each write on, as a
+possible origin: an address it reaches is an unresolved end at its site,
+never the call's address, so a field two configurations share joins no
+engine's destination. The address walk ("where does the address come
+from") ends at the unresolved field and lists its writes as possible
+origins, each its site and its value as written (`initializer: u`,
+`initializer: https://service.example`), read no further (READING
 "Outside systems"). Recorded limits: a
 package variable is not followed through its own writes (casdoor's
 `ormer = NewAdapter(…)` reads every write of `Ormer.Engine`), so two

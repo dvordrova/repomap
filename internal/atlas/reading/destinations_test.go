@@ -815,51 +815,52 @@ func TestATargetReadsOnlyItsOwnWritesOfASharedField(t *testing.T) {
 	}
 }
 
-// What a field's writes give is read once for walks with the same bindings,
-// but never reused when its reading heard an undecided call (each
-// consumer hears it) or met a value the walk was already reading (a
-// cycle: what it gave depends on that walk).
+// What a field's writes give the object walk is read once for walks with
+// the same bindings, but never reused when its reading heard an undecided
+// call (each consumer hears it) or met a value the walk was already reading
+// (a cycle: what it gave depends on that walk).
 func TestAFieldsWritesAreReusedOnlyWhenNothingDependsOnTheWalk(t *testing.T) {
 	at := func(path string, line, column int) *sourcevalue.Anchor {
 		return &sourcevalue.Anchor{Path: path, Line: line, Column: column}
 	}
 	field := func(key string, line int) sourcevalue.Value {
-		return sourcevalue.Value{Kind: "field", Text: "URL", Anchor: at("send.go", line, 18), Initializer: &sourcevalue.Value{Kind: "field_writes", Text: key},
+		return sourcevalue.Value{Kind: "field", Text: "DB", Anchor: at("send.go", line, 8), Initializer: &sourcevalue.Value{Kind: "field_writes", Text: key},
 			Parts: []sourcevalue.Value{{Kind: "parameter", Text: "c", Position: 1, Anchor: at("send.go", line-1, 10), Owner: at("send.go", line-1, 1)}}}
 	}
-	get := func(key string, line int) (atlas.Place, atlas.SymbolCall) {
-		url := field(key, line)
-		call := atlas.SymbolCall{Kind: "invokes_external", Name: "Get", Line: line, Column: 9, API: &atlas.CallAPI{Package: "net/http", Name: "Get"},
-			SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &url}}}
-		return atlas.Place{ID: fmt.Sprintf("send%d", line), Path: "send.go", LineNo: line - 1, TargetIDs: []string{"app"},
-			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: fmt.Sprintf("send%d", line), Column: 1, EndLine: line + 1}, Calls: []atlas.SymbolCall{call}}}, call
+	ping := func(key string, line int) (atlas.Place, atlas.SymbolCall) {
+		db := field(key, line)
+		call := atlas.SymbolCall{Kind: "invokes_external", Name: "Ping", Line: line, Column: 9, API: &atlas.CallAPI{Package: "database/sql", Receiver: "DB", Name: "Ping"}, ReceiverValue: &db}
+		return atlas.Place{ID: fmt.Sprintf("ping%d", line), Path: "send.go", LineNo: line - 1, TargetIDs: []string{"app"},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: fmt.Sprintf("ping%d", line), Column: 1, EndLine: line + 1}, Calls: []atlas.SymbolCall{call}}}, call
 	}
-	lookup := atlas.SymbolCall{Kind: "invokes_external", Name: "Lookup", Line: 31, Column: 9, API: &atlas.CallAPI{Package: "registry", Name: "Lookup"}}
-	writer := atlas.Place{ID: "configure", Path: "conf.go", LineNo: 30, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "configure", Column: 1, EndLine: 33}, Calls: []atlas.SymbolCall{lookup}}}
+	resolve := atlas.SymbolCall{Kind: "invokes_external", Name: "Resolve", Line: 31, Column: 20, API: &atlas.CallAPI{Package: "registry", Name: "Resolve"}}
+	open := atlas.SymbolCall{Kind: "invokes_external", Name: "Open", Line: 31, Column: 9, API: &atlas.CallAPI{Package: "database/sql", Name: "Open"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Text: "Resolve", Anchor: at("conf.go", 31, 20)}}}}
+	writer := atlas.Place{ID: "configure", Path: "conf.go", LineNo: 30, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "configure", Column: 1, EndLine: 33}, Calls: []atlas.SymbolCall{open, resolve}}}
 	write := func(value sourcevalue.Value) []atlas.FieldWrite {
-		return []atlas.FieldWrite{{TargetIDs: []string{"app"}, Value: sourcevalue.Value{Kind: "field_value", Text: "URL", Anchor: at("conf.go", 31, 4), Parts: []sourcevalue.Value{value}}}}
+		return []atlas.FieldWrite{{TargetIDs: []string{"app"}, Value: sourcevalue.Value{Kind: "field_value", Text: "DB", Anchor: at("conf.go", 31, 4), Parts: []sourcevalue.Value{value}}}}
 	}
-	again := field("app.Cyclic.URL", 32)
+	again := field("app.Cyclic.DB", 32)
 	writes := []atlas.FieldWrites{
-		{Field: "app.Heard.URL", Writes: write(sourcevalue.Value{Kind: "call_result", Text: "Lookup", Anchor: at("conf.go", 31, 9)})},
-		{Field: "app.Cyclic.URL", Writes: write(sourcevalue.Value{Kind: "concat", Parts: []sourcevalue.Value{again, {Kind: "literal", Text: "/x"}}})},
+		{Field: "app.Heard.DB", Writes: write(sourcevalue.Value{Kind: "call_result", Text: "Open", Anchor: at("conf.go", 31, 9)})},
+		{Field: "app.Cyclic.DB", Writes: write(again)},
 	}
-	first, firstCall := get("app.Heard.URL", 5)
-	second, secondCall := get("app.Heard.URL", 15)
-	cyclic, cyclicCall := get("app.Cyclic.URL", 25)
-	reader := NewDestinationReader([]atlas.Place{first, second, cyclic, writer}, DestinationChoices{Arguments: map[string]ArgumentChoice{"net/http.Get": {Position: 1}}, FieldWrites: writes})
+	first, firstCall := ping("app.Heard.DB", 5)
+	second, secondCall := ping("app.Heard.DB", 15)
+	cyclic, cyclicCall := ping("app.Cyclic.DB", 25)
+	reader := NewDestinationReader([]atlas.Place{first, second, cyclic, writer}, DestinationChoices{Arguments: map[string]ArgumentChoice{"database/sql.Open": {Position: 1}}, FieldWrites: writes})
 	heard := 0
 	reader.undecided = func(symbol string, _ atlas.Place, _ atlas.SymbolCall) {
-		if symbol == "registry.Lookup" {
+		if symbol == "registry.Resolve" {
 			heard++
 		}
 	}
-	reader.Read(first, firstCall)
-	reader.Read(second, secondCall)
+	reader.Exchange(first, firstCall, "db")
+	reader.Exchange(second, secondCall, "db")
 	if heard != 2 {
-		t.Fatalf("the undecided Lookup was heard %d times, want once per consumer", heard)
+		t.Fatalf("the undecided Resolve was heard %d times, want once per consumer", heard)
 	}
-	reader.Read(cyclic, cyclicCall)
+	reader.Exchange(cyclic, cyclicCall, "db")
 	for key, readings := range reader.writesMemo {
 		if len(readings) > 0 {
 			t.Fatalf("a reading that heard a call or cut a cycle was kept for reuse: %q", key)

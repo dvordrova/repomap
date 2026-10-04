@@ -2,7 +2,6 @@ package contracttest
 
 import (
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -49,9 +48,6 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 		slices.Sort(result)
 		return slices.Compact(result)
 	}
-	// callerOf is the deliverBoth line a walk passed, by the address its
-	// argument writes there.
-	callers := map[string]string{}
 	found := map[string][]string{}
 	for _, place := range graph.Places {
 		if place.Symbol == nil || place.Path != "cmd/app/field_stores.go" {
@@ -63,17 +59,7 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 			}
 			switch call.API.Name {
 			case "Get":
-				uses := reader.Read(place, call)
-				found[place.Symbol.Decl.Name] = ends(uses)
-				if place.Symbol.Decl.Name == "deliver" {
-					for _, use := range uses {
-						for _, step := range use.Steps {
-							if step.Name == "deliverBoth" && strings.HasPrefix(use.Frontier, "initializer: ") {
-								callers[fmt.Sprint(step.Line)] += strings.TrimPrefix(use.Frontier, "initializer: ") + " "
-							}
-						}
-					}
-				}
+				found[place.Symbol.Decl.Name] = ends(reader.Read(place, call))
 			case "DB.Exec", "Exec":
 				found["count"] = ends(reader.Exchange(place, call, "db"))
 			case "DB.Ping", "Ping":
@@ -87,15 +73,14 @@ func TestGoFieldReadsHoldEveryWriteOfTheField(t *testing.T) {
 	if !slices.Contains(found["pingPool"], "|initializer: file:pool.db") || slices.ContainsFunc(found["pingPool"], func(end string) bool { return !strings.HasPrefix(end, "|") }) {
 		t.Fatalf("the unrelated pool's ping = %q, want the pool database as a possible origin only", found["pingPool"])
 	}
-	// Each caller's request reads its own address as the write's value,
-	// never the other caller's.
-	if len(callers) != 2 || !slices.ContainsFunc(slices.Collect(maps.Values(callers)), func(v string) bool { return v == "https://a.example " }) ||
-		!slices.ContainsFunc(slices.Collect(maps.Values(callers)), func(v string) bool { return v == "https://b.example " }) {
-		t.Fatalf("deliver's writes by caller = %q", callers)
+	// A field the address walk reaches lists its writes as possible
+	// origins, each its site and value as written, read no further: the
+	// field deliver writes from its parameter, the webhook's Endpoint from a
+	// serviceConfig's URL. The unknown instance stays.
+	if !slices.Equal(found["deliver"], []string{"|initializer: u", "|main.endpoints[\"a\"].URL", "|main.endpoints[\"b\"].URL"}) {
+		t.Fatalf("deliver = %q", found["deliver"])
 	}
-	// The webhook's Endpoint is a serviceConfig's URL, whose write is read
-	// on too; the unknown webhook stays.
-	if !slices.Contains(found["fire"], "|initializer: https://service.example") || !slices.ContainsFunc(found["fire"], func(end string) bool { return strings.HasPrefix(end, "|w.Endpoint") }) {
+	if !slices.Equal(found["fire"], []string{"|initializer: c.URL", "|w.Endpoint"}) {
 		t.Fatalf("fire = %q", found["fire"])
 	}
 	if !slices.Contains(found["send"], "|initializer: https://service.example") || len(found["send"]) < 2 {

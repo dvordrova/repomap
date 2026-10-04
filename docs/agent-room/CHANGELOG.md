@@ -1,5 +1,18 @@
 # Implementation and acceptance journal
 
+## 2026-10-04 — The address walk lists a field's write sites; only the object walk follows them (owner decision a)
+
+- **Decision (owner via coordinator):** a reader asks "which engine or client does this go through" and "where does the address come from". The honest answer to the second is "from the field X, written at these sites". The object walk follows field writes to the engine or client. The address walk ends at the unresolved field and lists each write as a possible origin, its site and its value as written, with no onward chains. Nothing is merged, and unknown stays unknown.
+- **Fixture** (`TestGoFieldReadsHoldEveryWriteOfTheField`):
+  - `deliver` reads `initializer: u` beside each unresolved `endpoints[...]` instance;
+  - `fire` reads `initializer: c.URL` beside `w.Endpoint`;
+  - the pooled ping, the guarded count and the send/status cases are unchanged.
+- The memo control now runs through the object walk (`Exchange`).
+- **Timing** on the casdoor native rebuild, real roots, each test under 5 minutes:
+  - discovery: 1,149 calls in 31 s, 2.5 GB;
+  - every Read: 114 s, of which `object/avatar.go:42` `http.Client.Get` takes 112 s (85,055 ends, the avatar URL parameter's callers).
+  - The Read figure is finite but slow, noted for the ordinary run.
+
 ## 2026-10-04 — A field's writes are kept once and read with the walk's bindings; casdoor's destination walk still does not finish (item 3 object joins, continued)
 
 - **The stopped ordinary run:** `.bin/repomap` f267073c on casdoor (`~/Library/Caches/repomap/runs/20261004-130829-casdoor-abbc7d99704a`, kept). It sat 57 minutes in local work after "asking which argument names what the calls of 163 outside symbols reach". It ignored SIGINT and SIGTERM, was killed with SIGKILL (my own PID 86742), and the wrapper recorded exit 1.
