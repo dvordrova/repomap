@@ -1137,6 +1137,20 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	row.Through = builder.flowThrough(step.TargetID, step.Through)
 	row.Implemented = step.Basis == programindex.BasisImplements
 	row.Guard, row.Loop = builder.flowGuard(step.Guard), builder.flowLoop(step.Loop)
+	// A step the path is back in its caller for reads before its name, its
+	// condition's place with it: "then, back in luaD_call, only if
+	// (ldo.c:377):"; "called" is said by it.
+	if step.Resumes != "" {
+		if name, ok := builder.flowName(step.TargetID, step.Resumes); ok {
+			row.Back = &name
+			if row.ViaKey == "called (a Main flow step)" {
+				row.ViaKey = ""
+			}
+			if step.Guard != nil && step.Guard.Kind == programindex.GuardBranch && row.Guard.At != nil {
+				row.BackIf, row.Guard = row.Guard.At, nil
+			}
+		}
+	}
 	row.Stop = flowStopMessage(step.Stop)
 	row.OpenAt = builder.flowLoop(step.OpenAt)
 	row.Joins = builder.flowBranchNames(step.TargetID, step.Joins)

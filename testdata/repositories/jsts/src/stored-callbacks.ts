@@ -321,3 +321,26 @@ export function loginEither(cas: boolean): void {
     loginHandler();
   });
 }
+
+// A step that prepares, then executes only on preparing's result, as Lua's
+// luaD_call runs luaV_execute only if luaD_precall says so: walked through
+// watchPrepare, the route goes on into what preparing collects, then back in
+// watchRun to watchExecute, under its condition.
+function watchCollect(): void {
+  acceptClient();
+}
+
+function watchPrepare(): number {
+  watchCollect();
+  return 0;
+}
+
+function watchExecute(): void {
+  flushReplies();
+}
+
+export function watchRun(): void {
+  if (watchPrepare() === 0) {
+    watchExecute();
+  }
+}

@@ -35,6 +35,10 @@ type SpineStep struct {
 	// Helper marks a branch into a declaration the helper question decided
 	// serves others' work: named beside the branches, never followed.
 	Helper bool
+	// Resumes is, for a step the walk reads after the route through an
+	// earlier call of the same step ended, that step: the path is back in
+	// it, reading its later calls in written order (WalkPathsThen).
+	Resumes string `json:"-"`
 }
 
 // spine derives an input's spine from its reach.
@@ -212,6 +216,10 @@ type SpinePath struct {
 	// it: the path goes on into it as that way, never walking it twice.
 	// Beside ways of its own (Paths) they stand as more ways of the split.
 	Joins []SpineStep
+	// Then is the route after a split left torn or unanswered at the last
+	// step, back in the step whose later calls are not all on the path yet
+	// (WalkPathsThen): whichever way runs, it returns there.
+	Then *SpinePath `json:"-"`
 }
 
 // WalkPaths walks as Walk does, pick naming the candidates to follow at a
@@ -222,7 +230,26 @@ type SpinePath struct {
 // further on; none ends the path at a named fork of every candidate. Owner, 2026-09-30: several main paths are allowed where the
 // model is torn between them.
 func WalkPaths(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
-	return walkPath(start, map[string]bool{}, nil, next, pick)
+	return walkPath(start, map[string]bool{}, nil, next, pick, nil)
+}
+
+// WalkPathsThen walks as WalkPaths does and, where a route ends, goes back
+// to the last step that chose among several calls and reads the calls it
+// writes after the chosen one, in written order (later): one goes on with
+// no question, several are a split of that step among them, asked and
+// followed as any split is. "luaD_call: first luaD_precall, then, only if
+// its result says so, luaV_execute."
+func WalkPathsThen(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int, later func(step, chosen SpineStep, candidates []SpineStep) []SpineStep) SpinePath {
+	return walkPath(start, map[string]bool{}, nil, next, pick, later)
+}
+
+// resumeFrame is a step that chose one of several calls, where it stands
+// in its path, and the calls it writes after the chosen one.
+type resumeFrame struct {
+	in    *SpinePath
+	step  SpineStep
+	at    int
+	later []SpineStep
 }
 
 // walkPath walks one path; starts are the first steps of the other ways of
@@ -231,7 +258,7 @@ func WalkPaths(start SpineStep, next func(SpineStep) []SpineStep, pick func(Spin
 // way (5.1.5's script way reaching lua_pcall, the REPL way's start, through
 // docall); chosen beside a way of its own, the split is torn, the join one
 // of its ways.
-func walkPath(step SpineStep, seen map[string]bool, starts map[string]bool, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
+func walkPath(step SpineStep, seen map[string]bool, starts map[string]bool, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int, later func(step, chosen SpineStep, candidates []SpineStep) []SpineStep) SpinePath {
 	visited := make(map[string]bool, len(seen)+1)
 	for id := range seen {
 		visited[id] = true
@@ -240,22 +267,55 @@ func walkPath(step SpineStep, seen map[string]bool, starts map[string]bool, next
 	own := step.SubjectID
 	joinable := func(id string) bool { return starts[id] && id != own }
 	var result SpinePath
+	cur := &result
+	var frames []resumeFrame
+	// resumed, while not nil, are the later calls of the frame the path is
+	// back in, standing for the step's own candidates.
+	var resumed *resumeFrame
+	// backTo is the last frame whose later calls are not all on the path.
+	backTo := func() *resumeFrame {
+		for len(frames) > 0 {
+			frame := frames[len(frames)-1]
+			frames = frames[:len(frames)-1]
+			for _, candidate := range frame.later {
+				if !visited[candidate.SubjectID] {
+					return &frame
+				}
+			}
+		}
+		return nil
+	}
 	for {
-		result.Steps = append(result.Steps, step)
+		asker := step
 		var candidates []SpineStep
-		for _, candidate := range next(step) {
-			if !visited[candidate.SubjectID] || joinable(candidate.SubjectID) {
-				candidates = append(candidates, candidate)
+		if resumed != nil {
+			asker = resumed.step
+			for _, candidate := range resumed.later {
+				if !visited[candidate.SubjectID] {
+					candidates = append(candidates, candidate)
+				}
+			}
+		} else {
+			cur.Steps = append(cur.Steps, step)
+			for _, candidate := range next(step) {
+				if !visited[candidate.SubjectID] || joinable(candidate.SubjectID) {
+					candidates = append(candidates, candidate)
+				}
 			}
 		}
 		if len(candidates) == 0 {
-			return result
+			// The route ends; the path goes back to the last step whose
+			// later calls are not all on it yet.
+			if resumed = backTo(); resumed == nil {
+				return result
+			}
+			continue
 		}
 		var chosen []int
 		if len(candidates) == 1 {
 			chosen = []int{0}
 		} else if pick != nil {
-			for _, at := range pick(step, candidates) {
+			for _, at := range pick(asker, candidates) {
 				if at >= 0 && at < len(candidates) && !containsInt(chosen, at) {
 					chosen = append(chosen, at)
 				}
@@ -266,24 +326,57 @@ func walkPath(step SpineStep, seen map[string]bool, starts map[string]bool, next
 		var walked []int
 		for _, at := range chosen {
 			if joinable(candidates[at].SubjectID) {
-				result.Joins = append(result.Joins, candidates[at])
+				cur.Joins = append(cur.Joins, candidates[at])
 				continue
 			}
 			walked = append(walked, at)
 		}
+		back := resumed
+		resumed = nil
 		switch {
 		case len(chosen) == 0:
-			result.Rest = candidates
-			return result
+			if back != nil {
+				// A step's later calls left undecided stay its passed
+				// calls; the path ends where it was.
+				return result
+			}
+			cur.Rest = candidates
+			if resumed = backTo(); resumed == nil {
+				return result
+			}
+			cur.Then = &SpinePath{}
+			cur = cur.Then
+			continue
 		case len(walked) == 0:
-			result.keepPassed(candidates, chosen)
+			if back == nil {
+				cur.keepPassed(candidates, chosen)
+			}
 			return result
-		case len(walked) == 1 && len(result.Joins) == 0:
+		case len(walked) == 1 && len(cur.Joins) == 0:
 			// A decided split keeps what it did not follow.
-			result.keepPassed(candidates, chosen)
-			step = candidates[walked[0]]
+			if back == nil {
+				cur.keepPassed(candidates, chosen)
+			}
+			chosenStep := candidates[walked[0]]
+			parent, parentAt, in := step, len(cur.Steps)-1, cur
+			if back != nil {
+				parent, parentAt, in = back.step, back.at, back.in
+				chosenStep.Resumes = back.step.SubjectID
+				in.unpass(parentAt, chosenStep.SubjectID)
+			}
+			if later != nil && len(candidates) > 1 {
+				if after := later(parent, candidates[walked[0]], candidates); len(after) > 0 {
+					frames = append(frames, resumeFrame{in: in, step: parent, at: parentAt, later: after})
+				}
+			}
+			step = chosenStep
 			visited[step.SubjectID] = true
 			continue
+		}
+		if back != nil {
+			// A step's later calls the categorizer is torn between stay its
+			// passed calls: the path ends where it was.
+			return result
 		}
 		// The split is torn: each way of its own is walked apart, and none
 		// walks into another's first step, though each may go on into it,
@@ -297,15 +390,36 @@ func walkPath(step SpineStep, seen map[string]bool, starts map[string]bool, next
 			ways[candidates[at].SubjectID] = true
 		}
 		for _, at := range walked {
-			result.Paths = append(result.Paths, walkPath(candidates[at], visited, ways, next, pick))
+			cur.Paths = append(cur.Paths, walkPath(candidates[at], visited, ways, next, pick, later))
 		}
 		for position, candidate := range candidates {
 			if !containsInt(chosen, position) {
-				result.Rest = append(result.Rest, candidate)
+				cur.Rest = append(cur.Rest, candidate)
 			}
 		}
-		return result
+		// After the ways, the path goes back to the last step whose later
+		// calls are not all on it yet.
+		if resumed = backTo(); resumed == nil {
+			return result
+		}
+		cur.Then = &SpinePath{}
+		cur = cur.Then
 	}
+}
+
+// unpass takes a step read after its parent's route back out of the
+// parent's passed calls.
+func (result *SpinePath) unpass(at int, subjectID string) {
+	if result.Passed == nil {
+		return
+	}
+	kept := result.Passed[at][:0]
+	for _, candidate := range result.Passed[at] {
+		if candidate.SubjectID != subjectID {
+			kept = append(kept, candidate)
+		}
+	}
+	result.Passed[at] = kept
 }
 
 // keepPassed keeps, at a decided split, the candidates the path did not

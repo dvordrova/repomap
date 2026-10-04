@@ -277,3 +277,25 @@ def login_either(cas):
         def login_handler():
             flush_replies()
     login_handler()
+
+
+# A step that prepares, then executes only on preparing's result, as Lua's
+# luaD_call runs luaV_execute only if luaD_precall says so: walked through
+# watch_prepare, the route goes on into what preparing collects, then back
+# in watch_run to watch_execute, under its condition.
+def watch_collect():
+    accept_client()
+
+
+def watch_prepare():
+    watch_collect()
+    return 0
+
+
+def watch_execute():
+    flush_replies()
+
+
+def watch_run():
+    if watch_prepare() == 0:
+        watch_execute()

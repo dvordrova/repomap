@@ -488,6 +488,31 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 			t.Fatalf("%v: the passed call is not one step from its declaration and condition: %s", language, html)
 		}
 	}
+	// A step the path is back in its caller for reads before its name:
+	// "then, back in luaD_call, only if (ldo.c:377): luaV_execute", its
+	// condition said there once, in both languages (control review,
+	// 2026-10-04: Lua 5.1.5's script was never seen to execute).
+	back := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "resize", Via: "called", Resumes: "cron",
+		Guard: &programindex.Guard{Kind: programindex.GuardBranch, Location: &programindex.Location{Path: "redis.c", Line: 377, Column: 3}}}, section, map[string]bool{})
+	if back.Back == nil || back.Back.Name != "serverCron" || back.BackIf == nil || back.Guard != nil || back.ViaKey != "" {
+		t.Fatalf("the step back in its caller: %+v", back)
+	}
+	for language, words := range map[DisplayLanguage][2]string{English: {"then, back in", "only if"}, Russian: {"затем, снова в", "только если"}} {
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{back}}}); err != nil {
+			t.Fatal(err)
+		}
+		html := out.String()
+		at, name := strings.Index(html, `<span class="flow-via flow-back">`+words[0]+` <code class="flow-chain-name"`), strings.Index(html, `<span class="flow-what"><code>tryResizeHashTables</code>`)
+		if at < 0 || name < at || !strings.Contains(html[at:name], ">serverCron</code>, "+words[1]+" (") || !strings.Contains(html[at:name], "redis.c:377") ||
+			!strings.Contains(html[at:name], "):</span>") || strings.Contains(html, "flow-guard") {
+			t.Fatalf("%v: the step back in its caller does not read before its name: %s", language, html)
+		}
+	}
 }
 
 // A Main flow says what its steps are (external review, 2026-10-02: it had

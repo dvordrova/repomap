@@ -442,6 +442,12 @@ type pageFlowStep struct {
 	// reads as saved.
 	ViaKey string
 	ViaArg string
+	// Back is, for a step read after the route through an earlier call of
+	// the step that calls it ended, that step (orientation FlowStep.Resumes),
+	// and BackIf the condition its call is written under: "then, back in
+	// luaD_call, only if (ldo.c:377): luaV_execute".
+	Back   *pageStepName
+	BackIf *pageAnchor
 	Fork   *pageFlowFork
 	// Passed, on a step where the walk decided a split, are the candidates
 	// the path did not follow, read folded under "also calls:"; Handed,

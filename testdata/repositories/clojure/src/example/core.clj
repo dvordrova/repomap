@@ -208,3 +208,19 @@
 (defn open-greeting [name key]
   (service/command-for key)
   (greet-command name key))
+
+;; A step that prepares, then executes only on preparing's result, as Lua's
+;; luaD_call runs luaV_execute only if luaD_precall says so: walked through
+;; watch-prepare, the route goes on into what preparing collects, then back
+;; in watch-run to watch-execute, under its condition.
+(defn watch-collect [key] (service/command-for key))
+
+(defn watch-prepare [key]
+  (watch-collect key)
+  0)
+
+(defn watch-execute [name] (loud-greeting name))
+
+(defn watch-run [name key]
+  (when (= (watch-prepare key) 0)
+    (watch-execute name)))

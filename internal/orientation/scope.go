@@ -60,6 +60,29 @@ type flowEdge struct {
 	// in.
 	guard *programindex.Guard
 	loop  *programindex.Location
+	// started: the call starts its callee beside the caller (a goroutine,
+	// an async task), which goes on at once.
+	started bool
+	// written is where the declaration's own code writes the call or the
+	// hand-over: its earliest site that runs under no guard, else its
+	// earliest site; a registration fact or a deferred call has none. On a
+	// candidate (candidates) it is where the step's own code writes the
+	// call its work reaches the candidate by, through helpers and its own
+	// private members alike, and in the member of the step writing it.
+	written *programindex.Location
+	in      string
+}
+
+// earlierSite is the earlier of two places one declaration's code writes,
+// none known when either is none.
+func earlierSite(first, second *programindex.Location) *programindex.Location {
+	if first == nil || second == nil {
+		return nil
+	}
+	if second.Path < first.Path || second.Path == first.Path && (second.Line < first.Line || second.Line == first.Line && second.Column < first.Column) {
+		return second
+	}
+	return first
 }
 
 // strongerGuard is the stronger of two guards a chain of calls runs under,
@@ -121,6 +144,24 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 	calledBy := map[string]string{}
 	calledAt := map[string][]opened{}
 	alternatives := map[string]int{}
+	// A deferred call runs when its function returns, not where its code
+	// writes it: it has no written place among the step's calls.
+	deferred := map[string]bool{}
+	started := map[string]bool{}
+	for _, subject := range index.Subjects {
+		if subject.Pattern != nil && subject.Pattern.Invocation == programindex.InvocationDeferred {
+			deferred[subject.Pattern.RelationID] = true
+		}
+		if subject.Pattern != nil && (subject.Pattern.Invocation == programindex.InvocationGoroutine || subject.Pattern.Invocation == programindex.InvocationAsyncTask) {
+			started[subject.Pattern.RelationID] = true
+		}
+	}
+	writtenAt := func(edge groupindex.StructuralEdge) *programindex.Location {
+		if deferred[edge.RelationID] {
+			return nil
+		}
+		return edge.Location
+	}
 	for _, edge := range index.StructuralEdges {
 		if edge.Role != groupindex.EdgeRelationTarget || edge.RelationID == "" {
 			continue
@@ -151,6 +192,16 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 				// A traced call of a callee the declaration also reaches as
 				// an interface's implementation is how it is reached.
 				guard, loop := programindex.WeakestGuard([]*programindex.Guard{known.guard, edge.guard}), known.loop
+				// The earliest site running under no guard is where the call
+				// always runs (written twice, guarded first: if x {C()} … C()).
+				written := earlierSite(known.written, edge.written)
+				if (known.guard == nil) != (edge.guard == nil) {
+					written = known.written
+					if known.guard != nil {
+						written = edge.written
+					}
+				}
+				started := known.started && edge.started
 				if loop == nil {
 					loop = edge.loop
 				}
@@ -158,8 +209,9 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 					known = edge
 				}
 				// Each site of the call counts: the weakest guard, a loop
-				// if any site runs in one.
-				known.guard, known.loop = guard, loop
+				// if any site runs in one, the site it always runs at; it
+				// starts its callee only if every site does.
+				known.guard, known.loop, known.written, known.started = guard, loop, written, started
 				graph.out[from][position] = known
 			}
 			return
@@ -189,7 +241,8 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 			if edge.Resolution == programindex.ResolutionAlternatives {
 				reach = flowEdge{to: edge.ToSubjectID, via: fmt.Sprintf("one of %d", alternatives[edge.RelationID]), site: edge.FromSubjectID, at: siteOf(edge.Location)}
 			}
-			reach.basis, reach.guard, reach.loop = edge.Basis, edge.Guard, edge.Loop
+			reach.basis, reach.guard, reach.loop, reach.written = edge.Basis, edge.Guard, edge.Loop, writtenAt(edge)
+			reach.started = started[edge.RelationID]
 			add(edge.FromSubjectID, reach)
 		case programindex.RelationPassesCallback:
 			via := "handed over"
@@ -208,7 +261,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 					via = "handed to " + nearest.name
 				}
 			}
-			add(edge.FromSubjectID, flowEdge{to: edge.ToSubjectID, via: via, guard: edge.Guard, loop: edge.Loop})
+			add(edge.FromSubjectID, flowEdge{to: edge.ToSubjectID, via: via, guard: edge.Guard, loop: edge.Loop, written: writtenAt(edge)})
 		}
 	}
 	// A call through a function value the index leaves open reaches, as one
@@ -225,7 +278,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 		}
 		for _, end := range call.Possible {
 			add(call.FromSubjectID, flowEdge{to: end, via: fmt.Sprintf("one of %d", len(call.Possible)), site: call.FromSubjectID, at: siteOf(call.Location),
-				guard: call.Guard, loop: call.Loop})
+				guard: call.Guard, loop: call.Loop, written: call.Location})
 		}
 	}
 	graph.core = graph.closuresEnteringCore()
@@ -317,8 +370,18 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 		seen := map[string]bool{start: true}
 		queue := []string{start}
 		// passed are, by a helper the step's work passes through, that
-		// helper; the step's own members pass none.
+		// helper; the step's own members pass none. entry is, by what the
+		// step's work goes through (a helper, a private member of its own),
+		// where start's own code writes the call reaching it and whether
+		// that call, or one on the way, starts what it calls beside the step.
 		passed := map[string]flowEdge{}
+		entry := map[string]flowEdge{}
+		written := func(from string, edge flowEdge) flowEdge {
+			if from == start {
+				return flowEdge{written: edge.written, started: edge.started}
+			}
+			return entry[from]
+		}
 		for next := 0; next < len(queue); next++ {
 			from := queue[next]
 			for _, edge := range graph.out[from] {
@@ -330,10 +393,17 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 				if target == unit {
 					if !seen[edge.to] {
 						seen[edge.to] = true
+						site := written(from, edge)
+						site.started = site.started || edge.started
+						entry[edge.to] = site
 						queue = append(queue, edge.to)
 					}
 					continue
 				}
+				// A call the step's work starts beside it, or reaches through
+				// one it starts, is started.
+				site := written(from, edge)
+				edge.written, edge.in, edge.started = site.written, start, site.started || edge.started
 				edge.through, edge.said = passed[from].through, passed[from].said
 				// A call through a helper runs only when the helper's call
 				// does too.
@@ -351,14 +421,14 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 						switch {
 						case !seen[edge.to]:
 							seen[edge.to] = true
-							passed[edge.to] = route
+							passed[edge.to], entry[edge.to] = route, flowEdge{written: edge.written, started: edge.started}
 							queue = append(queue, edge.to)
 						case reached && programindex.GuardStrength(route.guard) < programindex.GuardStrength(known.guard):
 							// A weaker route to a helper reached before goes on
 							// too, whichever came first (control review,
 							// 2026-10-03: a normal route through a helper a
 							// failing route had reached first had been lost).
-							passed[edge.to] = route
+							passed[edge.to], entry[edge.to] = route, flowEdge{written: edge.written, started: edge.started}
 							queue = append(queue, edge.to)
 						}
 					}

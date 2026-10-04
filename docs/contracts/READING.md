@@ -2196,7 +2196,8 @@ stays beside the step among its passed calls with its guard, the step's
 own guard and loop saved too (`FlowStep.Guard`, `Loop`); the option text of
 the split is unchanged (control review, 2026-10-03: Lua's forprep had gone
 on to the collector through luaG_runerror, which never returns, and the
-title had named sweeplist). The last step of every path says why the path
+title had named sweeplist). The last step of every path, and a step after
+which the path is back in a step before it, says why its route
 ends (`FlowStep.Stop`): it parts into ways (`torn`), its split is left
 undecided (`unanswered`), its work reaches no further unit (`leaf`), only
 failing paths (`failure_only`), only units already on the path
@@ -2227,26 +2228,55 @@ The parts' own titles are its only words, none written for it
 (`TestAMainFlowNamesThePartsItPassesThrough`; Lua 5.5 "Standalone
 interpreter → Core API and state → Virtual machine"). It is the flow's only
 title; a one-part flow has the part's box over its steps and no line
-(`TestAMainFlowIsTitledByItsPartsAlone`). Where the model
-prefers another call to the VM (5.1.5's luaD_call: luaD_precall 0.70-0.75
-over luaV_execute, 0.79-0.82 with luaV_execute's condition written out,
-0.61-0.73 with the ask saying the path never comes back), the VM stays
-among the step's passed calls with its guard: a model choice, not a lost
-candidate, and the honest end of that route. The question carries no
-written order of the step's calls (its candidates come in name order, each
-"called"); with the step's calls in written order and their guard words as
-an item field, luaV_execute won 0.78-0.83, but the same field put
+(`TestAMainFlowIsTitledByItsPartsAlone`). Where a route ends, the path goes back to
+the step before it that chose among several calls and reads the calls it
+writes after the chosen one, as a reader does luaD_call: "first
+luaD_precall, then, only if its result says so, luaV_execute"
+(`groupindex.WalkPathsThen`, `FlowStep.Resumes`, orientation version 5). A
+route ends where its work reaches no further unit, and where a split is
+torn or left unanswered: whichever way runs, it returns, so the path goes
+on after the ways. The innermost such step is read first. Its later calls
+are the calls (or a dispatch site's alternatives) its own code writes on a
+later line of the member writing the chosen one: a call in the chosen
+one's arguments runs before it. Each keeps its own guard; one goes on with
+no question, several are one ordinary split of that step, and a torn or
+unanswered answer there ends the path, the later calls staying passed: no
+new fork. Only a chosen call the step always makes and waits for hands
+control back: a guarded one may stand in an arm the later calls are
+alternatives of, or return (an unrestricted way back read litestream
+main's `case "replicate": return (&ReplicateCommand{}).Run()` and every
+other subcommand as "then"); one started beside the step (a goroutine, an
+async task) runs alongside its later calls, and a hand-over runs where it
+is handed. A callee written twice hands back from its earliest site
+running under no guard. JS/TS and Clojure record no guards (ProgramIndex),
+so a call there is not known to run unguarded: no step hands control back,
+a missing equivalent. The order is structure only: nothing in any question
+changes. The page reads such a step "then, back in luaD_call, only if
+(ldo.c:377): luaV_execute", its condition said there once
+(`TestAWalkGoesBackToAStepsLaterCallsWhereARouteEnds`, each language's
+fixture flow test through `assertPreparedThenExecuted`, C's watch.c in
+`TestCFixtureAPreparedExecutionIsReadBackInTheStepThatRunsIt`). On ten
+saved runs, answers replayed: Lua 5.1.5 reaches luaV_execute after
+luaD_precall's two ways with no new question; redis, etcd and casdoor
+gain two, two and one steps, each one question; litestream one step and
+one question at RegisterDB; freqtrade, othello, headscale, beets and Lua
+5.5 are unchanged (control review, 2026-10-04). Before it, the model
+preferring another call to the VM (5.1.5's luaD_call: luaD_precall
+0.70-0.75 over luaV_execute, 0.79-0.82 with luaV_execute's condition
+written out, 0.61-0.73 with the ask saying the path never comes back) had
+left the VM only among the step's passed calls. Written order as request
+evidence was refused: with the step's calls in written order and their
+guard words as an item field, luaV_execute won 0.78-0.83, but
 litestream's RegisterDB (0.40 over 0.33) and freqtrade's
-check_and_call_adjust_trade_position (0.40 over 0.32) within the margin in
-held-out draws, new forks, so it was refused (control review and skeptic,
+check_and_call_adjust_trade_position (0.40 over 0.32) fell within the
+margin in held-out draws, new forks (control review and skeptic,
 2026-10-03; the patch and draws are in the CHANGELOG entry). Nor does the
-page add a cue: the VM shares luaD_call's part, so a part beside a passed
-call would mark luaC_step, not luaV_execute (191 of 302 passed calls across
-nine flows would gain one, none saying where work runs), and a model line
-per split candidate would undo captions being off, the owner's call of
-2026-09-17. The passed call stays one step from the reader: its condition
-with its place, its name a link into its declaration, its part on hover
-(`TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls`). No unit whose closure enters no
+page add a cue beside a passed call: the VM shares luaD_call's part, so a
+part beside a passed call would mark luaC_step, not luaV_execute, and a
+model line per split candidate would undo captions being off, the owner's
+call of 2026-09-17. A passed call stays one step from the reader: its
+condition with its place, its name a link into its declaration, its part
+on hover (`TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls`). No unit whose closure enters no
 part the program exists for (`Group.Core`) is a candidate, when it has one. None ends the path, the step being its
 result; one is followed with no request; of several, the categorizer answers
 one closed question (stage `orientation_flow`, `table.ClassifierCall`): the

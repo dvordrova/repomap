@@ -66,3 +66,122 @@ func TestAnInputsSpineFollowsOneCallAtATime(t *testing.T) {
 		t.Fatalf("branches %q, want %q", branches, want)
 	}
 }
+
+// WalkPathsThen reads a step's later calls where the route through its
+// chosen call ends, innermost step first, as a human reads luaD_call:
+// "first luaD_precall, then, only if its result says so, luaV_execute".
+// The test's later says which calls are later and when a chosen call
+// hands control back (a guarded one does not: it may sit in an arm the
+// later calls are alternatives of, or return).
+func TestAWalkGoesBackToAStepsLaterCallsWhereARouteEnds(t *testing.T) {
+	type graph struct {
+		calls   map[string][]string
+		picks   map[string][]string
+		guarded map[string]bool
+		// again is a step's answer when it is asked a second time, among
+		// its later calls.
+		again map[string][]string
+	}
+	walk := func(g graph) SpinePath {
+		asked := map[string]int{}
+		next := func(step SpineStep) []SpineStep {
+			var steps []SpineStep
+			for _, id := range g.calls[step.SubjectID] {
+				steps = append(steps, SpineStep{SubjectID: id})
+			}
+			return steps
+		}
+		pick := func(step SpineStep, candidates []SpineStep) []int {
+			var chosen []int
+			answer := g.picks[step.SubjectID]
+			if asked[step.SubjectID]++; asked[step.SubjectID] > 1 {
+				answer = g.again[step.SubjectID]
+			}
+			for _, want := range answer {
+				for at, candidate := range candidates {
+					if candidate.SubjectID == want {
+						chosen = append(chosen, at)
+					}
+				}
+			}
+			return chosen
+		}
+		later := func(step, chosen SpineStep, candidates []SpineStep) []SpineStep {
+			if g.guarded[chosen.SubjectID] {
+				return nil
+			}
+			for at, candidate := range candidates {
+				if candidate.SubjectID == chosen.SubjectID {
+					return candidates[at+1:]
+				}
+			}
+			return nil
+		}
+		return WalkPathsThen(SpineStep{SubjectID: "main"}, next, pick, later)
+	}
+	read := func(path SpinePath) []string {
+		var said []string
+		for path := &path; path != nil; path = path.Then {
+			for _, step := range path.Steps {
+				line := step.SubjectID
+				if step.Resumes != "" {
+					line = step.Resumes + " then " + line
+				}
+				said = append(said, line)
+			}
+			for _, way := range path.Paths {
+				said = append(said, "way "+way.Steps[0].SubjectID)
+			}
+			for _, candidate := range path.Rest {
+				said = append(said, "fork "+candidate.SubjectID)
+			}
+		}
+		return said
+	}
+	passed := func(path SpinePath, at int) []string {
+		var ids []string
+		for _, step := range path.Passed[at] {
+			ids = append(ids, step.SubjectID)
+		}
+		return ids
+	}
+	for name, test := range map[string]struct {
+		graph  graph
+		want   []string
+		passed []string
+	}{
+		// call: first precall, then execute; precall's route ends.
+		"back after the route ends": {graph{calls: map[string][]string{"main": {"precall", "execute"}}, picks: map[string][]string{"main": {"precall"}}},
+			[]string{"main", "precall", "main then execute"}, nil},
+		// A guarded chosen call hands nothing back: execute stays passed.
+		"no way back from a guarded call": {graph{calls: map[string][]string{"main": {"precall", "execute"}}, picks: map[string][]string{"main": {"precall"}}, guarded: map[string]bool{"precall": true}},
+			[]string{"main", "precall"}, []string{"execute"}},
+		// Whichever of precall's torn ways runs, it returns to main.
+		"back after a torn split's ways": {graph{calls: map[string][]string{"main": {"precall", "execute"}, "precall": {"gc", "read"}}, picks: map[string][]string{"main": {"precall"}, "precall": {"gc", "read"}}},
+			[]string{"main", "precall", "way gc", "way read", "main then execute"}, nil},
+		// An unanswered split goes back as a torn one does.
+		"back after an unanswered split": {graph{calls: map[string][]string{"main": {"precall", "execute"}, "precall": {"gc", "read"}}, picks: map[string][]string{"main": {"precall"}}},
+			[]string{"main", "precall", "fork gc", "fork read", "main then execute"}, nil},
+		// Several later calls are a split; torn between them, the path
+		// ends and they stay main's passed calls.
+		"a torn choice among later calls ends the path": {graph{calls: map[string][]string{"main": {"precall", "execute", "close"}}, picks: map[string][]string{"main": {"precall"}}, again: map[string][]string{"main": {"execute", "close"}}},
+			[]string{"main", "precall"}, []string{"execute", "close"}},
+		// One of several later calls chosen goes on; the rest stay passed.
+		"a decided choice among later calls": {graph{calls: map[string][]string{"main": {"precall", "execute", "close"}}, picks: map[string][]string{"main": {"precall"}}, again: map[string][]string{"main": {"close"}}},
+			[]string{"main", "precall", "main then close"}, []string{"execute"}},
+		// A later call already on the path is not read again.
+		"a later call already walked": {graph{calls: map[string][]string{"main": {"precall", "execute"}, "precall": {"execute"}}, picks: map[string][]string{"main": {"precall"}}},
+			[]string{"main", "precall", "execute"}, []string{"execute"}},
+		// The innermost step is read first, then its caller.
+		"innermost first": {graph{calls: map[string][]string{"main": {"call", "close"}, "call": {"precall", "execute"}}, picks: map[string][]string{"main": {"call"}, "call": {"precall"}}},
+			[]string{"main", "call", "precall", "call then execute", "main then close"}, nil},
+	} {
+		path := walk(test.graph)
+		if got := read(path); !reflect.DeepEqual(got, test.want) {
+			t.Errorf("%s: path = %q, want %q", name, got, test.want)
+		}
+		if got := passed(path, 0); !reflect.DeepEqual(got, test.passed) {
+			t.Errorf("%s: main's passed calls = %q, want %q", name, got, test.passed)
+		}
+	}
+}

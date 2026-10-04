@@ -141,7 +141,47 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 		walk.rejected = append(walk.rejected, rejected...)
 		return followed
 	}
-	path := groupindex.WalkPaths(groupindex.SpineStep{SubjectID: graph.unit(start), Members: []string{start}, Edge: -1}, next, pick)
+	// A step's later calls are the calls its code writes after the chosen
+	// one, in written order, each under its own guard: the path goes back to
+	// them where the chosen one's route ends ("luaD_call: first
+	// luaD_precall, then, only if its result says so, luaV_execute"). Only
+	// a call the step always makes and waits for hands control back: a
+	// guarded one may sit in an arm the later calls are alternatives of, or
+	// return (litestream's main: case "replicate": return ….Run()); one
+	// started beside the step (a goroutine, an async task) runs with them;
+	// a hand-over runs where it is handed. A registration fact or a
+	// deferred call has no written place. A later call is on a later line
+	// of the same member of the step: a call in the chosen one's arguments
+	// runs before it.
+	called := func(reach flowEdge) bool {
+		return reach.written != nil && !reach.started && (strings.HasPrefix(reach.via, "called") || strings.HasPrefix(reach.via, "one of "))
+	}
+	later := func(step, chosen groupindex.SpineStep, candidates []groupindex.SpineStep) []groupindex.SpineStep {
+		first := walk.met[chosen.Edge]
+		if first.guard != nil || !called(first.reach) {
+			return nil
+		}
+		after := first.reach.written
+		var result []groupindex.SpineStep
+		for _, candidate := range candidates {
+			reach := walk.met[candidate.Edge].reach
+			if candidate.SubjectID == chosen.SubjectID || reach.written == nil || reach.in != first.reach.in || !strings.HasPrefix(reach.via, "called") && !strings.HasPrefix(reach.via, "one of ") {
+				continue
+			}
+			if at := reach.written; at.Path == after.Path && at.Line > after.Line {
+				result = append(result, candidate)
+			}
+		}
+		sort.SliceStable(result, func(i, j int) bool {
+			a, b := walk.met[result[i].Edge].reach.written, walk.met[result[j].Edge].reach.written
+			return earlierSite(a, b) == a && *a != *b
+		})
+		return result
+	}
+	if !guardsRecorded[graph.index.Target.Language] {
+		later = nil
+	}
+	path := groupindex.WalkPathsThen(groupindex.SpineStep{SubjectID: graph.unit(start), Members: []string{start}, Edge: -1}, next, pick, later)
 	if failure != nil {
 		return flowWalk{}, failure
 	}
@@ -149,6 +189,13 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 	readRegistrations(walk.flow.Steps, nil, graph, input.Facts.OfKind(facts.KindRegistration))
 	return walk, nil
 }
+
+// guardsRecorded are the languages whose adapters record what a call runs
+// under (ProgramIndex guard: C, Go and Python). Elsewhere a call with no
+// guard is not known to run unguarded, nor a later call to run always: no
+// step hands control back to its later calls there, a missing equivalent
+// (JS/TS and Clojure record no guards yet).
+var guardsRecorded = map[string]bool{"c": true, "go": true, "python": true}
 
 // flowSteps are a walked path's steps: each its declaration, its own line
 // and how the step before reaches it, and, where the categorizer decided a
@@ -166,7 +213,7 @@ func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, grap
 		return said(walk.met[candidate.Edge], stepSubject(candidate))
 	}
 	for position, step := range path.Steps {
-		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
+		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step)), Resumes: step.Resumes}
 		if step.Edge >= 0 {
 			met := walk.met[step.Edge]
 			reach := met.reach
@@ -191,6 +238,9 @@ func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, grap
 			if len(rows) > 0 {
 				previous := rows[len(rows)-1]
 				row.Via, row.Site, row.Through, row.Basis = previous.Via, previous.Site, previous.Through, previous.Basis
+				if row.Resumes == "" {
+					row.Resumes = previous.Resumes
+				}
 				rows = rows[:len(rows)-1]
 				if len(rows) > 0 {
 					rows[len(rows)-1].Passed = append(rows[len(rows)-1].Passed, previous.Passed...)
@@ -223,6 +273,9 @@ func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, grap
 			}
 		}
 		rows = append(rows, row)
+	}
+	if path.Then != nil {
+		rows = append(rows, walk.flowSteps(*path.Then, targetID, graph)...)
 	}
 	return rows
 }

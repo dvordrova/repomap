@@ -319,12 +319,12 @@ func (asked *capturedOrientation) bodies(t *testing.T) [][]byte {
 // A step that prepares, then executes only on what preparing returns, as
 // Lua 5.1.5's luaD_call runs luaV_execute when luaD_precall's result says a
 // Lua function is called (util/watch.c's watchRun). The categorizer that
-// takes watchPrepare carries the route on into what preparing collects;
-// watchExecute stays beside watchRun among its passed calls, under its
-// condition, and no saved fact says that condition is watchPrepare's
-// result: the walk never comes back to its step's next call (control
+// takes watchPrepare carries the route on into what preparing collects,
+// where loopNowMs is one of two definitions and the split is left
+// unanswered; whichever runs, it returns, and the path is back in watchRun
+// at watchExecute, under its condition, then into netConnect (control
 // review, 2026-10-04: where does `lua script.lua` execute?).
-func TestCFixtureAPreparedExecutionStaysBesideTheStepThatRunsIt(t *testing.T) {
+func TestCFixtureAPreparedExecutionIsReadBackInTheStepThatRunsIt(t *testing.T) {
 	fixture := loadCFixture(t)
 	index := buildCIndex(t, fixture, "c:util/watch.c")
 	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
@@ -336,20 +336,16 @@ func TestCFixtureAPreparedExecutionStaysBesideTheStepThatRunsIt(t *testing.T) {
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root, preset)
 	chooser := &flowPreset{choose: map[string]string{"watchRun": "watchPrepare"}}
 	flow := walkFixtureFrom(t, projected, layer, graph, subjectNamed(t, projected, "watchRun", "util/watch.c"), chooser)
-	if got := flowPath([]groupindex.Index{projected}, flow); len(got) < 3 || got[1] != "watchPrepare (called)" || got[2] != "watchCollect (called)" {
-		t.Fatalf("watchRun's flow = %q", got)
+	if got, want := flowPath([]groupindex.Index{projected}, flow), []string{"watchRun ()", "watchPrepare (called)", "watchCollect (called)",
+		"? loopNowMs (one of 2 from watchCollect)", "? loopNowMs (one of 2 from watchCollect)", "watchExecute (called)", "netConnect (called)"}; !slices.Equal(got, want) {
+		t.Fatalf("watchRun's flow = %q\nwant %q", got, want)
 	}
-	if len(chooser.asked) == 0 || !slices.Equal(chooser.asked[0].options, []string{"watchExecute", "watchPrepare"}) {
+	if len(chooser.asked) < 1 || !slices.Equal(chooser.asked[0].options, []string{"watchExecute", "watchPrepare"}) {
 		t.Fatalf("splits asked: %+v", chooser.asked)
 	}
-	names := map[string]string{}
-	for _, subject := range projected.Subjects {
-		if subject.Object != nil {
-			names[subject.ID] = subject.Object.Name
-		}
-	}
-	passed := flow.Steps[0].Passed
-	if len(passed) != 1 || names[passed[0].SubjectID] != "watchExecute" || passed[0].Guard == nil || passed[0].Guard.Kind != programindex.GuardBranch {
-		t.Fatalf("watchRun passed %+v, want watchExecute under a condition", passed)
+	back := flow.Steps[3]
+	if back.Resumes != flow.Steps[0].SubjectID || back.Guard == nil || back.Guard.Kind != programindex.GuardBranch || back.Guard.Location == nil || back.Guard.Location.Line != 50 ||
+		len(flow.Steps[0].Passed) != 0 || flow.Steps[2].Stop != orientation.StopUnanswered {
+		t.Fatalf("watchExecute read back in %q under %+v after %q; watchRun passing %+v", back.Resumes, back.Guard, flow.Steps[2].Stop, flow.Steps[0].Passed)
 	}
 }

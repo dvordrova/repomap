@@ -206,6 +206,41 @@ func assertWaysJoin(t *testing.T, index groupindex.Index, layer facts.Result, gr
 	}
 }
 
+// assertPreparedThenExecuted walks a fixture's run that prepares, then
+// executes only on preparing's result, as Lua's luaD_call runs luaV_execute
+// only if luaD_precall says so: through prepare, the route goes on into
+// collect and what it calls; where it ends, the path is back in run, at
+// execute, still under its condition, and on into what execute calls.
+// Nothing is asked of the way back: execute is run's one later call. A
+// language whose adapter records no guards (guards false: JS/TS, Clojure)
+// cannot say execute runs under a condition: the path ends where the route
+// does, execute among run's passed calls, a missing equivalent.
+func assertPreparedThenExecuted(t *testing.T, index groupindex.Index, layer facts.Result, graph atlas.Graph, run, path, prepare, collect, collected, execute, executed string, guards bool) {
+	t.Helper()
+	preset := &flowPreset{choose: map[string]string{run: prepare}}
+	flow := walkFixtureFrom(t, index, layer, graph, subjectNamed(t, index, run, path), preset)
+	want := []string{run + " ()", prepare + " (called)", collect + " (called)", collected + " (called)"}
+	if guards {
+		want = append(want, execute+" (called)", executed+" (called)")
+	}
+	if got := flowPath([]groupindex.Index{index}, flow); !slices.Equal(got, want) {
+		t.Fatalf("%s's flow = %q\nwant %q", run, got, want)
+	}
+	if len(preset.asked) != 1 || preset.asked[0].step != run {
+		t.Fatalf("splits asked: %+v, want one at %s", preset.asked, run)
+	}
+	if !guards {
+		if passed := flow.Steps[0].Passed; len(passed) != 1 || passed[0].SubjectID != subjectNamed(t, index, execute, path) {
+			t.Fatalf("%s passing %+v, want %s", run, passed, execute)
+		}
+		return
+	}
+	back := flow.Steps[4]
+	if back.Resumes != flow.Steps[0].SubjectID || back.Guard == nil || back.Guard.Kind != programindex.GuardBranch || len(flow.Steps[0].Passed) != 0 {
+		t.Fatalf("%s read back in %q under %+v, %s passing %+v; want back in %s under its condition", execute, back.Resumes, back.Guard, run, flow.Steps[0].Passed, run)
+	}
+}
+
 // assertNoRepeats says a walked flow names no declaration twice.
 func assertNoRepeats(t *testing.T, flow orientation.MainFlow) {
 	t.Helper()
@@ -342,6 +377,7 @@ func TestPythonFixtureMainFlowsWalkByCode(t *testing.T) {
 	assertNoTestCode(t, throttle, "lambda", "throttle_a_lambda")
 	assertWaysJoin(t, index, layer, graph, "start_session", "src/fixture_app/stored_callbacks.py", "run_session", "accept_client", "flush_replies")
 	assertPassedHanded(t, index, layer, graph, "start_once", "src/fixture_app/stored_callbacks.py", "run_once", "accept_client")
+	assertPreparedThenExecuted(t, index, layer, graph, "watch_run", "src/fixture_app/stored_callbacks.py", "watch_prepare", "watch_collect", "accept_client", "watch_execute", "flush_replies", true)
 }
 
 // goFlowFixture is one command of the cumulative Go fixture as an ordinary
@@ -386,7 +422,11 @@ func TestGoFixtureMainFlowsWalkByCode(t *testing.T) {
 		"RunCommitWorker (handed to go)", "commitPendingBatches (called)"}; !slices.Equal(got, want) {
 		t.Fatalf("the worker's flow = %q\nwant %q", got, want)
 	}
-	if len(preset.asked) != 2 || !slices.Equal(preset.asked[1].options, []string{"RetryCommit", "ScheduleCommit", "StartCommitWorker", "StartCompactor", "StartSweeper", "WarmCache"}) {
+	// Where RunCommitWorker's route ends, the path is back in
+	// StartBackground among the calls it writes after StartCommitWorker:
+	// one question, left unanswered here, so the path ends.
+	if len(preset.asked) != 3 || !slices.Equal(preset.asked[1].options, []string{"RetryCommit", "ScheduleCommit", "StartCommitWorker", "StartCompactor", "StartSweeper", "WarmCache"}) ||
+		preset.asked[2].step != "StartBackground" || !slices.Equal(preset.asked[2].options, []string{"RetryCommit", "ScheduleCommit", "StartCompactor", "StartSweeper", "WarmCache"}) {
 		t.Fatalf("splits asked: %+v", preset.asked)
 	}
 	assertNoRepeats(t, flow)
@@ -402,6 +442,7 @@ func TestGoFixtureMainFlowsWalkByCode(t *testing.T) {
 	}
 	assertWaysJoin(t, app, layer, graph, "StartSession", "internal/storefixture/command_table.go", "runSession", "acceptJob", "flushJob")
 	assertPassedHanded(t, app, layer, graph, "StartOnce", "internal/storefixture/command_table.go", "runOnce", "acceptJob")
+	assertPreparedThenExecuted(t, app, layer, graph, "WatchRun", "internal/storefixture/command_table.go", "watchPrepare", "watchCollect", "acceptJob", "watchExecute", "flushJob", true)
 }
 
 // jstsFlowFixture is the cumulative JS/TS fixture as an ordinary run reads
@@ -448,6 +489,7 @@ func TestJSTSFixtureMainFlowsWalkByCode(t *testing.T) {
 	assertNoTestCode(t, preset, "exerciseMarket", "throttleAnArrow")
 	assertWaysJoin(t, index, layer, graph, "startSession", "src/stored-callbacks.ts", "runSession", "acceptClient", "flushReplies")
 	assertPassedHanded(t, index, layer, graph, "startOnce", "src/stored-callbacks.ts", "runOnce", "acceptClient")
+	assertPreparedThenExecuted(t, index, layer, graph, "watchRun", "src/stored-callbacks.ts", "watchPrepare", "watchCollect", "acceptClient", "watchExecute", "flushReplies", false)
 }
 
 // clojureFlowFixture is the cumulative Clojure fixture as an ordinary run
@@ -491,4 +533,5 @@ func TestClojureFixtureMainFlowWalksByCode(t *testing.T) {
 	}
 	assertNoRepeats(t, flow)
 	assertWaysJoin(t, index, layer, graph, "example.core/open-greeting", "src/example/core.clj", "example.core/greet-command", "example.service/command-for", "example.core/loud-greeting")
+	assertPreparedThenExecuted(t, index, layer, graph, "example.core/watch-run", "src/example/core.clj", "example.core/watch-prepare", "example.core/watch-collect", "example.service/command-for", "example.core/watch-execute", "example.core/loud-greeting", false)
 }

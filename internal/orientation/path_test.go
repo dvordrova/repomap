@@ -879,3 +879,79 @@ func TestAnOlderOrientationIsRefusedByItsVersion(t *testing.T) {
 		}
 	}
 }
+
+// A step parts at a path's end, or where the path is next back in a step
+// before it: whichever way runs returns there (Lua 5.1.5's luaD_precall
+// parts, then the path is back in luaD_call at luaV_execute).
+func TestAFlowPartsMidPathOnlyWhereThePathIsBackInAStepBeforeIt(t *testing.T) {
+	way := []FlowPath{{Steps: []FlowStep{{TargetID: "t1", SubjectID: "gc", Via: "called"}}}, {Steps: []FlowStep{{TargetID: "t1", SubjectID: "read", Via: "called"}}}}
+	steps := func(resumes string) []FlowStep {
+		return []FlowStep{{TargetID: "t1", SubjectID: "call"}, {TargetID: "t1", SubjectID: "precall", Via: "called", Stop: StopTorn, Paths: way},
+			{TargetID: "t1", SubjectID: "execute", Via: "called", Resumes: resumes}}
+	}
+	if err := validFlowSteps(steps("call")); err != nil {
+		t.Fatalf("parts, then back in call: %v", err)
+	}
+	if validFlowSteps(steps("")) == nil {
+		t.Fatal("a step parting before a step that is not back in a step before it was accepted")
+	}
+	if validFlowSteps([]FlowStep{{TargetID: "t1", SubjectID: "call", Resumes: "main"}}) == nil {
+		t.Fatal("a flow's first step back in a step before it was accepted")
+	}
+}
+
+// Where a route ends the path is back in the step before it at the calls
+// it writes after the chosen one, each under its own guard (luaD_call:
+// first luaD_precall, then, only if its result says so, luaV_execute). A
+// callee written twice, guarded first, hands back from its unguarded site,
+// so a call between the two sites is no later call; a language whose
+// adapter records no guards hands nothing back (skeptic, 2026-10-04).
+func TestAStepIsReadBackInItsCallerAfterTheChosenCallsRoute(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "ldo.c", Line: line, Column: 3}
+	}
+	subject := func(id string) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: at(1)}}
+	}
+	calls := func(from, to string, line int, guarded *programindex.Guard) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls,
+			Resolution: programindex.ResolutionExact, Location: at(line), Guard: guarded}
+	}
+	branch := &programindex.Guard{Kind: programindex.GuardBranch, Location: at(10)}
+	walkOf := func(language string, edges ...groupindex.StructuralEdge) MainFlow {
+		t.Helper()
+		index := groupindex.Index{
+			Target:          programindex.Target{ID: "t1", Name: "lua", Language: language, Seeds: []programindex.TargetSeed{{ObjectID: "call", Kind: programindex.SeedCallable}}},
+			Subjects:        []groupindex.Subject{subject("call"), subject("precall"), subject("execute"), subject("collect")},
+			Groups:          []groupindex.Group{{ID: "g1", Title: "Virtual machine", Core: true, MemberSubjectIDs: []string{"call", "precall", "execute", "collect"}}},
+			StructuralEdges: edges,
+		}
+		categorizer := &typesafetest.Categorizer{Decide: func(_ string, question llm.Question) (llm.Verdict, bool) {
+			if step, _ := question.Item["step"].(string); step == "call" && slices.ContainsFunc(question.Options, func(option llm.Option) bool { return option.Name == "precall" }) {
+				return typesafetest.Choose("precall"), true
+			}
+			return llm.Verdict{}, false
+		}}
+		walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, Input{Groups: []groupindex.Index{index}}, "t1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validFlowSteps(walk.flow.Steps); err != nil {
+			t.Fatal(err)
+		}
+		return walk.flow
+	}
+	flow := walkOf("c", calls("call", "precall", 10, nil), calls("call", "execute", 11, branch), calls("precall", "collect", 30, nil))
+	if got := flowNames(flow); !slices.Equal(got, []string{"call ()", "precall (called)", "collect (called)", "execute (called)"}) ||
+		flow.Steps[3].Resumes != "call" || flow.Steps[3].Guard == nil || flow.Steps[3].Guard.Location.Line != 10 || len(flow.Steps[0].Passed) != 0 {
+		t.Fatalf("the flow is %q, %+v", got, flow.Steps)
+	}
+	flow = walkOf("c", calls("call", "precall", 5, branch), calls("call", "execute", 8, nil), calls("call", "precall", 12, nil), calls("precall", "collect", 30, nil))
+	if got := flowNames(flow); !slices.Equal(got, []string{"call ()", "precall (called)", "collect (called)"}) || len(flow.Steps[0].Passed) != 1 {
+		t.Fatalf("a callee written twice, guarded first: the flow is %q, %+v", got, flow.Steps)
+	}
+	flow = walkOf("typescript", calls("call", "precall", 10, nil), calls("call", "execute", 11, branch), calls("precall", "collect", 30, nil))
+	if got := flowNames(flow); !slices.Equal(got, []string{"call ()", "precall (called)", "collect (called)"}) {
+		t.Fatalf("without recorded guards: the flow is %q", got)
+	}
+}

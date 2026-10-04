@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	Version          = 4
+	Version          = 5
 	ArtifactFilename = "orientation.json"
 	RejectedFilename = "rejected.jsonl"
 
@@ -65,7 +65,10 @@ type RecipeStep struct {
 // (version 2): the calls of the step it goes on beside (freqtrade's
 // FreqtradeBot.process passes IStrategy). Registered and RunBy (version 3)
 // say where a registered callable is registered and what runs it. Joins
-// (version 4) are every way a path goes on as, each with its reach.
+// (version 4) are every way a path goes on as, each with its reach. Resumes
+// (version 5) says a step is read back in a step before it, once the route
+// through that step's earlier call ended: an undecided split's step is then
+// no path's last, its ways each returning before the step after it.
 type FlowStep struct {
 	TargetID    string `json:"target_id"`
 	FactID      string `json:"fact_id,omitempty"`
@@ -86,10 +89,16 @@ type FlowStep struct {
 	Basis string `json:"basis,omitempty"`
 	// Guard is the construct the step before's call of it runs under, the
 	// weakest of its ways (ProgramIndex Guard), Loop the loop statement it
-	// runs in; Stop, on the last step of a path, why the path ends there.
+	// runs in; Stop, on the last step of a path, why the path ends there, or,
+	// on a step the path goes on after back in a step before it, why its own
+	// route ends (torn, unanswered).
 	Guard *programindex.Guard    `json:"guard,omitempty"`
 	Loop  *programindex.Location `json:"loop,omitempty"`
 	Stop  string                 `json:"stop,omitempty"`
+	// Resumes is, for a step read after the route through an earlier call
+	// of the step that calls it ended, that step: "then, back in
+	// luaD_call, only under a condition: luaV_execute".
+	Resumes string `json:"resumes,omitempty"`
 	// Joins are, on the last step of a path, the ways it goes on as: each
 	// chosen candidate that is where another way of the splits around it
 	// starts, reached as a branch is, never walked twice. They end a path
@@ -364,8 +373,13 @@ func validFlowSteps(steps []FlowStep) error {
 		if step.FactID != "" && !validText(step.FactID) || step.SubjectID != "" && !validText(step.SubjectID) {
 			return fmt.Errorf("orientation: flow step %d ref is invalid", position)
 		}
-		if len(step.Paths) > 0 && position != len(steps)-1 {
+		// A step parts at a path's end, or where the path is next back in
+		// a step before it (FlowStep.Resumes): whichever way runs returns.
+		if len(step.Paths) > 0 && position != len(steps)-1 && steps[position+1].Resumes == "" {
 			return fmt.Errorf("orientation: flow step %d parts before the path ends", position)
+		}
+		if step.Resumes != "" && (position == 0 || !validText(step.Resumes)) {
+			return fmt.Errorf("orientation: flow step %d is back in an invalid step", position)
 		}
 		for _, path := range step.Paths {
 			if len(path.Steps) == 0 {
