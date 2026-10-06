@@ -8,6 +8,53 @@ Every
 answer is anchored to an exact `path:line` you can open in one click, so any
 claim on the page can be checked in seconds.
 
+## Examples
+
+Explore the English reports below, hosted on GitHub Pages.
+Each link opens the repository's interactive map, with its explanations and
+source links beside it. Projects are grouped by language and what they do;
+mixed projects can appear under more than one language.
+Source links open the analyzed revision. Generated files and local changes
+without a matching source at that revision are marked **No source**.
+
+### Golang
+
+| Type | Examples |
+| --- | --- |
+| Server | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas), [etcd](https://dvordrova.github.io/repomap/etcd#canvas), [Headscale](https://dvordrova.github.io/repomap/headscale#canvas), [Moby](https://dvordrova.github.io/repomap/moby#canvas) |
+| CLI | [k6](https://dvordrova.github.io/repomap/k6#canvas), [repomap](https://dvordrova.github.io/repomap/repomap#canvas) |
+| Utility / library | [Telebot](https://dvordrova.github.io/repomap/telebot#canvas) |
+
+### JavaScript / TypeScript
+
+| Type | Examples |
+| --- | --- |
+| Utility / library | [type-fest](https://dvordrova.github.io/repomap/type-fest#canvas) — TypeScript types |
+| Game / mixed | [Python tutorial game](https://dvordrova.github.io/repomap/python-tutorial-game#canvas) — React/TypeScript frontend with a Python backend |
+| Mixed | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) — React frontend and Go server |
+
+### Python
+
+| Type | Examples |
+| --- | --- |
+| CLI | [beets](https://dvordrova.github.io/repomap/beets#canvas) |
+| Utility / library | [pykrx](https://dvordrova.github.io/repomap/pykrx#canvas) |
+| Game / mixed | [Python tutorial game](https://dvordrova.github.io/repomap/python-tutorial-game#canvas) — backend and browser frontend |
+| Mixed | [Freqtrade](https://dvordrova.github.io/repomap/freqtrade#canvas) — trading bot, CLI and API |
+
+### C
+
+| Type | Examples |
+| --- | --- |
+| Server | [Redis](https://dvordrova.github.io/repomap/redis#canvas) |
+| CLI / embedded library | [SQLite](https://dvordrova.github.io/repomap/sqlite#canvas), [Lua](https://dvordrova.github.io/repomap/lua#canvas) |
+
+### Clojure
+
+| Type | Examples |
+| --- | --- |
+| Game | [Othello](https://dvordrova.github.io/repomap/othello#canvas) — JVM and ClojureScript builds |
+
 Everything on the page is one of three labeled things:
 
 - **facts** — extracted from the code deterministically: entrypoints, HTTP
