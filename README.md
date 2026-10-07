@@ -55,6 +55,59 @@ without a matching source at that revision are marked **No source**.
 | --- | --- |
 | Game | [Othello](https://dvordrova.github.io/repomap/othello#canvas) — JVM and ClojureScript builds |
 
+### Build measurements
+
+Measured runs behind the published reports, including native analysis and HTML
+publication. Token counts are **new provider usage in that run**, shown as
+**input / output**. Local response-cache reuse makes these warm-run measurements;
+they are not estimates of a first build from an empty cache.
+
+| Report | Build time | Jev tokens (in / out) | DeepSeek tokens (in / out) | DeepSeek cached input | Estimated new API cost (USD) | Local reused responses |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| [beets](https://dvordrova.github.io/repomap/beets#canvas) | 6m 31s | 8,146,736 / 477,456 | 969,243 / 81,739 | 184,188 | $0.5095–$0.6769 | 755 |
+| [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) | 5m 19s | 5,236,341 / 271,788 | 853,483 / 51,352 | 124,032 | $0.3605–$0.5011 | 699 |
+| [etcd](https://dvordrova.github.io/repomap/etcd#canvas) | 15m 1s | 26,709,217 / 1,140,686 | 5,653,469 / 187,597 | 471,932 | $2.0130–$2.9042 | 394 |
+| [Freqtrade](https://dvordrova.github.io/repomap/freqtrade#canvas) | 5m 17s | 10,879,049 / 487,350 | 685,015 / 25,056 | 62,976 | $0.5654–$0.6740 | 0 |
+| [Headscale](https://dvordrova.github.io/repomap/headscale#canvas) | 3m 14s | 14,065,093 / 579,176 | 816,113 / 18,041 | 84,992 | $0.7115–$0.8322 | 1 |
+| [k6](https://dvordrova.github.io/repomap/k6#canvas) | 1m 9s | 40,449 / 816 † | 0 / 0 † | 0 | $0.0017 † | 931 |
+| [Lua](https://dvordrova.github.io/repomap/lua#canvas) | 1m 13s | 2,505,458 / 150,109 | 387,693 / 6,877 | 67,964 | $0.1575–$0.2098 | 304 |
+| [Moby](https://dvordrova.github.io/repomap/moby#canvas) | 22m 54s | 30,935,180 / 1,467,975 † | 3,734,451 / 311,776 † | 181,248 | $2.0199–$2.7405 † | 17 |
+| [Othello](https://dvordrova.github.io/repomap/othello#canvas) | 30s | 790,746 / 36,737 | 62,639 / 2,703 | 21,117 | $0.0411–$0.0490 | 19 |
+| [pykrx](https://dvordrova.github.io/repomap/pykrx#canvas) | 49s | 940,145 / 71,205 | 174,824 / 6,607 | 21,632 | $0.0665–$0.0935 | 0 |
+| [Python tutorial game](https://dvordrova.github.io/repomap/python-tutorial-game#canvas) | 27s | 389,689 / 19,095 | 41,775 / 2,180 | 17,024 | $0.0214–$0.0265 | 0 |
+| [Redis](https://dvordrova.github.io/repomap/redis#canvas) | 50s | 2,036,356 / 132,578 | 225,212 / 7,961 | 120,189 | $0.1064–$0.1273 | 26 |
+| [repomap](https://dvordrova.github.io/repomap/repomap#canvas) | 4m 7s | 0 / 0 | 0 / 0 | 0 | $0 | 1,134 |
+| [SQLite](https://dvordrova.github.io/repomap/sqlite#canvas) | 10m 22s | 6,459,445 / 1,241,173 | 2,378,095 / 172,970 | 79,488 | $0.7201–$1.1689 | 1,030 |
+| [Telebot](https://dvordrova.github.io/repomap/telebot#canvas) | 46s | 1,895,665 / 79,064 | 127,143 / 4,324 | 12,928 | $0.0994–$0.1191 | 0 |
+| [type-fest](https://dvordrova.github.io/repomap/type-fest#canvas) | 2m 0s | 2,706,977 / 175,987 | 224,642 / 2,975 | 12,928 | $0.1473–$0.1809 | 0 |
+
+Retries and refused answers are included when provider usage was reported.
+Local cached/shared answers add no new API charge; their original token counts
+are excluded. DeepSeek's provider-side prefix cache still incurs an API charge
+and is included at its cache-hit rate. Cached input is a subset of input tokens,
+not extra tokens to add. Reasoning tokens are already included in
+DeepSeek output. Earlier failed runs, development probes and previous cache fills
+are outside these per-run measurements.
+
+Costs are **current-tariff estimates**, not invoices. Rates checked on 2026-10-07:
+[Jev 1.13](https://docs.typesafe.ai/models) costs $0.042 per million input tokens
+with free output. [DeepSeek Flash](https://api-docs.deepseek.com/quick_start/pricing/)
+costs $0.003 / $0.15 / $0.60 per million cached input / uncached input / output
+tokens off-peak; peak rates are twice those amounts. The displayed range covers
+those two rates without claiming a historical billing band.
+
+† k6 and Moby contain selected native targets that failed before producing their
+run artifacts. Their ordinary logs and aggregate live-call counters agree with
+the available journals; the missing child journals cannot be independently audited.
+The historical journals do not preserve a usage-completeness flag, so all token
+counts and estimates describe recorded usage rather than a certified billed total.
+
+SQLite and Othello use their original completed run metadata and all saved target
+journals; a separate command-wrapper log is unavailable for those two runs.
+
+[Measurement data](https://dvordrova.github.io/repomap/build-measurements.json)
+includes exact run IDs, report checksums, provider models and accounting details.
+
 Everything on the page is one of three labeled things:
 
 - **facts** — extracted from the code deterministically: entrypoints, HTTP
