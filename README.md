@@ -31,7 +31,7 @@ without a matching source at that revision are marked **No source**.
 | --- | --- |
 | Utility / library | [type-fest](https://dvordrova.github.io/repomap/type-fest#canvas) — TypeScript types |
 | Game / mixed | [Python tutorial game](https://dvordrova.github.io/repomap/python-tutorial-game#canvas) — React/TypeScript frontend with a Python backend |
-| Mixed | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) — React frontend and Go server |
+| Mixed | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) — React frontend and Go server, [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) — TypeScript frontend and Clojure server, [repomap](https://dvordrova.github.io/repomap/repomap#canvas) — Go CLI and JavaScript report UI |
 
 ### Python
 
@@ -53,6 +53,7 @@ without a matching source at that revision are marked **No source**.
 
 | Type | Examples |
 | --- | --- |
+| Server / mixed | [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) — Clojure backend and TypeScript frontend |
 | Game | [Othello](https://dvordrova.github.io/repomap/othello#canvas) — JVM and ClojureScript builds |
 
 ### Build measurements
@@ -71,6 +72,7 @@ they are not estimates of a first build from an empty cache.
 | [Headscale](https://dvordrova.github.io/repomap/headscale#canvas) | 3m 14s | 14,065,093 / 579,176 | 816,113 / 18,041 | 84,992 | $0.7115–$0.8322 | 1 |
 | [k6](https://dvordrova.github.io/repomap/k6#canvas) | 1m 9s | 40,449 / 816 † | 0 / 0 † | 0 | $0.0017 † | 931 |
 | [Lua](https://dvordrova.github.io/repomap/lua#canvas) | 1m 13s | 2,505,458 / 150,109 | 387,693 / 6,877 | 67,964 | $0.1575–$0.2098 | 304 |
+| [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) | 2h 38m 46s | 1,383,758 / 139,171 | 21,754,859 / 2,919,059 | 5,137,792 | $4.3175–$8.5769 | 23,850 |
 | [Moby](https://dvordrova.github.io/repomap/moby#canvas) | 22m 54s | 30,935,180 / 1,467,975 † | 3,734,451 / 311,776 † | 181,248 | $2.0199–$2.7405 † | 17 |
 | [Othello](https://dvordrova.github.io/repomap/othello#canvas) | 30s | 790,746 / 36,737 | 62,639 / 2,703 | 21,117 | $0.0411–$0.0490 | 19 |
 | [pykrx](https://dvordrova.github.io/repomap/pykrx#canvas) | 49s | 940,145 / 71,205 | 174,824 / 6,607 | 21,632 | $0.0665–$0.0935 | 0 |
@@ -96,7 +98,9 @@ costs $0.003 / $0.15 / $0.60 per million cached input / uncached input / output
 tokens off-peak; peak rates are twice those amounts. The displayed range covers
 those two rates without claiming a historical billing band.
 
-† k6 and Moby contain selected native targets that failed before producing their
+† marks unavailable child journals or a transported call with no recorded numeric
+usage. The displayed sums cover only the available usage; they are not a full
+billed-total claim. k6 and Moby contain selected native targets that failed before producing their
 run artifacts. Their ordinary logs and aggregate live-call counters agree with
 the available journals; the missing child journals cannot be independently audited.
 The historical journals do not preserve a usage-completeness flag, so all token
