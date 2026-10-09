@@ -8,13 +8,24 @@ boundaries, including tests, examples and tools. `.cljs` is not part of this
 JVM execution view.
 
 Each build of a `shadow-cljs.edn` that names what it starts from (a module's
-`:init-fn` or `:entries`, a node script's `:main`) is a ClojureScript program
+`:init-fn` or `:entries`, a build-level literal `:entries` vector such as
+`:target :npm-module`, or a node script's `:main`) is a ClojureScript program
 of its own (`clojure:shadow-cljs.edn:app`, kind `executable`, named by its
 build id), restored from its `shadow-cljs.edn` (`ScoutShadow`). Its view is the
 `.cljs` sources and the `:cljs` branch of the `.cljc` sources of that
 directory, up to a nested `deps.edn`, `project.clj` or `shadow-cljs.edn`, read
 by the same clj-kondo analysis; its seeds are the build's `:init-fn`/`:main`
 functions and `:entries` namespaces, and `-main` seeds only the JVM view.
+Build-level entries keep the `builds.<id>.entries` key and each namespace's
+original manifest line. They use the same namespace seeds as module entries;
+an unknown namespace creates no invented object or callable seed. Computed or
+non-vector build entries are not evaluated into launch evidence.
+The cumulative native fixture contrasts this package build with an unchanged
+browser init function and an absent namespace. Other native entry contracts
+remain language-specific: Go package mains, Python installed scripts, JS/TS
+manifest entry modules and C build link rules already have cumulative coverage.
+None has the shadow-cljs build-level namespace-vector syntax; no equivalent
+field is fabricated for those languages.
 ClojureScript's own namespaces (`cljs.core`, `clojure.string`, ...), the
 Closure Library (`goog.*`) and the JavaScript globals clj-kondo writes with no
 namespace (`js/setInterval`, an external symbol of package `js`) are its
@@ -35,7 +46,10 @@ parameter stays an unresolved callable. Native argument-site symbol uses bind
 callback transfers to their original source argument. Clojure reader syntax
 preserves complete source expressions, quoted forms, reader-discard forms and
 literal strings without executing them. Exact source docstrings enter the
-ordinary author-claim layer, with their original quote location.
+ordinary author-claim layer, with their original quote line/column and exact
+reader-owned declaration form-start line/column. Two forms on one source line
+remain different owners; neither inherits the other's body docstring. Namespace
+prose stays a file claim and cannot become a same-line function description.
 
 `-main` declarations provide callable seeds. Test-framework imports
 `clojure.test` and `speclj.core` identify test source files. Platform namespaces
@@ -79,6 +93,12 @@ says it calls that form, not itself; a call its own arity takes is a
 recursion. Only Clojure writes several arities of one definition
 (`TestAClojureSpecialFormIsNoCallAndAnotherArityIsNoRecursion`,
 `greet-times` in `core.clj`).
+The original parameter vector is the witness's `source_expression`, including
+line breaks, tabs and Unicode; `detail` is the adapter's `selected arity`
+caption. The native call coordinates and relation remain unchanged. A call
+within the selected arity remains recursion. JS/TS and Python already carry
+typed source expressions in witnesses; Go and C have no producer of this field,
+and no other supported language has Clojure's multiple-arity body selection.
 
 Map/vector values returned by functions remain values in native observations;
 their constructors are functions, not invented named types. The ordinary
@@ -89,7 +109,17 @@ Board representation and Game state responsibilities remain in GroupsIndex.
 No runtime mutation or entity ownership is inferred from `assoc`/`update` names.
 
 A var is public unless it is `defn-` or `^:private` (clj-kondo's `private`);
-the map of parts shows signatures of public vars only. `defmethod`,
+the map of parts shows signatures of public vars only. Native definition
+operators from `clojure.core` and `cljs.core` keep the same declaration kinds
+in shared `.cljc` sources. A `defprotocol` header is a type; its native
+`protocol-name` identifies the callable method declarations. Native argument
+lists distinguish callable constructors/members emitted by `defrecord`,
+`deftype` and `definterface` from the type header. No constructor-name prefix
+or cross-view kind fallback supplies this evidence. The cumulative
+`service.cljc` contrasts a protocol/header/method, record/type constructors
+and an ordinary variable; real JVM and Shadow projections preserve matching
+source coordinates, names and kinds. A method declaration does not identify
+the runtime implementation or prove dispatch to one. `defmethod`,
 `extend-type` and `extend-protocol` are not declarations this adapter
 projects, so a method implemented in another namespace than its multimethod
 or protocol has no declaration of its own to move with its type; this
@@ -162,6 +192,14 @@ Missing equivalents, recorded rather than fabricated:
   hand-over, so no declaration of the fixture is handed over without being
   called; the reach's rule that a hand-over is not followed is checked on the
   other adapters' facts and GroupsIndex's unit test.
+- Go's cumulative `TicketContract`/`Cancel`/`Status` expectation already
+  distinguishes a type from declared callable interface methods without
+  bodies or invented runtime edges. Python's cumulative class/method coverage
+  has no `typing.Protocol`/ABC case. JS/TS has interface headers and fields,
+  but its native projection does not yet admit method signatures; that
+  declared-method equivalent remains missing. C has no protocol/interface
+  method declaration; its cumulative type/function-pointer-field/function
+  contrast is not a fabricated protocol equivalent.
 - No Clojure function is proven `unreachable` (the C adapter's per-program
   fact, PROGRAM_INDEX): `resolve`, `requiring-resolve`, `ns-resolve`, a
   symbol or var invoked as a value, multimethods and protocol dispatch reach

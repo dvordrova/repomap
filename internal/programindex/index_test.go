@@ -11,6 +11,37 @@ import (
 	"testing"
 )
 
+// A relation or a flow edge folded from several sites cannot borrow the
+// first site's condition. Its guard kind survives, and source guards do too.
+func TestWeakestGuardKeepsOnlyACommonCondition(t *testing.T) {
+	first := &Guard{Kind: GuardBranch, Location: &Location{Path: "main.go", Line: 2, Column: 1}, Condition: "ready", When: GuardWhenHolds}
+	for _, row := range []struct {
+		name      string
+		other     *Guard
+		condition string
+	}{
+		{"same", &Guard{Kind: GuardBranch, Condition: "ready", When: GuardWhenHolds}, "ready"},
+		{"different", &Guard{Kind: GuardBranch, Condition: "retry", When: GuardWhenHolds}, ""},
+		{"opposite arm", &Guard{Kind: GuardBranch, Condition: "ready", When: GuardWhenFails}, ""},
+		{"no text", &Guard{Kind: GuardBranch}, ""},
+		{"unguarded", nil, ""},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			got := WeakestGuard([]*Guard{first, row.other})
+			if row.other == nil {
+				if got != nil {
+					t.Fatal("an unguarded site acquired a guard")
+				}
+			} else if got == nil || got.Kind != GuardBranch || got.Condition != row.condition || (got.Condition == "" && got.When != "") {
+				t.Fatalf("folded guard: %+v", got)
+			}
+			if first.Condition != "ready" || first.When != GuardWhenHolds {
+				t.Fatal("fold changed the site's own guard")
+			}
+		})
+	}
+}
+
 func TestNewRejectsUnmeasuredAdapterCoverage(t *testing.T) {
 	input := shapeInput()
 	if _, err := New(input); err == nil || !strings.Contains(err.Error(), "coverage was not measured") {
@@ -1633,5 +1664,51 @@ func validRelationPatternInput() RelationPatternInput {
 	return RelationPatternInput{
 		SourceRef: "pattern", Form: PatternCall, Selector: "get", ArgumentsObserved: 1,
 		Arguments: []PatternArgumentInput{{Position: 1, Kind: PatternLiteralString, Value: "/api/levels"}},
+	}
+}
+
+func TestWitnessSourceExpressionKeepsMultilineSourceAndStrictIdentity(t *testing.T) {
+	const expression = "[значение\r\n\tstatus \"😀\"]"
+	input := representativeInput()
+	input.Relations[1].Witnesses[0].SourceExpression = expression
+	index, err := newMeasuredProgramIndex(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := Encode(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := Decode(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	position := relationPositionWithSourceRef(t, index, "relation-exact")
+	if got := restored.Relations[position].Witnesses[0].SourceExpression; got != expression {
+		t.Fatalf("source expression changed: %q", got)
+	}
+	snapshot := restored.Snapshot()
+	snapshot.Relations[position].Witnesses[0].SourceExpression = "changed"
+	if restored.Relations[position].Witnesses[0].SourceExpression != expression {
+		t.Fatal("snapshot mutated original")
+	}
+	for _, test := range []struct {
+		name  string
+		alter func(*Witness)
+	}{
+		{"invalid-UTF8-source", func(w *Witness) { w.SourceExpression = string([]byte{0xff}) }},
+		{"control-in-kind", func(w *Witness) { w.Kind = "native\ncall" }},
+		{"control-in-detail", func(w *Witness) { w.Detail = "caption\nsource" }},
+		{"noncanonical-path", func(w *Witness) { w.Location = &Location{Path: "../outside.clj", Line: 1, Column: 1} }},
+		{"invalid-column", func(w *Witness) { w.Location = &Location{Path: "main.go", Line: 1, Column: 0} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bad := representativeInput()
+			bad.Relations[1].Witnesses[0].SourceExpression = expression
+			test.alter(&bad.Relations[1].Witnesses[0])
+			if _, err := newMeasuredProgramIndex(bad); err == nil {
+				t.Fatal("actual identity/source validation relaxed")
+			}
+		})
 	}
 }

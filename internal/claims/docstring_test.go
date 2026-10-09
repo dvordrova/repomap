@@ -1,6 +1,7 @@
 package claims
 
 import (
+	"github.com/dvordrova/repomap/internal/programindex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,7 +142,7 @@ func TestGoDocCommentsSkipDirectivesAndDetachedComments(t *testing.T) {
 		`func Run() {}`,
 	}, "\n"))
 	quotes := goDocComments(lines)
-	want := []quote{{Line: 5, Text: "Config holds settings."}, {Line: 11, Text: "Run starts the server. It blocks."}}
+	want := []quote{{Line: 5, DeclarationLine: 7, DeclarationColumn: 6, Text: "Config holds settings."}, {Line: 11, DeclarationLine: 13, DeclarationColumn: 6, Text: "Run starts the server. It blocks."}}
 	if len(quotes) != len(want) || quotes[0] != want[0] || quotes[1] != want[1] {
 		t.Fatalf("quotes = %+v, want %+v", quotes, want)
 	}
@@ -158,6 +159,11 @@ type Ticket[T any] interface {
  // Embedded documentation is not a method declaration.
  Other
 }
+
+func TestGoASTDocOwnerKeepsSameLineDeclarationColumns(t *testing.T) {
+	got:=goDocComments(splitLines("package x\n// First names the authored type.\ntype First struct{}; type Second struct{}\n// Values documents a whole variable declaration.\nvar Values,Others=1,2\n// Constants documents a whole constant declaration.\nconst Constants,OtherConstants=1,2\n"))
+	if len(got)!=1 || got[0].DeclarationLine!=3 || got[0].DeclarationColumn!=6 || got[0].Text!="First names the authored type." {t.Fatalf("Go AST named owner: %+v",got)}
+}
 type Other interface{}
 func local() {
  type Nested interface {
@@ -170,7 +176,7 @@ var anonymous interface {
  Run()
 }
 `))
-	if len(quotes) != 1 || quotes[0].Line != 3 || quotes[0].Text != "Cancel revokes a ticket. Pending jobs are removed from the queue." {
+	if len(quotes) != 1 || quotes[0].Line != 3 || quotes[0].DeclarationLine != 4 || quotes[0].Text != "Cancel revokes a ticket. Pending jobs are removed from the queue." {
 		t.Fatalf("interface documentation lost or misattached: %+v", quotes)
 	}
 }
@@ -194,6 +200,32 @@ func TestJSDocBlocksRequireDeclarationAndDropTags(t *testing.T) {
 	want := []quote{{Line: 4, Text: "One-liner."}, {Line: 6, Text: "Loads a level."}}
 	if len(quotes) != len(want) || quotes[0] != want[0] || quotes[1] != want[1] {
 		t.Fatalf("quotes = %+v, want %+v", quotes, want)
+	}
+}
+
+func TestNativeJSDocQuotesStopAtClosingDelimiter(t *testing.T) {
+	lines := splitLines("/** Counts inline levels. */ export const inlineOwned = 1;\n" +
+		"export const inlineUndocumented = 2;\n" +
+		"/**\n * Reads a separate level.\n */ export const followingOwned = 3;\n" +
+		"export const followingUndocumented = 4;\n")
+	got, err := jsDocBlocksWithOwners(lines, map[programindex.LineRange]declarationSite{
+		{Line: 1, EndLine: 1, Column: 1, EndColumn: len("/** Counts inline levels. */")}: {Line: 1, Column: 42},
+		{Line: 3, EndLine: 5, Column: 1, EndColumn: 3}:                                   {Line: 5, Column: 18},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []quote{
+		{Line: 1, Column: 1, DeclarationLine: 1, DeclarationColumn: 42, Text: "Counts inline levels."},
+		{Line: 3, Column: 1, DeclarationLine: 5, DeclarationColumn: 18, Text: "Reads a separate level."},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("bounded native quotes = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("quote %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 

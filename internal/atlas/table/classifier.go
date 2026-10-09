@@ -2,7 +2,9 @@ package table
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,10 +21,9 @@ const (
 	// ClassifierQuestions packs a closed table's windows for the
 	// categorizer: every row and column becomes its own question, and the shared
 	// context is sent once as state. A request of 150 rows of seven columns
-	// (1,050 questions) exceeded the model's 64k-token request. Bytes pack
-	// by the ordinary target, and an oversized row still goes whole in its
-	// own request: a model refusal leaves it explicitly unanswered instead of
-	// failing the run.
+	// (1,050 questions) exceeded the model's 64k-token request. Preparation packs
+	// complete rows before transport; an indivisible oversized row stays
+	// explicitly unanswered without taking its independent neighbours.
 	ClassifierQuestions = 150
 	// ClassifierConcurrency is how many decision requests run at once. A
 	// 150-question request takes ~3 s whatever the load: 26 of them took 23 s
@@ -59,61 +60,43 @@ func Closed(def Definition) bool {
 	return true
 }
 
-// ClassifierBodyBytes bounds one decision-model request body: at the
-// densest tokens a byte Jev has counted (ClassifierDensestTokensPerByte) it
-// stays inside the model's 64k-token request. Byte packing measures the
-// text-model request, which lacks each question's options; 150 questions
-// naming 18 part titles each exceeded the budget.
-const ClassifierBodyBytes = 120_000
+// ClassifierNeedsPartition asks the actual provider to prepare the complete
+// request. Provider limits belong to that client, not to table-specific guesses.
+func ClassifierNeedsPartition(c llm.Categorizer, def Definition, window Window) (bool, error) {
+	err := prepareClassifier(c, def, window)
+	if classifierInputRefused(err) {
+		return true, nil
+	}
+	return false, err
+}
 
-// ClassifierRequestTokens and ClassifierQuestionTokens are Jev's envelope:
-// 64k tokens a request, and 32k for the shared state with any one question,
-// which it reads with the state. Over either it refuses the request (HTTP
-// 400 max_tokens_exceeded): casdoor's InitAPI, one question of 150,741 bytes
-// beside a 5,502-byte state, was refused so.
-const (
-	ClassifierRequestTokens  = 64_000
-	ClassifierQuestionTokens = 32_000
-)
+func prepareClassifier(c llm.Categorizer, def Definition, window Window) error {
+	call, err := ClassifierCall(c, def, window)
+	if err != nil {
+		return err
+	}
+	prepared, err := llm.Prepare(c, call.Prompt, call.Limits)
+	if err != nil {
+		return err
+	}
+	if call.Limits.MaxRequestBytes > 0 && prepared.Len() > call.Limits.MaxRequestBytes {
+		return llm.NewResourceLimitError(llm.ResourceLimitError{Kind: llm.ResourceLimitRequestBytes,
+			Limit: call.Limits.MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true})
+	}
+	return nil
+}
 
-// Jev's tokenizer is not ours, so a request is measured in bytes at the
-// densities Jev counted in the requests it answered: the densest of 15,521
-// saved requests held 0.471 tokens a byte (median 0.270), and the sparsest
-// of those of 20 KB or more 0.233, glossary prose. It answered single
-// questions of 110 KB at 0.263. A fit on character classes still erred by
-// a quarter either way, so no estimate is closer than these two.
-const (
-	ClassifierDensestTokensPerByte  = 0.471
-	ClassifierSparsestTokensPerByte = 0.233
-)
+func classifierInputRefused(err error) bool {
+	var resource *llm.ResourceLimitError
+	return errors.As(err, &resource) && (resource.Kind == llm.ResourceLimitContextTokens || resource.Kind == llm.ResourceLimitRequestBytes)
+}
 
-// ClassifierQuestionBytes is where a question with the state may exceed
-// ClassifierQuestionTokens, at the densest: a row over it is asked in its
-// lossless packed form (Definition.Pack), and alone. ClassifierQuestionCeiling
-// and ClassifierBodyCeiling are where a request would exceed the envelope
-// even at the sparsest: a row over either, packed, is refused unsent.
-// Between them Jev decides, as it did for those 110 KB questions, and a
-// refusal of its own leaves the row unanswered as before.
-const (
-	ClassifierQuestionBytes   = 67_940  // 32,000 / 0.471
-	ClassifierQuestionCeiling = 137_339 // 32,000 / 0.233
-	ClassifierBodyCeiling     = 274_678 // 64,000 / 0.233
-)
-
-// FitClassifierWindows fits every window to the categorizer's envelope.
-// Each row whose question with the state exceeds ClassifierQuestionBytes,
-// or whose questions alone exceed ClassifierBodyBytes, first takes the
-// definition's lossless packed form in its place; every other row keeps its
-// bytes. A row still over ClassifierQuestionBytes goes alone, in its place
-// in row order: Jev may refuse its request, and that must not take its
-// neighbours' answers. Alone, a row that would exceed the envelope even at
-// the sparsest density (ClassifierQuestionCeiling, ClassifierBodyCeiling)
-// is refused here (Window.Refused) with what was measured: never cut and
-// never sent. A window whose body exceeds ClassifierBodyBytes is then
-// halved until it fits or holds one row; nothing is dropped.
+// FitClassifierWindows preserves every row and its complete shared context.
+// Preparation is the provider's. The owner may pack an oversized row losslessly;
+// an indivisible refusal stays beside accepted neighbours without transport.
 func FitClassifierWindows(c llm.Categorizer, def Definition, windows []Window) ([]Window, error) {
 	var fitted []Window
-	packed := make(map[string]bool)
+	packed := map[string]bool{}
 	piece := func(window Window, rows []Row) (Window, error) {
 		window.Rows = rows
 		request, err := Request(def, window)
@@ -122,41 +105,30 @@ func FitClassifierWindows(c llm.Categorizer, def Definition, windows []Window) (
 	}
 	var fit func(Window) error
 	fit = func(window Window) error {
-		size, err := measureClassifier(c, def, window)
-		if err != nil {
-			return err
-		}
-		var parts [][]Row
-		switch {
-		case len(window.Rows) == 1 && (size.question > ClassifierQuestionCeiling || size.body > ClassifierBodyCeiling):
-			window.Refused = refusal(window.Rows[0], packed[window.Rows[0].ID], size)
-		case len(window.Rows) > 1 && size.question > ClassifierQuestionBytes:
-			// Each row that may exceed the envelope goes alone; the rows
-			// between keep their order in windows of their own.
-			start := 0
-			for i, row := range window.Rows {
-				if size.rows[i] <= ClassifierQuestionBytes {
-					continue
-				}
-				if start < i {
-					parts = append(parts, window.Rows[start:i])
-				}
-				parts = append(parts, []Row{row})
-				start = i + 1
-			}
-			if start < len(window.Rows) {
-				parts = append(parts, window.Rows[start:])
-			}
-		case size.body > ClassifierBodyBytes && len(window.Rows) > 1:
-			half := len(window.Rows) / 2
-			parts = [][]Row{window.Rows[:half], window.Rows[half:]}
-		}
-		if parts == nil {
+		err := prepareClassifier(c, def, window)
+		if err == nil {
 			fitted = append(fitted, window)
 			return nil
 		}
-		for _, rows := range parts {
-			next, err := piece(window, slices.Clone(rows))
+		if !classifierInputRefused(err) {
+			return err
+		}
+		if len(window.Rows) <= 1 {
+			form := "as built"
+			if len(window.Rows) == 1 && packed[window.Rows[0].ID] {
+				form = "even packed"
+			}
+			id := ""
+			if len(window.Rows) == 1 {
+				id = window.Rows[0].ID
+			}
+			window.Refused = fmt.Sprintf("row %s was not sent: %s, provider preparation refused the complete request: %v; partition the complete owning task", id, form, err)
+			fitted = append(fitted, window)
+			return nil
+		}
+		half := len(window.Rows) / 2
+		for _, rows := range [][]Row{window.Rows[:half], window.Rows[half:]} {
+			next, err := piece(window, rows)
 			if err != nil {
 				return err
 			}
@@ -167,81 +139,69 @@ func FitClassifierWindows(c llm.Categorizer, def Definition, windows []Window) (
 		return nil
 	}
 	for _, window := range windows {
-		if def.Pack != nil {
-			size, err := measureClassifier(c, def, window)
+		err := prepareClassifier(c, def, window)
+		if err == nil {
+			fitted = append(fitted, window)
+			continue
+		}
+		if !classifierInputRefused(err) {
+			return nil, err
+		}
+		rows := slices.Clone(window.Rows)
+		refused := make([]bool, len(rows))
+		for i, row := range rows {
+			alone, err := piece(window, []Row{row})
 			if err != nil {
 				return nil, err
 			}
-			var rows []Row
-			for i, row := range window.Rows {
-				if size.rows[i] <= ClassifierQuestionBytes && size.bodies[i] <= ClassifierBodyBytes {
-					continue
-				}
-				if rows == nil {
-					rows = slices.Clone(window.Rows)
-				}
-				rows[i], packed[row.ID] = def.Pack(row), true
+			err = prepareClassifier(c, def, alone)
+			if err != nil && !classifierInputRefused(err) {
+				return nil, err
 			}
-			if rows != nil {
-				if window, err = piece(window, rows); err != nil {
+			if classifierInputRefused(err) && def.Pack != nil {
+				rows[i], packed[row.ID] = def.Pack(row), true
+				alone, err = piece(window, []Row{rows[i]})
+				if err != nil {
+					return nil, err
+				}
+				err = prepareClassifier(c, def, alone)
+				if err != nil && !classifierInputRefused(err) {
 					return nil, err
 				}
 			}
+			refused[i] = classifierInputRefused(err)
 		}
-		if err := fit(window); err != nil {
+		// Separate only genuinely indivisible rows; contiguous accepted
+		// neighbours retain their order and their complete evidence.
+		start := 0
+		emit := func(end int) error {
+			if start == end {
+				return nil
+			}
+			next, err := piece(window, rows[start:end])
+			if err != nil {
+				return err
+			}
+			return fit(next)
+		}
+		for i, over := range refused {
+			if !over {
+				continue
+			}
+			if err := emit(i); err != nil {
+				return nil, err
+			}
+			start = i
+			if err := emit(i + 1); err != nil {
+				return nil, err
+			}
+			start = i + 1
+		}
+		if err := emit(len(rows)); err != nil {
 			return nil, err
 		}
 	}
 	return fitted, nil
-}
-
-// classifierSize is a categorizer request as Jev bounds it: the whole body,
-// the state with the longest question, and each row's state with its own
-// longest question and with all its questions.
-type classifierSize struct {
-	body, question int
-	rows, bodies   []int
-}
-
-// measureClassifier measures a window's categorizer request in the bytes
-// the categorizer writes: every question with its item, ask and options,
-// beside the state.
-func measureClassifier(c llm.Categorizer, def Definition, window Window) (classifierSize, error) {
-	call, err := ClassifierCall(c, def, window)
-	if err != nil {
-		return classifierSize{}, err
-	}
-	var body struct {
-		State     json.RawMessage            `json:"state"`
-		Questions map[string]json.RawMessage `json:"questions"`
-	}
-	if err := json.Unmarshal([]byte(call.Prompt.User), &body); err != nil {
-		return classifierSize{}, fmt.Errorf("table %s: categorizer body: %w", def.Stage, err)
-	}
-	size := classifierSize{body: len(call.Prompt.User), rows: make([]int, len(window.Rows)), bodies: make([]int, len(window.Rows))}
-	for i, row := range window.Rows {
-		longest, all := 0, 0
-		for _, column := range def.Columns {
-			question := len(body.Questions[questionKey(row, column)])
-			longest, all = max(longest, question), all+question
-		}
-		size.rows[i], size.bodies[i] = len(body.State)+longest, len(body.State)+all
-		size.question = max(size.question, size.rows[i])
-	}
-	return size, nil
-}
-
-// refusal says why a row was not sent: what it measured, and what that
-// would count even at the sparsest density Jev has counted.
-func refusal(row Row, packed bool, size classifierSize) string {
-	form := "as built"
-	if packed {
-		form = "even packed"
-	}
-	return fmt.Sprintf("row %s was not sent: %s, its state with its longest question is %d bytes and its request %d bytes, which even at the sparsest density Jev has counted (%.3f tokens a byte) would be %d and %d tokens, over Jev's envelope of %d and %d",
-		row.ID, form, size.question, size.body, ClassifierSparsestTokensPerByte,
-		int(float64(size.question)*ClassifierSparsestTokensPerByte), int(float64(size.body)*ClassifierSparsestTokensPerByte),
-		ClassifierQuestionTokens, ClassifierRequestTokens)
 }
 
 // ForClassifier packs a closed table for a decision model.
@@ -255,6 +215,54 @@ func fieldsMap(fields []Field) map[string]any {
 	values := make(map[string]any, len(fields))
 	for _, field := range fields {
 		values[field.Name] = field.Value
+	}
+	return values
+}
+
+// classifierItem factors only text carried verbatim by the closed options.
+// Keep catalogue identities and any other source fields beside the question;
+// the original row remains unchanged for decoding and persistence.
+func classifierItem(row Row, column Column, names optionNames, options []llm.Option) map[string]any {
+	values := fieldsMap(row.Fields)
+	if column.OptionsFrom == "" || column.CriteriaFrom == "" || column.CriteriaFrom == "ref" || column.CriteriaFrom == "title" || names.list != column.OptionsFrom {
+		return values
+	}
+	meanings := map[string]string{}
+	for _, option := range options {
+		if option.Criteria == nil && option.Meaning != "" {
+			meanings[option.Name] = option.Meaning
+		}
+	}
+	entry := func(original map[string]any) map[string]any {
+		ref, _ := original["ref"].(string)
+		text, _ := original[column.CriteriaFrom].(string)
+		label := names.label[ref]
+		if text == "" || names.ref[label] != ref || meanings[label] != text {
+			return original
+		}
+		copy := make(map[string]any, len(original)-1)
+		for key, value := range original {
+			if key != column.CriteriaFrom {
+				copy[key] = value
+			}
+		}
+		return copy
+	}
+	switch list := values[column.OptionsFrom].(type) {
+	case []map[string]any:
+		copy := make([]map[string]any, len(list))
+		for i, value := range list {
+			copy[i] = entry(value)
+		}
+		values[column.OptionsFrom] = copy
+	case []any:
+		copy := slices.Clone(list)
+		for i, value := range list {
+			if object, ok := value.(map[string]any); ok {
+				copy[i] = entry(object)
+			}
+		}
+		values[column.OptionsFrom] = copy
 	}
 	return values
 }
@@ -427,7 +435,7 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 				return llm.Call[Result]{}, fmt.Errorf("table %s: row %s column %s has no options", def.Stage, row.ID, column.Name)
 			}
 			names := namesFor(column, window.Context, row, options)
-			question := llm.Question{Name: column.Item, Item: fieldsMap(row.Fields), Ask: columnQuestion(column, names)}
+			question := llm.Question{Name: column.Item, Ask: columnQuestion(column, names)}
 			if !yesOnly(column, options) {
 				// A catalogue's purposes are already in the context; repeating
 				// them in every question multiplied a request past the budget.
@@ -446,6 +454,7 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 					question.Options = append(question.Options, llm.Option{Name: classifierAbsent, Meaning: "No listed option applies to this row."})
 				}
 			}
+			question.Item = classifierItem(row, column, names, question.Options)
 			questions[questionKey(row, column)] = question
 		}
 	}
@@ -459,7 +468,8 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 		Request  string  `json:"request_sha256"`
 		Margin   float64 `json:"margin"`
 		YesAt    float64 `json:"yes_at,omitempty"`
-	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex([]byte(prompt.User)), ClassifierMargin, def.YesAt})
+		Top      bool    `json:"top_choice,omitempty"`
+	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex([]byte(prompt.User)), ClassifierMargin, def.YesAt, def.TopChoice})
 	if err != nil {
 		return llm.Call[Result]{}, err
 	}
@@ -549,6 +559,9 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 	}
 	options := columnOptions(column, window.Context, row)
 	if yesOnly(column, options) {
+		if ok && (got.InvalidYes || got.Yes != nil && !validProbability(*got.Yes)) {
+			return fmt.Sprintf("column %s has an invalid required probability of yes", column.Name), false
+		}
 		if def.Ranked && ok && got.Yes != nil {
 			answer[ProbabilityCell(column.Name)] = strconv.FormatFloat(*got.Yes, 'f', 4, 64)
 			if *got.Yes >= yesAt {
@@ -570,8 +583,14 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 	}
 	if def.YesAt > 0 && len(options) == 2 && slices.Contains(options, "yes") && slices.Contains(options, "no") {
 		got = LabelForm(got, options)
-		if !ok || got.Probabilities == nil {
+		if !ok || got.Choice == "" || got.Probabilities == nil {
 			return fmt.Sprintf("column %s was not answered", column.Name), false
+		}
+		if !slices.Contains(options, got.Choice) {
+			return fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice), false
+		}
+		if reason := requiredProbabilities(got, options); reason != "" {
+			return fmt.Sprintf("column %s %s", column.Name, reason), false
 		}
 		answer[column.Name] = "no"
 		if got.Probabilities["yes"] >= def.YesAt {
@@ -588,6 +607,11 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 		labels = append(labels, classifierAbsent)
 	}
 	got = LabelForm(got, labels)
+	if ok && slices.Contains(labels, got.Choice) {
+		if reason := requiredProbabilities(got, labels); reason != "" {
+			return fmt.Sprintf("column %s %s", column.Name, reason), false
+		}
+	}
 	probability := got.Probabilities[got.Choice]
 	rival, rivalAt := runnerUp(got, labels)
 	switch {
@@ -597,7 +621,7 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 		return fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice), false
 	// Jev's probabilities are hundredths carried as floats: 0.30
 	// against 0.20 leads by 0.0999…, which is the margin.
-	case probability-rivalAt < ClassifierMargin-1e-9:
+	case probability-rivalAt < ClassifierMargin-1e-9 && !def.TopChoice:
 		return fmt.Sprintf("column %s is uncertain: %q at %.2f against %q at %.2f, a lead under %.2f", column.Name, got.Choice, probability, rival, rivalAt, ClassifierMargin), true
 	case got.Choice == classifierAbsent:
 		return "", false
@@ -605,6 +629,23 @@ func decideClassifierColumn(def Definition, window Window, row Row, column Colum
 		answer[column.Name] = names.ref[got.Choice]
 		return "", false
 	}
+}
+
+func validProbability(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
+}
+
+func requiredProbabilities(got llm.Verdict, labels []string) string {
+	for _, label := range labels {
+		value, present := got.Probabilities[label]
+		if !present {
+			return fmt.Sprintf("is missing required probability for %q", label)
+		}
+		if slices.Contains(got.InvalidProbabilities, label) || !validProbability(value) {
+			return fmt.Sprintf("has an invalid required probability for %q", label)
+		}
+	}
+	return ""
 }
 
 // LabelForm writes a verdict's choice and probability keys as the listed
@@ -623,6 +664,10 @@ func LabelForm(got llm.Verdict, labels []string) llm.Verdict {
 		return written
 	}
 	got.Choice = label(got.Choice)
+	got.InvalidProbabilities = slices.Clone(got.InvalidProbabilities)
+	for i, written := range got.InvalidProbabilities {
+		got.InvalidProbabilities[i] = label(written)
+	}
 	if got.Probabilities != nil {
 		probabilities := make(map[string]float64, len(got.Probabilities))
 		for written, at := range got.Probabilities {

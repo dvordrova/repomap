@@ -100,7 +100,7 @@ func TestASubcommandsOptionsAreNestedUnderIt(t *testing.T) {
 		t.Setenv("GOTOOLCHAIN", "local")
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
-		app := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "subcommand options")
+		app := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "subcommand options")
 		index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
 		if err != nil {
 			t.Fatal(err)

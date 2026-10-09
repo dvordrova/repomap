@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -189,16 +188,13 @@ func TestThePageShowsTheSavedSceneWhateverItsLinks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw := regexp.MustCompile(`<script type="application/json" id="rm-scene">([^<]*)</script>`).FindSubmatch(page)
-			if raw == nil {
-				t.Fatal("the page carries no saved scene")
-			}
+			raw := readEmbeddedJSON(t, page, "rm-scene")
 			var shown scenePage
-			if err := json.Unmarshal(raw[1], &shown); err != nil {
+			if err := json.Unmarshal(raw, &shown); err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(shown, scenePage(*scene)) {
-				t.Fatalf("the page shows\n%s\nnot the saved scene %+v", raw[1], scene)
+				t.Fatalf("the page shows\n%s\nnot the saved scene %+v", raw, scene)
 			}
 			prepared, err := PreparePage(&rendered, options)
 			if err != nil {

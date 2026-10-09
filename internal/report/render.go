@@ -395,17 +395,17 @@ func validateBoundProgramPresentation(data *ReportData) error {
 			return fmt.Errorf("report: warning %d must be non-empty", index)
 		}
 	}
-	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	defaultEntry, err := data.ProgramPortfolio.defaultBinding()
 	if err != nil {
 		return fmt.Errorf("report: %w", err)
 	}
 	if data.GroupGraph == nil {
 		return fmt.Errorf("report: publication requires the final group graph")
 	}
-	if len(data.ProgramPortfolio.Entries) != len(data.GroupGraph.Indexes) {
+	if data.ProgramPortfolio.Len() != len(data.GroupGraph.Indexes) {
 		return fmt.Errorf("report: ProgramIndex and group overlay sets differ")
 	}
-	for position, program := range data.ProgramPortfolio.Entries {
+	for position, program := range data.ProgramPortfolio.programs() {
 		overlay := data.GroupGraph.Indexes[position]
 		if overlay.TargetID != program.Target.ID || overlay.ProgramIndexSHA256 != program.SHA256 {
 			return fmt.Errorf("report: group overlay %d does not bind its ProgramIndex", position)
@@ -949,6 +949,9 @@ func pageTemplateFuncsWith(language DisplayLanguage, data *pageData) template.Fu
 		"pagedata":         data.ref,
 		"pagedataLink":     data.attrLink,
 		"pagedataJSON":     data.JSON,
+		"embeddedJSON":     embeddedJSON,
+		"reportBoot":       embeddedReportBoot,
+		"reportBundle":     embeddedReportBundle,
 		// A glossary term's files, registered in the page data with the
 		// links' base they are written without.
 		"pagedataOccurrences": func(term pageGlossaryTerm) (string, error) {

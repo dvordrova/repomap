@@ -11,8 +11,19 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {wrapText} from './cards.mjs';
 import {tileGrid} from './symbols.mjs';
+import {programContents} from './model.mjs';
 
-let engine;
+// Layout engines, one worker each in the browser: the levels of the areas
+// are independent of one another (a closed area's card is its words, never
+// its drawing), so they are laid out at once; one worker laying out
+// Metabase's 1,262 areas one by one had taken minutes.
+const engines=[];
+let turn=0;
+function engine(){
+  const most=Math.max(1,Math.min(8,(globalThis.navigator?.hardwareConcurrency||4)-1));
+  if(engines.length<most){engines.push(new ELK());return engines.at(-1);}
+  return engines[turn++%engines.length];
+}
 // ELK can throw on a graph it places with one option and not another
 // (old canvas: a NullPointerException with native ports, RIGHT and layer
 // unzipping on Redis). A graph that fails is laid out again with ELK's own
@@ -32,7 +43,7 @@ const relaid=(node,change)=>({...node,layoutOptions:node.layoutOptions&&without(
 async function native(graph){
   let failure;
   for(const [i,change] of fallbacks.entries()){
-    try{return await (engine||=new ELK()).layout(i?structuredClone(relaid(graph,change)):graph);}
+    try{return await engine().layout(i?structuredClone(relaid(graph,change)):graph);}
     catch(error){failure||=error;}
   }
   throw failure;
@@ -70,6 +81,9 @@ const outer={
 // its title at 17px); the whole map's text is 1 unit to a pixel.
 export const units={
   part:{width:260},
+  // How deep areas are drawn open, and the least scale a level may draw its
+  // cards at for one deeper to open (layoutLevels).
+  openDepth:2,leastShrink:.3,
   title:17,
   pad:40,
   // An open frame's title band, in its level's text units.
@@ -118,14 +132,6 @@ export function pack(sizes,{gap=units.gap,pad=16,top=0,aspect=1.6}={}){
     if(!best||score<best.score-1e-9)best={...result,score};
   }
   return best;
-}
-
-// The smallest box of proportion `aspect` no narrower than `width` and
-// tall enough for `height(width)` of content.
-function boxOf(aspect,width,height){
-  let w=width;
-  for(let i=0;i<8;i++){const need=height(w);if(w/aspect>=need-.5)break;w=Math.max(w,need*aspect);}
-  return {width:w,height:w/aspect};
 }
 
 // Read ELK's node and its edges: children's boxes, ports and routes in the
@@ -209,17 +215,22 @@ export function wholeLines(text,width,font,measure,most=Infinity){
   return lines.length<=most?lines:[];
 }
 // A program's card on the whole map: its title, its role and its purpose,
-// each of them whole in two lines at most or left out; what it holds reads
-// where it is entered.
+// its role/purpose whole in at most two lines, and every saved direct child.
+// Inventory rows wrap whole and share the same measurement with the renderer.
 export function programWords(node,width,measure){
   const card=units.programCard,inner=width-2*card.pad;
-  return {title:wrapText(node.name??node.title,inner,card.font,measure),role:wholeLines(node.item?.role,inner,card.role,measure,2),
-    purpose:wholeLines(node.item?.summary,inner,card.text,measure,2)};
+  return {title:wrapText(node.name??node.title,inner-32,card.font,measure),role:wholeLines(node.item?.role,inner,card.role,measure,2),
+    purpose:wholeLines(node.item?.summary,inner,card.text,measure,2),
+    contents:(node.contents||[]).map(child=>({...child,lines:wrapText(child.title,inner-32,card.text,measure)}))};
 }
-export function programCardHeight(node,width,measure){
+export function programInventoryHeight(words,maxHeight=Infinity){
+  return Math.min(maxHeight,words.contents.reduce((height,child)=>height+child.lines.length*units.programCard.textLine+8,0));
+}
+export function programCardHeight(node,width,measure,maxInventoryHeight=Infinity){
   const card=units.programCard,words=programWords(node,width,measure);
   return Math.max(card.minHeight,2*card.pad+words.title.length*card.line+
-    (words.role.length?words.role.length*card.textLine+6:0)+(words.purpose.length?words.purpose.length*card.textLine+6:0));
+    (words.role.length?words.role.length*card.textLine+6:0)+(words.purpose.length?words.purpose.length*card.textLine+6:0)+
+    (words.contents.length?programInventoryHeight(words,maxInventoryHeight)+6:0));
 }
 // A part's or a closed area's card: its title whole in its lines and its
 // description whole under it, in at most four lines that stand in the
@@ -234,18 +245,11 @@ export function cardWords(node,description,measure,{room=0,pad=14,titleFont='700
   const most=Math.max(0,Math.floor((height-title.length*titleLine-6)/18));
   return {title,lines:wholeLines(description,width,'13px system-ui',measure,Math.min(most,4)),hidden:false};
 }
-// A closed area's card at its program's level, `k` times a part's: its
-// title and up to three lines of its purpose, in the proportion of its
-// open drawing, so that entered it holds that drawing exactly.
-export function areaCard(node,inside,measure,k=1){
-  const content=width=>{
-    const inner=width-2*14-24;
-    const title=wrapText(node.name,inner,'700 17px system-ui',measure).length*21.25;
-    const lines=wholeLines(node.item?.summary,inner,'13px system-ui',measure,3).length,purpose=lines?lines*18+6:0;
-    return 28+title+purpose;
-  };
-  const box=boxOf(inside.width/inside.height,units.part.width,content);
-  return {id:node.id,width:box.width*k,height:box.height*k};
+// A closed area names every saved direct child. Its open graph is fitted
+// independently; that graph's aspect ratio does not stretch the inventory.
+export function areaCard(node,inside,measure,k=1,maxInventoryHeight=Infinity){
+  const width=units.part.width;
+  return {id:node.id,width:width*k,height:programCardHeight(node,width,measure,maxInventoryHeight)*k};
 }
 // A chip's box: one cell of its frame's grid, as tall as its name's lines
 // (owner, 2026-10-02: a name stands whole, never ellipsized; casdoor's
@@ -280,7 +284,12 @@ export function inputsCard(node){
 export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const canvas={width:Math.max(320,width),height:Math.max(240,height)};
   const {nodes}=model;
-  const local=new Map();
+  const local=new Map(),areaInventoryHeights=new Map();
+  const closedArea=node=>{
+    const named={...node,contents:programContents(model,node)},cap=canvas.height/2;
+    areaInventoryHeights.set(node.id,programInventoryHeight(programWords(named,units.part.width,measure),cap));
+    return areaCard(named,local.get(node.id),measure,1,cap);
+  };
   const childOf=container=>id=>{
     for(let at=id;at;at=model.parent(at))if(model.parent(at)===container)return at;
     return '';
@@ -288,19 +297,39 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const fitZoom=(w,h,pad=24)=>Math.min((canvas.width-2*pad)/w,(canvas.height-2*pad)/h);
 
   // 1. Areas: their parts, with the arrows between them.
-  for(const area of [...nodes.values()].filter(node=>node.kind==='area')){
+  // Only the first `units.openDepth` levels of areas are drawn open, and
+  // one deeper only where its parent's level draws its cards at least
+  // `units.leastShrink` of their size: each level stands inside its card,
+  // and Metabase's seven levels of areas, each some ten times smaller, had
+  // made the world 10^7 times its camera, every card one pixel. A deeper
+  // area is a closed card naming what it holds, read in the column. Levels
+  // are laid out top down, a level at once, so no deeper one is laid out
+  // in vain.
+  const layArea=async area=>{
     const parts=area.children.map(id=>nodes.get(id)).filter(Boolean);
     const pairs=pairsOf(model,model.edges,childOf(area.id));
-    const laid=await layered(area.id,parts.map(part=>partBox(part,measure)),pairs);
-    local.set(area.id,{...laid,text:1,pairs,kind:'area'});
+    const laid=await layered(area.id,parts.map(part=>part.kind==='area'?closedArea(part):partBox(part,measure)),pairs);
+    return {...laid,text:1,pairs,kind:'area'};
+  };
+  let frontier=[...nodes.values()].filter(node=>node.kind==='area'&&nodes.get(model.parent(node.id))?.kind==='program');
+  for(let depth=1;frontier.length;depth++){
+    const levels=await Promise.all(frontier.map(layArea));
+    const next=[];
+    frontier.forEach((area,i)=>{
+      const inside=levels[i];local.set(area.id,inside);
+      const card=closedArea(area),shrink=Math.min(card.width/inside.width,card.height/inside.height);
+      if(depth<units.openDepth||shrink>=units.leastShrink)
+        for(const id of area.children)if(nodes.get(id)?.kind==='area')next.push(nodes.get(id));
+    });
+    frontier=next;
   }
 
-  // 2. Programs: their areas closed, each a card of its open drawing's
-  // proportion holding its title and purpose, and their loose parts'
+  // 2. Programs: compact closed area inventories and loose parts'
   // cards; their links to other programs end on ports of their border,
   // those coming in on the left and those going out on the right.
   // Entered, an area draws its parts inside its card.
-  for(const program of [...nodes.values()].filter(node=>node.kind==='program')){
+  const programNodes=[...nodes.values()].filter(node=>node.kind==='program');
+  const programLevels=await Promise.all(programNodes.map(async program=>{
     const children=program.children.map(id=>nodes.get(id)).filter(Boolean);
     const inner=childOf(program.id);
     const pairs=pairsOf(model,model.edges,inner);
@@ -326,14 +355,15 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // canvas. Its cards are a part's size: drawn larger, the program grows
     // with them and reads no better where it fits the canvas; one too
     // large to read whole is the camera's job.
-    const boxes=children.map(child=>child.kind==='area'?areaCard(child,local.get(child.id),measure):partBox(child,measure));
+    const boxes=children.map(child=>child.kind==='area'?closedArea(child):partBox(child,measure));
     const at=direction=>layered(program.id,boxes,pairs,{ports,portPairs:[...portPairs.values()],options:{...interior,'elk.direction':direction}});
-    const down=await at('DOWN'),across=await at('RIGHT');
+    const [down,across]=await Promise.all([at('DOWN'),at('RIGHT')]);
     const direction=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?'RIGHT':'DOWN';
     const laid=direction==='RIGHT'?across:down,k=1;
-    local.set(program.id,{...laid,text:k,direction,pairs,ports:ports.map(port=>({...port,...laid.ports.find(p=>p.id===port.id)})),
-      portPairs:[...portPairs.values()],kind:'program'});
-  }
+    return {...laid,text:k,direction,pairs,ports:ports.map(port=>({...port,...laid.ports.find(p=>p.id===port.id)})),
+      portPairs:[...portPairs.values()],kind:'program'};
+  }));
+  programNodes.forEach((program,i)=>local.set(program.id,programLevels[i]));
 
   // 3. Collections, packed: an Inputs frame's kinds, each its inputs'
   // names; an Outside frame's systems and buckets, a bucket's systems.
@@ -386,12 +416,17 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // at the size (`systemText`) theirs do (ten, a secondary word); an Inputs
   // card, its kinds icons, and a loose box keep their own.
   let programText=1,systemText=1;
+  const programInventoryHeights=new Map();
   const systems=model.roots.some(id=>nodes.get(id)?.kind==='outside'&&nodes.get(id).children.length);
   const rootBox=id=>{
     const node=nodes.get(id),inside=local.get(id);
     // A program's card holds its summary; entered, its drawing stands
     // inside the card at the scale that fits it.
-    if(node.kind==='program')return {id,width:units.programCard.width*programText,height:programCardHeight(node,units.programCard.width,measure)*programText};
+    if(node.kind==='program'){
+      const named={...node,contents:programContents(model,node)},maxInventoryHeight=canvas.height/2;
+      programInventoryHeights.set(id,programInventoryHeight(programWords(named,units.programCard.width,measure),maxInventoryHeight));
+      return {id,width:units.programCard.width*programText,height:programCardHeight(named,units.programCard.width,measure,maxInventoryHeight)*programText};
+    }
     if(node.kind==='inputs')return {id,...inside.closed};
     if(node.kind==='outside')return {id,width:inside.width*systemText,height:inside.height*systemText};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
@@ -471,6 +506,12 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const origin={x:rect.x+(rect.width-inside.width*scale)/2,y:rect.y+(rect.height-inside.height*scale)/2};
     scales.set(container,{scale,origin,frame:{x:origin.x,y:origin.y,width:inside.width*scale,height:inside.height*scale}});
     const world=toWorld(origin,scale);
+    // Program borders belong to the original closed card. The inner ELK
+    // drawing may be letterboxed; extend its port routes across that gutter
+    // instead of changing the program's world rectangle on entry.
+    const placedPorts=(inside.ports||[]).map(port=>({...port,point:{...world(port),
+      ...(inside.kind==='program'?{x:port.way==='out'?rect.x+rect.width:rect.x}:{})}}));
+    const portPoints=new Map(placedPorts.map(port=>[port.id,port.point]));
     for(const [id,box] of inside.children){
       const at=world(box);
       boxes.set(id,{x:at.x,y:at.y,width:box.width*scale,height:box.height*scale});
@@ -482,10 +523,12 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     }
     for(const pair of inside.portPairs||[]){
       const points=(inside.routes.get(pair.key)||[]).map(world);
+      const end=portPoints.get(pair.port),old=pair.out?points.at(-1):points[0];
+      if(end&&old&&(end.x!==old.x||end.y!==old.y)){if(pair.out)points.push(end);else points.unshift(end);}
       if(points.length>1)drawn.push({id:`${container}:${pair.key}`,container,from:pair.out?pair.child:pair.port,to:pair.out?pair.port:pair.child,points,forward:pair.forward,backward:[],port:pair.port});
     }
     routes.set(container,drawn);
-    if(inside.ports?.length)ports.set(container,inside.ports.map(port=>({...port,point:world(port)})));
+    if(placedPorts.length)ports.set(container,placedPorts);
     for(const id of inside.children.keys())if(local.has(id))place(id,boxes.get(id));
   }
   place('',{x:0,y:0,width:map.width,height:map.height});
@@ -517,7 +560,11 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // two keeping every level's entry camera at most four screen pixels to a
   // world pixel.
   const deepest=Math.max(1,...enterZoom.values(),...[...grids].map(([id,{grid,box}])=>11/13*grid.divisor*box.width/(boxes.get(id)?.width||Infinity)));
-  const unit=2**Math.max(0,Math.ceil(Math.log2(deepest/4)));
+  // No larger, though, than keeps the whole world under ten million
+  // pixels: the browser clamps a length near 2^25 pixels, and Metabase's
+  // frontend, drawn larger, had stood its cards off where its markers were.
+  const most=Math.max(1,2**Math.floor(Math.log2(1e7/Math.max(1,map.width,map.height))));
+  const unit=Math.min(most,2**Math.max(0,Math.ceil(Math.log2(deepest/4))));
   const big=r=>({...r,x:r.x*unit,y:r.y*unit,width:r.width*unit,height:r.height*unit});
   const far=p=>({...p,x:p.x*unit,y:p.y*unit});
   for(const [id,r] of boxes)boxes.set(id,big(r));
@@ -540,7 +587,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // sight (its title wraps across it); an Outside frame only at its title's
   // corner.
   const closed=model.roots.filter(id=>['program','inputs','outside'].includes(nodes.get(id)?.kind)&&boxes.has(id)).map(id=>({...boxes.get(id),whole:nodes.get(id).kind!=='outside'}));
-  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programText:programText*unit,
+  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programInventoryHeights,areaInventoryHeights,programText:programText*unit,
     home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length,16,closed),whole:homeCamera(bounds,canvas,16,1/unit)};
 }
 

@@ -17,7 +17,7 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("Clojure discovery: %v %v", targets, err)
 	}
-	result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+	result, err := sharedClojureFixture(t, root, repository, targets[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +32,7 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertNativeAdjacentCommentOwners(t, root, repository, index, "src/example/service.cljc", "example.service/documented-neighbor", "example.service/undocumented-neighbor")
 	assertClojureJavaStaticCalls(t, index)
 	assertClojureAnonymousArgumentCall(t, index)
 	assertClojureReferAllKeepsTheNamespacesOwnVar(t, index)

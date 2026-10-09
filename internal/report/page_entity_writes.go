@@ -96,6 +96,7 @@ type pageDataFacts struct {
 }
 
 func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
+	builder.activateNativeScope(index.Target.ID)
 	if builder.dataByTarget == nil {
 		builder.dataByTarget = map[string]*pageDataFacts{}
 	}
@@ -106,7 +107,7 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 	facts := &pageDataFacts{writes: map[string][]int{}, data: map[string]bool{}, persisted: map[string]bool{}, makes: map[string][]string{},
 		relations: map[string]programindex.Relation{}, fieldsOf: map[string][]string{}, typesOf: map[string][]string{}, reads: map[string][]int{}}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
+		for _, entry := range builder.nativeTargets(targetID) {
 			if entry.Target.ID != targetID {
 				continue
 			}

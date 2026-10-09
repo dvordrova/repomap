@@ -158,7 +158,7 @@ func restoreDependencyCatalog(runDir string, data *ReportData) error {
 // repository documentation reduction. A base ProgramIndex is not a publishable
 // page authority.
 func restoreReducedDocumentation(runDir string, data *ReportData) error {
-	if data == nil || len(data.programIndexes) == 0 {
+	if data == nil || data.ProgramPortfolio == nil || data.ProgramPortfolio.Len() == 0 {
 		return fmt.Errorf("report: reduced documentation ProgramIndex authority is unavailable")
 	}
 	encoded, _, err := readBoundedProgramArtifact(
@@ -174,7 +174,10 @@ func restoreReducedDocumentation(runDir string, data *ReportData) error {
 	if err != nil {
 		return fmt.Errorf("report: decode reduced documentation: %w", err)
 	}
-	for _, index := range data.programIndexes {
+	for index, readErr := range data.ProgramPortfolio.indexes() {
+		if readErr != nil {
+			return readErr
+		}
 		if index.Categorization == nil {
 			// The atlas path reads the base index: the reduced documentation
 			// is the run's, not a categorization's, and nothing binds them.
@@ -212,15 +215,19 @@ func restoreGroupGraphView(runDir string, data *ReportData) error {
 	if !present {
 		return fmt.Errorf("report: groups index is missing")
 	}
-	if data.defaultProgramIndex == nil || data.ProgramPortfolio == nil {
+	if data.ProgramPortfolio == nil {
 		return fmt.Errorf("report: groups index default ProgramIndex is unavailable")
 	}
-	index, err := groupindex.Decode(encoded, *data.defaultProgramIndex)
+	program, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return err
+	}
+	index, err := groupindex.Decode(encoded, program)
 	if err != nil {
 		return fmt.Errorf("report: decode groups index: %w", err)
 	}
-	if index.ProgramIndexSHA256 != data.defaultProgramIndex.SHA256 ||
-		!reflect.DeepEqual(index.Target, data.defaultProgramIndex.Target) {
+	if index.ProgramIndexSHA256 != program.SHA256 ||
+		!reflect.DeepEqual(index.Target, program.Target) {
 		return fmt.Errorf("report: groups index does not bind the default ProgramIndex")
 	}
 	local := index.Snapshot()
@@ -256,34 +263,27 @@ func restoreProgramPortfolio(runDir string, data *ReportData) error {
 	if err != nil {
 		return fmt.Errorf("report: decode program index set: %w", err)
 	}
-	indexes := make([]programindex.Index, 0, len(set.Entries))
-	for _, entry := range set.Entries {
-		index, decodeErr := programindex.ReadFile(filepath.Join(runDir, entry.Filename))
-		if decodeErr != nil {
-			return fmt.Errorf("report: decode program index %q: %w", entry.TargetID, decodeErr)
+	readers := make([]func() (programindex.Index, error), len(set.Entries))
+	defaultFilename := ""
+	for position, entry := range set.Entries {
+		readers[position] = func() (programindex.Index, error) {
+			index, decodeErr := programindex.ReadFile(filepath.Join(runDir, entry.Filename))
+			if decodeErr != nil {
+				return programindex.Index{}, fmt.Errorf("report: decode program index %q: %w", entry.TargetID, decodeErr)
+			}
+			if index.Target.ID != entry.TargetID || index.SHA256 != entry.IndexSHA256 {
+				return programindex.Index{}, fmt.Errorf("report: program index %q does not match its artifact-set binding", entry.TargetID)
+			}
+			return index, nil
 		}
-		if index.Target.ID != entry.TargetID || index.SHA256 != entry.IndexSHA256 {
-			return fmt.Errorf("report: program index %q does not match its artifact-set binding", entry.TargetID)
+		if entry.TargetID == set.DefaultTargetID {
+			defaultFilename = entry.Filename
 		}
-		indexes = append(indexes, index)
 	}
-	portfolio, err := NewProgramPortfolio(set.DefaultTargetID, indexes)
-	if err != nil {
+	if err := BindProgramPortfolioReaders(data, set.DefaultTargetID, readers); err != nil {
 		return fmt.Errorf("report: project program portfolio: %w", err)
 	}
-	data.ProgramPortfolio = portfolio
-	data.programIndexes = make([]programindex.Index, len(indexes))
-	for position := range indexes {
-		data.programIndexes[position] = indexes[position].Snapshot()
-	}
-	for position := range indexes {
-		if indexes[position].Target.ID == set.DefaultTargetID {
-			value := indexes[position]
-			data.defaultProgramIndex = &value
-			data.defaultProgramIndexArtifactFilename = set.Entries[position].Filename
-			break
-		}
-	}
+	data.defaultProgramIndexArtifactFilename = defaultFilename
 	if data.defaultProgramIndex == nil || data.defaultProgramIndexArtifactFilename == "" {
 		return fmt.Errorf("report: default ProgramIndex is missing after portfolio projection")
 	}
@@ -359,47 +359,9 @@ func collectOpenablePaths(data *ReportData) error {
 			}
 		}
 	}
-	addProgram := func(index programindex.Index) error {
-		for _, source := range index.Target.Sources {
-			if err := add(source.Path); err != nil {
-				return err
-			}
-		}
-		for _, seed := range index.Target.Seeds {
-			if seed.Location != nil {
-				if err := add(seed.Location.Path); err != nil {
-					return err
-				}
-			}
-		}
-		for _, object := range index.Objects {
-			if object.Location != nil {
-				if err := add(object.Location.Path); err != nil {
-					return err
-				}
-			}
-		}
-		for _, relation := range index.Relations {
-			if relation.Location != nil {
-				if err := add(relation.Location.Path); err != nil {
-					return err
-				}
-			}
-			for _, witness := range relation.Witnesses {
-				if witness.Location != nil {
-					if err := add(witness.Location.Path); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		return nil
-	}
 	if data.ProgramPortfolio != nil {
-		for _, entry := range data.ProgramPortfolio.Entries {
-			if err := addProgram(entry); err != nil {
-				return err
-			}
+		if err := data.ProgramPortfolio.visitSourcePaths(add); err != nil {
+			return err
 		}
 	}
 	// A fresh slice: callers collect into a shallow copy (PreparePage, Generate)
@@ -410,6 +372,43 @@ func collectOpenablePaths(data *ReportData) error {
 	}
 	sort.Strings(openable)
 	data.OpenablePaths = openable
+	return nil
+}
+
+func visitNativeSourcePaths(index programindex.Index, add func(string) error) error {
+	for _, source := range index.Target.Sources {
+		if err := add(source.Path); err != nil {
+			return err
+		}
+	}
+	for _, seed := range index.Target.Seeds {
+		if seed.Location != nil {
+			if err := add(seed.Location.Path); err != nil {
+				return err
+			}
+		}
+	}
+	for _, object := range index.Objects {
+		if object.Location != nil {
+			if err := add(object.Location.Path); err != nil {
+				return err
+			}
+		}
+	}
+	for _, relation := range index.Relations {
+		if relation.Location != nil {
+			if err := add(relation.Location.Path); err != nil {
+				return err
+			}
+		}
+		for _, witness := range relation.Witnesses {
+			if witness.Location != nil {
+				if err := add(witness.Location.Path); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 

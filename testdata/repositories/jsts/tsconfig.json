@@ -6,6 +6,9 @@
     "lib": ["ES2022", "DOM"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "paths": {
+      "@fixture/dependency-alias": ["./node_modules/@fixture/missing-sdk"]
+    },
     "jsx": "preserve",
     "experimentalDecorators": true,
     "strict": true

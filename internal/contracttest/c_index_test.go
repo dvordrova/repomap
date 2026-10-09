@@ -98,7 +98,7 @@ var cCommandRows = []struct{ name, function string }{
 }
 
 func TestCFixtureIndexesTheServer(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:kvd")
 	main := cObject(t, index, programindex.ObjectFunction, "main", "kvd.c")
 	if index.Target.Language != "c" || index.Target.Selector != "c:kvd" || len(index.Target.Seeds) != 1 ||
@@ -645,7 +645,7 @@ func assertCDispatchCalls(t *testing.T, fixture cFixture, graph atlas.Graph) {
 }
 
 func TestCFixtureKeepsTheClientApart(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	input, index := buildCInput(t, fixture, "c:kvcli")
 	main := cObject(t, index, programindex.ObjectFunction, "main", "kvcli.c")
 	if len(index.Target.Seeds) != 1 || index.Target.Seeds[0].ObjectID != main.ID {
@@ -695,7 +695,7 @@ func TestCFixtureKeepsTheClientApart(t *testing.T) {
 // table that names it by a string literal is a registration, which the
 // reading stage classifies like any other.
 func TestCFixtureCommandRowsAreRegistrations(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:kvd")
 	result, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index, Root: "."}}})
 	if err != nil {
@@ -746,11 +746,11 @@ func TestCFixtureCommandRowsAreRegistrations(t *testing.T) {
 // that names it (/* Signal handler */ above onSignal) is one, beside the
 // full sentences above the other declarations.
 func TestCFixtureDocstrings(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:kvd")
 	// Claims carry their commit's date.
 	runFixtureGit(t, fixture.root, "-c", "user.email=fixture@example.test", "-c", "user.name=fixture", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture")
-	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: fixture.repository, RepoPath: fixture.root, Revision: "HEAD"})
+	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: fixture.repository, RepoPath: fixture.root, Revision: "HEAD", ReadIndexes: []func() (programindex.Index, error){func() (programindex.Index, error) { return index, nil }}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -790,7 +790,7 @@ func TestCFixtureDocstrings(t *testing.T) {
 // parentheses, casts and an address taken still name the function; a
 // branch holding a pointer leaves the call open. util/watch.c's watchTick.
 func TestCFixtureACalleeChosenByAConditionCallsOneOfItsFunctions(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:util/watch.c")
 	tick := cObject(t, index, programindex.ObjectFunction, "watchTick", "util/watch.c")
 	seconds := cObject(t, index, programindex.ObjectFunction, "tickSeconds", "util/watch.c").ID

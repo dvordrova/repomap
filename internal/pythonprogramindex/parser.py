@@ -4596,7 +4596,7 @@ def attach_control_context(tree, path):
     walk(tree, [])
 
 
-def attach_guards(tree, path):
+def attach_guards(tree, path, content=""):
     # A call's guard (ProgramIndex Guard): the strongest construct of its
     # function it runs under, at that construct. "branch": an if or else
     # arm, a conditional expression's arm, a match case, the operands of
@@ -4607,8 +4607,23 @@ def attach_guards(tree, path):
     def strength(guard):
         return 0 if guard is None else (1 if guard["kind"] == "branch" else 2)
 
-    def stronger(guard, kind, node):
+    # condition is the code deciding an arm as written, trimmed of
+    # surrounding whitespace, and when the outcome it runs on (ProgramIndex
+    # Guard.When): an if's test, an and/or's operands before, a match's
+    # subject.
+    def code(first, last=None):
+        last = last or first
+        span = type("span", (), {"lineno": first.lineno, "col_offset": first.col_offset,
+                                 "end_lineno": last.end_lineno, "end_col_offset": last.end_col_offset})
+        text = ast.get_source_segment(content, span) if content else None
+        return (text or "").strip()
+
+    def stronger(guard, kind, node, condition=None, when=""):
         inner = {"kind": kind, "location": source_location(path, node)}
+        if condition is not None:
+            text = code(*condition) if isinstance(condition, tuple) else code(condition)
+            if text:
+                inner["condition"], inner["when"] = text, when
         return guard if strength(guard) > strength(inner) else inner
 
     def returns(nodes):
@@ -4625,8 +4640,8 @@ def attach_guards(tree, path):
     def ends_in_raise(body):
         return bool(body) and isinstance(body[-1], ast.Raise) and not returns(body)
 
-    def arm(guard, body, node):
-        return stronger(guard, "error" if ends_in_raise(body) else "branch", node)
+    def arm(guard, body, node, condition=None, when=""):
+        return stronger(guard, "error" if ends_in_raise(body) else "branch", node, condition, when)
 
     def walk(node, guard):
         if guard is not None:
@@ -4638,28 +4653,29 @@ def attach_guards(tree, path):
             return
         if isinstance(node, ast.If):
             walk(node.test, guard)
-            inner = arm(guard, node.body, node)
+            inner = arm(guard, node.body, node, node.test, "holds")
             for child in node.body:
                 walk(child, inner)
             if node.orelse:
-                inner = arm(guard, node.orelse, node.orelse[0])
+                inner = arm(guard, node.orelse, node.orelse[0], node.test, "fails")
                 for child in node.orelse:
                     walk(child, inner)
             return
         if isinstance(node, ast.IfExp):
             walk(node.test, guard)
-            walk(node.body, stronger(guard, "branch", node))
-            walk(node.orelse, stronger(guard, "branch", node))
+            walk(node.body, stronger(guard, "branch", node, node.test, "holds"))
+            walk(node.orelse, stronger(guard, "branch", node, node.test, "fails"))
             return
         if isinstance(node, ast.BoolOp):
             walk(node.values[0], guard)
-            for value in node.values[1:]:
-                walk(value, stronger(guard, "branch", node))
+            when = "holds" if isinstance(node.op, ast.And) else "fails"
+            for at, value in enumerate(node.values[1:], 1):
+                walk(value, stronger(guard, "branch", node, (node.values[0], node.values[at - 1]), when))
             return
         if hasattr(ast, "Match") and isinstance(node, ast.Match):
             walk(node.subject, guard)
             for case in node.cases:
-                inner = arm(guard, case.body, case.pattern)
+                inner = arm(guard, case.body, case.pattern, node.subject, "matches")
                 if case.guard is not None:
                     walk(case.guard, guard)
                 for child in case.body:
@@ -4707,7 +4723,7 @@ def parse_sources(rows):
         try:
             parsed[path] = ast.parse(content, filename=path, type_comments=True)
             attach_control_context(parsed[path], path)
-            attach_guards(parsed[path], path)
+            attach_guards(parsed[path], path, content)
         except (SyntaxError, ValueError):
             raise ValueError("module %s has invalid Python syntax" % path)
         parsed[path].repomap_code_lines = code_line_set(content, parsed[path])

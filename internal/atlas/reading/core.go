@@ -88,13 +88,45 @@ func (r *reader) readCore(ctx context.Context) error {
 			}
 			rows = append(rows, table.Row{ID: part.id, Fields: fields})
 		}
+		// A part is asked beside its siblings: the parts of the same area of
+		// the grouping tree, or the target's parts outside every area. All
+		// of a large target's parts would not fit one question's context.
+		areaOf := map[string]int{}
+		for i, zone := range r.treeZones[target.ID] {
+			for _, id := range zone.parts {
+				areaOf[id] = i + 1
+			}
+		}
+		var groups rowGroups
+		var members [][]int
+		at := map[int]int{}
+		for i, part := range parts {
+			g, ok := at[areaOf[part.id]]
+			if !ok {
+				g = len(groups)
+				at[areaOf[part.id]] = g
+				groups, members = append(groups, rowGroup{}), append(members, nil)
+			}
+			groups[g].rows = append(groups[g].rows, rows[i])
+			members[g] = append(members[g], i)
+		}
+		var order []int
+		for g := range groups {
+			siblings := make([]string, len(members[g]))
+			for j, i := range members[g] {
+				siblings[j] = listed[i]
+			}
+			groups[g].shared = []table.Field{{Name: "parts", Value: siblings}}
+			order = append(order, members[g]...)
+		}
 		r.opts.Stage(lines.StageCore, fmt.Sprintf("%s: asking which of %d parts the program exists for", target.Name, len(parts)))
-		answers, err := r.runTableWith(ctx, lines.Core(), round+1, []table.Field{{Name: "parts", Value: listed}}, rows, nil)
+		answers, err := r.runTableGroups(ctx, lines.Core(), round+1, groups, nil)
 		if err != nil {
 			return err
 		}
-		for i, part := range parts {
-			answer := answers[i].answer
+		for k, i := range order {
+			part := parts[i]
+			answer := answers[k].answer
 			if answer == nil {
 				continue
 			}

@@ -79,6 +79,44 @@ func decodeReading(t *testing.T, raw string) pageGroupReading {
 	return reading
 }
 
+func TestPartTypesKeepTheirOriginalReturningAndTakingFunctions(t *testing.T) {
+	b, index, part, _ := readingFixture(t)
+	set := func(id string, results, parameters []programindex.TypedName) {
+		ref := b.subjects[subjectKey("t1", id)]
+		ref.subject.Object.Results, ref.subject.Object.Parameters = results, parameters
+	}
+	client := programindex.TypedName{TypeID: "client"}
+	unknown := programindex.TypedName{TypeID: "outside-the-part"}
+	set("zeta", []programindex.TypedName{client, client, unknown}, []programindex.TypedName{client, client})
+	set("alpha", []programindex.TypedName{client}, nil)
+	set("cron", nil, []programindex.TypedName{client})
+	// Non-functions and functions in another part are not this type's users.
+	set("state", []programindex.TypedName{client}, []programindex.TypedName{client})
+	set("main", []programindex.TypedName{client}, []programindex.TypedName{client})
+	part.MemberSubjectIDs = append(part.MemberSubjectIDs, "zeta", "missing")
+	reading := decodeReading(t, b.groupReading(index, part, pageGroup{ID: "t1-g14", Title: part.Title}))
+	names := func(positions []int) []string {
+		var result []string
+		for _, position := range positions {
+			result = append(result, reading.Decls[position].Name)
+		}
+		return result
+	}
+	for _, owner := range reading.Own {
+		if reading.Decls[owner.Decl].Name != "redisClient" {
+			continue
+		}
+		if got := names(owner.Returns); !slices.Equal(got, []string{"appendServerSaveParams", "Zfree"}) {
+			t.Fatalf("returning functions: %q", got)
+		}
+		if got := names(owner.Takes); !slices.Equal(got, []string{"serverCron", "Zfree"}) {
+			t.Fatalf("taking functions: %q", got)
+		}
+		return
+	}
+	t.Fatal("the part's type lost its function catalogue")
+}
+
 // A part's reading lists its declarations by kind, each list by name
 // whatever its case, those "Called from" reaches first and counted (owner,
 // 2026-09-29), the keys marked; a type keeps every field and its type,
@@ -543,6 +581,30 @@ func TestAReadingTellsSameNamedDeclarationsApartByWhatOnlyEachUses(t *testing.T)
 	if len(decls[0].Apart) != 1 || decls[0].Apart[0] != (pageApartWord{Word: "URL", Of: apartCalls, At: "web/src/auth/LoginPage.js:531"}) ||
 		len(decls[1].Apart) != 1 || decls[1].Apart[0] != (pageApartWord{Word: "goToLink", Of: apartCalls, At: "web/src/auth/LoginPage.js:562"}) || decls[2].Apart != nil {
 		t.Fatalf("apart words %+v / %+v / %+v", decls[0].Apart, decls[1].Apart, decls[2].Apart)
+	}
+	firstReader := builder.ownUseReader
+	if firstReader == nil {
+		t.Fatal("reader did not keep the current target's lookup")
+	}
+	first := builder.data.ProgramPortfolio.Entries[0]
+	other := first
+	other.Target.ID = "t3"
+	other.Objects = slices.Clone(first.Objects)
+	other.Objects[2].Name = "redirect"
+	builder.data.ProgramPortfolio.Entries = append(builder.data.ProgramPortfolio.Entries, other)
+	for position, target := range []string{"t2", "t3", "t2"} {
+		current := []pageReadingDecl{{Name: "loginHandler"}, {Name: "loginHandler"}}
+		builder.tellDeclsApartByUse(current, map[int][2]string{0: {target, "n1"}, 1: {target, "n2"}})
+		word := "goToLink"
+		if target == "t3" {
+			word = "redirect"
+		}
+		if len(current[0].Apart) != 1 || current[0].Apart[0].Word != "URL" || len(current[1].Apart) != 1 || current[1].Apart[0].Word != word {
+			t.Fatalf("%s borrowed another target's uses: %+v", target, current)
+		}
+		if position == 0 && builder.ownUseReader != firstReader {
+			t.Fatal("repeated questions rebuilt the current target's lookup")
+		}
 	}
 }
 

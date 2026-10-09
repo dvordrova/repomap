@@ -14,12 +14,10 @@ import (
 	"github.com/dvordrova/repomap/internal/clojureproject"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
@@ -56,11 +54,19 @@ func (preset *flowPreset) categorizer() *typesafetest.Categorizer {
 		preset.mu.Lock()
 		preset.asked = append(preset.asked, flowSplit{step: step, options: options, meanings: meanings})
 		preset.mu.Unlock()
+		nearTie := func(first, second string) llm.Verdict {
+			probabilities := make(map[string]float64, len(options))
+			for _, option := range options {
+				probabilities[option] = 0
+			}
+			probabilities[first], probabilities[second] = 0.5, 0.45
+			return llm.Verdict{Choice: first, Probabilities: probabilities}
+		}
 		if preset.tie[step] && len(options) > 1 {
-			return llm.Verdict{Choice: options[0], Probabilities: map[string]float64{options[0]: 0.5, options[1]: 0.45}}, true
+			return nearTie(options[0], options[1]), true
 		}
 		if pair, torn := preset.torn[step]; torn && slices.Contains(options, pair[0]) && slices.Contains(options, pair[1]) {
-			return llm.Verdict{Choice: pair[0], Probabilities: map[string]float64{pair[0]: 0.5, pair[1]: 0.45}}, true
+			return nearTie(pair[0], pair[1]), true
 		}
 		chosen, known := preset.choose[step]
 		if !known || !slices.Contains(options, chosen) {
@@ -239,6 +245,10 @@ func assertPreparedThenExecuted(t *testing.T, index groupindex.Index, layer fact
 	if back.Resumes != flow.Steps[0].SubjectID || back.Guard == nil || back.Guard.Kind != programindex.GuardBranch || len(flow.Steps[0].Passed) != 0 {
 		t.Fatalf("%s read back in %q under %+v, %s passing %+v; want back in %s under its condition", execute, back.Resumes, back.Guard, run, flow.Steps[0].Passed, run)
 	}
+	condition := prepare + "() == 0"
+	if back.Guard.Condition != condition || back.Guard.When != programindex.GuardWhenHolds {
+		t.Fatalf("%s lost its written condition on the way to the flow: %+v, want %q", execute, back.Guard, condition)
+	}
 }
 
 // assertNoRepeats says a walked flow names no declaration twice.
@@ -284,7 +294,7 @@ func pythonFlowFixture(t *testing.T) (groupindex.Index, facts.Result, atlas.Grap
 			break
 		}
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	input, err := sharedPythonFixtureInput(t, repository, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +398,7 @@ func goFlowFixture(t *testing.T, pkg string) (groupindex.Index, facts.Result, at
 	t.Setenv("GOTOOLCHAIN", "local")
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
-	app := analyzeGoFixture(t, root, repository, pkg, "flow walk")
+	app := sharedGoFixtureAuthorities(t, root, repository, pkg, "flow walk")
 	index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
 	if err != nil {
 		t.Fatal(err)
@@ -450,7 +460,7 @@ func TestGoFixtureMainFlowsWalkByCode(t *testing.T) {
 func jstsFlowFixture(t *testing.T) (groupindex.Index, facts.Result, atlas.Graph) {
 	t.Helper()
 	root, repository := materializeFixtureRepository(t, "jsts")
-	_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+	_, index, _, err := sharedJSTSFixture(t, repository, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +511,7 @@ func clojureFlowFixture(t *testing.T) (groupindex.Index, facts.Result, atlas.Gra
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("Clojure discovery: %v %v", targets, err)
 	}
-	result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+	result, err := sharedClojureFixture(t, root, repository, targets[0])
 	if err != nil {
 		t.Fatal(err)
 	}

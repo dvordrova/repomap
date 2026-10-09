@@ -78,8 +78,11 @@ func readRun(dir string) (*auditRun, error) {
 		run.revision = receipt.Manifest().RepositoryState.Head
 	}
 	programs := map[string]programindex.Index{}
-	for _, program := range data.ProgramPortfolio.Entries {
+	if err := data.ProgramPortfolio.ReadProgramIndexes(func(program programindex.Index) error {
 		programs[program.Target.ID] = program
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	display := map[string]string{}
 	if data.TargetOutcomePortfolio != nil {

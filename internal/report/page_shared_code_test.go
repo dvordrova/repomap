@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -9,6 +10,72 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestSharedJoinKeepsFileOwnershipDeclarationIdentityAndViewScope(t *testing.T) {
+	object := func(id, path string, line int) programindex.Object {
+		return programindex.Object{ID: id, Kind: programindex.ObjectFunction, Name: "same",
+			Location: &programindex.Location{Path: path, Line: line, Column: 1}}
+	}
+	objects := []programindex.Object{
+		object("n1", "pkg/shared.py", 10), object("n2", "tests/example.py", 20),
+		{ID: "n3", Kind: programindex.ObjectFunction, Name: "no_location"},
+		object("n4", "pkg/other.py", 10), object("n5", "off.py", 30),
+		object("n6", "unused.py", 40), object("n7", "pkg/shared.py", 50),
+	}
+	entries := make([]programindex.Index, 3)
+	for i := range entries {
+		entries[i] = programindex.Index{Target: programindex.Target{ID: fmt.Sprintf("t%d", i+1)}, Objects: slices.Clone(objects)}
+	}
+	entries[0].Objects[0].Unreachable = true
+	graphs := []groupindex.Index{
+		{Target: entries[0].Target, Groups: []groupindex.Group{{ID: "g1", MemberSubjectIDs: []string{"n1", "n2", "n3"}}},
+			OffMap: []groupindex.OffMapFile{{Path: "off.py"}}},
+		{Target: entries[1].Target, OffMap: []groupindex.OffMapFile{{Path: "off.py"}}},
+	}
+	newBuilder := func(indexes []groupindex.Index) *pageBuilder {
+		return &pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: entries}}, indexes: indexes,
+			sections: []*pageSection{{programTargetID: "t3"}, {programTargetID: "t1"}, {programTargetID: "t2"}}}
+	}
+	builder := newBuilder(graphs)
+	join := builder.sharedJoin()
+	want := &sharedCode{holders: map[string][]sharedHolder{}, keys: map[string]string{}, unreachable: map[string]bool{},
+		held: map[string]map[string]bool{"t1": {"pkg/shared.py": true, "tests/example.py": true, "off.py": true}, "t2": {"off.py": true}, "t3": nil},
+		into: map[string]map[string][]groupindex.StructuralEdge{}}
+	// These are the reader's expected declarations, including helpers in a
+	// held file and every declaration in a program without a mapped inventory.
+	for _, row := range []struct {
+		target string
+		ids    []int
+	}{{"t3", []int{0, 1, 3, 4, 5, 6}}, {"t1", []int{0, 1, 4, 6}}, {"t2", []int{4}}} {
+		for _, i := range row.ids {
+			key := groupindex.DeclarationKey(objects[i])
+			qualified := subjectKey(row.target, objects[i].ID)
+			want.keys[qualified] = key
+			want.unreachable[qualified] = row.target == "t1" && i == 0
+			want.holders[key] = append(want.holders[key], sharedHolder{targetID: row.target, objectID: objects[i].ID})
+		}
+	}
+	if !reflect.DeepEqual(join, want) {
+		t.Fatalf("shared identity, ownership or order changed:\ngot %#v\nwant %#v", join, want)
+	}
+	if builder.sharedJoin() != join {
+		t.Fatal("shared join was rebuilt")
+	}
+	// The test-free view has different file ownership. Its join must not
+	// borrow the full page's holders merely because native evidence is shared.
+	withoutTests := slices.Clone(graphs)
+	withoutTests[0].Groups = []groupindex.Group{{ID: "g1", MemberSubjectIDs: []string{"n1", "n3"}}}
+	view := newBuilder(withoutTests)
+	if view.sharedJoin().holds("t1", objects[1].Location) || !join.holds("t1", objects[1].Location) {
+		t.Fatal("full and test-free views lost their independent held files")
+	}
+	if files := heldFiles(&groupindex.Index{Target: entries[0].Target, Groups: []groupindex.Group{{MemberSubjectIDs: []string{"n3"}}}}, entries[:1]); files == nil || len(files) != 0 {
+		t.Fatalf("a mapped inventory with no located members became a no-map inventory: %v", files)
+	}
+	if files := heldFiles(&groupindex.Index{Target: entries[0].Target}, entries[:1]); files != nil {
+		t.Fatalf("a no-map inventory no longer holds all native declarations: %v", files)
+	}
+}
 
 // Programs sharing one project index (Python's) each declare every file of
 // the project, but a program holds only the files its map claims: a script

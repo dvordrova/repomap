@@ -253,22 +253,23 @@ type builder struct {
 	// fieldWrites are every target's field writes by field key, each
 	// write once with the targets whose code makes it (ProgramIndex
 	// FieldWrites).
-	fieldWrites       map[string][]atlas.FieldWrite
-	seedTargets       map[string]map[string]struct{} // symbol place -> targets it is the seed of
-	tableRows         map[string][]atlas.TableRow    // symbol place of a table variable -> its word rows
-	tableReadRows     map[string]map[atlas.TableRead]bool
-	comparisons       map[string][]atlas.Comparison // symbol place -> the values it compares with several words
-	targetOf          map[string]map[string]struct{}
-	bounds            map[boundaryKey]*boundaryState
-	symbols           []atlas.Place
-	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
-	symbolBindingRows map[string]map[string]atlas.SymbolBinding
-	symbolCallRows    map[string]map[string]atlas.SymbolCall
-	symbolUseRows     map[string]map[atlas.SymbolUse]bool                 // symbol place -> what it reads, hands over or is decorated by
-	symbolFieldRows   map[string]map[atlas.SymbolField]*sourcevalue.Value // symbol place -> the record fields it reads and writes, with the value a write stores
-	memberOwners      map[string]string                                   // retained declaration -> native owner's symbol place
-	unreached         map[string]map[string]struct{}                      // symbol place -> targets whose program never runs it
-	typeFields        map[string]typeField
+	fieldWrites        map[string][]atlas.FieldWrite
+	seedTargets        map[string]map[string]struct{} // symbol place -> targets it is the seed of
+	tableRows          map[string][]atlas.TableRow    // symbol place of a table variable -> its word rows
+	tableReadRows      map[string]map[atlas.TableRead]bool
+	comparisons        map[string][]atlas.Comparison // symbol place -> the values it compares with several words
+	targetOf           map[string]map[string]struct{}
+	bounds             map[boundaryKey]*boundaryState
+	symbols            []atlas.Place
+	symbolCallerRows   map[string]map[string]atlas.SymbolCaller
+	symbolBindingRows  map[string]map[string]atlas.SymbolBinding
+	symbolCallRows     map[string]map[string]atlas.SymbolCall
+	symbolUseRows      map[string]map[atlas.SymbolUse]bool                 // symbol place -> what it reads, hands over or is decorated by
+	symbolFieldRows    map[string]map[atlas.SymbolField]*sourcevalue.Value // symbol place -> the record fields it reads and writes, with the value a write stores
+	memberOwners       map[string]string                                   // retained declaration -> native owner's symbol place
+	unreached          map[string]map[string]struct{}                      // symbol place -> targets whose program never runs it
+	declarationTargets map[string]map[string]struct{}                      // shared declaration -> native views that actually observed it
+	typeFields         map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
 	// the dependency catalogs: a call into one of them is not an integration.
 	workspace map[string]struct{}
@@ -450,6 +451,13 @@ func (b *builder) collectObjects(target TargetInput) {
 		if b.symbolOf[object.ID] == "" {
 			continue
 		}
+		if b.declarationTargets == nil {
+			b.declarationTargets = make(map[string]map[string]struct{})
+		}
+		if b.declarationTargets[b.symbolOf[object.ID]] == nil {
+			b.declarationTargets[b.symbolOf[object.ID]] = make(map[string]struct{})
+		}
+		b.declarationTargets[b.symbolOf[object.ID]][targetID] = struct{}{}
 		scopedID := scopedObjectID(targetID, object.ID)
 		// Keep the fact's exact target-local identity before declarations from
 		// overlapping targets merge and the current native lookups are released.
@@ -506,10 +514,15 @@ func (b *builder) collectObjects(target TargetInput) {
 		// The previous all-object pass sorted native IDs before deduplicating
 		// fields. Preserve that representative independently of target order.
 		scopedID := scopedObjectID(targetID, object.ID)
-		if previous, exists := b.typeFields[key]; exists && previous.member.Decl.ObjectID <= scopedID {
+		previous, exists := b.typeFields[key]
+		observers := appendUnique(previous.member.TargetIDs, targetID)
+		sort.Strings(observers)
+		if exists && previous.member.Decl.ObjectID <= scopedID {
+			previous.member.TargetIDs = observers
+			b.typeFields[key] = previous
 			continue
 		}
-		b.typeFields[key] = typeField{owner: id, member: atlas.TypeMember{Path: filePath, Decl: atlas.Decl{
+		b.typeFields[key] = typeField{owner: id, member: atlas.TypeMember{Path: filePath, TargetIDs: observers, Decl: atlas.Decl{
 			ObjectID: scopedID, Name: object.Name, Kind: string(object.Kind), Signature: object.Signature, Aliases: aliasText(object.Aliases), Types: typeAnchors(object.Types),
 			LineNo: object.Location.Line, Column: object.Location.Column, Exported: object.Visibility == programindex.VisibilityPublic,
 		}}}
@@ -831,7 +844,7 @@ func (b *builder) readFiles() error {
 		})
 		for i := range state.decls {
 			state.decls[i].FanIn = b.fanIn[state.decls[i].ObjectID]
-			state.decls[i].Doc = b.docstringFor(filePath, state.decls[i].LineNo, state.decls)
+			state.decls[i].Doc = b.docstringFor(filePath, state.decls[i].LineNo, state.decls, state.decls[i].Column)
 		}
 		state.doc = b.moduleDoc(filePath, state)
 		entry, ok := b.entries[filePath]
@@ -880,13 +893,13 @@ func generatedByMarker(content []byte) bool {
 // docstringFor finds the author quote attached to this declaration. Python
 // body docstrings carry their declaration line; comment-based languages use
 // the existing neighbouring-comment rule.
-func (b *builder) docstringFor(filePath string, line int, decls []atlas.Decl) string {
-	return firstSentence(b.quotedDocstringFor(filePath, line, decls))
+func (b *builder) docstringFor(filePath string, line int, decls []atlas.Decl, column ...int) string {
+	return firstSentence(b.quotedDocstringFor(filePath, line, decls, column...))
 }
 
 // quotedDocstringFor retains the existing bounded author quote. Type contracts
 // need later sentences as well: these often state effects or lifecycle rules.
-func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.Decl) string {
+func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.Decl, column ...int) string {
 	docs := b.docs[filePath]
 	if claims.CPath(filePath) {
 		// A C docstring describes only the declaration whose header it names.
@@ -894,17 +907,34 @@ func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.De
 		for i, decl := range decls {
 			declared[i] = decl.LineNo
 		}
-		return claims.CDocstring(docs, line, declared)
+		return claims.CDocstring(docs, line, declared, column...)
 	}
 	best := ""
 	for _, doc := range docs {
-		if strings.EqualFold(path.Ext(filePath), ".py") {
-			if doc.DeclarationLine == line {
+		if doc.DeclarationLine != 0 {
+			if doc.DeclarationLine == line && ((doc.DeclarationColumn == 0 && !claims.JSTSPath(filePath) && !claims.ClojurePath(filePath)) || doc.DeclarationColumn > 0 && len(column) > 0 && doc.DeclarationColumn == column[0]) {
 				return doc.Text
 			}
 			continue
 		}
-		clojure := strings.HasSuffix(filePath, ".clj") || strings.HasSuffix(filePath, ".cljc") || strings.HasSuffix(filePath, ".cljs")
+		if strings.EqualFold(path.Ext(filePath), ".py") || claims.JSTSPath(filePath) {
+			continue
+		}
+		clojure := claims.ClojurePath(filePath)
+		if clojure && doc.Column > 0 {
+			continue
+		}
+		if clojure {
+			ownersOnLine := 0
+			for _, decl := range decls {
+				if decl.LineNo == line {
+					ownersOnLine++
+				}
+			}
+			if ownersOnLine > 1 {
+				continue
+			}
+		}
 		if clojure && doc.Line < line || !clojure && doc.Line > line || line-doc.Line > docstringReach || doc.Line-line > docstringReach {
 			continue
 		}
@@ -942,7 +972,7 @@ func (b *builder) moduleDoc(filePath string, state *fileState) string {
 			return firstSentence(first.Text)
 		}
 	case ".go":
-		if strings.HasPrefix(first.Text, "Package ") {
+		if first.DeclarationLine == 0 && strings.HasPrefix(first.Text, "Package ") {
 			return firstSentence(first.Text)
 		}
 	case ".c", ".h":
@@ -950,7 +980,10 @@ func (b *builder) moduleDoc(filePath string, state *fileState) string {
 			return firstSentence(first.Text)
 		}
 	default:
-		if firstDecl == 0 || firstDecl-first.Line > docstringReach {
+		if claims.JSTSPath(filePath) {
+			return ""
+		}
+		if first.DeclarationLine == 0 && (firstDecl == 0 || firstDecl-first.Line > docstringReach) {
 			return firstSentence(first.Text)
 		}
 	}
@@ -1246,7 +1279,7 @@ func (b *builder) collectSymbols() {
 			}
 			id := atlas.SymbolID(filePath, decl.LineNo, decl.Name)
 			if decl.Kind == string(programindex.ObjectType) {
-				decl.Doc = b.quotedDocstringFor(filePath, decl.LineNo, state.decls)
+				decl.Doc = b.quotedDocstringFor(filePath, decl.LineNo, state.decls, decl.Column)
 			}
 			// A target the file no longer belongs to (claimByRoot) holds
 			// no declaration of it to leave unreached.
@@ -1262,9 +1295,15 @@ func (b *builder) collectSymbols() {
 					seeds = append(seeds, target)
 				}
 			}
+			var observers []string
+			for _, target := range sortedKeys(b.declarationTargets[id]) {
+				if _, holds := state.targets[target]; holds {
+					observers = append(observers, target)
+				}
+			}
 			b.symbols = append(b.symbols, atlas.Place{
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
-				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
+				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: observers,
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
 				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Fields: fields[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds, Rows: b.tableRows[id],
 					ReadAt: b.tableReads(id), Comparisons: b.comparisons[id]},
@@ -1508,8 +1547,9 @@ func (b *builder) typeMembers() map[string][]atlas.TypeMember {
 		for _, decl := range file.decls {
 			id := b.memberOwners[decl.ObjectID]
 			if id != "" {
-				decl.Doc = b.quotedDocstringFor(path, decl.LineNo, file.decls)
-				result[id] = append(result[id], atlas.TypeMember{Path: path, Decl: decl})
+				decl.Doc = b.quotedDocstringFor(path, decl.LineNo, file.decls, decl.Column)
+				memberID := atlas.SymbolID(path, decl.LineNo, decl.Name)
+				result[id] = append(result[id], atlas.TypeMember{Path: path, Decl: decl, TargetIDs: sortedKeys(b.declarationTargets[memberID])})
 			}
 		}
 	}
@@ -1785,6 +1825,7 @@ func symbolCallKey(call atlas.SymbolCall) string {
 	// but must not reorder provider facts and invalidate unrelated answers.
 	column := call.Column
 	call.Column = 0
+	call.TargetIDs = nil
 	raw, _ := json.Marshal(call)
 	return fmt.Sprintf("%s:%d", raw, column)
 }
@@ -1803,7 +1844,13 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 		if byObject[symbol] == nil {
 			byObject[symbol] = make(map[string]atlas.SymbolCall)
 		}
-		byObject[symbol][symbolCallKey(call)] = call
+		key := symbolCallKey(call)
+		call.TargetIDs = slices.Clone(byObject[symbol][key].TargetIDs)
+		if !slices.Contains(call.TargetIDs, target.Index.Target.ID) {
+			call.TargetIDs = append(call.TargetIDs, target.Index.Target.ID)
+			sort.Strings(call.TargetIDs)
+		}
+		byObject[symbol][key] = call
 	}
 	// Where each pattern is written, for the calls naming the call they
 	// read the same value as.
@@ -1959,7 +2006,17 @@ func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
 			}
 			call.Name, call.Resolution = "", string(programindex.ResolutionUnresolved)
 			call.CalleeIDs, call.Evidence = nil, nil
-			delete(rows, symbolCallKey(call))
+			key := symbolCallKey(call)
+			if unresolved, ok := rows[key]; ok {
+				unresolved.TargetIDs = slices.DeleteFunc(slices.Clone(unresolved.TargetIDs), func(id string) bool {
+					return slices.Contains(call.TargetIDs, id)
+				})
+				if len(unresolved.TargetIDs) == 0 {
+					delete(rows, key)
+				} else {
+					rows[key] = unresolved
+				}
+			}
 		}
 		keys := make([]string, 0, len(rows))
 		for key := range rows {

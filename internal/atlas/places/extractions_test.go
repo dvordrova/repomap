@@ -137,7 +137,13 @@ func TestDataOutsideEveryProgramIsNoProgramsData(t *testing.T) {
 		t.Fatal(err)
 	}
 	graph := atlas.Graph{Version: atlas.GraphVersion, Places: []atlas.Place{}, Edges: []atlas.Edge{}, Seeds: []string{}}
-	b := &builder{input: Input{Facts: result}, files: map[string]*fileState{"internal/store/store.go": {targets: map[string]struct{}{"t1": {}}}}}
+	b := &builder{input: Input{Facts: result}, files: map[string]*fileState{
+		"internal/store/store.go": {targets: map[string]struct{}{"t1": {}}},
+		// Airflow's db_cleanup.py was collected but held by no selected
+		// program. Its SQL entity was excluded after an inventory edge had
+		// already been emitted, which made the ordinary graph invalid.
+		"scripts/backfill/backfill.py": {targets: map[string]struct{}{}},
+	}}
 	b.addExtractions(&graph)
 	held := map[string][]string{}
 	for _, place := range graph.Places {

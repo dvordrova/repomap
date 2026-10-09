@@ -344,3 +344,8 @@ function frameGroupsOf(model,id){
   if(!model.nodes.has(id))return [];
   return connections(id,frameMembers(model,id),model.edges,outsideOf(model,id));
 }
+
+// The closed component lists its existing direct areas and loose parts in
+// saved order. Names never create a child or merge equal named children.
+export const programContents=(model,node)=>(node.children||[]).map(id=>model.nodes.get(id))
+  .filter(child=>child&&['area','part'].includes(child.kind)).map(child=>({id:child.id,title:child.name}));

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -63,6 +64,105 @@ func adaptiveEachBuild(item []string) (Call[testValue], error) {
 		return Call[testValue]{}, err
 	}
 	return calls[0], nil
+}
+
+type preflightEachProvider struct{ adaptiveEachProvider }
+
+type completionEnvelopeEachProvider struct {
+	adaptiveEachProvider
+	kind ResourceLimitKind
+}
+
+func (p *completionEnvelopeEachProvider) Complete(ctx context.Context, prepared Prepared) (Completion, error) {
+	completion, err := p.adaptiveEachProvider.Complete(ctx, prepared)
+	var values []string
+	_ = json.Unmarshal(prepared.Bytes(), &values)
+	if len(values) > 1 {
+		// Transport succeeded; the shared executor owns this envelope refusal.
+		completion = Completion{Response: []byte(`{"value":"partial"}`), FinishReason: FinishLength, ChoiceCount: 1, Metrics: Metrics{Attempts: 1}}
+		if p.kind == ResourceLimitResponseBytes {
+			completion.FinishReason = FinishStop
+			completion.Response = []byte(strings.Repeat(" ", 513))
+		}
+		return completion, nil
+	}
+	return completion, err
+}
+
+func TestAdaptiveOwnersSplitExecutorCompletionEnvelopesAndReuseLeaves(t *testing.T) {
+	for _, kind := range []ResourceLimitKind{ResourceLimitOutputTokens, ResourceLimitResponseBytes} {
+		for _, batch := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/batch=%t", kind, batch), func(t *testing.T) {
+				p := &completionEnvelopeEachProvider{kind: kind}
+				executor := Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1}
+				build := func(items [][]string) ([]Call[testValue], error) {
+					calls, err := adaptiveBatchTestBuild(items)
+					for i := range calls {
+						calls[i].Limits.MaxResponseBytes = 512
+					}
+					return calls, err
+				}
+				for range 2 {
+					items := [][]string{{"a", "b"}, {"sibling"}}
+					var outcomes []Outcome[testValue]
+					var err error
+					if batch {
+						_, outcomes, err = ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
+					} else {
+						_, outcomes, err = ExecuteAdaptiveJSONEach(t.Context(), executor, p, items, func(item []string) (Call[testValue], error) {
+							calls, err := build([][]string{item})
+							return calls[0], err
+						}, adaptiveBatchTestSplit)
+					}
+					if err != nil || len(outcomes) != 3 {
+						t.Fatalf("complete leaves unavailable: %+v / %v", outcomes, err)
+					}
+					for i, want := range []string{"a", "b", "sibling"} {
+						if outcomes[i].Value.Value != want {
+							t.Fatalf("leaf %d: %q, want %q", i, outcomes[i].Value.Value, want)
+						}
+					}
+				}
+				want := map[string]int{"a,b": 1, "a": 1, "b": 1, "sibling": 1}
+				if !reflect.DeepEqual(p.requests, want) {
+					t.Fatalf("exact failed parent or accepted sibling was repeated: %v", p.requests)
+				}
+			})
+		}
+	}
+}
+
+func (p *preflightEachProvider) Prepare(prompt Prompt, limits Limits) (Prepared, error) {
+	var values []string
+	if err := json.Unmarshal([]byte(prompt.User), &values); err != nil {
+		return Prepared{}, err
+	}
+	if len(values) > 1 {
+		return Prepared{}, NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitContextTokens, Limit: 1, Observed: len(values), ObservedKnown: true})
+	}
+	return p.adaptiveEachProvider.Prepare(prompt, limits)
+}
+
+func TestAdaptiveOwnersPartitionKnownEnvelopeBeforeAnyTransport(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprint(batch), func(t *testing.T) {
+			p := &preflightEachProvider{}
+			items := [][]string{{"a", "b", "c", "d"}, {"sibling"}}
+			var err error
+			if batch {
+				_, _, err = ExecuteAdaptiveJSONBatch(t.Context(), Executor{BatchConcurrency: 2}, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+			} else {
+				_, _, err = ExecuteAdaptiveJSONEach(t.Context(), Executor{BatchConcurrency: 2}, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]int{"a": 1, "b": 1, "c": 1, "d": 1, "sibling": 1}
+			if !reflect.DeepEqual(p.requests, want) {
+				t.Fatalf("transport calls %v, want complete leaf cover %v", p.requests, want)
+			}
+		})
+	}
 }
 
 func TestAdaptiveEachKeepsRunningSiblingAndSplitsEveryFailureWithoutCache(t *testing.T) {

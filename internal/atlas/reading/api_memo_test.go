@@ -136,9 +136,14 @@ func TestAnOutsideSymbolsUsageIsItsCallNotItsLine(t *testing.T) {
 // undecided rather than being drawn again.
 func TestAWarmAtlasAPIRereadMakesNoLiveCall(t *testing.T) {
 	cache := t.TempDir()
+	uncertain := make(map[string]float64)
+	for _, option := range lines.API(false, true).Columns[0].Options {
+		uncertain[option] = 0
+	}
+	uncertain[lines.APINone], uncertain[atlas.BoundaryClientRequest] = 0.52, 0.48
 	answers := &asking{verdicts: map[string]llm.Verdict{
 		"sys/socket.h.accept": typesafetest.Choose(lines.APIServes),
-		"string.h.strcmp":     {Choice: lines.APINone, Probabilities: map[string]float64{lines.APINone: 0.52, atlas.BoundaryClientRequest: 0.48}},
+		"string.h.strcmp":     {Choice: lines.APINone, Probabilities: uncertain},
 	}}
 	places := apiGraph(apiCall(t, "string.h", "strcmp", "strcmp", "b"), apiCall(t, "sys/socket.h", "accept", "accept"), apiCall(t, "stdio.h", "printf", "printf", "%s\n"))
 	categorizer := answers.categorizer()

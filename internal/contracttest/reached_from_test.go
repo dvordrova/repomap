@@ -8,10 +8,8 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
@@ -24,7 +22,7 @@ import (
 func TestCFixtureConnectIsReachedFromTheClientsTwoParts(t *testing.T) {
 	pair := readKvdPair(t)
 	client, program := pair.indexes["kvcli"], pair.client
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	mainLine, _ := fixture.at(t, "kvcli.c", "fd = netConnect(", "")
 	replLine, _ := fixture.at(t, "repl.c", "fd = netConnect(host, port)", "")
 	var connect *groupindex.OutboundCall
@@ -72,7 +70,7 @@ func TestEveryLanguageReachesASendingHelperFromItsCallersParts(t *testing.T) {
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
 		writePublishedGoFixtureModule(t, root)
-		authorities := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "reached from")
+		authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "reached from")
 		input, err := goadapter.BuildInput(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -92,7 +90,7 @@ func TestEveryLanguageReachesASendingHelperFromItsCallersParts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		input, err := pythonprogramindex.BuildInput(t.Context(), repository, pythonFixtureTarget(t, catalog))
+		input, err := sharedPythonFixtureInput(t, repository, pythonFixtureTarget(t, catalog))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +103,7 @@ func TestEveryLanguageReachesASendingHelperFromItsCallersParts(t *testing.T) {
 	})
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}

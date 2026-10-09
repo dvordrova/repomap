@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -32,8 +33,8 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 27
-	Version      = 22
+	GraphVersion = 29
+	Version      = 23
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -367,6 +368,9 @@ type RowLiteral struct {
 type TypeMember struct {
 	Path string `json:"path"`
 	Decl Decl   `json:"decl"`
+	// TargetIDs are the native views that observed this owned declaration,
+	// independent of the shared type's own views or representative ObjectID.
+	TargetIDs []string `json:"target_ids,omitempty"`
 }
 
 // SymbolUse is one use of another declaration: PlaceID is its symbol place,
@@ -431,6 +435,9 @@ func SymbolUseLess(left, right SymbolUse) bool {
 }
 
 type SymbolCall struct {
+	// TargetIDs are the native views that observed this call, independently
+	// of its caller and callee declarations. Absent means the holder's views.
+	TargetIDs     []string           `json:"target_ids,omitempty"`
 	ReceiverValue *sourcevalue.Value `json:"receiver_value,omitempty"`
 	ResultValue   *sourcevalue.Value `json:"result_value,omitempty"`
 	API           *CallAPI           `json:"api,omitempty"`
@@ -735,6 +742,31 @@ func EntryKinds() []string {
 }
 
 // Target is one analyzed program target with its boxes.
+// RefusedPart retains a provisional model responsibility and its original
+// declarations after actual-set admission refused it. MemberIDs use the same
+// source identities as Box.MemberIDs; projection binds them to native subjects.
+type RefusedPart struct {
+	Name      string   `json:"name"`
+	Holds     string   `json:"holds"`
+	Reason    string   `json:"reason"`
+	MemberIDs []string `json:"member_ids"`
+}
+
+const (
+	PartsIndependentJobs = "independent_jobs"
+	PartsNotEstablished  = "not_established"
+	PartsDecisionRefused = "decision_refused"
+	PartsOverEnvelope    = "over_envelope"
+)
+
+func ValidPartsRefusalReason(reason string) bool {
+	switch reason {
+	case PartsIndependentJobs, PartsNotEstablished, PartsDecisionRefused, PartsOverEnvelope:
+		return true
+	}
+	return false
+}
+
 type Target struct {
 	Data     []DataRecord `json:"data,omitempty"`
 	ID       string       `json:"id"`
@@ -756,6 +788,9 @@ type Target struct {
 	// holds, with why. Its files keep their lines, captions and keys here;
 	// their boundaries name no box.
 	OffMap []OffMapFile `json:"off_map"`
+	// RefusedParts are model proposals refused for their actual assigned work;
+	// they are not accepted boxes or deterministic native classifications.
+	RefusedParts []RefusedPart `json:"refused_parts,omitempty"`
 	// MapFailure says why the target has no map of parts at all, in one of
 	// the closed MapFailure* words: its parts answer was refused, or no model
 	// was asked. The refusals themselves are rejected rows. Every file is then
@@ -812,7 +847,8 @@ type Idiom struct {
 // Zone is one area of a target: a named frame holding several parts.
 type Zone struct {
 	// ID is a compact atlas-local z* ordinal.
-	ID string `json:"id"`
+	ID       string `json:"id"`
+	ParentID string `json:"parent_id,omitempty"`
 	// Title and Line are MODEL; an empty Line is the explicit state of an
 	// area whose description was refused or not asked.
 	Title  string   `json:"title"`
@@ -1175,6 +1211,19 @@ func cleanPath(path string) string {
 }
 
 func compactGraphPlaceIDs(graph Graph) (Graph, error) {
+	return compactGraphPlaceIDsWithPresentation(graph, nil)
+}
+
+func compactGraphPlaceIDsWithPresentation(graph Graph, presentation *GraphPresentation) (Graph, error) {
+	var originalPositions map[string]int
+	if presentation != nil {
+		originalPositions = make(map[string]int)
+		for position, place := range graph.Places {
+			if place.Symbol != nil {
+				originalPositions[place.ID] = position
+			}
+		}
+	}
 	raw, err := json.Marshal(graph)
 	if err != nil {
 		return Graph{}, fmt.Errorf("atlas: copy graph for identity sealing: %w", err)
@@ -1245,6 +1294,9 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 	}
 	for position := range owned.Places {
 		place := &owned.Places[position]
+		if presentation != nil && place.Symbol != nil {
+			presentation.symbols[mapID(place.ID)] = originalPositions[place.ID]
+		}
 		place.ID = mapID(place.ID)
 		place.Parent = mapID(place.Parent)
 		if place.File != nil {
@@ -1253,7 +1305,21 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 		}
 		if place.Symbol != nil {
 			for call := range place.Symbol.Calls {
-				mapIDs(place.Symbol.Calls[call].CalleeIDs)
+				ids := place.Symbol.Calls[call].CalleeIDs
+				var original []string
+				if presentation != nil && len(ids) > 1 {
+					original = make([]string, len(ids))
+					for i, id := range ids {
+						original[i] = mapID(id)
+					}
+				}
+				mapIDs(ids)
+				if presentation != nil && len(original) > 0 && !slices.Equal(original, ids) {
+					if presentation.calls[place.ID] == nil {
+						presentation.calls[place.ID] = make(map[int][]string)
+					}
+					presentation.calls[place.ID][call] = original
+				}
 				for store := range place.Symbol.Calls[call].Stores {
 					place.Symbol.Calls[call].Stores[store].CalleeID = mapID(place.Symbol.Calls[call].Stores[store].CalleeID)
 				}
@@ -1344,8 +1410,96 @@ func Slug(title string) string {
 	return strings.TrimSuffix(out.String(), "-")
 }
 
-// EncodeGraph seals and encodes places.json.
+// GraphPresentation contains only the producer's original traversal and
+// alternative ordering. It changes no canonical graph, source value or artifact.
+// Fields are private; consumers cannot replace this ordering with new evidence.
+type GraphPresentation struct {
+	symbols map[string]int
+	calls   map[string]map[int][]string
+}
+
+// SymbolPosition keeps the producer's last-by-object/first-by-key lookup order.
+func (order *GraphPresentation) SymbolPosition(id string) (int, bool) {
+	if order == nil {
+		return 0, false
+	}
+	position, ok := order.symbols[id]
+	return position, ok
+}
+
+// Calls restores only source presentation order on a row-owned shallow copy.
+// Original observations, flags, values and literal evidence remain untouched.
+func (order *GraphPresentation) Calls(id string, calls []SymbolCall) []SymbolCall {
+	if order == nil || len(order.calls[id]) == 0 {
+		return calls
+	}
+	owned := slices.Clone(calls)
+	for position, ids := range order.calls[id] {
+		owned[position].CalleeIDs = slices.Clone(ids)
+	}
+	return owned
+}
+
+// SealedGraph owns the independent canonical graph and its exact artifact.
+// Only SealGraph constructs it. Take transfers the value once; copies of the
+// handle share that one transfer, so callers cannot retain a second authority.
+type SealedGraph struct{ state *sealedGraphState }
+type sealedGraphState struct {
+	mu           sync.Mutex
+	graph        Graph
+	encoded      []byte
+	presentation *GraphPresentation
+	taken        bool
+}
+
+// Take transfers the canonical typed graph and exact bytes without copying.
+// The consumer owns both values afterwards; this handle can no longer expose them.
+func (sealed *SealedGraph) Take() (Graph, []byte, *GraphPresentation, error) {
+	if sealed == nil || sealed.state == nil {
+		return Graph{}, nil, nil, fmt.Errorf("atlas: no sealed graph handoff")
+	}
+	state := sealed.state
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.taken {
+		return Graph{}, nil, nil, fmt.Errorf("atlas: sealed graph handoff already taken")
+	}
+	graph, encoded, presentation := state.graph, state.encoded, state.presentation
+	state.graph, state.encoded, state.presentation, state.taken = Graph{}, nil, nil, true
+	return graph, encoded, presentation, nil
+}
+
+// WriteGraph persists the exact artifact while the handle still owns it.
+func (sealed *SealedGraph) WriteGraph(runDir string) error {
+	if sealed == nil || sealed.state == nil {
+		return fmt.Errorf("atlas: no sealed graph handoff")
+	}
+	state := sealed.state
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.taken {
+		return fmt.Errorf("atlas: sealed graph handoff already taken")
+	}
+	return WriteGraph(runDir, state.encoded)
+}
+
+// EncodeGraph retains its existing exact-byte contract.
 func EncodeGraph(graph Graph) ([]byte, error) {
+	sealed, err := sealGraph(graph, nil)
+	if err != nil {
+		return nil, err
+	}
+	_, encoded, _, err := sealed.Take()
+	return encoded, err
+}
+
+// SealGraph seals the same independent canonical copy as EncodeGraph, keeping
+// that owned typed value for the ordinary reading instead of decoding it again.
+func SealGraph(graph Graph) (*SealedGraph, error) {
+	return sealGraph(graph, &GraphPresentation{symbols: make(map[string]int), calls: make(map[string]map[int][]string)})
+}
+
+func sealGraph(graph Graph, presentation *GraphPresentation) (*SealedGraph, error) {
 	// Seal a canonical, independent copy of local native bindings. Caller
 	// iteration order and duplicate observations do not change provider input.
 	graph.Places = append([]Place(nil), graph.Places...)
@@ -1359,7 +1513,7 @@ func EncodeGraph(graph Graph) ([]byte, error) {
 	graph.Version = GraphVersion
 	graph.SHA256 = ""
 	var err error
-	graph, err = compactGraphPlaceIDs(graph)
+	graph, err = compactGraphPlaceIDsWithPresentation(graph, presentation)
 	if err != nil {
 		return nil, err
 	}
@@ -1371,7 +1525,11 @@ func EncodeGraph(graph Graph) ([]byte, error) {
 		return nil, err
 	}
 	graph.SHA256 = digest
-	return json.Marshal(graph)
+	encoded, err := json.Marshal(graph)
+	if err != nil {
+		return nil, err
+	}
+	return &SealedGraph{state: &sealedGraphState{graph: graph, encoded: encoded, presentation: presentation}}, nil
 }
 
 // DecodeGraph reads places.json and checks its seal.
@@ -1544,6 +1702,13 @@ func validateGraph(graph Graph) error {
 			}
 		}
 		if place.Symbol != nil {
+			for _, member := range place.Symbol.Members {
+				for i, target := range member.TargetIDs {
+					if target == "" || i > 0 && member.TargetIDs[i-1] >= target {
+						return fmt.Errorf("atlas: type %q member %q has an invalid native observer %q", place.ID, member.Decl.Name, target)
+					}
+				}
+			}
 			for _, target := range place.Symbol.Unreached {
 				if !slices.Contains(place.TargetIDs, target) {
 					return fmt.Errorf("atlas: symbol %q is unreached in target %q, which does not hold it", place.ID, target)
@@ -1722,6 +1887,18 @@ func Validate(value Atlas) error {
 		if target.MapFailure != "" && target.MapFailure != MapFailureRefused && target.MapFailure != MapFailureNoModel {
 			return fmt.Errorf("atlas: target %q has an invalid map failure", target.ID)
 		}
+		for _, refusal := range target.RefusedParts {
+			if strings.TrimSpace(refusal.Name) == "" || strings.TrimSpace(refusal.Holds) == "" || invalidText(refusal.Name) || invalidText(refusal.Holds) || !ValidPartsRefusalReason(refusal.Reason) || len(refusal.MemberIDs) == 0 {
+				return fmt.Errorf("atlas: target %q has an invalid refused part", target.ID)
+			}
+			seen := map[string]bool{}
+			for _, id := range refusal.MemberIDs {
+				if strings.TrimSpace(id) == "" || invalidText(id) || seen[id] {
+					return fmt.Errorf("atlas: refused part %q has invalid members", refusal.Name)
+				}
+				seen[id] = true
+			}
+		}
 		boxes := make(map[string]struct{}, len(target.Boxes))
 		members := make(map[string]struct{})
 		for _, box := range target.Boxes {
@@ -1798,6 +1975,23 @@ func Validate(value Atlas) error {
 				if _, ok := boxes[boxID]; !ok {
 					return fmt.Errorf("atlas: zone %q names unknown box %q", zone.ID, boxID)
 				}
+			}
+		}
+		if err := validateZoneTree(target.Zones); err != nil {
+			return fmt.Errorf("atlas: target %q: %w", target.ID, err)
+		}
+		zoneOwners := map[string]string{}
+		for _, zone := range target.Zones {
+			for _, id := range zone.BoxIDs {
+				if zoneOwners[id] != "" {
+					return fmt.Errorf("atlas: box %q belongs to multiple zones", id)
+				}
+				zoneOwners[id] = zone.ID
+			}
+		}
+		for _, box := range target.Boxes {
+			if box.ZoneID != zoneOwners[box.ID] {
+				return fmt.Errorf("atlas: box %q has inconsistent zone membership", box.ID)
 			}
 		}
 		for _, box := range target.Boxes {

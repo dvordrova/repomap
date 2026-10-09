@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 27
+	Version          = 28
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -456,6 +456,10 @@ type ObjectInput struct {
 	OwnerRef     string
 	ContainerRef string
 	Location     *Location
+	// DocstringRanges are original comment ranges attached to this
+	// declaration by its native parser, in Location.Path. No text or role
+	// is inferred; absence leaves attachment unknown.
+	DocstringRanges []LineRange
 	// EndLine is the last line of the declaration's source, when the adapter
 	// knows where it ends; zero otherwise.
 	EndLine int
@@ -902,23 +906,24 @@ func IsExternalPlatformAuthority(value *ExternalSymbol) bool {
 // Signature, ownership, containment and location are optional because not all
 // adapters can establish them with exact local authority.
 type Object struct {
-	ID          string          `json:"id"`
-	SourceRef   string          `json:"-"`
-	Kind        ObjectKind      `json:"kind"`
-	Name        string          `json:"name"`
-	Visibility  Visibility      `json:"visibility"`
-	Signature   string          `json:"signature,omitempty"`
-	OwnerID     string          `json:"owner_id,omitempty"`
-	ContainerID string          `json:"container_id,omitempty"`
-	Location    *Location       `json:"location,omitempty"`
-	EndLine     int             `json:"end_line,omitempty"`
-	CodeLines   int             `json:"code_lines,omitempty"`
-	Unreachable bool            `json:"unreachable,omitempty"`
-	Macro       bool            `json:"macro,omitempty"`
-	Anonymous   bool            `json:"anonymous,omitempty"`
-	Directory   string          `json:"directory,omitempty"`
-	External    *ExternalSymbol `json:"external,omitempty"`
-	Aliases     []Alias         `json:"aliases,omitempty"`
+	ID              string          `json:"id"`
+	SourceRef       string          `json:"-"`
+	Kind            ObjectKind      `json:"kind"`
+	Name            string          `json:"name"`
+	Visibility      Visibility      `json:"visibility"`
+	Signature       string          `json:"signature,omitempty"`
+	OwnerID         string          `json:"owner_id,omitempty"`
+	ContainerID     string          `json:"container_id,omitempty"`
+	Location        *Location       `json:"location,omitempty"`
+	DocstringRanges []LineRange     `json:"docstring_ranges,omitempty"`
+	EndLine         int             `json:"end_line,omitempty"`
+	CodeLines       int             `json:"code_lines,omitempty"`
+	Unreachable     bool            `json:"unreachable,omitempty"`
+	Macro           bool            `json:"macro,omitempty"`
+	Anonymous       bool            `json:"anonymous,omitempty"`
+	Directory       string          `json:"directory,omitempty"`
+	External        *ExternalSymbol `json:"external,omitempty"`
+	Aliases         []Alias         `json:"aliases,omitempty"`
 	// Types are, for a variable, where the repository types its declared
 	// type names are declared (see ObjectInput.Types).
 	Types      []Location  `json:"types,omitempty"`
@@ -1246,9 +1251,38 @@ func validDispatch(value string) bool {
 // code's structure, saved, never a provider row (owner, control review
 // 2026-10-03: Lua's forprep calls luaG_runerror only when the step is zero,
 // and the error message's allocation had read as the path's outcome).
+//
+// Condition is, for an arm a condition decides, that condition's own code
+// as written, trimmed of surrounding whitespace only (C, GO, PYTHON), and
+// When on which outcome the arm runs: GuardWhenHolds (an if arm, a ?: arm
+// taken when it holds, an && operand after the ones before it), GuardWhenFails
+// (an else arm, the other ?: arm, an || operand) or GuardWhenMatches (a case
+// of a switch or match, Condition its subject). Absent, the arm has no one
+// condition (a select clause, an except body, a try's else) or the guard is
+// a call that never returns. It is display only, never model input (owner,
+// 2026-10-05: lua.c:361 reads "only if `script`").
 type Guard struct {
-	Kind     string    `json:"kind"`
-	Location *Location `json:"location,omitempty"`
+	Kind      string    `json:"kind"`
+	Location  *Location `json:"location,omitempty"`
+	Condition string    `json:"condition,omitempty"`
+	When      string    `json:"when,omitempty"`
+}
+
+// The outcomes of a guard's condition its arm runs on (Guard.When).
+const (
+	GuardWhenHolds   = "holds"
+	GuardWhenFails   = "fails"
+	GuardWhenMatches = "matches"
+)
+
+// GuardCondition is a guard's Condition and When for an arm: the code
+// trimmed of surrounding whitespace, both empty when no code is known.
+func GuardCondition(code, when string) (string, string) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", ""
+	}
+	return code, when
 }
 
 // The guard kinds, weakest first; an error and a call that never returns are
@@ -1278,16 +1312,25 @@ func (guard *Guard) Fails() bool {
 
 // WeakestGuard folds the guards of several sites of one relation: an
 // unguarded site leaves none, else the weakest stands (the first of equal
-// strength).
+// strength). A written condition belongs to the folded call only when every
+// site has that same condition and outcome. Never change the input guards.
 func WeakestGuard(guards []*Guard) *Guard {
 	var weakest *Guard
+	common := true
 	for position, guard := range guards {
 		if guard == nil {
 			return nil
 		}
+		if position > 0 && (guard.Condition != guards[0].Condition || guard.When != guards[0].When) {
+			common = false
+		}
 		if position == 0 || GuardStrength(guard) < GuardStrength(weakest) {
 			weakest = guard
 		}
+	}
+	if !common {
+		weakest = cloneGuard(weakest)
+		weakest.Condition, weakest.When = "", ""
 	}
 	return weakest
 }
@@ -1558,6 +1601,26 @@ func restoreRelationLocation(location **Location, relation *Location) {
 // Decode strictly decodes one JSON artifact, rejects unknown fields and
 // trailing JSON values, then validates identities, references and the seal.
 func Decode(encoded []byte) (Index, error) {
+	index, err := decodeArtifact(encoded)
+	if err != nil {
+		return Index{}, err
+	}
+	if err := index.Validate(); err != nil {
+		return Index{}, err
+	}
+	return index, nil
+}
+
+// DecodeVerified decodes an artifact whose bytes a caller has matched to the
+// SHA-256 recorded when a validated index was written (report's program
+// portfolio): validating it again re-encoded and hashed the whole index on
+// every read, and the report reads each one several times (Metabase:
+// minutes of a render).
+func DecodeVerified(encoded []byte) (Index, error) {
+	return decodeArtifact(encoded)
+}
+
+func decodeArtifact(encoded []byte) (Index, error) {
 	if len(encoded) == 0 {
 		return Index{}, fmt.Errorf("program index: invalid artifact size")
 	}
@@ -1576,9 +1639,6 @@ func Decode(encoded []byte) (Index, error) {
 			return Index{}, fmt.Errorf("program index: trailing JSON value")
 		}
 		return Index{}, fmt.Errorf("program index: trailing data: %w", err)
-	}
-	if err := index.Validate(); err != nil {
-		return Index{}, err
 	}
 	return index, nil
 }
@@ -1610,6 +1670,16 @@ func (decoded indexArtifact) restore() Index {
 	index.Coverage = compileCoverage(index.Objects, index.Relations,
 		len(index.Objects)+decoded.Coverage.ObjectsOmitted, len(index.Relations)+decoded.Coverage.RelationsOmitted)
 	return index
+}
+
+// validGuardCondition: a condition is code as written, trimmed, with one of
+// the closed outcomes; none has neither.
+func validGuardCondition(guard *Guard) bool {
+	if guard.Condition == "" {
+		return guard.When == ""
+	}
+	return guard.Condition == strings.TrimSpace(guard.Condition) && utf8.ValidString(guard.Condition) &&
+		(guard.When == GuardWhenHolds || guard.When == GuardWhenFails || guard.When == GuardWhenMatches)
 }
 
 func cloneGuard(guard *Guard) *Guard {
@@ -1735,7 +1805,8 @@ func New(input Input) (Index, error) {
 			ID: id, SourceRef: value.SourceRef,
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
 			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Anonymous: value.Anonymous, Directory: value.Directory,
-			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases), Types: slices.Clone(value.Types),
+			DocstringRanges: canonicalDocstringRanges(value.DocstringRanges),
+			External:        cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases), Types: slices.Clone(value.Types),
 			ParameterStores: canonicalParameterStores(value.ParameterStores), Rows: cloneRows(value.Rows),
 			Comparisons: canonicalComparisons(value.Comparisons),
 		}
@@ -1978,6 +2049,7 @@ func (index Index) Snapshot() Index {
 	copy(result.Objects, index.Objects)
 	for position := range result.Objects {
 		result.Objects[position].Location = cloneLocation(index.Objects[position].Location)
+		result.Objects[position].DocstringRanges = slices.Clone(index.Objects[position].DocstringRanges)
 		result.Objects[position].External = cloneExternalSymbol(index.Objects[position].External)
 		result.Objects[position].Aliases = slices.Clone(index.Objects[position].Aliases)
 		result.Objects[position].Types = slices.Clone(index.Objects[position].Types)
@@ -2612,6 +2684,7 @@ func validateObjectInput(value ObjectInput) error {
 	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
+		!validDocstringRanges(value.Location, canonicalDocstringRanges(value.DocstringRanges)) ||
 		!validAliases(canonicalAliases(value.Aliases)) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) || value.Anonymous && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) ||
@@ -2633,6 +2706,7 @@ func validateObject(value Object) error {
 	if !validCompactID(value.ID, "n") || !value.Kind.Valid() || !validText(value.Name) || !value.Visibility.Valid() ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
+		!validDocstringRanges(value.Location, value.DocstringRanges) ||
 		!validAliases(value.Aliases) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) || value.Anonymous && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) ||
@@ -2648,6 +2722,39 @@ func validateObject(value Object) error {
 		return err
 	}
 	return nil
+}
+
+func canonicalDocstringRanges(lines []LineRange) []LineRange {
+	if len(lines) == 0 {
+		return nil
+	}
+	owned := slices.Clone(lines)
+	slices.SortFunc(owned, compareDocstringRanges)
+	return slices.Compact(owned)
+}
+
+func compareDocstringRanges(a, b LineRange) int {
+	for _, pair := range [][2]int{{a.Line, b.Line}, {a.Column, b.Column}, {a.EndLine, b.EndLine}, {a.EndColumn, b.EndColumn}} {
+		if pair[0] < pair[1] {
+			return -1
+		}
+		if pair[0] > pair[1] {
+			return 1
+		}
+	}
+	return 0
+}
+
+func validDocstringRanges(location *Location, lines []LineRange) bool {
+	if len(lines) > 0 && (location == nil || !validOptionalLocation(location)) {
+		return false
+	}
+	for position, line := range lines {
+		if line.Line < 1 || line.Column < 1 || line.EndLine < line.Line || line.EndColumn < 1 || line.EndLine == line.Line && line.EndColumn <= line.Column || position > 0 && compareDocstringRanges(lines[position-1], line) >= 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func validateTargetSeedBinding(seed TargetSeed, object Object) error {
@@ -2694,7 +2801,7 @@ func validateRelationShape(value Relation) error {
 		return fmt.Errorf("program index: an implements basis belongs to a resolved interface call")
 	}
 	if guard := value.Guard; guard != nil && (guard.Kind != GuardBranch && guard.Kind != GuardError && guard.Kind != GuardNoReturn ||
-		!validOptionalLocation(guard.Location) ||
+		!validOptionalLocation(guard.Location) || !validGuardCondition(guard) ||
 		value.Kind != RelationCalls && value.Kind != RelationInvokesExternal && value.Kind != RelationPassesCallback) {
 		return fmt.Errorf("program index: a guard belongs to a call or a callback handed over, with a known kind")
 	}
@@ -2744,7 +2851,7 @@ func validateRelationShape(value Relation) error {
 
 func validateWitness(value Witness) error {
 	if !validText(value.Kind) || !validOptionalText(value.Detail) ||
-		!validOptionalText(value.SourceExpression) || !validOptionalLocation(value.Location) ||
+		!validPatternString(value.SourceExpression) || !validOptionalLocation(value.Location) ||
 		value.ObjectRef != "" || value.ObjectID != "" && !validCompactID(value.ObjectID, "n") ||
 		value.Kind == WitnessKeys && value.ObjectID == "" {
 		return fmt.Errorf("program index: invalid witness")

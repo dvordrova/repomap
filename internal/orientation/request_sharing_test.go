@@ -12,6 +12,39 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
+func TestManifestProviderReferencesKeepCompleteCommandsAtRepositoryRoot(t *testing.T) {
+	root := "/private/tmp/selected-repository"
+	command := "cd \"" + root + "\" && ./configure --enable-json --enable-fts5 --enable-session --enable-column-metadata --enable-threadsafe --enable-shared --enable-static && make -f " + root + "/Makefile sqlite3"
+	input := Input{RepositoryRoot: root}
+	builder := newRequestBuilder(input)
+	original := facts.Fact{ID: "a1", Kind: facts.KindManifest, Value: command, Key: "variable.CONFIGURE", Anchor: &facts.Anchor{Path: "Makefile", Line: 8}}
+	row := builder.factWire(original)
+	want := strings.ReplaceAll(strings.ReplaceAll(command, "\""+root+"\"", "\".\""), root+"/", "./")
+	if row.Value != want || row.Key != original.Key || row.Anchor != original.Anchor.String() || original.Value != command {
+		t.Fatalf("portable complete manifest command or original source changed: row=%#v original=%#v", row, original)
+	}
+	if row := builder.factWire(facts.Fact{Kind: facts.KindManifest, Value: root}); row.Value != "." {
+		t.Fatalf("checkout root variable = %q", row.Value)
+	}
+	unrelated := root + "-other/build"
+	if row := builder.factWire(facts.Fact{Kind: facts.KindManifest, Value: unrelated}); row.Value != unrelated {
+		t.Fatalf("a different authored directory was changed: %q", row.Value)
+	}
+	for _, value := range []string{"/backup" + root + "/file", "https://example" + root + "/file"} {
+		if got := portableManifestValue(value, root); got != value {
+			t.Fatalf("a matching suffix in another path changed: %q => %q", value, got)
+		}
+	}
+	for value, want := range map[string]string{
+		"cd " + root + " && ./configure":            "cd . && ./configure",
+		"-I" + root + "/include -L" + root + "/lib": "-I./include -L./lib",
+	} {
+		if got := portableManifestValue(value, root); got != want {
+			t.Fatalf("known checkout reference: %q => %q, want %q", value, got, want)
+		}
+	}
+}
+
 // freqtrade's build_helpers module is t2.n1, t3.n59 and t4.n16, and its one
 // merged place keeps t1's numbering (t1.n1781). Looked up by their own
 // qualified ids, t2 and t3 found no place and went without their calls.

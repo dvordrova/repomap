@@ -247,8 +247,9 @@ var displayPlaceholder = regexp.MustCompile(`__REPOMAP_P[0-9]+__`)
 // displayNameIndex finds protected names in a text without scanning every
 // name. A name is protected only where it stands whole, with no name rune
 // on either side, so each maximal run of name runes inside it is also a whole
-// run of the text: names are indexed by their longest run and only names
-// whose run occurs in the text are searched.
+// run of the text: names are indexed by their least frequent run and only
+// names whose run occurs in the text are searched. Frequency changes only
+// candidate selection; exact whole-name matching still owns protected spans.
 type displayNameIndex struct {
 	byRun map[string][]string
 	bare  []string // names without a run of name runes
@@ -256,21 +257,35 @@ type displayNameIndex struct {
 
 func newDisplayNameIndex(names []string) *displayNameIndex {
 	index := &displayNameIndex{byRun: map[string][]string{}}
+	frequencies := map[string]int{}
 	for _, name := range names {
 		if !displayUnambiguousName(name) {
 			continue
 		}
-		longest := ""
+		seen := map[string]bool{}
 		for _, run := range displayNameRuns(name) {
-			if len(run) > len(longest) {
-				longest = run
+			if !seen[run] {
+				frequencies[run]++
+				seen[run] = true
 			}
 		}
-		if longest == "" {
+	}
+	for _, name := range names {
+		if !displayUnambiguousName(name) {
+			continue
+		}
+		selected := ""
+		for _, run := range displayNameRuns(name) {
+			if selected == "" || frequencies[run] < frequencies[selected] ||
+				(frequencies[run] == frequencies[selected] && len(run) > len(selected)) {
+				selected = run
+			}
+		}
+		if selected == "" {
 			index.bare = append(index.bare, name)
 			continue
 		}
-		index.byRun[longest] = append(index.byRun[longest], name)
+		index.byRun[selected] = append(index.byRun[selected], name)
 	}
 	return index
 }

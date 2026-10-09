@@ -14,7 +14,6 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
@@ -50,7 +49,7 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	t.Setenv("GOTOOLCHAIN", "local")
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
-	app := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "cumulative-go-inputs")
+	app := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "cumulative-go-inputs")
 	index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +216,7 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 			break
 		}
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	input, err := sharedPythonFixtureInput(t, repository, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +407,7 @@ func TestCumulativeClojureInputsAreAskedPerCall(t *testing.T) {
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("Clojure discovery: %v %v", targets, err)
 	}
-	result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+	result, err := sharedClojureFixture(t, root, repository, targets[0])
 	if err != nil {
 		t.Fatal(err)
 	}

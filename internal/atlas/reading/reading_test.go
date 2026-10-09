@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -128,32 +129,20 @@ type tableProvider struct {
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
-	// partFor names the part of one unit row of a parts request (a whole
-	// file, or a box of a split file with its "box"); nil puts each unit in
-	// the part named after its directory. partsResponse, when set, answers a
-	// parts request verbatim from its unit rows, and partsBodies keeps every
-	// parts request. placeFor chooses a follow-up
-	// row's part; nil takes its first option. areaFor names the area of one
-	// part row of an areas request, "" for none; nil answers no areas.
-	// areasResponse, when set, answers an areas request verbatim.
-	// describe writes a description; nil writes "About <name>.", and a
-	// description it returns empty is refused.
-	partFor       func(file map[string]any) string
-	partsResponse func(files []map[string]any) string
-	partsBodies   [][]byte
-	placeFor      func(row map[string]any) string
-	areaFor       func(part map[string]any) string
-	areasResponse func(parts []map[string]any) string
-	describe      func(name string) string
-	// boxesFor answers the naming of one file's boxes verbatim; nil names
-	// none, which keeps the file whole.
-	boxesFor func(path string) string
-	// designRequests counts the parts, description, areas and naming
-	// requests; described keeps each description request by part name and
-	// named each naming request by path.
+	// groupFor names the smaller box a file goes in when the grouping
+	// divides the box named box; nil names it by the file's directory. A
+	// proposal names each distinct box once, holding its files' paths, so
+	// a box whose files share one name is read as it is. describe writes a
+	// description; nil writes "About <name>.", and a description it returns
+	// empty is refused.
+	groupFor func(box, file string) string
+	describe func(name string) string
+	// designRequests counts the proposal and description requests;
+	// proposed keeps each proposal request and described each description
+	// request by part name.
 	designRequests map[string]int
+	proposed       [][]byte
 	described      map[string][]byte
-	named          map[string][]byte
 }
 
 type questionBatchRequest struct {
@@ -310,9 +299,6 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 					// Nothing listed: the free value names its own.
 					answer[column.Name] = column.Free + "Text for " + key
 				}
-				if column.Name == "part" && provider.placeFor != nil {
-					answer[column.Name] = provider.placeFor(row)
-				}
 				// A peer choice takes the first listed ref, not "none".
 				if column.Name == "peer" && len(options) > 1 {
 					answer[column.Name] = options[1]
@@ -415,7 +401,9 @@ func readOptions(t *testing.T, graph atlas.Graph, provider llm.Provider, cacheRo
 // closedDecisions answers the closed tables as the tests decide them: every
 // candidate explains its part, every part is the domain, every declaration
 // is a key, a handed callable runs around the handlers and a call that hands
-// nothing over serves. Any other question fails its request.
+// nothing over serves; no declaration is a helper, every box asked about
+// needs smaller boxes and a declaration goes in the proposed box that holds
+// its file. Any other question fails its request.
 func closedDecisions() *typesafetest.Categorizer {
 	return closedDecisionsWith(nil)
 }
@@ -424,12 +412,23 @@ func closedDecisions() *typesafetest.Categorizer {
 func closedDecisionsWith(verdicts map[string]llm.Verdict) *typesafetest.Categorizer {
 	decided := map[string]llm.Verdict{
 		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose(lines.PartDomain), "key_symbol": typesafetest.Choose("yes"),
-		"boxes": typesafetest.Choose(lines.RoleOneBox), "helper": typesafetest.Choose(lines.RoleHelperOwnJob),
+		"helper": typesafetest.Choose(lines.RoleHelperOwnJob), "grouping": typesafetest.Choose(lines.GroupNeedsSmaller),
 		"binds": typesafetest.Choose(lines.APIMiddleware), "talks": typesafetest.Choose(lines.APIServes),
 		"enters": typesafetest.Choose(lines.APINone),
 	}
 	maps.Copy(decided, verdicts)
-	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(decided)}
+	byColumn := typesafetest.ByColumn(decided)
+	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		if _, decided := verdicts["box"]; !decided && strings.HasSuffix(key, "|box") {
+			// A declaration goes in the proposed box that holds its file.
+			file, _ := question.Item["file"].(string)
+			if box := heldBy(question.Options, file); box != "" {
+				return typesafetest.Choose(box), true
+			}
+			return llm.Verdict{}, false
+		}
+		return byColumn(key, question)
+	}}
 }
 
 // jevCalls is how many requests the reading's categorizer answered.
@@ -535,15 +534,13 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 			t.Fatal("request reference points to table input without provider preparation")
 		}
 	}
+	// Four declarations are read as one box, the target's own; the file
+	// table's box answer moves no file out of it.
 	target := result.Atlas.Targets[0]
-	boxes := make(map[string]atlas.Box)
-	for _, box := range target.Boxes {
-		boxes[box.Title] = box
+	if len(target.Boxes) != 1 || len(target.Boxes[0].Files) != 4 {
+		t.Fatalf("parts: %+v", target.Boxes)
 	}
-	if len(boxes) != 2 || len(boxes["pkg/a"].Files) != 2 || len(boxes["pkg/b"].Files) != 2 {
-		t.Fatalf("source layout overrode accepted parts: %+v", boxes)
-	}
-	for _, file := range boxes["pkg/a"].Files {
+	for _, file := range target.Boxes[0].Files {
 		if file.Path == "pkg/a/y.go" && (file.Source != atlas.SourceModel || file.Line != "File pkg/a/y.go does things.") {
 			t.Fatalf("moved file: %+v", file)
 		}
@@ -646,101 +643,78 @@ func TestRequestBytesCarryNoIdentities(t *testing.T) {
 	}
 }
 
-// design answers the parts, description and areas requests of the map of
-// parts; ok is false for any other request.
+// design answers the grouping's proposals and the parts' descriptions; ok
+// is false for any other request.
 func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, error) {
-	var request struct {
-		Units []map[string]any `json:"units"`
-		Parts []map[string]any `json:"parts"`
-		Part  string           `json:"part"`
-		File  struct {
-			Path string `json:"path"`
-		} `json:"file"`
-	}
-	switch task {
-	case designPartsTask, designDescribeTask, designAreasTask, designBoxesTask:
-	default:
+	if task != groupProposeTask && task != designDescribeTask {
 		return nil, false, nil
-	}
-	if err := json.Unmarshal(body, &request); err != nil {
-		return nil, true, err
 	}
 	provider.mu.Lock()
 	if provider.designRequests == nil {
-		provider.designRequests, provider.described, provider.named = map[string]int{}, map[string][]byte{}, map[string][]byte{}
+		provider.designRequests, provider.described = map[string]int{}, map[string][]byte{}
 	}
 	provider.designRequests[task]++
-	switch task {
-	case designDescribeTask:
-		provider.described[request.Part] = append([]byte(nil), body...)
-	case designBoxesTask:
-		provider.named[request.File.Path] = append([]byte(nil), body...)
-	}
 	provider.mu.Unlock()
-	switch task {
-	case designBoxesTask:
-		if provider.boxesFor == nil {
-			return []byte(`{"boxes":[]}`), true, nil
+	if task == designDescribeTask {
+		var request describeInput
+		if err := json.Unmarshal(body, &request); err != nil {
+			return nil, true, err
 		}
-		return []byte(provider.boxesFor(request.File.Path)), true, nil
-	case designPartsTask:
 		provider.mu.Lock()
-		provider.partsBodies = append(provider.partsBodies, append([]byte(nil), body...))
+		provider.described[request.Part] = append([]byte(nil), body...)
 		provider.mu.Unlock()
-		if provider.partsResponse != nil {
-			return []byte(provider.partsResponse(request.Units)), true, nil
-		}
-		type group struct {
-			Name  string   `json:"name"`
-			Units []string `json:"units"`
-		}
-		var groups []group
-		at := map[string]int{}
-		for _, unit := range request.Units {
-			name := filepath.Dir(fmt.Sprint(unit["path"]))
-			if provider.partFor != nil {
-				name = provider.partFor(unit)
-			}
-			if _, seen := at[name]; !seen {
-				at[name] = len(groups)
-				groups = append(groups, group{Name: name})
-			}
-			groups[at[name]].Units = append(groups[at[name]].Units, fmt.Sprint(unit["ref"]))
-		}
-		raw, err := json.Marshal(map[string]any{"groups": groups})
-		return raw, true, err
-	case designDescribeTask:
 		text := "About " + request.Part + "."
 		if provider.describe != nil {
 			text = provider.describe(request.Part)
 		}
 		raw, err := json.Marshal(map[string]string{"description": text})
 		return raw, true, err
-	default:
-		if provider.areasResponse != nil {
-			return []byte(provider.areasResponse(request.Parts)), true, nil
-		}
-		type area struct {
-			Name  string   `json:"name"`
-			Parts []string `json:"parts"`
-		}
-		areas := []area{}
-		at := map[string]int{}
-		for _, part := range request.Parts {
-			if provider.areaFor == nil {
-				continue
-			}
-			name := provider.areaFor(part)
-			if name == "" {
-				continue
-			}
-			if _, seen := at[name]; !seen {
-				at[name] = len(areas)
-				areas = append(areas, area{Name: name})
-			}
-			areas[at[name]].Parts = append(areas[at[name]].Parts, fmt.Sprint(part["ref"]))
-		}
-		raw, err := json.Marshal(map[string]any{"areas": areas})
-		return raw, true, err
 	}
+	var request groupProposeInput
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, true, err
+	}
+	provider.mu.Lock()
+	provider.proposed = append(provider.proposed, append([]byte(nil), body...))
+	provider.mu.Unlock()
+	var paths []string
+	for _, file := range request.Files {
+		paths = append(paths, file.Path)
+	}
+	for _, dir := range request.Counts {
+		for _, file := range dir.Files {
+			paths = append(paths, path.Join(dir.Dir, file.Name))
+		}
+	}
+	var names []string
+	files := map[string][]string{}
+	for _, file := range paths {
+		name := path.Dir(file)
+		if provider.groupFor != nil {
+			name = provider.groupFor(request.Box.Name, file)
+		}
+		if files[name] == nil {
+			names = append(names, name)
+		}
+		files[name] = append(files[name], file)
+	}
+	boxes := []map[string]string{}
+	for _, name := range names {
+		boxes = append(boxes, map[string]string{"name": name, "holds": "Holds " + strings.Join(files[name], ", ") + "."})
+	}
+	raw, err := json.Marshal(map[string]any{"boxes": boxes})
+	return raw, true, err
+}
+
+// heldBy is the proposed box whose holds lists the file, as the preset
+// proposal writes it; "" when none does.
+func heldBy(options []llm.Option, file string) string {
+	for _, option := range options {
+		for _, word := range strings.Fields(option.Meaning) {
+			if strings.TrimRight(word, ",.") == file {
+				return option.Name
+			}
+		}
+	}
+	return ""
 }

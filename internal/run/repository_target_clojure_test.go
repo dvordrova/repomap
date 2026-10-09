@@ -58,8 +58,18 @@ func TestClojureShadowBuildIsDiscoveredBesideTheJVMProject(t *testing.T) {
 		t.Fatalf("required files: %v", discovery.RequiredFileRefs)
 	}
 	restored, err := discovery.RestoreFiles([]corpus.FileID{shadow})
-	if err != nil || len(restored) != 1 || restored[0].Target.Selector != "clojure:shadow-cljs.edn:app" || restored[0].Target.Scope != targetoutcome.ScopeExecutable {
+	if err != nil || len(restored) != 2 || restored[0].Target.Selector != "clojure:shadow-cljs.edn:app" || restored[0].Target.Scope != targetoutcome.ScopeExecutable || restored[1].Target.Selector != "clojure:shadow-cljs.edn:library" {
 		t.Fatalf("restored: %+v %v", restored, err)
+	}
+	libraryEvidence, err := discovery.NativeEvidence(restored[1].Target)
+	if err != nil || len(libraryEvidence.Observations) != 3 {
+		t.Fatalf("namespace build evidence: %+v %v", libraryEvidence, err)
+	}
+	for i, namespace := range []string{"example.web", "example.service", "example.absent"} {
+		observation := libraryEvidence.Observations[i]
+		if observation.Path != "shadow-cljs.edn" || observation.Line != 7+i || observation.Fields["build"] != "library" || observation.Fields["key"] != "entries" || len(observation.Values) != 1 || observation.Values[0] != namespace {
+			t.Fatalf("lost original namespace launch evidence: %+v", observation)
+		}
 	}
 	targets, err := discovery.ResolveExplicit(repository, "clojure:shadow-cljs.edn:app")
 	if err != nil || len(targets) != 1 {

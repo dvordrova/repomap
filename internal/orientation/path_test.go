@@ -12,8 +12,36 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/typesafe"
 	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
+
+// The Main flow calls the categorizer directly, outside table packing. An
+// oversized choice still refuses locally and keeps an explicit native fork.
+func TestMainFlowCannotBypassTheCategorizerEnvelope(t *testing.T) {
+	input := flowProgram()
+	for i := range input.Groups[0].Subjects {
+		subject := &input.Groups[0].Subjects[i]
+		if subject.ID == "on_click" {
+			subject.Interpretation.Line = strings.Repeat("Complete accepted behavior. ", typesafe.QuestionTokenLimit/20)
+		}
+	}
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, _ llm.Question) (llm.Verdict, bool) {
+		t.Errorf("oversized flow choice reached transport: %s", key)
+		return llm.Verdict{}, false
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, input, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if categorizer.Calls() != 0 || len(walk.rejected) != 1 || !strings.Contains(walk.rejected[0].Reason, "resource=context_tokens") {
+		t.Fatalf("direct flow guard: calls=%d rejected=%+v", categorizer.Calls(), walk.rejected)
+	}
+	names := flowNames(walk.flow)
+	if !slices.Contains(names, "? on_click (handed to loop.on.on_click)") || !slices.Contains(names, "? on_move (handed to loop.on.on_move)") {
+		t.Fatalf("refused decision lost its native alternatives: %v", names)
+	}
+}
 
 // flowProgram is a small program to walk: main calls start, which registers
 // three callbacks with an outside loop (on_click, on_move, draw) and calls a
@@ -303,7 +331,7 @@ func TestAClassStepsPublicCallsAreStepsAndItsHelpersFold(t *testing.T) {
 	var asked []llm.Question
 	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		asked = append(asked, question)
-		return llm.Verdict{Choice: "enter", Probabilities: map[string]float64{"enter": 0.7, "exit": 0.2}}, true
+		return llm.Verdict{Choice: "enter", Probabilities: map[string]float64{"enter": 0.7, "exit": 0.2, "analyze": 0.1}}, true
 	}}
 	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, Input{Groups: []groupindex.Index{index}}, "t1")
 	if err != nil {

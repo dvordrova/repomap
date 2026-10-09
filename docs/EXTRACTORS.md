@@ -155,6 +155,9 @@ files receive the producer's source context too. Model-selected anchors are
 restored locally, including a configuration anchor for an output that was not
 collected. Producer observations and corpus membership keep their own edge
 kinds; neither becomes a compiler-proved call.
+Corpus membership edges enter the graph only with their admitted entity. A
+source file collected without a program owner remains in the corpus, but its
+excluded data entity leaves neither inventory nor observation edges behind.
 
 This does not create language targets, execute a generator, apply migrations,
 or automatically build a change recipe. Saved places and reading inputs use the

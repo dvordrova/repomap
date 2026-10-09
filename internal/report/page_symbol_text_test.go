@@ -15,6 +15,11 @@ func TestAVariableTileSaysNoNameTwice(t *testing.T) {
 		{"othello.ai.search/alpha-min", "alpha-min", ""},
 		{"fixture_app.levels.READ_LIMIT", "READ_LIMIT = 8", " = 8"},
 		{"Model", "Model gorm.Model", ": gorm.Model"},
+		{"a", "any", ": any"},
+		{"i", "int", ": int"},
+		{"n", "number", ": number"},
+		{"body", "body: string;", ": string"},
+		{"a", "a = 8", " = 8"},
 	} {
 		object := &groupindex.ObjectFacts{Name: c.name, Kind: programindex.ObjectVariable, Signature: c.signature}
 		if got := symbolText(object, c.name); got != c.want {

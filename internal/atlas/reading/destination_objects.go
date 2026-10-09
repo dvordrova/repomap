@@ -145,7 +145,7 @@ func (d *DestinationReader) sendersOf(site sourcevalue.Anchor, kind string) []de
 			if d.talks[apiName(*call.call.API)] != kind {
 				return
 			}
-			if receiver := call.call.ReceiverValue; receiver != nil && !d.sameKindResult(receiver, kind) {
+			if receiver := call.call.ReceiverValue; receiver != nil && !d.sameKindResult(receiver, kind, runningCallTargets(call.place, call.call)) {
 				senders = append(senders, call)
 			}
 			follow(sourcevalue.Anchor{Path: call.place.Path, Line: call.call.Line, Column: call.call.Column})
@@ -212,11 +212,14 @@ func (d *DestinationReader) sendersOf(site sourcevalue.Anchor, kind string) []de
 // sameKindResult reports a value that is what an outside call answered
 // kind returned: a statement being built, not the object it is sent
 // through.
-func (d *DestinationReader) sameKindResult(value *sourcevalue.Value, kind string) bool {
+func (d *DestinationReader) sameKindResult(value *sourcevalue.Value, kind string, targets []string) bool {
 	if value.Kind != "call_result" || value.Anchor == nil {
 		return false
 	}
 	for _, call := range d.callSites[*value.Anchor] {
+		if len(intersectTargets(targets, runningCallTargets(call.place, call.call))) == 0 {
+			continue
+		}
 		if call.call.API != nil && d.talks[apiName(*call.call.API)] == kind {
 			return true
 		}
@@ -230,19 +233,19 @@ func (d *DestinationReader) sameKindResult(value *sourcevalue.Value, kind string
 // else the object the call itself is made on. Empty when no outside call
 // made that object: the call then stays its own destination.
 func (d *DestinationReader) Exchange(place atlas.Place, call atlas.SymbolCall, kind string) []atlas.DestinationUse {
-	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{destinationStep(place, call)}}, kind: kind}
+	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningCallTargets(place, call)...), Steps: []atlas.DestinationStep{destinationStep(place, call)}}, kind: kind}
 	active := make(map[string]bool)
 	var result []destinationPath
 	for _, sender := range d.sendersOf(sourcevalue.Anchor{Path: place.Path, Line: call.Line, Column: call.Column}, kind) {
 		next := cloneDestinationPath(initial)
-		next.TargetIDs = intersectTargets(initial.TargetIDs, runningTargets(sender.place))
+		next.TargetIDs = intersectTargets(initial.TargetIDs, runningCallTargets(sender.place, sender.call))
 		if len(next.TargetIDs) == 0 {
 			continue
 		}
 		next.Steps = appendDestinationStep(next.Steps, destinationStep(sender.place, sender.call))
 		result = append(result, d.object(sender.call.ReceiverValue, sender.place, next, true, active)...)
 	}
-	if len(result) == 0 && call.ReceiverValue != nil && !d.sameKindResult(call.ReceiverValue, kind) {
+	if len(result) == 0 && call.ReceiverValue != nil && !d.sameKindResult(call.ReceiverValue, kind, initial.TargetIDs) {
 		result = d.object(call.ReceiverValue, place, initial, true, active)
 	}
 	if len(result) == 0 {
@@ -286,6 +289,10 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 		}
 		for _, call := range d.callSites[*value.Anchor] {
 			next := cloneDestinationPath(use)
+			next.TargetIDs = intersectTargets(use.TargetIDs, runningCallTargets(call.place, call.call))
+			if len(next.TargetIDs) == 0 {
+				continue
+			}
 			next.Steps = appendDestinationStep(next.Steps, destinationStep(call.place, call.call))
 			switch {
 			case call.call.API != nil:
@@ -327,7 +334,7 @@ func (d *DestinationReader) object(value *sourcevalue.Value, owner atlas.Place, 
 	case "parameter":
 		for _, caller := range d.parameterCallers(value, use) {
 			next := cloneDestinationPath(use)
-			next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(caller.place))
+			next.TargetIDs = intersectTargets(use.TargetIDs, runningCallTargets(caller.place, caller.call))
 			if len(next.TargetIDs) == 0 {
 				continue
 			}

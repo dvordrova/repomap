@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/makefile"
 )
 
 // dryRunTimeout bounds `make -n -B`. The dry run prints recipes without
@@ -506,8 +508,9 @@ func linkPrograms(env parseEnv, description buildDescription) ([]Program, map[st
 			paths = append(paths, spec.Path)
 		}
 		anchor := Site{Path: specs[0].Path}
-		if makefile := dirMakefile(env, link.dir); makefile != "" {
-			anchor = Site{Path: makefile, Line: ruleLine(env, makefile, link.written)}
+		manifest := dirMakefile(env, link.dir)
+		if manifest != "" {
+			anchor = ruleSite(env, manifest, link.written)
 		}
 		kind := ProgramExecutable
 		if link.shared {
@@ -518,7 +521,7 @@ func linkPrograms(env parseEnv, description buildDescription) ([]Program, map[st
 			// The archives the line links, each a library target of its own.
 			fields["archives"] = strings.Join(archives, " ")
 		}
-		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: kind, Units: specs, Anchor: anchor, LinkArgs: link.args, Missing: missing,
+		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: kind, Units: specs, Anchor: anchor, Manifest: manifest, LinkArgs: link.args, Missing: missing,
 			Evidence: []Observation{{Kind: "c_link", Path: anchor.Path, Line: anchor.Line, Fields: fields, Values: paths}}})
 	}
 	return programs, linked, observations
@@ -602,8 +605,9 @@ func archivePrograms(env parseEnv, description buildDescription) ([]Program, map
 			paths = append(paths, spec.Path)
 		}
 		anchor := Site{Path: specs[0].Path}
-		if makefile := dirMakefile(env, rule.dir); makefile != "" {
-			anchor = Site{Path: makefile, Line: ruleLine(env, makefile, rule.written)}
+		manifest := dirMakefile(env, rule.dir)
+		if manifest != "" {
+			anchor = ruleSite(env, manifest, rule.written)
 		}
 		fields := map[string]string{"output": name}
 		if users := consumers[name]; len(users) > 0 {
@@ -612,7 +616,7 @@ func archivePrograms(env parseEnv, description buildDescription) ([]Program, map
 		}
 		users := slices.Clone(consumerUnits[name])
 		sortUnits(users)
-		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: ProgramLibrary, Units: specs, Anchor: anchor, Missing: missing, Consumers: users,
+		programs = append(programs, Program{Selector: "c:" + name, Name: name, Kind: ProgramLibrary, Units: specs, Anchor: anchor, Manifest: manifest, Missing: missing, Consumers: users,
 			Evidence: []Observation{{Kind: "c_archive", Path: anchor.Path, Line: anchor.Line, Fields: fields, Values: paths}}})
 	}
 	return programs, covered, observations
@@ -687,44 +691,63 @@ func dirMakefile(env parseEnv, dir string) string {
 	return ""
 }
 
-// ruleLine is the line of the rule whose targets name the output as
-// written, else of the rule whose targets name it through a variable the
-// same makefile assigns it to (`LUA_T= lua`, then `$(LUA_T): …`), one level
-// deep; 0 when neither is written.
-func ruleLine(env parseEnv, makefile, output string) int {
-	id, ok := env.repository.ID(makefile)
-	if !ok {
-		return 0
-	}
-	content, err := env.repository.ReadFileAll(id)
-	if err != nil {
-		return 0
-	}
-	lines := strings.Split(string(content.Bytes), "\n")
-	find := func(target string) int {
-		rule := regexp.MustCompile(`^(?:[^:#=\t][^:#=]*\s)?` + target + `(?:\s[^:#=]*)?::?(?:[^=]|$)`)
-		for number, line := range lines {
-			if rule.MatchString(line) {
-				return number + 1
-			}
-		}
-		return 0
-	}
-	if line := find(regexp.QuoteMeta(output)); line > 0 {
-		return line
-	}
-	for _, line := range lines {
-		match := makeAssignment.FindStringSubmatch(line)
-		if match == nil || !slices.Contains(strings.Fields(match[2]), output) {
+// ruleSite is the unique source rule for the native output. Complete included
+// source is read with the root invocation directory. A unique recipe fragment
+// locates a link/archive; otherwise only a unique source fragment is known.
+// Ambiguous/unresolved sites remain the root manifest with no invented line.
+func ruleSite(env parseEnv, manifest, output string) Site {
+	all, recipes, conditional := map[Site]bool{}, map[Site]bool{}, map[Site]bool{}
+	for _, row := range ruleRows(env, manifest) {
+		if row.Target != output {
 			continue
 		}
-		name := regexp.QuoteMeta(match[1])
-		if at := find(`\$(?:\(` + name + `\)|\{` + name + `\})`); at > 0 {
-			return at
+		site := Site{Path: row.Path, Line: row.Line}
+		if row.Condition != "" {
+			conditional[site] = true
+			continue
+		}
+		all[site] = true
+		if row.HasRecipe {
+			recipes[site] = true
 		}
 	}
-	return 0
+	for site := range conditional {
+		if !all[site] {
+			return Site{Path: manifest}
+		}
+	}
+	if len(recipes) == 1 {
+		for site := range recipes {
+			return site
+		}
+	}
+	if len(all) == 1 {
+		for site := range all {
+			return site
+		}
+	}
+	return Site{Path: manifest}
 }
 
-// makeAssignment is a makefile variable assignment: its name and value.
-var makeAssignment = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*(?::=|::=|\?=|\+=|=)\s*(.*?)\s*$`)
+func hasRule(env parseEnv, manifest, target string) bool {
+	return slices.ContainsFunc(ruleRows(env, manifest), func(row makefile.Row) bool { return row.Target == target })
+}
+
+func ruleRows(env parseEnv, manifest string) []makefile.Row {
+	return makefile.ReadSource(manifest, func(name string) ([]string, bool) {
+		id, ok := env.repository.ID(name)
+		if !ok {
+			return nil, false
+		}
+		content, err := env.repository.ReadFileAll(id)
+		if err != nil {
+			return nil, false
+		}
+		return strings.Split(string(content.Bytes), "\n"), true
+	}, func(name string) (string, bool) {
+		if !path.IsAbs(name) {
+			name = path.Join(path.Dir(manifest), name)
+		}
+		return env.repository.RepositoryPath(name)
+	})
+}

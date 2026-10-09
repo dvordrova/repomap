@@ -216,7 +216,7 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 func TestCumulativeClojureShadowBuild(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "clojure")
 	builds, err := clojureproject.ScoutShadow(repository)
-	if err != nil || len(builds) != 1 {
+	if err != nil || len(builds) != 2 {
 		t.Fatalf("shadow-cljs builds: %v %v", builds, err)
 	}
 	result, err := clojureproject.Build(t.Context(), root, repository, builds[0])
@@ -248,6 +248,10 @@ func TestCumulativeClojureShadowBuild(t *testing.T) {
 		"manifest shadow-cljs.edn:2 builds.app.output-dir public/js",
 		"manifest shadow-cljs.edn:2 builds.app.target browser",
 		"manifest shadow-cljs.edn:4 builds.app.modules.main.init-fn example.web/init",
+		"manifest shadow-cljs.edn:6 builds.library.target npm-module",
+		"manifest shadow-cljs.edn:7 builds.library.entries example.web",
+		"manifest shadow-cljs.edn:8 builds.library.entries example.service",
+		"manifest shadow-cljs.edn:9 builds.library.entries example.absent",
 		"registration src/example/web.cljs:11 js/setInterval example.web/refresh! js.setInterval",
 	}
 	if !slices.Equal(got, want) {
@@ -263,5 +267,51 @@ func TestCumulativeClojureShadowBuild(t *testing.T) {
 	}
 	if !slices.Equal(ticks, []string{"function 19"}) {
 		t.Fatalf("example.web/tick declarations: %q, want its defn alone", ticks)
+	}
+}
+
+// Metabase's npm-module build declares namespaces directly under the build.
+// The same ordinary reader and native pipeline must restore a second program
+// with module seeds; absent namespaces and callable init functions are not seeds.
+func TestCumulativeClojureBuildLevelNamespaceEntries(t *testing.T) {
+	root, repository := materializeFixtureRepository(t, "clojure")
+	builds, err := clojureproject.ScoutShadow(repository)
+	if err != nil || len(builds) != 2 {
+		t.Fatalf("shadow builds: %v / %v", builds, err)
+	}
+	build := builds[1]
+	if build.Selector != "clojure:shadow-cljs.edn:library" || build.Platform != "cljs" || !slices.Equal(build.Entries, []clojureproject.Entry{
+		{Key: "entries", Symbol: "example.web", Line: 7},
+		{Key: "entries", Symbol: "example.service", Line: 8},
+		{Key: "entries", Symbol: "example.absent", Line: 9},
+	}) {
+		t.Fatalf("namespace build identity/evidence: %+v", build)
+	}
+	result, err := clojureproject.Build(t.Context(), root, repository, build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(result.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := map[string]programindex.Object{}
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	var seeds []string
+	for _, seed := range index.Target.Seeds {
+		object := objects[seed.ObjectID]
+		if seed.Kind != programindex.SeedModule || object.Kind != programindex.ObjectModule || object.Location == nil {
+			t.Fatalf("invented callable/module seed: %+v / %+v", seed, object)
+		}
+		seeds = append(seeds, fmt.Sprintf("%s %s:%d", object.Name, object.Location.Path, object.Location.Line))
+	}
+	slices.Sort(seeds)
+	if !slices.Equal(seeds, []string{"example.service src/example/service.cljc:1", "example.web src/example/web.cljs:1"}) {
+		t.Fatalf("native namespace seeds: %v", seeds)
+	}
+	if len(index.Target.Sources) != 3 {
+		t.Fatalf("manifest + two exact seed source files: %+v", index.Target.Sources)
 	}
 }

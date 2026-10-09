@@ -102,7 +102,7 @@ func foldContainers(index Index, canonical map[Endpoint]Endpoint) []Container {
 	result := make([]Container, 0, len(index.Containers))
 	for _, container := range index.Containers {
 		kept := Container{
-			ID: container.ID, Title: container.Title, Summary: container.Summary, Lane: container.Lane, Core: container.Core,
+			ID: container.ID, ParentID: container.ParentID, GroupIDs: []string{}, Title: container.Title, Summary: container.Summary, Lane: container.Lane, Core: container.Core,
 		}
 		for _, id := range container.GroupIDs {
 			here := Endpoint{TargetID: index.Target.ID, GroupID: id}
@@ -111,11 +111,9 @@ func foldContainers(index Index, canonical map[Endpoint]Endpoint) []Container {
 			}
 			kept.GroupIDs = append(kept.GroupIDs, id)
 		}
-		if len(kept.GroupIDs) > 0 {
-			result = append(result, kept)
-		}
+		result = append(result, kept)
 	}
-	return result
+	return pruneEmptyContainers(result)
 }
 
 // foldConnections points every connection at the folded groups. Two slices of

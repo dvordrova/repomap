@@ -89,9 +89,14 @@ func (r *reader) readKeys(ctx context.Context) error {
 		}
 		// A part the model named no key for keeps the selection's own order.
 		if kept == 0 {
-			ranked := append([]string(nil), group.ids...)
+			var ranked []string
+			for i, id := range group.ids {
+				if groupAnswers[i].answer != nil {
+					ranked = append(ranked, id)
+				}
+			}
 			sort.SliceStable(ranked, func(i, j int) bool { return r.places[ranked[i]].Symbol.Rank < r.places[ranked[j]].Symbol.Rank })
-			for _, id := range ranked[:lines.MaxKeysPerPart] {
+			for _, id := range ranked[:min(len(ranked), lines.MaxKeysPerPart)] {
 				r.partKeys[id] = true
 			}
 		}

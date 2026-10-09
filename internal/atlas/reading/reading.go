@@ -196,6 +196,7 @@ type reader struct {
 	classifierResponses map[string]rememberedClassifier
 	designBoxOf         map[string]map[string]string // target -> declaration/file -> accepted part
 	helperOf            map[string]map[string]bool   // target -> declaration -> decided helper
+	treeZones           map[string][]zoneDraft       // target -> areas of its grouping tree
 	designSubjects      map[string]string            // native declaration -> place
 	nextPart            int
 	nextZone            int
@@ -207,6 +208,7 @@ type reader struct {
 	boxes               map[string]*boxState             // box ID -> box
 	offMap              map[string][]offMapEntry         // target -> what no part holds
 	mapFailure          map[string]string                // target -> why it has no map of parts
+	refusedParts        map[string][]atlas.RefusedPart   // target -> provisional actual sets not admitted
 	zones               map[string][]*zoneState
 	arrows              map[string][]*arrowState
 	boundaries          map[string]*boundaryState
@@ -271,8 +273,10 @@ func symbolSourceKey(path string, line int, name string) string {
 }
 
 func (r *reader) symbolID(path string, line int, name string) string {
-	if id := r.symbolsBySource[symbolSourceKey(path, line, name)]; id != "" {
-		return id
+	// Read constructs this complete, immutable index before any stage forks.
+	// An absent source tuple therefore stays unknown without scanning places.
+	if r.symbolsBySource != nil {
+		return r.symbolsBySource[symbolSourceKey(path, line, name)]
 	}
 	for id, place := range r.places {
 		if place.Kind == atlas.PlaceSymbol && place.Path == path && place.LineNo == line && place.Symbol != nil && place.Symbol.Decl.Name == name {
@@ -296,6 +300,33 @@ func (r *reader) directoryID(path string) string {
 
 // Read performs the walk.
 func Read(ctx context.Context, opts Options) (Result, error) {
+	return read(ctx, opts, SaveInput)
+}
+
+// ReadSealed consumes the ordinary producer's opaque canonical handoff. It
+// does not accept caller-supplied Graph or SealedGraph bytes. The returned graph
+// is the same complete value the reading used, with no second typed copy.
+func ReadSealed(ctx context.Context, opts Options, sealed *atlas.SealedGraph) (Result, atlas.Graph, *atlas.GraphPresentation, error) {
+	if opts.Graph.Version != 0 || opts.Graph.Revision != "" || len(opts.Graph.Places) != 0 || len(opts.Graph.Edges) != 0 || len(opts.Graph.Seeds) != 0 || len(opts.Graph.SeedDecls) != 0 || len(opts.Graph.FieldWrites) != 0 || opts.Graph.SHA256 != "" || opts.SealedGraph != nil {
+		return Result{}, atlas.Graph{}, nil, fmt.Errorf("atlas reading: sealed handoff cannot be combined with a caller graph")
+	}
+	graph, exact, presentation, err := sealed.Take()
+	if err != nil {
+		return Result{}, atlas.Graph{}, nil, err
+	}
+	opts.Graph = graph
+	result, err := read(ctx, opts, func(options Options) (atlas.Graph, error) {
+		saved, err := saveCanonicalInput(options, graph, exact)
+		exact = nil // Persistence finished; request reading needs only the typed value.
+		return saved, err
+	})
+	if err != nil {
+		return Result{}, atlas.Graph{}, nil, err
+	}
+	return result, graph, presentation, nil
+}
+
+func read(ctx context.Context, opts Options, save func(Options) (atlas.Graph, error)) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -333,64 +364,12 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	if err := os.MkdirAll(filepath.Join(opts.OwnerRunDir, atlas.TablesDir), 0o700); err != nil {
 		return Result{}, fmt.Errorf("atlas reading: prepare %s: %w", atlas.TablesDir, err)
 	}
-	graph, err := SaveInput(opts)
+	graph, err := save(opts)
 	if err != nil {
 		return Result{}, err
 	}
 	opts.Graph, opts.SealedGraph = graph, nil
-	r := &reader{
-		opts:              opts,
-		classifierGate:    &llm.BatchController{},
-		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
-		directoriesByPath: make(map[string]string),
-		testPaths:         make(map[string]bool),
-		symbolsBySource:   make(map[string]string),
-		lines:             make(map[string]cell),
-		titles:            make(map[string]cell),
-		openDirs:          make(map[string]bool),
-		openFiles:         make(map[string]bool),
-		symbolLine:        make(map[string]cell),
-		api:               make(map[string]apiRole),
-		keys:              make(map[string][]string),
-		selectedKeys:      make(map[string]bool),
-		keysDecided:       make(map[string]bool),
-		uses:              make(map[string]*atlas.StageUse),
-		started:           make(map[string]time.Time),
-		dry:               opts.Provider == nil,
-		knowledge:         make(map[string]*Knowledge),
-		knowledgeRecords:  make(map[knowledgeRecordKey]*Knowledge),
-		knowledgeSubjects: make(map[string]*Knowledge),
-		responseTables:    make(map[string]rememberedTable),
-		boundaryIDs:       make(map[string]string),
-		boxOf:             make(map[string]string),
-		shared:            &readerShared{},
-
-		classifierResponses: make(map[string]rememberedClassifier),
-	}
-	files := 0
-	for _, place := range opts.Graph.Places {
-		r.places[place.ID] = place
-		if place.Kind == atlas.PlaceDirectory {
-			r.directoriesByPath[place.Path] = place.ID
-		}
-		if place.Kind == atlas.PlaceFile {
-			// Before the parts are drawn, a file stands for itself.
-			r.boxOf[place.ID] = place.Path
-			if place.File != nil && place.File.Test {
-				r.testPaths[place.Path] = true
-			}
-		}
-		if place.Kind == atlas.PlaceSymbol && place.Symbol != nil {
-			r.symbolsBySource[symbolSourceKey(place.Path, place.LineNo, place.Symbol.Decl.Name)] = place.ID
-		}
-		if place.Kind == atlas.PlaceBoundary {
-			r.nextBoundary++
-		}
-		if place.Kind == atlas.PlaceFile && !place.File.Generated {
-			files++
-		}
-	}
-	r.budget = opts.Budget || files > BudgetThreshold
+	r, files := newReader(opts)
 	mode := "live"
 	if r.dry {
 		mode = "dry, every cell is its fallback"
@@ -463,6 +442,65 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	sort.Slice(result.Uses, func(i, j int) bool { return result.Uses[i].Stage < result.Uses[j].Stage })
 	result.Atlas.Budget.Stages = result.Uses
 	return result, nil
+}
+
+// newReader indexes the complete saved input before the ordinary stage walk.
+// Forked stages share the immutable source index; only boundary places change.
+func newReader(opts Options) (*reader, int) {
+	r := &reader{
+		opts:              opts,
+		classifierGate:    &llm.BatchController{},
+		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
+		directoriesByPath: make(map[string]string),
+		testPaths:         make(map[string]bool),
+		symbolsBySource:   make(map[string]string),
+		lines:             make(map[string]cell),
+		titles:            make(map[string]cell),
+		openDirs:          make(map[string]bool),
+		openFiles:         make(map[string]bool),
+		symbolLine:        make(map[string]cell),
+		api:               make(map[string]apiRole),
+		keys:              make(map[string][]string),
+		selectedKeys:      make(map[string]bool),
+		keysDecided:       make(map[string]bool),
+		uses:              make(map[string]*atlas.StageUse),
+		started:           make(map[string]time.Time),
+		dry:               opts.Provider == nil,
+		knowledge:         make(map[string]*Knowledge),
+		knowledgeRecords:  make(map[knowledgeRecordKey]*Knowledge),
+		knowledgeSubjects: make(map[string]*Knowledge),
+		responseTables:    make(map[string]rememberedTable),
+		boundaryIDs:       make(map[string]string),
+		boxOf:             make(map[string]string),
+		shared:            &readerShared{},
+
+		classifierResponses: make(map[string]rememberedClassifier),
+	}
+	files := 0
+	for _, place := range opts.Graph.Places {
+		r.places[place.ID] = place
+		if place.Kind == atlas.PlaceDirectory {
+			r.directoriesByPath[place.Path] = place.ID
+		}
+		if place.Kind == atlas.PlaceFile {
+			// Before the parts are drawn, a file stands for itself.
+			r.boxOf[place.ID] = place.Path
+			if place.File != nil && place.File.Test {
+				r.testPaths[place.Path] = true
+			}
+		}
+		if place.Kind == atlas.PlaceSymbol && place.Symbol != nil {
+			r.symbolsBySource[symbolSourceKey(place.Path, place.LineNo, place.Symbol.Decl.Name)] = place.ID
+		}
+		if place.Kind == atlas.PlaceBoundary {
+			r.nextBoundary++
+		}
+		if place.Kind == atlas.PlaceFile && !place.File.Generated {
+			files++
+		}
+	}
+	r.budget = opts.Budget || files > BudgetThreshold
+	return r, files
 }
 
 // saveTables writes tables.md when the reading printed more since the last
@@ -671,6 +709,8 @@ func (r *reader) fileCallers() map[string]lines.FileCallers {
 // rowAnswer is what one row ends with: the model's cells, or none with the
 // source saying why.
 type rowAnswer struct {
+	// err retains a terminal transport/preparation refusal for the owning task.
+	err         error
 	answer      table.Answer
 	source      string
 	requestSHA  string
@@ -918,7 +958,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			use.Rejected++
 			use.Given += len(window.Rows)
 			for j := range window.Rows {
-				answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
+				answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven, err: llm.NewResourceLimitError(llm.ResourceLimitError{Kind: llm.ResourceLimitContextTokens, Stage: def.Stage, FinishReason: window.Refused})}
 			}
 			samples := make([]string, len(window.Rows))
 			for j, row := range window.Rows {
@@ -993,7 +1033,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			use.Live++
 		}
 		for j := range window.Rows {
-			answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
+			answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven, err: result.Err}
 		}
 		reason := result.Err.Error()
 		responseRef := ""
@@ -1246,7 +1286,8 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		SharedCode: append([]string(nil), meta.SharedCode...),
 		Zones:      []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{},
 		Boundaries: []atlas.Boundary{}, OffMap: []atlas.OffMapFile{},
-		MapFailure: r.mapFailure[meta.ID],
+		MapFailure:   r.mapFailure[meta.ID],
+		RefusedParts: slices.Clone(r.refusedParts[meta.ID]),
 	}
 	if state, ok := r.targets[meta.ID]; ok {
 		target.Line, target.Role = state.line, state.role
@@ -1255,7 +1296,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 	for _, zone := range r.zones[meta.ID] {
 		boxIDs := append([]string{}, zone.boxes...)
 		sort.Slice(boxIDs, func(i, j int) bool { return compactIDLess(boxIDs[i], boxIDs[j]) })
-		target.Zones = append(target.Zones, atlas.Zone{ID: zone.id, Title: zone.title, Line: zone.line, BoxIDs: boxIDs})
+		target.Zones = append(target.Zones, atlas.Zone{ID: zone.id, ParentID: zone.parent, Title: zone.title, Line: zone.line, BoxIDs: boxIDs})
 		for _, id := range boxIDs {
 			zoneOf[id] = zone.id
 		}
@@ -1376,7 +1417,7 @@ func (r *reader) projectFile(targetID, fileID string, listed map[string]bool, bo
 	}
 	for _, decl := range place.File.Decls {
 		symbolID := r.symbolID(place.Path, decl.LineNo, decl.Name)
-		if !listed[symbolID] {
+		if !listed[symbolID] || !contains(r.places[symbolID].TargetIDs, targetID) {
 			continue
 		}
 		symbol := atlas.Symbol{

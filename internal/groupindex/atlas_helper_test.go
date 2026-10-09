@@ -49,7 +49,11 @@ func helperTestProgram(t *testing.T) programindex.Index {
 func helperTestAtlas(p programindex.Index) atlas.Atlas {
 	box := func(id, path, name string, index int, side string, core, helper bool) atlas.Box {
 		object := p.Objects[index]
-		return atlas.Box{ID: id, Dir: "svc", Title: name, Line: name + " line.", Side: side, Core: core, Open: true, MemberIDs: []string{object.ID},
+		zone := "z1"
+		if index >= 2 {
+			zone = "z2"
+		}
+		return atlas.Box{ID: id, ZoneID: zone, Dir: "svc", Title: name, Line: name + " line.", Side: side, Core: core, Open: true, MemberIDs: []string{object.ID},
 			Files: []atlas.File{{Path: path, Line: "File.", Source: atlas.SourceModel, Open: true, Asked: true,
 				Symbols: []atlas.Symbol{{ID: "s" + id, ObjectID: object.ID, Name: object.Name, Kind: "function", LineNo: 3, Column: 1, Helper: helper}}}}}
 	}

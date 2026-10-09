@@ -66,6 +66,23 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		}
 		replanned := false
 		for index, call := range calls {
+			if err := validateLimits(call.Limits); err != nil {
+				return nil, nil, accounting, err
+			}
+			prepared, prepareErr := Prepare(provider, call.Prompt, call.Limits)
+			if prepareErr == nil && prepared.Len() > call.Limits.MaxRequestBytes {
+				prepareErr = NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitRequestBytes, Limit: call.Limits.MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true})
+			}
+			var resource *ResourceLimitError
+			if errors.As(prepareErr, &resource) && (resource.Kind == ResourceLimitRequestBytes || resource.Kind == ResourceLimitContextTokens) {
+				left, right, ok := split(plan[index])
+				if !ok {
+					return nil, nil, accounting, &BatchItemError{Index: index, Err: prepareErr}
+				}
+				plan = replaceAdaptiveItem(plan, index, left, right)
+				replanned = true
+				break
+			}
 			found, err := loadAdaptiveSplit(executor, provider, call)
 			if err != nil {
 				return nil, nil, accounting, err
@@ -120,6 +137,13 @@ func adaptiveFailureMemo[Value any](call Call[Value], outcome Outcome[Value], er
 	providerErr, providerFailure := err.(*ProviderError)
 	if providerFailure && providerErr.Operation == "complete" && errors.As(err, &resourceErr) && adaptiveSplitKind(resourceErr.Kind) {
 		memo.Kind = resourceErr.Kind
+	} else if len(outcome.Request) > 0 && errors.As(err, &resourceErr) &&
+		(resourceErr.Kind == ResourceLimitOutputTokens || resourceErr.Kind == ResourceLimitResponseBytes) &&
+		hasResponseEnvelopeRefusal(outcome.ResponseRejections) {
+		// A provider-neutral completion can pass transport, then exceed the
+		// executor's output envelope. This is still a completed parent that the
+		// owner can divide; preparation/configuration failures have no such proof.
+		memo.Kind = resourceErr.Kind
 	} else if providerFailure && providerErr.Operation == "complete" && call.SplitHTTP500 &&
 		providerErr.ProviderFailure().Kind == ProviderFailureHTTPStatus && providerErr.ProviderFailure().HTTPStatus == 500 {
 		memo.RejectionReason = adaptiveHTTP500
@@ -129,6 +153,15 @@ func adaptiveFailureMemo[Value any](call Call[Value], outcome Outcome[Value], er
 		return memo, false
 	}
 	return memo, true
+}
+
+func hasResponseEnvelopeRefusal(rejections []ResponseRejection) bool {
+	for _, rejection := range rejections {
+		if rejection.Kind == "response_envelope" {
+			return true
+		}
+	}
+	return false
 }
 
 func rejectedAdaptiveResponse[Value any](outcome Outcome[Value]) bool {

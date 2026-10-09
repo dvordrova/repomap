@@ -6,10 +6,8 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/clojureproject"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
@@ -101,7 +99,7 @@ func TestEveryLanguageRecordsAMultiWayDispatchAsOneComparison(t *testing.T) {
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
 		writePublishedGoFixtureModule(t, root)
-		authorities := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "comparisons")
+		authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "comparisons")
 		index, err := goadapter.Build(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -128,7 +126,7 @@ func TestEveryLanguageRecordsAMultiWayDispatchAsOneComparison(t *testing.T) {
 	})
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +139,7 @@ func TestEveryLanguageRecordsAMultiWayDispatchAsOneComparison(t *testing.T) {
 		if err != nil || len(targets) != 1 {
 			t.Fatalf("Clojure discovery: %v %v", targets, err)
 		}
-		result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+		result, err := sharedClojureFixture(t, root, repository, targets[0])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -152,7 +150,7 @@ func TestEveryLanguageRecordsAMultiWayDispatchAsOneComparison(t *testing.T) {
 		expectOneComparison(t, index, "src/example/core.clj", "run-command", "(first args)", []string{"case serve", "case check|verify"}, "shouted?")
 	})
 	t.Run("c", func(t *testing.T) {
-		index := buildCIndex(t, loadCFixture(t), "c:kvcli")
+		index := buildCIndex(t, sharedCFixture(t), "c:kvcli")
 		expectOneComparison(t, index, "kvcli.c", "shortOption", "arg[1]", []string{"case h|?", "case V"}, "main")
 	})
 }
@@ -170,7 +168,7 @@ func pythonLibraryIndex(t *testing.T) programindex.Index {
 		if candidate.Kind != pythontarget.KindLibrary || candidate.ProjectDir != "." {
 			continue
 		}
-		input, err := pythonprogramindex.BuildInput(t.Context(), repository, candidate)
+		input, err := sharedPythonFixtureInput(t, repository, candidate)
 		if err != nil {
 			t.Fatal(err)
 		}

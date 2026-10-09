@@ -2,8 +2,10 @@ package reading
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // reachedFrom are the declarations an outgoing call is reached from in the
@@ -62,6 +64,9 @@ func (r *reader) reachedFrom(targets []string, owner atlas.Place, handlers map[s
 func (r *reader) runningCallers(targets []string, current atlas.Place, resolution string) []atlas.Place {
 	var result []atlas.Place
 	for _, caller := range current.Symbol.CalledBy {
+		if target, _, scoped := strings.Cut(caller.ObjectID, "."); scoped && programindex.ValidTargetID(target) && !slices.Contains(targets, target) {
+			continue
+		}
 		if caller.Kind != "calls" || caller.Resolution != resolution || caller.PlaceID == "" || caller.PlaceID == current.ID || r.testPath(caller.Path) {
 			continue
 		}

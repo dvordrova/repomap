@@ -233,7 +233,9 @@ function rmCrumbs(container,segments,fallback){
   // event; otherwise that event could save the visit we are leaving over it.
   window.addEventListener('popstate',restore,true);window.addEventListener('hashchange',restore,true);
   prepareReadingEntrances();body.classList.add('reading-ready');selectQuestion(null);restore();remember();
-  var initialHash=location.hash;window.addEventListener('load',function(){document.fonts.ready.then(function(){if(initialHash&&location.hash===initialHash)rmScrollToReading(locate());});},{once:true});
+  var initialHash=location.hash;
+  function restoreInitialScroll(){document.fonts.ready.then(function(){if(initialHash&&location.hash===initialHash)rmScrollToReading(locate());});}
+  if(document.readyState==='complete')restoreInitialScroll();else window.addEventListener('load',restoreInitialScroll,{once:true});
   document.addEventListener('repomap:find',remember);
   if(globalSearch){
     globalSearch.addEventListener('input',function(){

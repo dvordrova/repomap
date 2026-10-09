@@ -21,7 +21,7 @@ func TestRussianUIExistsBeforeBrowserScripts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	static, scripts, ok := strings.Cut(string(rendered), `<script type="application/json" id="rm-ui-vocabulary">`)
+	static, _, ok := strings.Cut(string(rendered), `<script type="application/json" id="rm-ui-vocabulary"`)
 	if !ok {
 		t.Fatal("report has no UI vocabulary for browser labels")
 	}
@@ -35,12 +35,9 @@ func TestRussianUIExistsBeforeBrowserScripts(t *testing.T) {
 			t.Fatalf("static Russian HTML keeps untranslated UI %q", unwanted)
 		}
 	}
-	encoded, _, ok := strings.Cut(scripts, "</script>")
-	if !ok {
-		t.Fatal("UI vocabulary script is incomplete")
-	}
+	encoded := readEmbeddedJSON(t, rendered, "rm-ui-vocabulary")
 	var embedded map[string]string
-	if err := json.Unmarshal([]byte(encoded), &embedded); err != nil {
+	if err := json.Unmarshal(encoded, &embedded); err != nil {
 		t.Fatal(err)
 	}
 	want, err := uiVocabulary(Russian)

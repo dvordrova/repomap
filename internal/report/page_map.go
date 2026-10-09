@@ -2138,7 +2138,20 @@ func symbolText(object *groupindex.ObjectFacts, name string) string {
 		if at := strings.LastIndexAny(short, "./"); at >= 0 {
 			short = short[at+1:]
 		}
-		rest := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(object.Signature), short)), ";"))
+		rest := strings.TrimSpace(object.Signature)
+		// A compiler may supply only the type ("any" for a variable named
+		// "a"). Remove a written name only when it is the complete token.
+		if rest == short {
+			rest = ""
+		} else if suffix, starts := strings.CutPrefix(rest, short); starts && suffix != "" {
+			for _, next := range suffix {
+				if unicode.IsSpace(next) || next == ':' || next == '=' || next == '?' {
+					rest = suffix
+				}
+				break
+			}
+		}
+		rest = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(rest), ";"))
 		switch {
 		case rest == "":
 			return ""
@@ -2385,7 +2398,7 @@ func (builder *pageBuilder) testOnly(targetID string, group groupindex.Group) bo
 		return false
 	}
 	var tests map[string]bool
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
+	for _, entry := range builder.data.ProgramPortfolio.programs() {
 		if entry.Target.ID == targetID {
 			tests = map[string]bool{}
 			for _, path := range entry.Target.TestSources {

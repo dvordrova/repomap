@@ -11,114 +11,118 @@
     },
     {
       "id": "f3",
-      "path": "kvcli.c"
+      "path": "build/main.mk"
     },
     {
       "id": "f4",
-      "path": "kvd.c"
+      "path": "kvcli.c"
     },
     {
       "id": "f5",
-      "path": "kvd.h"
+      "path": "kvd.c"
     },
     {
       "id": "f6",
-      "path": "loop.c"
+      "path": "kvd.h"
     },
     {
       "id": "f7",
-      "path": "loop.h"
+      "path": "loop.c"
     },
     {
       "id": "f8",
-      "path": "loop_epoll.c"
+      "path": "loop.h"
     },
     {
       "id": "f9",
-      "path": "loop_poll.c"
+      "path": "loop_epoll.c"
     },
     {
       "id": "f10",
-      "path": "net.c"
+      "path": "loop_poll.c"
     },
     {
       "id": "f11",
-      "path": "net.h"
+      "path": "net.c"
     },
     {
       "id": "f12",
-      "path": "repl.c"
+      "path": "net.h"
     },
     {
       "id": "f13",
-      "path": "staticsyms.h"
+      "path": "repl.c"
     },
     {
       "id": "f14",
-      "path": "strbuf.c"
+      "path": "staticsyms.h"
     },
     {
       "id": "f15",
-      "path": "strbuf.h"
+      "path": "strbuf.c"
     },
     {
       "id": "f16",
-      "path": "tools/dump.c"
+      "path": "strbuf.h"
     },
     {
       "id": "f17",
-      "path": "upper/makefile"
+      "path": "tools/dump.c"
     },
     {
       "id": "f18",
-      "path": "upper/upper.c"
+      "path": "upper/makefile"
     },
     {
       "id": "f19",
-      "path": "util/Makefile"
+      "path": "upper/upper.c"
     },
     {
       "id": "f20",
-      "path": "util/fixedclock.c"
+      "path": "util/Makefile"
     },
     {
       "id": "f21",
-      "path": "util/ping.c"
+      "path": "util/fixedclock.c"
     },
     {
       "id": "f22",
-      "path": "util/watch.c"
+      "path": "util/ping.c"
     },
     {
       "id": "f23",
-      "path": "wire/Makefile"
+      "path": "util/watch.c"
     },
     {
       "id": "f24",
-      "path": "wire/encode.c"
+      "path": "wire/Makefile"
     },
     {
       "id": "f25",
-      "path": "wire/escape.c"
+      "path": "wire/encode.c"
     },
     {
       "id": "f26",
-      "path": "wire/escape_none.c"
+      "path": "wire/escape.c"
     },
     {
       "id": "f27",
-      "path": "wire/selftest.c"
+      "path": "wire/escape_none.c"
     },
     {
       "id": "f28",
-      "path": "wire/wire.h"
+      "path": "wire/selftest.c"
     },
     {
       "id": "f29",
-      "path": "wire/wire_internal.h"
+      "path": "wire/wire.h"
     },
     {
       "id": "f30",
+      "path": "wire/wire_internal.h"
+    },
+    {
+      "id": "f31",
       "path": "wire/wirecat.c"
     }
   ]

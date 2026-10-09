@@ -154,7 +154,7 @@ func (builder *pageBuilder) runnersOf(programTargetID, objectID string) []string
 		return nil
 	}
 	var runners []string
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
+	for _, entry := range builder.nativeTargets(programTargetID) {
 		if entry.Target.ID != programTargetID {
 			continue
 		}
@@ -178,6 +178,7 @@ func (builder *pageBuilder) runnersOf(programTargetID, objectID string) []string
 // fieldTypes are where the repository types a field's declared type names
 // are declared (ProgramIndex Object.Types), from the program's index.
 func (builder *pageBuilder) fieldTypes(programTargetID, objectID string) []programindex.Location {
+	builder.activateNativeScope(programTargetID)
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
 	}
@@ -187,7 +188,7 @@ func (builder *pageBuilder) fieldTypes(programTargetID, objectID string) []progr
 	byObject, done := builder.typesOf[programTargetID]
 	if !done {
 		byObject = map[string][]programindex.Location{}
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
+		for _, entry := range builder.nativeTargets(programTargetID) {
 			if entry.Target.ID != programTargetID {
 				continue
 			}

@@ -200,6 +200,20 @@ func TestReportJSONNamesTheOtherTargetsRunDirectoryFile(t *testing.T) {
 // ProgramIndex with every location spelled out.
 func assertSameReportData(t *testing.T, got, want ReportData) {
 	t.Helper()
+	// Compare complete native values, independent of whether the existing
+	// saved format names their original files or holds their bytes inline.
+	for _, data := range []*ReportData{&got, &want} {
+		portfolio := *data.ProgramPortfolio
+		portfolio.Entries = nil
+		if err := data.ProgramPortfolio.ReadProgramIndexes(func(index programindex.Index) error {
+			portfolio.Entries = append(portfolio.Entries, index)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		portfolio.files = nil
+		data.ProgramPortfolio = &portfolio
+	}
 	gotJSON, err := json.Marshal(reportDataForPersistence(&got))
 	if err != nil {
 		t.Fatal(err)

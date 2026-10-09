@@ -57,16 +57,26 @@ type Claim struct {
 	Source Source `json:"source"`
 	Path   string `json:"path,omitempty"`
 	Line   int    `json:"line,omitempty"`
+	Column int    `json:"column,omitempty"`
 	// DeclarationLine is the exact Python def/class header owning a body
-	// docstring, or the line where the header of the C declaration directly
-	// below a C docstring ends (CDocstring). Line still locates the original
+	// docstring, the Go declaration directly following its doc comment, the
+	// JSTS declaration directly following JSDoc, or the line
+	// where the header of the C declaration directly
+	// below a legacy C docstring ends (CDocstring). Native-bound C uses its name
+	// line and Clojure uses the owning form-start line. Line still locates the original
 	// quote; zero leaves it unbound.
-	DeclarationLine int    `json:"declaration_line,omitempty"`
-	Commit          string `json:"commit,omitempty"`
-	Text            string `json:"text"`
-	Date            string `json:"date,omitempty"`
-	AgeDays         int    `json:"age_days,omitempty"`
-	TargetID        string `json:"target_id,omitempty"`
+	DeclarationLine int `json:"declaration_line,omitempty"`
+	// DeclarationColumn is the native Go/JSTS/C name column or Clojure form-start
+	// column. Exact ownership needs
+	// both coordinates: adjacent declarations can share one source line.
+	DeclarationColumn int `json:"declaration_column,omitempty"`
+	// DeclarationUnresolved retains a known C header whose native owner is not unique.
+	DeclarationUnresolved bool   `json:"declaration_unresolved,omitempty"`
+	Commit                string `json:"commit,omitempty"`
+	Text                  string `json:"text"`
+	Date                  string `json:"date,omitempty"`
+	AgeDays               int    `json:"age_days,omitempty"`
+	TargetID              string `json:"target_id,omitempty"`
 }
 
 // Result is the sealed claims artifact.
@@ -194,8 +204,15 @@ func (claim Claim) validate() error {
 			return err
 		}
 	}
-	if claim.Line < 0 || claim.AgeDays < 0 {
+	if claim.Line < 0 || claim.Column < 0 || claim.Column > 0 && (claim.Line < 1 || claim.Source != SourceDocstring || !(JSTSPath(claim.Path) || ClojurePath(claim.Path))) || claim.AgeDays < 0 {
 		return fmt.Errorf("negative position or age")
+	}
+	if claim.DeclarationColumn < 0 || claim.DeclarationColumn > 0 &&
+		(claim.DeclarationLine < 1 || claim.Line < 1 || claim.Source != SourceDocstring || !(JSTSPath(claim.Path) || ClojurePath(claim.Path) || CPath(claim.Path) || strings.EqualFold(path.Ext(claim.Path), ".go"))) {
+		return fmt.Errorf("invalid native declaration column")
+	}
+	if claim.DeclarationUnresolved && (claim.Source != SourceDocstring || !CPath(claim.Path) || claim.DeclarationLine < 1 || claim.DeclarationColumn != 0) {
+		return fmt.Errorf("invalid unresolved declaration")
 	}
 	if claim.Date != "" && !validDate(claim.Date) {
 		return fmt.Errorf("invalid date %q", claim.Date)
@@ -218,6 +235,9 @@ func claimLess(a, b Claim) bool {
 	}
 	if a.Line != b.Line {
 		return a.Line < b.Line
+	}
+	if a.Column != b.Column {
+		return a.Column < b.Column
 	}
 	if a.Date != b.Date {
 		return a.Date > b.Date

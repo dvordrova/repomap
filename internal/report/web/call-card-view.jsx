@@ -146,12 +146,14 @@ export function FrameConnections({groups,open,choose=null,single=false}){
 // A part's first dozen names say what it is; a click on the arrow reads
 // every call in the column.
 const briefMost=12;
-export function BriefRows({card,into=''}){
+export function BriefRows({card,into='',choose=null}){
   const parts=briefCard(card);
   return <div className="flow-card-brief">{parts.map(part=><section key={part.name}>
     {part.name!==into&&<h5 className="flow-card-pair"><span><i>→</i> {part.name}</span></h5>}
     {part.names.length>0&&<ul>
-      {part.names.slice(0,briefMost).map(entry=><li key={entry.name}><Link href={entry.href}>{entry.name}</Link></li>)}
+      {part.names.slice(0,briefMost).map(entry=><li key={entry.at?`${entry.at.part}\0${entry.at.key}`:entry.input?.id||entry.name}>{entry.input
+        ?<InputNames refs={[entry.input]} choose={choose}/>
+        :<Name at={entry.at} href={entry.href} choose={choose}>{entry.name}</Name>}</li>)}
       {part.names.length>briefMost&&<li className="flow-card-more" aria-hidden="true">…</li>}</ul>}
   </section>)}</div>;
 }

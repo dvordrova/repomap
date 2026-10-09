@@ -28,6 +28,9 @@ func (r *reader) keyCall(files map[string]*lines.CallFile, place atlas.Place, ca
 	var keySite sourceSite
 	for i := range place.Symbol.Calls {
 		other := &place.Symbol.Calls[i]
+		if len(intersectTargets(callTargets(place, call), callTargets(place, *other))) != len(callTargets(place, call)) {
+			continue
+		}
 		at := sourceSite{place.Path, other.Line, other.Column}
 		if other.Kind != string(programindex.RelationInvokesExternal) || len(other.Values) == 0 || at.compare(site) >= 0 {
 			continue

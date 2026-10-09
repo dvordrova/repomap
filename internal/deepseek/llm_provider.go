@@ -87,21 +87,6 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 	}
 
 	maxOutputTokens := min(limits.MaxOutputTokens, c.MaxTokens)
-	if c.ContextTokens > 0 {
-		// A declared context window refuses an oversized request here, with
-		// the refusal the provider would send after tokenizing it; run
-		// 20260911-053911 spent 36 s per such refusal, 52 times. The
-		// estimate is conservative: DeepSeek tokenized 1,160,656 bytes of
-		// English JSON as 330,422 tokens, 3.5 bytes per token.
-		estimate := estimatedPromptTokens(prompt)
-		if estimate+maxOutputTokens > c.ContextTokens {
-			return llm.Prepared{}, newResourceLimitError(ResourceLimitError{
-				Stage: llmProviderStage, Kind: ResourceLimitContextTokens,
-				Limit: c.ContextTokens, Observed: estimate + maxOutputTokens, ObservedKnown: true,
-				InputTokens: estimate, ConfiguredMaxTokens: maxOutputTokens,
-			})
-		}
-	}
 	request := c.semanticRequest(prompt.User, prompt.System, prompt.ResponseFormatJSON)
 	request.MaxTokens = maxOutputTokens
 	request.ChatTemplateKwargs = c.ChatTemplateKwargs
@@ -123,6 +108,20 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 	if err != nil {
 		return llm.Prepared{}, errors.New("deepseek llm provider: encode request failed")
 	}
+	if contextTokens := c.contextTokenLimit(); contextTokens > 0 {
+		// The owner chose a byte reservation rather than a local tokenizer.
+		// Every encoded UTF-8 byte reserves one input token, including framing.
+		// Owning stages divide complete evidence when this upper allowance fails.
+		inputAllowance := len(body)
+		if inputAllowance+maxOutputTokens > contextTokens {
+			return llm.Prepared{}, newResourceLimitError(ResourceLimitError{
+				Stage: llmProviderStage, Kind: ResourceLimitContextTokens,
+				Limit: contextTokens, Observed: inputAllowance + maxOutputTokens, ObservedKnown: true,
+				ConfiguredMaxTokens: maxOutputTokens,
+				FinishReason:        "utf8_byte_reservation",
+			})
+		}
+	}
 	requestLimit := min(limits.MaxRequestBytes, llmProviderRequestByteLimit)
 	if len(body) > requestLimit {
 		return llm.Prepared{}, newResourceLimitError(ResourceLimitError{
@@ -134,15 +133,21 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 	return llm.NewPrepared(body)
 }
 
-// estimatedBytesPerToken is deliberately below the 3.5 bytes per token
-// DeepSeek measured on English JSON, so the local check refuses before the
-// provider would; a request it lets through can still be refused remotely and
-// is then partitioned the same way.
-const estimatedBytesPerToken = 3
-
-func estimatedPromptTokens(prompt llm.Prompt) int {
-	size := len(prompt.System) + len(prompt.User)
-	return (size + estimatedBytesPerToken - 1) / estimatedBytesPerToken
+// The official, known model family has a declared context even when an env
+// override is absent. A compatible endpoint or an unknown model owns its
+// configured limit; it must never inherit another model's window by name alone.
+func (c *Client) contextTokenLimit() int {
+	if c.ContextTokens > 0 {
+		return c.ContextTokens
+	}
+	if !isOfficialDeepSeekEndpoint(c.Endpoint) {
+		return 0
+	}
+	switch c.Model {
+	case "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash-vision-exp":
+		return 1_000_000
+	}
+	return 0
 }
 
 // Complete sends exactly the immutable bytes returned by Prepare. Only
@@ -169,6 +174,12 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 	if !json.Valid(body) {
 		return llm.Completion{}, errors.New("deepseek llm provider: prepared request is not valid JSON")
 	}
+	var sent struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	// Diagnostics describe this immutable request, not current client defaults.
+	// A transport-only prepared body without the field has no known allowance.
+	_ = json.Unmarshal(body, &sent)
 	if err := ctx.Err(); err != nil {
 		return llm.Completion{}, err
 	}
@@ -245,7 +256,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			noAnswerRetried = true
 		}
 		lastErr = annotateIncompleteCompletion(err, llmProviderStage)
-		lastErr = annotateResourceLimit(lastErr, llmProviderStage, c.MaxTokens)
+		lastErr = annotateResourceLimit(lastErr, llmProviderStage, sent.MaxTokens)
 		failure := (&llmProviderError{cause: lastErr}).ProviderFailure()
 		splitHTTP500 := llm.ProviderSplitsHTTP500(ctx) &&
 			failure.Kind == llm.ProviderFailureHTTPStatus && failure.HTTPStatus == http.StatusInternalServerError

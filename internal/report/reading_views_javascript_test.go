@@ -140,6 +140,33 @@ const exports=[...Array(9)].map((_,i)=>({name:'lua_f'+i,callable:true,part:'#cor
 const library=rmEl('div');
 rmProgramsTable(context,library,[{id:'system-component-t2',dataset:{title:'liblua.a',owner:'t2',entries:JSON.stringify(exports)}}],()=>[]);
 assert.deepEqual(library.all(c=>c.tagName==='DETAILS'&&c.has('system-program-entries')).map(f=>f.children[0].textContent),['Server core · 9','Auxiliary library · 5'],'fourteen entries fold by part');
+const entryFolds=library.all(c=>c.tagName==='DETAILS'&&c.has('system-program-entries'));
+assert.deepEqual(entryFolds.map(f=>f.children.length),[1,1],'closed exports create only their headings');
+const open=fold=>{fold.open=true;fold.listeners.toggle({target:fold});};
+open(entryFolds[0]);
+assert.deepEqual(entryFolds[0].all(c=>c.tagName==='LI').map(c=>c.textContent),exports.slice(0,9).map(e=>e.name+'()'),'opening a part creates every original export, in order');
+assert.equal(entryFolds[1].children.length,1,'opening one part does not create its peers');
+entryFolds[0].open=false;entryFolds[0].listeners.toggle({target:entryFolds[0]});open(entryFolds[0]);
+assert.equal(entryFolds[0].all(c=>c.tagName==='LI').length,9,'returning keeps one exact export list');
+entryFolds[0].all(c=>c.tagName==='BUTTON'&&c.textContent==='lua_f8()')[0].listeners.click({stopPropagation(){}});
+assert.equal(opened.at(-1),'Server core h#f8','the last export still opens its original declaration');
+open(entryFolds[1]);assert.deepEqual(entryFolds[1].all(c=>c.tagName==='LI').map(c=>c.textContent),exports.slice(9).map(e=>e.name+'()'));
+const paths=['README.md',...Array(17)].map((value,i)=>i===0?value:'src/internal/file'+i+'.ts').concat(['docs/guide.md']);
+const fileProgram=rmEl('div');
+rmProgramsTable(context,fileProgram,[{id:'system-component-t3',dataset:{title:'tool',owner:'t3',sources:JSON.stringify(paths)}}],()=>[]);
+const filesFold=fileProgram.all(c=>c.has('system-program-built'))[0];
+assert.ok(filesFold&&!filesFold.open&&filesFold.children.length===1,'closed complete file inventory creates no file rows or folders');
+open(filesFold);assert.deepEqual(filesFold.all(c=>c.tagName==='LI').map(c=>c.textContent),['README.md'],'only top-level files are drawn when the inventory opens');
+const rootFolders=filesFold.children.filter(c=>c.has('system-program-folder'));
+assert.deepEqual(rootFolders.map(c=>c.children[0].textContent),['src/','docs/']);
+assert.deepEqual(rootFolders.map(c=>c.children.length),[1,1],'closed folders do not build descendants');
+open(rootFolders[0]);const nested=rootFolders[0].children.find(c=>c.has('system-program-folder'));
+assert.ok(nested&&nested.children[0].textContent==='internal/'&&nested.children.length===1,'a nested closed folder holds its complete data without DOM rows');
+open(nested);assert.deepEqual(nested.all(c=>c.tagName==='LI').map(c=>c.textContent),paths.slice(1,-1).map(p=>p.slice('src/internal/'.length)),'every original nested file survives in order');
+assert.equal(rootFolders[1].children.length,1,'opening a nested folder does not expand another root');
+open(rootFolders[1]);assert.deepEqual(rootFolders[1].all(c=>c.tagName==='LI').map(c=>c.textContent),['guide.md']);
+filesFold.listeners.toggle({target:nested});open(filesFold);open(nested);
+assert.equal(filesFold.all(c=>c.tagName==='LI').length,paths.length,'repeated and child toggles never duplicate original files');
 `)
 }
 

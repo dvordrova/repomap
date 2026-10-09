@@ -22,7 +22,7 @@ import (
 // bgsaveCommand; an entry's value is reached through a local pointer
 // (kvEntry.value) and through the global's array (server.db.value).
 func TestCFixtureReadsAndWritesRecordFields(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	server := buildCIndex(t, fixture, "c:kvd")
 	objects := map[string]programindex.Object{}
 	for _, object := range server.Objects {

@@ -1,6 +1,7 @@
 package report
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -56,6 +57,11 @@ type groupEdges struct {
 	groups  map[string]groupindex.Group
 	groupOf map[string]string
 	byGroup map[string][]int
+	// bySubject lists, by subject, the index's relation-target edges that
+	// subject makes to another subject, in the index's order: a part's
+	// internal relations are read from its members, never by scanning
+	// every edge of the target for every part.
+	bySubject map[string][]int
 }
 
 // groupEdgesSource is the identity of the lists an index's groupEdges read.
@@ -80,7 +86,7 @@ func (builder *pageBuilder) edgesBetweenGroups(index groupindex.Index) *groupEdg
 	if cached := builder.groupEdges[index.Target.ID]; cached != nil && cached.from == from {
 		return cached
 	}
-	between := &groupEdges{from: from, groups: make(map[string]groupindex.Group, len(index.Groups)), groupOf: map[string]string{}, byGroup: map[string][]int{}}
+	between := &groupEdges{from: from, groups: make(map[string]groupindex.Group, len(index.Groups)), groupOf: map[string]string{}, byGroup: map[string][]int{}, bySubject: map[string][]int{}}
 	for _, part := range index.Groups {
 		between.groups[part.ID] = part
 		for _, id := range part.MemberSubjectIDs {
@@ -94,6 +100,9 @@ func (builder *pageBuilder) edgesBetweenGroups(index groupindex.Index) *groupEdg
 		}
 	}
 	for position, edge := range index.StructuralEdges {
+		if edge.Role == groupindex.EdgeRelationTarget && edge.FromSubjectID != edge.ToSubjectID {
+			between.bySubject[edge.FromSubjectID] = append(between.bySubject[edge.FromSubjectID], position)
+		}
 		if edge.Role != groupindex.EdgeRelationTarget || covered[edge.RelationID+"\x00"+edge.ToSubjectID] {
 			continue
 		}
@@ -122,12 +131,19 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 	for _, id := range group.MemberSubjectIDs {
 		members[id] = true
 	}
-	var rows []pageConnection
-	for _, edge := range index.StructuralEdges {
-		if edge.Role != groupindex.EdgeRelationTarget || edge.FromSubjectID == edge.ToSubjectID ||
-			!members[edge.FromSubjectID] || !members[edge.ToSubjectID] {
-			continue
+	edges := builder.edgesBetweenGroups(index).bySubject
+	var positions []int
+	for id := range members {
+		for _, position := range edges[id] {
+			if members[index.StructuralEdges[position].ToSubjectID] {
+				positions = append(positions, position)
+			}
 		}
+	}
+	slices.Sort(positions)
+	var rows []pageConnection
+	for _, position := range positions {
+		edge := index.StructuralEdges[position]
 		fromSubject, fromKnown := builder.subject(index.Target.ID, edge.FromSubjectID)
 		toSubject, toKnown := builder.subject(index.Target.ID, edge.ToSubjectID)
 		if !fromKnown || !toKnown {

@@ -12,7 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/clojureproject"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 )
@@ -94,7 +93,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		t.Setenv("GOTOOLCHAIN", "local")
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
-		app := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "dispatch inputs")
+		app := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "dispatch inputs")
 		index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -141,7 +140,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 	})
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +155,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		if err != nil || len(targets) != 1 {
 			t.Fatalf("Clojure discovery: %v %v", targets, err)
 		}
-		result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+		result, err := sharedClojureFixture(t, root, repository, targets[0])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,7 +169,7 @@ func TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase(t *testing.T) {
 		expectDispatchInputs(t, preset, projected, "src/example/core.clj", "(first args)", `[["serve"],["check","verify"]]`, "example.core/run-command", []string{"serve", "check"}, "serve")
 	})
 	t.Run("c", func(t *testing.T) {
-		fixture := loadCFixture(t)
+		fixture := sharedCFixture(t)
 		index := buildCIndex(t, fixture, "c:kvcli")
 		layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
 		if err != nil {

@@ -14,11 +14,9 @@ import (
 	"github.com/dvordrova/repomap/internal/clojureproject"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
@@ -160,7 +158,7 @@ func expectAsked(t *testing.T, asked map[string]askedSymbol, symbol, question, u
 // names no symbol, so neither is asked.
 func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 	t.Run("c", func(t *testing.T) {
-		fixture := loadCFixture(t)
+		fixture := sharedCFixture(t)
 		asked := askedOutsideSymbols(t, fixture.repository, buildCIndex(t, fixture, "c:kvd"))
 		expectAsked(t, asked, "string.h.strcmp", "given", `strcmp(argv[1], "--symbols")`)
 		expectAsked(t, asked, "stdio.h.fprintf", "given", "")
@@ -173,7 +171,7 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
 		writePublishedGoFixtureModule(t, root)
-		authorities := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "word-given")
+		authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "word-given")
 		input, err := goadapter.BuildInput(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -197,7 +195,7 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		input, err := pythonprogramindex.BuildInput(t.Context(), repository, pythonFixtureTarget(t, catalog))
+		input, err := sharedPythonFixtureInput(t, repository, pythonFixtureTarget(t, catalog))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,7 +220,7 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 	})
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -244,7 +242,7 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 		if err != nil || len(targets) != 1 {
 			t.Fatalf("Clojure discovery: %v %v", targets, err)
 		}
-		result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+		result, err := sharedClojureFixture(t, root, repository, targets[0])
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -91,6 +91,7 @@ type pageMacroCall struct {
 // macroCalls are a program's calls made by a macro's expansion, by relation
 // ID, built once from its ProgramIndex.
 func (builder *pageBuilder) macroCalls(targetID string) map[string]pageMacroCall {
+	builder.activateNativeScope(targetID)
 	if builder.macros == nil {
 		builder.macros = map[string]map[string]pageMacroCall{}
 	}
@@ -99,7 +100,7 @@ func (builder *pageBuilder) macroCalls(targetID string) map[string]pageMacroCall
 	}
 	calls := map[string]pageMacroCall{}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
+		for _, entry := range builder.nativeTargets(targetID) {
 			if entry.Target.ID != targetID {
 				continue
 			}
@@ -124,6 +125,7 @@ func (builder *pageBuilder) macroCalls(targetID string) map[string]pageMacroCall
 // making them, by relation ID: the parameters of the arity called (the
 // relation's `arity` witness), built once from its ProgramIndex.
 func (builder *pageBuilder) arityCalls(targetID string) map[string]string {
+	builder.activateNativeScope(targetID)
 	if builder.arities == nil {
 		builder.arities = map[string]map[string]string{}
 	}
@@ -132,14 +134,18 @@ func (builder *pageBuilder) arityCalls(targetID string) map[string]string {
 	}
 	calls := map[string]string{}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
+		for _, entry := range builder.nativeTargets(targetID) {
 			if entry.Target.ID != targetID {
 				continue
 			}
 			for _, relation := range entry.Relations {
 				for _, witness := range relation.Witnesses {
-					if witness.Kind == "arity" && witness.Detail != "" {
-						calls[relation.ID] = witness.Detail
+					if witness.Kind == "arity" {
+						if witness.SourceExpression != "" {
+							calls[relation.ID] = witness.SourceExpression
+						} else if witness.Detail != "" {
+							calls[relation.ID] = witness.Detail
+						}
 					}
 				}
 			}

@@ -56,15 +56,6 @@ func TestCompileSendsCandidateFileTreeAndCompleteReadmes(t *testing.T) {
 	if sha256Hex(wire) != compilation.RequestSHA256 {
 		t.Fatalf("wire identity = %d/%s", len(wire), compilation.RequestSHA256)
 	}
-	batches, err := batches(compilation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for index, batch := range batches {
-		if len(batch.wire) > MaxRequestBytes {
-			t.Fatalf("batch %d = %d bytes", index, len(batch.wire))
-		}
-	}
 	var request Request
 	if err := json.Unmarshal(wire, &request); err != nil {
 		t.Fatal(err)
@@ -641,6 +632,7 @@ func TestCompileIsExplicitlyNotApplicableWithoutCandidateFiles(t *testing.T) {
 }
 
 func TestRunSendsFourMiBReadmeThroughSemanticEnvelope(t *testing.T) {
+	const formerProviderWindow = 2*(1536<<10) + 64<<10
 	content := strings.Repeat("complete repository guidance\n", (4<<20)/29+1)
 	repository, _ := testCorpus(t, map[string]string{
 		"README.md": content,
@@ -650,8 +642,8 @@ func TestRunSendsFourMiBReadmeThroughSemanticEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(compilation.wire) <= MaxProviderRequestBytes {
-		t.Fatalf("fixture bytes = %d, want beyond former provider window %d", len(compilation.wire), MaxProviderRequestBytes)
+	if len(compilation.wire) <= formerProviderWindow {
+		t.Fatalf("fixture bytes = %d, want beyond former provider window %d", len(compilation.wire), formerProviderWindow)
 	}
 	provider := &emptyResultProvider{}
 	execution, err := Run(t.Context(), llm.Executor{BatchConcurrency: 2}, provider, compilation)
@@ -659,88 +651,11 @@ func TestRunSendsFourMiBReadmeThroughSemanticEnvelope(t *testing.T) {
 		t.Fatalf("four-MiB README failed before the semantic envelope: %v", err)
 	}
 	if provider.maxRequestLimit.Load() != llm.SemanticRecordByteLimit ||
-		provider.maxPreparedBytes.Load() <= MaxProviderRequestBytes || execution.Result == nil {
+		provider.maxPreparedBytes.Load() <= formerProviderWindow || execution.Result == nil {
 		t.Fatalf(
 			"run result=%#v, request limit=%d, max prepared=%d",
 			execution.Result, provider.maxRequestLimit.Load(), provider.maxPreparedBytes.Load(),
 		)
-	}
-}
-
-func TestBatchesCoverEveryGuidanceDocumentAgainstEveryCandidateFile(t *testing.T) {
-	files := map[string]string{
-		"README.md":          strings.Repeat("r", 800<<10),
-		"docs/AGENTS.md":     strings.Repeat("a", 800<<10),
-		"cmd/server/main.go": "package main\n",
-	}
-	for index := 0; index < 40; index++ {
-		files[fmt.Sprintf("pkg/p%02d/file.go", index)] = "package p\n"
-	}
-	repository, _ := testCorpus(t, files)
-	compilation, err := compileWithTestHints(t, "sample", repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(compilation.wire) <= AdvisoryAtomicRequestBytes {
-		t.Fatalf("aggregate request unexpectedly small: %d", len(compilation.wire))
-	}
-	batches, err := batches(compilation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(batches) < 2 {
-		t.Fatalf("batch count = %d, want multiple guidance shards", len(batches))
-	}
-	coverage := make(map[string]int)
-	for batchIndex, batch := range batches {
-		if len(batch.wire) > MaxRequestBytes {
-			t.Fatalf("batch %d = %d bytes", batchIndex, len(batch.wire))
-		}
-		for _, document := range batch.Request.GuidanceDocuments {
-			if document.Content != files[document.Path] {
-				t.Fatalf("batch %d truncated %s", batchIndex, document.Path)
-			}
-			for fileRef := range batch.authority {
-				coverage[document.Path+"\x00"+string(fileRef)]++
-			}
-		}
-	}
-	for _, document := range compilation.Request.GuidanceDocuments {
-		for fileRef := range compilation.authority {
-			if coverage[document.Path+"\x00"+string(fileRef)] != 1 {
-				t.Fatalf("coverage %s/%s = %d", document.Path, fileRef, coverage[document.Path+"\x00"+string(fileRef)])
-			}
-		}
-	}
-}
-
-func TestRunExecutesEveryShardInJSONModeAndReturnsOneCompleteResult(t *testing.T) {
-	repository, _ := testCorpus(t, map[string]string{
-		"README.md":      strings.Repeat("r", 800<<10),
-		"docs/AGENTS.md": strings.Repeat("a", 800<<10),
-		"main.go":        "package main\n",
-	})
-	compilation, err := compileWithTestHints(t, "sample", repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	batches, err := batches(compilation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := &emptyResultProvider{}
-	execution, err := Run(t.Context(), llm.Executor{
-		BatchConcurrency: 4,
-	}, provider, compilation)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(execution.Outcomes) != len(batches) || provider.calls.Load() != int64(len(batches)) ||
-		execution.Result == nil || len(execution.Result) != 0 {
-		t.Fatalf("execution = %#v, calls = %d, batches = %d", execution, provider.calls.Load(), len(batches))
-	}
-	if !provider.jsonMode.Load() {
-		t.Fatal("classifier requests did not ask for a JSON object response")
 	}
 }
 

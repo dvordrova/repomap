@@ -6,7 +6,6 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/programindex"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
@@ -34,7 +33,7 @@ func TestACallIntoAnotherTargetsPackageJoinsTheirFiles(t *testing.T) {
 	if client.Selector == "" {
 		t.Fatalf("the Python fixture has no client library target: %#v", catalog.Entries)
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, client)
+	input, err := sharedPythonFixtureInput(t, repository, client)
 	if err != nil {
 		t.Fatal(err)
 	}

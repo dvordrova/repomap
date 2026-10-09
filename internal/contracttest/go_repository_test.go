@@ -49,7 +49,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	t.Setenv("GOWORK", "off")
 	repositoryPath, repository := materializeFixtureRepository(t, "go")
 	writePublishedGoFixtureModule(t, repositoryPath)
-	authorities := analyzeGoFixture(t, repositoryPath, repository, goFixtureAppPackage, "cumulative-go-contract")
+	authorities := sharedGoFixtureAuthorities(t, repositoryPath, repository, goFixtureAppPackage, "cumulative-go-contract")
 	assertUnusedPrivateMethodHasNoDanglingDirectNode(t, authorities)
 	producerResultID := assertGoRetainedProducerReceiverAuthority(t, authorities)
 
@@ -72,6 +72,8 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	}
 	adaptertest.AssertSharedArtifact(t, input, index)
 	assertProgramIndexRoundTrip(t, index)
+	assertGoRuntimeTypeMethods(t, index)
+	assertGoAttachedAuthorCommentOwnership(t, repositoryPath, repository, index)
 	if index.Target.Language != "go" || index.Target.Selector == "" || index.Target.Name != goFixtureAppPackage {
 		t.Fatalf("Go ProgramIndex target = %#v", index.Target)
 	}
@@ -126,7 +128,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoInterfaceDeclarations(t, authorities, index)
 	assertGoResponseFieldDeclarations(t, repository, authorities, index)
 
-	publishedAuthorities := analyzeGoFixture(
+	publishedAuthorities := sharedGoFixtureAuthorities(
 		t,
 		repositoryPath,
 		repository,
@@ -150,7 +152,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertPublishedRootImportRemainsExternal(t, publishedAuthorities, publishedIndex)
 	assertGoEffectOnlyImports(t, publishedAuthorities)
 	assertGoWordsAnchoredWhereWritten(t, index)
-	library := analyzeGoFixture(t, repositoryPath, repository, goFixtureRootPackage, "cumulative-go-library-tests")
+	library := sharedGoFixtureAuthorities(t, repositoryPath, repository, goFixtureRootPackage, "cumulative-go-library-tests")
 	libraryIndex, err := goadapter.Build(repository, library.target, library.origins, library.direct, library.external, library.core, library.dynamic, library.tests)
 	if err != nil {
 		t.Fatal(err)

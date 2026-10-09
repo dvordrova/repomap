@@ -10,47 +10,46 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-// Run executes the complete deterministic batch cover and unions every
-// compatible closed-ref result. A refused model shard contributes no guidance
-// classification; independent native target inventories remain untouched.
-func Run(
-	ctx context.Context,
-	executor llm.Executor,
-	provider llm.Provider,
-	compilation Compilation,
-) (Execution, error) {
-	batches, err := batches(compilation)
+// Run prepares the complete authority through the provider and splits only
+// observed envelopes. Every final request covers an original doc-by-file
+// rectangle; independent accepted calls survive without being asked again.
+func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, compilation Compilation) (Execution, error) {
+	if err := validateReadyCompilation(compilation); err != nil {
+		return Execution{}, err
+	}
+	build := func(item guidanceBatch) (llm.Call[responseResult], error) {
+		if item.err != nil {
+			return llm.Call[responseResult]{}, item.err
+		}
+		batch := item.compilation
+		prompt, err := BuildPrompt(batch)
+		if err != nil {
+			return llm.Call[responseResult]{}, err
+		}
+		state, err := batchExecutionState(compilation, batch)
+		if err != nil {
+			return llm.Call[responseResult]{}, err
+		}
+		return llm.Call[responseResult]{
+			State:          state,
+			Prompt:         llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: true, ResponseExample: responseExample},
+			Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: MaxResponseBytes, MaxOutputTokens: MaxOutputTokens},
+			DecodeValidate: func(raw []byte) (responseResult, error) { return resolveResponse(batch, raw) },
+		}, nil
+	}
+	responses, err := llm.ExecuteAdaptiveJSONEachResults(ctx, executor, provider,
+		[]guidanceBatch{{compilation: compilation}}, build, splitGuidanceBatch)
 	if err != nil {
 		return Execution{}, err
 	}
-	calls := make([]llm.Call[responseResult], len(batches))
-	for index, batch := range batches {
-		prompt, err := BuildPrompt(batch)
-		if err != nil {
-			return Execution{}, err
-		}
-		state, err := batchExecutionState(compilation, index, len(batches))
-		if err != nil {
-			return Execution{}, err
-		}
-		batch := batch
-		calls[index] = llm.Call[responseResult]{
-			State:  state,
-			Prompt: llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: true, ResponseExample: responseExample},
-			Limits: llm.Limits{
-				MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: MaxResponseBytes,
-				MaxOutputTokens: MaxOutputTokens,
-			},
-			DecodeValidate: func(raw []byte) (responseResult, error) {
-				return resolveResponse(batch, raw)
-			},
-		}
-	}
-	responses := llm.ExecuteJSONEach(ctx, executor, provider, calls)
 	execution := Execution{Outcomes: make([]llm.Outcome[responseResult], len(responses))}
 	results := make([]Result, len(responses))
+	// Populate every outcome before considering terminal errors, preserving the
+	// complete accepted/refused leaf evidence even when discovery cannot finish.
 	for index, response := range responses {
 		execution.Outcomes[index] = response.Outcome
+	}
+	for index, response := range responses {
 		if response.Err == nil {
 			results[index] = response.Outcome.Value.Result
 			continue
@@ -64,7 +63,7 @@ func Run(
 		}
 		modelFailure := false
 		for _, rejected := range response.Outcome.ResponseRejections {
-			if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" || rejected.Kind == "provider_failed" {
+			if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" {
 				modelFailure = true
 			}
 		}
@@ -81,18 +80,14 @@ func Run(
 	return execution, nil
 }
 
-func batchExecutionState(compilation Compilation, index, count int) ([]byte, error) {
+func batchExecutionState(compilation, batch Compilation) ([]byte, error) {
 	state, err := json.Marshal(struct {
 		Contract       json.RawMessage `json:"contract"`
 		CompilationSHA string          `json:"compilation_sha256"`
-		BatchIndex     int             `json:"batch_index"`
-		BatchCount     int             `json:"batch_count"`
-	}{
-		Contract: ExecutionState(), CompilationSHA: compilation.RequestSHA256,
-		BatchIndex: index, BatchCount: count,
-	})
+		RequestSHA     string          `json:"request_sha256"`
+	}{ExecutionState(), compilation.RequestSHA256, batch.RequestSHA256})
 	if err != nil {
-		return nil, fmt.Errorf("README file classifier: encode batch execution state: %w", err)
+		return nil, fmt.Errorf("README file classifier: encode request execution state: %w", err)
 	}
 	return state, nil
 }

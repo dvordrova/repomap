@@ -323,6 +323,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertInheritedHTTPRoutes(t, index)
 	assertCumulativeJSTSRuntimeRegistrations(t, result, index, repository)
 	assertCumulativeJSTSSourceValues(t, repository, index)
+	assertMergedDefaultLibraryInvocations(t, result, index)
 	input, err := BuildInputFromResult(result)
 	if err != nil {
 		t.Fatal(err)
@@ -440,9 +441,13 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	for expression, externalName := range map[string]string{
 		"new Date": "Date", "new Image": "Image", "new Promise": "Promise",
 	} {
+		packagePath := javascriptPlatform
+		if expression == "new Date" {
+			packagePath = "@types/node"
+		}
 		call, exists := calls[expression]
 		if !exists || call.Invocation != "construct" || call.Resolution != "exact" ||
-			call.ExternalPackage != javascriptPlatform || call.ExternalName != externalName ||
+			!call.DefaultLibrarySymbol || call.ExternalPackage != packagePath || call.ExternalName != externalName ||
 			len(call.CalleeRefs) != 0 {
 			t.Fatalf("cumulative platform constructor %q = %#v", expression, call)
 		}
@@ -459,9 +464,13 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		"Math.min":               {receiver: "Math", name: "min"},
 		"console.log":            {receiver: "Console", name: "log"},
 	} {
+		packagePath := javascriptPlatform
+		if expression == "console.log" {
+			packagePath = "@fixture/console-adapter"
+		}
 		call, exists := calls[expression]
 		if !exists || call.Invocation != "call" || call.Resolution != "exact" ||
-			call.ExternalPackage != javascriptPlatform || call.ExternalReceiver != target.receiver ||
+			!call.DefaultLibrarySymbol || call.ExternalPackage != packagePath || call.ExternalReceiver != target.receiver ||
 			call.ExternalName != target.name || len(call.CalleeRefs) != 0 {
 			t.Fatalf("cumulative platform call %q = %#v, want %#v", expression, call, target)
 		}
@@ -2917,6 +2926,13 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 
 func materializeCumulativeJSTSDependencyTypes(t *testing.T, root string) {
 	t.Helper()
+	writeTestFile(t, root, "node_modules/@types/node/index.d.ts", "interface DateConstructor { new(): Date }\n")
+	writeTestFile(t, root, "node_modules/@fixture/console-adapter/package.json", `{"name":"@fixture/console-adapter","version":"1.0.0","types":"index.d.ts"}`)
+	writeTestFile(t, root, "node_modules/@fixture/console-adapter/index.d.ts", `
+export declare const Console: { log(message?: any, ...args: any[]): void }
+export declare function createConsole(): { log(message?: any): void }
+declare global { interface Console { log(message?: any, ...args: any[]): void } }
+`)
 	writeTestFile(t, root, "node_modules/hono/package.json", `{"name":"hono","version":"4.0.0","types":"index.d.ts"}`)
 	writeTestFile(t, root, "node_modules/hono/index.d.ts", `export class Hono { get(path: string, handler: () => void): void }`)
 	writeTestFile(t, root, "node_modules/axios/package.json", `{"name":"axios","version":"1.0.0","types":"index.d.ts"}`)
@@ -3008,7 +3024,7 @@ func preparedTempProject(t *testing.T) string {
 	}
 	writeTestFile(t, root, "src/collisions.ts", collisions.String())
 	writeTestFile(t, root, "src/main.ts", "import { same as one } from \"@/one\"\nimport { same as two } from \"@/two\"\nexport class ExactReceiver { statusCode(): number { return 201 } }\nexport class Constructed { constructor() {} }\nexport function createResponse() { return { statusCode(): number { return 200 } }\nexport const response = { get statusCode(): number { return 202 } }\nexport function hello(): string { return \"hello\" }\nexport function platformCalls(canvas: HTMLCanvasElement) {\n  new Constructed()\n  new Date()\n  new Promise<void>((resolve) => resolve())\n  const localDateConstructor: DateConstructor = Date\n  new localDateConstructor()\n  canvas.getContext(\"2d\")\n  Math.min(1, 2)\n  console.log(\"ready\")\n  return new Image()\n}\nhello()\none()\ntwo()\nexport const prompt = ["+strings.Repeat("\"abc\", ", 100)+"\"end\"].join(\"\\n\")\n")
-	writeTestFile(t, root, "node_modules/@types/node/index.d.ts", "interface Console { log(message?: any, ...optionalParams: any[]): void }\n")
+	writeTestFile(t, root, "node_modules/@types/node/index.d.ts", "interface Console { log(message?: any, ...optionalParams: any[]): void }\ninterface DateConstructor { new(): Date }\n")
 	writeTestFile(t, root, "src/one.ts", "export function same(): number { return 1 }\n")
 	writeTestFile(t, root, "src/two.ts", "export function same(): number { return 2 }\n")
 	writeTestFile(t, root, "src/view.tsx", "export function View() { return <main /> }\n")
@@ -3033,6 +3049,86 @@ func hasExactImport(result Result, specifier, resolvedPath string) bool {
 		}
 	}
 	return false
+}
+
+func assertMergedDefaultLibraryInvocations(t *testing.T, result Result, index programindex.Index) {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, call := range result.Calls {
+		if call.Location.Path != "src/platform.ts" {
+			continue
+		}
+		if call.Expression == "new localDateConstructor" && (call.DefaultLibrarySymbol || call.ExternalPackage != "" || call.Resolution != "unresolved") {
+			t.Fatalf("local typed constructor gained default-library authority: %#v", call)
+		}
+		if call.Expression == "console.log" || call.Expression == "new Date" {
+			packagePath := "@types/node"
+			if call.Expression == "console.log" {
+				packagePath = "@fixture/console-adapter"
+			}
+			if !call.DefaultLibrarySymbol || call.ExternalPackage != packagePath || call.Resolution != "exact" {
+				t.Fatalf("merged default-library symbol lost proof or raw signature origin: %#v", call)
+			}
+			receiver, name := "Console", "log"
+			if call.Expression == "new Date" {
+				receiver, name = "", "Date"
+			}
+			if call.ExternalReceiver != receiver || call.ExternalName != name {
+				t.Fatalf("merged default-library symbol lost canonical target: %#v", call)
+			}
+			ref := externalProgramObjectRef(packagePath, receiver, name, "", true)
+			found := false
+			for _, object := range index.Objects {
+				if object.SourceRef == ref && object.External != nil && object.External.AuthorityKind == programindex.ExternalAuthorityPlatform && object.External.PackagePath == packagePath {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("merged platform call has no matching native platform object: %s", ref)
+			}
+			seen[call.Expression] = true
+		}
+		if call.Expression == "adapterConsole.log" {
+			if call.DefaultLibrarySymbol || call.ExternalPackage != "@fixture/console-adapter" || call.ExternalReceiver != "Console" || call.ExternalName != "log" {
+				t.Fatalf("exact imported symbol borrowed merged platform proof: %#v", call)
+			}
+			ref := externalProgramObjectRef(call.ExternalPackage, call.ExternalReceiver, call.ExternalName, "")
+			found := false
+			for _, object := range index.Objects {
+				if object.SourceRef == ref && object.External != nil && object.External.AuthorityKind == programindex.ExternalAuthorityPackage {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("independent imported Console.log lost its package identity: %s", ref)
+			}
+			seen[call.Expression] = true
+		}
+		if call.Expression == "chosenFactory" {
+			if call.Resolution != "unresolved" || call.ExternalPackage != "" || len(call.CalleeRefs) != 0 {
+				t.Fatalf("unknown reaching assignment gained exact call authority: %#v", call)
+			}
+			seen[call.Expression] = true
+		}
+		if call.Expression == "logger.log" {
+			if call.Pattern == nil || len(call.Pattern.ReceiverOriginRefs) != 0 || call.Pattern.ReceiverOriginResolution != "unresolved" {
+				t.Fatalf("unresolved factory became an exact receiver origin: %#v", call)
+			}
+			seen[call.Expression] = true
+		}
+		if call.Expression == "now.getTime" {
+			want := externalProgramObjectRef("@types/node", "", "Date", "", true)
+			if call.Pattern == nil || !reflect.DeepEqual(call.Pattern.ReceiverOriginRefs, []string{want}) {
+				t.Fatalf("receiver provenance differs from constructor call target: %#v", call)
+			}
+			seen[call.Expression] = true
+		}
+	}
+	for _, expression := range []string{"console.log", "new Date", "now.getTime", "adapterConsole.log", "chosenFactory", "logger.log"} {
+		if !seen[expression] {
+			t.Fatalf("cumulative merged platform example missing %s", expression)
+		}
+	}
 }
 
 func assertCompilerResolvedInvocationProjection(t *testing.T, result Result, index programindex.Index) {
@@ -3066,8 +3162,12 @@ func assertCompilerResolvedInvocationProjection(t *testing.T, result Result, ind
 		relationsBySourceRef[relation.SourceRef] = relation
 	}
 	for expression, want := range wantPlatform {
+		packagePath := javascriptPlatform
+		if expression == "console.log" || expression == "new Date" {
+			packagePath = "@types/node"
+		}
 		call, ok := callsByExpression[expression]
-		if !ok || call.Resolution != "exact" || call.Invocation != want.invocation || call.ExternalPackage != javascriptPlatform ||
+		if !ok || !call.DefaultLibrarySymbol || call.Resolution != "exact" || call.Invocation != want.invocation || call.ExternalPackage != packagePath ||
 			call.ExternalReceiver != want.receiver || call.ExternalName != want.name || len(call.CalleeRefs) != 0 {
 			t.Fatalf("compiler-resolved platform invocation %q = %#v, want %#v", expression, call, want)
 		}
@@ -3078,7 +3178,7 @@ func assertCompilerResolvedInvocationProjection(t *testing.T, result Result, ind
 		}
 		target := objectsByID[relation.ToIDs[0]]
 		if target.External == nil || target.External.AuthorityKind != programindex.ExternalAuthorityPlatform ||
-			target.External.PackagePath != javascriptPlatform || target.External.Receiver != want.receiver || target.External.Name != want.name {
+			target.External.PackagePath != packagePath || target.External.Receiver != want.receiver || target.External.Name != want.name {
 			t.Fatalf("platform invocation target %q = %#v", expression, target)
 		}
 	}
@@ -3213,6 +3313,8 @@ func assertCumulativeJSTSTypeMembers(t *testing.T, result Result, index programi
 		{"OtherResponse", "message", "message: `first\\nsecond`;", 14, 3},
 		{"OtherResponse", "route", "route: `first\\n${number}  last`;", 16, 3},
 		{"ExtendedResponse", "own", "own: boolean;", 22, 3},
+		{"AuthoredShape", "count", "readonly count: number;", 125, 12},
+		{"AuthoredShape", "next", "next: number;", 127, 3},
 	}
 	declarations := make(map[string]Declaration)
 	owners := make(map[string]Declaration)

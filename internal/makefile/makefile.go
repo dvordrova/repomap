@@ -13,9 +13,13 @@ import (
 // makefile as the build's manifest"): its key, its value and the line it
 // starts on.
 type Row struct {
-	Key   string
-	Value string
-	Line  int
+	Path      string
+	Target    string
+	HasRecipe bool
+	Condition string
+	Key       string
+	Value     string
+	Line      int
 }
 
 // Read reads a makefile as a newcomer runs it, as package.json's
@@ -23,7 +27,7 @@ type Row struct {
 // .DEFAULT_GOAL, else the first target of the first rule that names no
 // special target, `.x`, or pattern, `%`), with what it builds; each other
 // rule a reader may run (`make test`), with what it needs and runs, an
-// object's rule (`x.o`) none; and the variables the goal's commands and
+// object's rule (`x.o`) none; and the variables each advertised rule's commands and
 // make's own compile and link commands use (CC, CFLAGS, CPPFLAGS, LDFLAGS,
 // LDLIBS), followed through the variables their values name, each
 // assignment with the conditional it stands under (redis-1.3.6's CFLAGS
@@ -34,21 +38,25 @@ func Read(lines []string) []Row {
 	file := parseMakefile(lines)
 	goal := file.defaultGoal()
 	var rows []Row
+	var advertised []*makeRule
 	if goal != nil {
+		advertised = append(advertised, goal)
 		rows = append(rows, Row{Key: "default_goal", Value: strings.TrimSpace(goal.target + ": " + file.describe(goal)), Line: goal.line})
 	}
 	for _, rule := range file.rules {
 		if rule == goal || !runnable(rule.target) {
 			continue
 		}
+		advertised = append(advertised, rule)
 		key := "rule." + rule.target
 		if rule.condition != "" {
 			key += " when " + rule.condition
 		}
 		rows = append(rows, Row{Key: key, Value: file.describe(rule), Line: rule.line})
 	}
+	used := file.used(advertised...)
 	for _, assignment := range file.assignments {
-		if !file.used(goal)[assignment.name] {
+		if !used[assignment.name] {
 			continue
 		}
 		key := "variable." + assignment.name
@@ -62,38 +70,56 @@ func Read(lines []string) []Row {
 }
 
 type makeRule struct {
-	target        string
-	prerequisites string
-	recipe        []string
-	line          int
-	condition     string
+	path                  string
+	target                string
+	prerequisites         string
+	observedPrerequisites string
+	recipe                []string
+	line                  int
+	condition             string
 }
 
 type makeVariable struct {
-	name, value string
-	line        int
-	condition   string
+	name, value   string
+	operator      string
+	path          string
+	line          int
+	condition     string
+	immediate     string
+	resolved      bool
+	appendSimple  bool
+	appendUnknown bool
 }
 
 type makefile struct {
 	rules       []*makeRule
 	assignments []makeVariable
 	goal        string // .DEFAULT_GOAL, when assigned
-	usedBy      map[*makeRule]map[string]bool
+	includes    []Row
+	sourceAware bool
+	goalUnknown bool
+	goalRows    []Row
 }
 
 var (
 	// makeAssignment is a variable assignment: its name and value.
-	makeAssignment = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*(?::=|::=|\?=|\+=|=)\s*(.*?)\s*$`)
+	makeAssignment = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*(:=|::=|\?=|\+=|=)\s*(.*?)\s*$`)
 	// defaultGoalAssignment names the goal make builds when given none.
-	defaultGoalAssignment = regexp.MustCompile(`^\.DEFAULT_GOAL\s*(?::=|::=|\?=|=)\s*(.*?)\s*$`)
+	defaultGoalAssignment = regexp.MustCompile(`^\.DEFAULT_GOAL\s*(:=|::=|\?=|=)\s*(.*?)\s*$`)
 	makeReference         = regexp.MustCompile(`\$[({]([A-Za-z_][A-Za-z0-9_.]*)[)}]`)
 	makeDirective         = regexp.MustCompile(`^(ifeq|ifneq|ifdef|ifndef|else|endif|define|endef|include|-include|sinclude|export|unexport|override|vpath)\b`)
 )
 
 func parseMakefile(physical []string) *makefile {
 	file := &makefile{}
-	var conditions []string
+	file.read(physical, "", nil, nil)
+	return file
+}
+
+// read retains the invocation's variable environment while reading included
+// source at its original positions. Conditions are evidence, never evaluated.
+func (file *makefile) read(physical []string, sourcePath string, inherited []string, include func(string, string, int, []string)) {
+	conditions := slices.Clone(inherited)
 	// current are the rules a recipe line belongs to: every target of the
 	// rule line before it.
 	var current []*makeRule
@@ -125,6 +151,10 @@ func parseMakefile(physical []string) *makefile {
 		if directive := makeDirective.FindString(line); directive != "" {
 			current = nil
 			switch directive {
+			case "include", "-include", "sinclude":
+				if include != nil {
+					include(sourcePath, line, start+1, slices.Clone(conditions))
+				}
 			case "ifeq", "ifneq", "ifdef", "ifndef":
 				conditions = append(conditions, line)
 			case "else":
@@ -144,19 +174,27 @@ func parseMakefile(physical []string) *makefile {
 			case "export", "override":
 				// export CC = gcc assigns as CC = gcc does.
 				if match := makeAssignment.FindStringSubmatch(strings.TrimSpace(strings.TrimPrefix(line, directive))); match != nil {
-					file.assign(match[1], match[2], start+1, conditions)
+					file.assign(match[1], match[2], match[3], sourcePath, start+1, conditions)
 				}
 			}
 			continue
 		}
 		if goal := defaultGoalAssignment.FindStringSubmatch(line); goal != nil {
 			current = nil
-			file.goal = strings.TrimSpace(goal[1])
+			file.goal = strings.TrimSpace(goal[2])
+			if file.sourceAware {
+				row := Row{Path: sourcePath, Key: "variable..DEFAULT_GOAL", Value: file.goal, Line: start + 1}
+				if condition := strings.Join(conditions, " and "); condition != "" {
+					row.Key += " when " + condition
+				}
+				file.goalRows = append(file.goalRows, row)
+				file.goalUnknown = len(conditions) > 0 || file.goal == "" || goal[1] == "?=" || strings.ContainsAny(file.goal, "$ \t")
+			}
 			continue
 		}
 		if match := makeAssignment.FindStringSubmatch(line); match != nil {
 			current = nil
-			file.assign(match[1], match[2], start+1, conditions)
+			file.assign(match[1], match[2], match[3], sourcePath, start+1, conditions)
 			continue
 		}
 		colon := strings.Index(line, ":")
@@ -170,8 +208,11 @@ func parseMakefile(physical []string) *makefile {
 			rest, inline = rest[:semicolon], strings.TrimSpace(rest[semicolon+1:])
 		}
 		current = nil
-		for _, target := range strings.Fields(file.expand(targets, map[string]bool{})) {
-			rule := &makeRule{target: target, prerequisites: strings.TrimSpace(rest), line: start + 1, condition: strings.Join(conditions, " and ")}
+		for _, target := range makeWords(file.expand(targets, map[string]bool{})) {
+			rule := &makeRule{path: sourcePath, target: target, prerequisites: strings.TrimSpace(rest), line: start + 1, condition: strings.Join(conditions, " and ")}
+			if file.sourceAware {
+				rule.observedPrerequisites = file.expand(rule.prerequisites, map[string]bool{})
+			}
 			if inline != "" {
 				rule.recipe = append(rule.recipe, inline)
 			}
@@ -179,11 +220,23 @@ func parseMakefile(physical []string) *makefile {
 			current = append(current, rule)
 		}
 	}
-	return file
 }
 
-func (file *makefile) assign(name, value string, line int, conditions []string) {
-	file.assignments = append(file.assignments, makeVariable{name: name, value: strings.Join(strings.Fields(value), " "), line: line, condition: strings.Join(conditions, " and ")})
+func (file *makefile) assign(name, operator, value, sourcePath string, line int, conditions []string) {
+	assignment := makeVariable{name: name, value: strings.Join(strings.Fields(value), " "), operator: operator, path: sourcePath, line: line, condition: strings.Join(conditions, " and ")}
+	if file.sourceAware && (operator == ":=" || operator == "::=") {
+		assignment.immediate = file.expand(assignment.value, map[string]bool{})
+		assignment.resolved = !strings.Contains(assignment.immediate, "$")
+	}
+	if file.sourceAware && operator == "+=" {
+		assignment.appendSimple, assignment.resolved = file.simpleVariable(name)
+		assignment.appendUnknown = !assignment.resolved
+		if assignment.appendSimple && !assignment.appendUnknown {
+			assignment.immediate = file.expand(assignment.value, map[string]bool{})
+			assignment.resolved = !strings.Contains(assignment.immediate, "$")
+		}
+	}
+	file.assignments = append(file.assignments, assignment)
 }
 
 // stripMakeComment drops a comment: make reads `#` as one unless escaped.
@@ -205,6 +258,17 @@ func (file *makefile) expand(text string, seen map[string]bool) string {
 		if seen[name] {
 			return reference
 		}
+		if file.sourceAware {
+			value, known := file.literalVariable(name)
+			if !known {
+				return reference
+			}
+			inner := map[string]bool{name: true}
+			for key := range seen {
+				inner[key] = true
+			}
+			return file.expand(value, inner)
+		}
 		for _, assignment := range file.assignments {
 			if assignment.name == name {
 				inner := map[string]bool{name: true}
@@ -219,6 +283,9 @@ func (file *makefile) expand(text string, seen map[string]bool) string {
 }
 
 func (file *makefile) defaultGoal() *makeRule {
+	if file.sourceAware && file.goalUnknown {
+		return nil
+	}
 	for _, rule := range file.rules {
 		if file.goal != "" {
 			if rule.target == file.goal {
@@ -236,11 +303,18 @@ func (file *makefile) defaultGoal() *makeRule {
 // describe is a rule's prerequisites through the makefile's variables and,
 // when it has one, its recipe as written.
 func (file *makefile) describe(rule *makeRule) string {
-	text := strings.Join(strings.Fields(file.expand(rule.prerequisites, map[string]bool{})), " ")
+	text := strings.Join(strings.Fields(file.rulePrerequisites(rule)), " ")
 	if len(rule.recipe) > 0 {
 		text = strings.TrimSpace(text + " — runs: " + strings.Join(rule.recipe, "; "))
 	}
 	return text
+}
+
+func (file *makefile) rulePrerequisites(rule *makeRule) string {
+	if file.sourceAware {
+		return rule.observedPrerequisites
+	}
+	return file.expand(rule.prerequisites, map[string]bool{})
 }
 
 // runnable is a target a reader may name to make: not special (.PHONY,
@@ -249,15 +323,9 @@ func runnable(target string) bool {
 	return !strings.HasPrefix(target, ".") && !strings.Contains(target, "%") && !strings.HasSuffix(target, ".o")
 }
 
-// used are the variables the goal's commands and make's own compile and
+// used are the variables every advertised rule's commands and make's own compile and
 // link commands name, followed through the variables their values name.
-func (file *makefile) used(goal *makeRule) map[string]bool {
-	if file.usedBy == nil {
-		file.usedBy = map[*makeRule]map[string]bool{}
-	}
-	if used, done := file.usedBy[goal]; done {
-		return used
-	}
+func (file *makefile) used(advertised ...*makeRule) map[string]bool {
 	used := map[string]bool{}
 	var queue []string
 	name := func(text string) {
@@ -271,10 +339,20 @@ func (file *makefile) used(goal *makeRule) map[string]bool {
 	for _, implicit := range []string{"CC", "CFLAGS", "CPPFLAGS", "LDFLAGS", "LDLIBS"} {
 		name("$(" + implicit + ")")
 	}
-	// The rules the goal builds, through their prerequisites.
-	if goal != nil {
+	if file.sourceAware {
+		for _, row := range file.includes {
+			name(row.Value)
+			name(row.Key)
+		}
+		for _, rule := range file.rules {
+			name(rule.prerequisites)
+			name(rule.condition)
+		}
+	}
+	// Each advertised rule and the rules it builds through its prerequisites.
+	if len(advertised) > 0 {
 		reached := map[*makeRule]bool{}
-		rules := []*makeRule{goal}
+		rules := append([]*makeRule(nil), advertised...)
 		for len(rules) > 0 {
 			rule := rules[0]
 			rules = rules[1:]
@@ -287,7 +365,7 @@ func (file *makefile) used(goal *makeRule) map[string]bool {
 			for _, command := range rule.recipe {
 				name(command)
 			}
-			for _, prerequisite := range strings.Fields(file.expand(rule.prerequisites, map[string]bool{})) {
+			for _, prerequisite := range makeWords(file.rulePrerequisites(rule)) {
 				for _, other := range file.rules {
 					if other.target == prerequisite {
 						rules = append(rules, other)
@@ -305,6 +383,5 @@ func (file *makefile) used(goal *makeRule) map[string]bool {
 			}
 		}
 	}
-	file.usedBy[goal] = used
 	return used
 }

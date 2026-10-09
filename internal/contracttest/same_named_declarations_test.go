@@ -1,11 +1,11 @@
 package contracttest
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
@@ -22,7 +22,7 @@ import (
 // var.
 func TestSameNamedDeclarationsOfOneScopeReadApartByWhatOnlyEachCalls(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "jsts")
-	_, jsts, _, err := jstsproject.Build(t.Context(), repository, root)
+	_, jsts, _, err := sharedJSTSFixture(t, repository, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,11 @@ func TestSameNamedDeclarationsOfOneScopeReadApartByWhatOnlyEachCalls(t *testing.
 			t.Fatalf("%s: %d declarations named %s, want two", check.path, len(ids), check.name)
 		}
 		var words []string
-		for _, use := range groupindex.OwnUses(check.index, ids) {
+		uses := groupindex.OwnUses(check.index, ids)
+		if indexed := groupindex.NewOwnUseReader(check.index).OwnUses(ids); !reflect.DeepEqual(indexed, uses) {
+			t.Fatalf("%s: indexed reader changed native names or source uses: %+v / %+v", check.path, indexed, uses)
+		}
+		for _, use := range uses {
 			if use.Reads {
 				t.Fatalf("%s: %s reads by what it reads, want what it calls: %+v", check.path, check.name, use)
 			}

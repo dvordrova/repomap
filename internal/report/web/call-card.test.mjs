@@ -168,6 +168,21 @@ test('an arrow card on the canvas names each callee once under the part it goes 
   assert.deepEqual(brief[1].names.map(entry=>entry.name),['sdsnew']);
 });
 
+test('brief call names retain exact declarations without source links, including folds and equal names',()=>{
+  const relations=[{from:'clients',to:'data',calls:[
+    call('dispatch calls lookup','a.c:1',{to:'',callee:'decl-a'}),
+    call('dispatch calls lookup','a.c:2',{to:'',callee:'decl-b'}),
+    call('other calls lookup','a.c:3',{to:'',callee:'decl-a'}),
+    call('table passes_callback callback','a.c:4',{to:'',callee:'decl-c',fold:'set',of:2,one:true}),
+  ]}];
+  const entries=briefCard(callCard(relations,{nameOf}))[0].names;
+  assert.deepEqual(entries.map(entry=>[entry.name,entry.href,entry.at]),[
+    ['callback','',{part:'data',key:'decl-c'}],
+    ['lookup','',{part:'data',key:'decl-a'}],
+    ['lookup','',{part:'data',key:'decl-b'}],
+  ]);
+});
+
 // redis-cli → redis-server: the exchange, each side's own function.
 test('an arrow card names a call leaving its program by the functions on each side',()=>{
   const relations=[{from:'clients',to:'data',calls:[call('anetTcpGenericConnect connects_to anetAccept','anet.c:158',{sides:[

@@ -59,7 +59,7 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 	if nodes["system-out-1"].FullTitle != "Queue" || nodes["system-out-2"].FullTitle != "Queue" {
 		t.Fatal("equal destination names merged unrelated records")
 	}
-	for _, id := range []string{"system-component-front", "system-component-backend", "system-component-worker", "system-unread"} {
+	for _, id := range []string{"system-component-front", "system-component-backend", "system-component-worker"} {
 		if _, ok := nodes[id]; !ok {
 			t.Fatalf("component %s absent", id)
 		}
@@ -67,8 +67,8 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 	if nodes["system-inputs-worker"].Children != "task" || nodes["system-inputs-worker"].Owner != "worker" || strings.Contains(nodes["system-component-worker"].Children, "task") {
 		t.Fatal("input lost its owning catalogue or remained inside the component")
 	}
-	if nodes["system-unread"].FullTitle != "Not analysed" || nodes["system-unread"].Summary != "failed, failed2" || nodes["system-unread"].DetailsID != "targets-not-read" {
-		t.Fatalf("the targets not read are not one note naming them: %+v", nodes["system-unread"])
+	if _, exists := nodes["system-unread"]; exists {
+		t.Fatal("failed targets acquired a canvas placeholder")
 	}
 	if view.Sections[0].Map.Edges[0].To != "remote" {
 		t.Fatal("display mutated the original component view")
@@ -283,14 +283,17 @@ func TestAnArrowIsQuietOnlyWhenEveryRelationItDrawsIs(t *testing.T) {
 	}
 }
 
-func TestSystemMapKeepsConnectionsToUnreadComponents(t *testing.T) {
-	view := pageView{Sections: []*pageSection{{ID: "front", ShortLabel: "front"}}, RepoMap: &pageRepoMap{
-		Nodes: []pageRepoNode{{ID: "source", Href: "#front", Analyzed: true}, {ID: "failed", FullName: "worker", Note: "No compiler"}},
-		Edges: []pageRepoEdge{{From: "source", To: "failed", Label: "uses", Possible: true}},
+func TestSystemMapExcludesUnreadComponentsAndTheirConnections(t *testing.T) {
+	view := pageView{Sections: []*pageSection{{ID: "front", ShortLabel: "front"}, {ID: "back", ShortLabel: "back"}}, RepoMap: &pageRepoMap{
+		Nodes: []pageRepoNode{{ID: "source", Href: "#front", Analyzed: true}, {ID: "failed", FullName: "worker", Note: "No compiler"}, {ID: "peer", Href: "#back", Analyzed: true}},
+		Edges: []pageRepoEdge{{From: "source", To: "failed", Label: "uses", Possible: true}, {From: "failed", To: "peer", Label: "uses"}, {From: "source", To: "peer", Label: "uses", Possible: true}},
 	}}
 	got := view.SystemMap()
-	if len(got.Edges) != 1 || got.Edges[0].From != "system-component-front" || got.Edges[0].To != "system-unread" || !got.Edges[0].Possible {
-		t.Fatalf("unread component lost its original connection: %+v", got.Edges)
+	if len(got.Nodes) != 2 || len(got.Edges) != 1 || got.Edges[0].From != "system-component-front" || got.Edges[0].To != "system-component-back" || !got.Edges[0].Possible {
+		t.Fatalf("failed target entered the canvas or successful siblings lost their connection: %+v", got)
+	}
+	if len(view.RepoMap.Nodes) != 3 || len(view.RepoMap.Edges) != 3 || view.RepoMap.Nodes[1].Note != "No compiler" {
+		t.Fatal("excluding a failed target from the canvas changed its saved inventory")
 	}
 }
 

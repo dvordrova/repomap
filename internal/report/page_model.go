@@ -257,6 +257,11 @@ type subjectRef struct {
 }
 
 type pageBuilder struct {
+	nativeCatalog *pageNativeCatalogue
+	nativeIndex   *programindex.Index
+	nativeErrors  *nativeReadError
+	nativeScope   string
+	ownUseReader  *groupindex.OwnUseReader
 	// language is the language the page says its own words in; a callable
 	// written inline is named in it (inlineWords).
 	language DisplayLanguage
@@ -364,18 +369,20 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		return nil, fmt.Errorf("report: page requires the final group graph and target inventory")
 	}
 	builder := &pageBuilder{
-		data:         data,
-		language:     data.displayLanguage,
-		places:       map[string]SceneSource{},
-		links:        newPageLinks(data),
-		byProgram:    make(map[string]*pageSection),
-		byFacts:      make(map[string]*pageSection),
-		factsByID:    make(map[string]facts.Fact),
-		claimsByID:   make(map[string]claims.Claim),
-		subjects:     make(map[string]subjectRef),
-		groupTitles:  make(map[groupindex.Endpoint]string),
-		declarations: make(map[string][]int),
-		subjectAt:    make(map[string]string),
+		nativeCatalog: &pageNativeCatalogue{},
+		nativeErrors:  &nativeReadError{},
+		data:          data,
+		language:      data.displayLanguage,
+		places:        map[string]SceneSource{},
+		links:         newPageLinks(data),
+		byProgram:     make(map[string]*pageSection),
+		byFacts:       make(map[string]*pageSection),
+		factsByID:     make(map[string]facts.Fact),
+		claimsByID:    make(map[string]claims.Claim),
+		subjects:      make(map[string]subjectRef),
+		groupTitles:   make(map[groupindex.Endpoint]string),
+		declarations:  make(map[string][]int),
+		subjectAt:     make(map[string]string),
 	}
 	if data.Facts != nil {
 		builder.factsByID = data.Facts.ByID()
@@ -395,14 +402,16 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		}
 	}
 	builder.indexes = foldIndexes(data.GroupGraph.hydrated)
+	seenDeclarationSites := make(map[programindex.Location]bool)
 	for position := range builder.indexes {
 		index := &builder.indexes[position]
 		for _, subject := range index.Subjects {
 			builder.subjects[subjectKey(index.Target.ID, subject.ID)] = subjectRef{subject: subject, programTargetID: index.Target.ID}
 			if object := subject.Object; object != nil && object.Location != nil && object.Location.Path != "" {
-				builder.declarations[object.Location.Path] = append(
-					builder.declarations[object.Location.Path], object.Location.Line,
-				)
+				if !seenDeclarationSites[*object.Location] {
+					seenDeclarationSites[*object.Location] = true
+					builder.declarations[object.Location.Path] = append(builder.declarations[object.Location.Path], object.Location.Line)
+				}
 				builder.subjectAt[subjectLocationKey(index.Target.ID, object.Location.Path, object.Location.Line)] = subject.ID
 			}
 		}
@@ -450,6 +459,9 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	}
 	view.Timing = timingLines(data.Timing)
 	view.places = builder.places
+	if builder.nativeFailure().err != nil {
+		return nil, fmt.Errorf("report: read complete native portfolio: %w", builder.nativeFailure().err)
+	}
 	return view, nil
 }
 
@@ -1147,7 +1159,10 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 				row.Via, row.ViaKey = "", ""
 			}
 			if step.Guard != nil && step.Guard.Kind == programindex.GuardBranch && row.Guard.At != nil {
-				row.BackIf, row.Guard = row.Guard.At, nil
+				row.BackIf, row.Guard = row.Guard, nil
+				if row.BackIf.Condition == "" {
+					row.BackIf.Key = "only if"
+				}
 			}
 		}
 	}
@@ -1351,6 +1366,22 @@ func (builder *pageBuilder) flowGuard(guard *programindex.Guard) *pageGuard {
 	case programindex.GuardError:
 		said.Key = "on an error path"
 	}
+	if guard.Condition != "" {
+		switch guard.When {
+		case programindex.GuardWhenHolds:
+			said.ConditionKey = "only if"
+		case programindex.GuardWhenFails:
+			said.ConditionKey = "only if not"
+		case programindex.GuardWhenMatches:
+			said.ConditionKey = "in a case of"
+		}
+		if said.ConditionKey != "" {
+			said.Condition = guard.Condition
+			if guard.Kind == programindex.GuardBranch {
+				said.Key = ""
+			}
+		}
+	}
 	if at := guard.Location; at != nil {
 		said.At = builder.links.anchorPointer(at.Path, at.Line, at.Column)
 	}
@@ -1524,7 +1555,7 @@ func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
 	}
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
+	for _, entry := range builder.nativeTargets(programTargetID) {
 		if entry.Target.ID != programTargetID {
 			continue
 		}
@@ -1639,16 +1670,7 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 // program's index records it (ProgramIndex end_line), 0 when none does.
 func (builder *pageBuilder) declarationEnd(location programindex.Location) int {
 	if builder.declarationEnds == nil {
-		builder.declarationEnds = map[string]int{}
-		if builder.data != nil && builder.data.ProgramPortfolio != nil {
-			for _, entry := range builder.data.ProgramPortfolio.Entries {
-				for _, object := range entry.Objects {
-					if object.Location != nil && object.EndLine > object.Location.Line {
-						builder.declarationEnds[placeKey(*object.Location)] = object.EndLine
-					}
-				}
-			}
-		}
+		builder.declarationEnds = builder.nativeCatalogue().ends
 	}
 	return builder.declarationEnds[placeKey(location)]
 }

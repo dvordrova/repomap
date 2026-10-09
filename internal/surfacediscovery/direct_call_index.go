@@ -33,7 +33,7 @@ const (
 	// or more different words, a switch's cases or == comparisons.
 	// Version 18 adds FieldWrites: once per field a source value references,
 	// every write the code makes into it.
-	DirectCallIndexVersion = 18
+	DirectCallIndexVersion = 19
 )
 
 type DirectCallIndexState string

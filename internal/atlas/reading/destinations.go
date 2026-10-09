@@ -232,7 +232,7 @@ func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *Des
 // whose decided argument it was not given, stops at its own name.
 func (d *DestinationReader) Read(place atlas.Place, call atlas.SymbolCall) []atlas.DestinationUse {
 	step := destinationStep(place, call)
-	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{step}}}
+	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningCallTargets(place, call)...), Steps: []atlas.DestinationStep{step}}}
 	if call.API != nil {
 		initial.kind = d.talks[apiName(*call.API)]
 	}
@@ -248,7 +248,7 @@ func (d *DestinationReader) Read(place atlas.Place, call atlas.SymbolCall) []atl
 // boundaries and files that read them need.
 func (d *DestinationReader) discover(place atlas.Place, call atlas.SymbolCall) {
 	if value := d.chosen(call); value != nil {
-		initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{destinationStep(place, call)}}}
+		initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningCallTargets(place, call)...), Steps: []atlas.DestinationStep{destinationStep(place, call)}}}
 		d.value(value, place, initial, make(map[string]bool))
 	}
 }
@@ -343,7 +343,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		var result []destinationPath
 		for _, caller := range d.parameterCallers(value, use) {
 			next := cloneDestinationPath(use)
-			next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(caller.place))
+			next.TargetIDs = intersectTargets(use.TargetIDs, runningCallTargets(caller.place, caller.call))
 			if len(next.TargetIDs) == 0 {
 				continue
 			}
@@ -362,6 +362,10 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		if value.Anchor != nil {
 			for _, call := range d.callSites[*value.Anchor] {
 				next := cloneDestinationPath(use)
+				next.TargetIDs = intersectTargets(use.TargetIDs, runningCallTargets(call.place, call.call))
+				if len(next.TargetIDs) == 0 {
+					continue
+				}
 				next.Steps = appendDestinationStep(next.Steps, destinationStep(call.place, call.call))
 				at := sourcevalue.Anchor{Path: call.place.Path, Line: call.call.Line, Column: call.call.Column}
 				// What a command-line option's declaration or an
@@ -1023,7 +1027,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 					continue
 				}
 				next := cloneDestinationPath(use)
-				next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(call.place))
+				next.TargetIDs = intersectTargets(use.TargetIDs, runningCallTargets(call.place, call.call))
 				if len(next.TargetIDs) == 0 {
 					continue
 				}
@@ -1042,7 +1046,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 				continue
 			}
 			next := cloneDestinationPath(use)
-			next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(call.place))
+			next.TargetIDs = intersectTargets(use.TargetIDs, runningCallTargets(call.place, call.call))
 			if len(next.TargetIDs) == 0 {
 				continue
 			}

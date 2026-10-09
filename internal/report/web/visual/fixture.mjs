@@ -14,6 +14,7 @@ const {records,relations,areas,inputOwner}=graph?graph:options.has('single-targe
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';
 if(options.has('short-names'))document.querySelector('h1').textContent='Short component names · complete initial inventories';
 if(options.has('single-target'))document.querySelector('h1').textContent='One system · twenty external participants';
+if(options.has('role-badges')){records.find(n=>n.id==='requests').lane='triggers';records.find(n=>n.id==='execution').lane='core';}
 // A part in no area stands beside the backend's areas.
 if(options.has('loose-part')){
   records.find(n=>n.id==='backend').children.push('audit');
@@ -54,14 +55,20 @@ if(options.has('symbols')){
 // declarations it joins, as the page data does, and the worker's tiles list
 // the callee.
 if(options.has('reading-names'))relations.find(r=>r.from==='routes'&&r.to==='worker').calls=[{kind:'calls',caller_name:'handleCreate',callee_name:'processJob',from:'#routes.go-20',to:'#worker.go-3',at:'routes.go:20',caller:'#routes.go-5',callee:'#worker.go-3'}];
+// Generated-source declarations can be read even without an upstream URL.
+if(options.has('no-source-names')){
+  const symbol=records.find(n=>n.id==='worker').symbols[0];
+  symbol.decl_key=symbol.href;delete symbol.href;
+  relations.find(r=>r.from==='routes'&&r.to==='worker').calls[0].to='';
+}
 
 // A service answering many commands, as Redis's server does: its input
 // collection holds more inputs than read at the scale it opens at.
 if(options.has('many-inputs')){
   const collection=records.find(n=>n.id==='backend-inputs');
   for(let i=0;i<40;i++){
-    const id=`command-${i}`,owner=i%2?'routes':'worker';
-    records.push({id,title:`command ${i}`,activation:'request',componentOwner:'backend',componentName:'Job processing service'});
+    const id=`command-${i}`,owner=options.has('marker-inventory')?'routes':i%2?'routes':'worker';
+    records.push({id,title:options.has('marker-inventory')&&(i===0||i===39)?'Same command':`command ${i}`,activation:'request',componentOwner:'backend',componentName:'Job processing service'});
     collection.children.push(id);inputOwner[id]=owner;
     relations.push({from:id,to:owner,label:'implemented in',operations:[id]});
   }
@@ -81,6 +88,7 @@ saved.textContent=JSON.stringify(graph?.scene||sceneOf({records,relations,inputO
 // Rendering, measurement, layout, zoom, hover and controls are production code.
 window.rmT=(text,...args)=>text.replace(/\{(\d+)\}/g,(_,i)=>String(args[Number(i)]));
 const map=document.querySelector('[data-map]'), stage=map.querySelector('.map-stage');
+map.explainSource=source=>{map.dataset.chosenSource=source.key;};
 // The real report's header leaves 580px for the canvas at 1440×900, including
 // the same 30px location bar above it. Set the host before production measures.
 if(options.has('short-names'))map.querySelector('.map-workspace').style.height='610px';
@@ -100,6 +108,7 @@ const showReading=id=>{
 let operation='';
 const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwner,{
   select(id,center){
+    map.dataset.readID=id;
     if(byID.get(id)?.activation)operation=id;
     flow.update({scope:byID.get(id)?.activation?'':id,operation,entry:operation,selected:selected(id)});
     showReading(id);

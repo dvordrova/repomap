@@ -28,7 +28,12 @@ const (
 )
 
 //go:embed helper.mjs
-var nodeHelper string
+var nodeHelperBody string
+
+//go:embed json_transport.mjs
+var nodeJSONTransport string
+
+var nodeHelper = nodeJSONTransport + "\n" + nodeHelperBody
 
 var ErrTypeScriptCompilerUnavailable = errors.New("jsts project: prepared TypeScript compiler is unavailable")
 
@@ -1155,6 +1160,9 @@ func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequ
 	command := exec.CommandContext(ctx, nodePath, "--input-type=module", "--eval", nodeHelper)
 	command.Dir = repositoryRoot
 	command.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if options, supplied := os.LookupEnv("NODE_OPTIONS"); supplied {
+		command.Env = append(command.Env, "NODE_OPTIONS="+options)
+	}
 	command.Stdin = bytes.NewReader(encoded)
 	stdout := &bytes.Buffer{}
 	stderr := &boundedBuffer{limit: maxHelperStderrBytes}

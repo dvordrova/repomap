@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/facts"
@@ -146,9 +148,11 @@ type subjectEntry struct {
 // catalog closes the request vocabulary. Canonical compact graph identities
 // pass through directly; facts retain their own artifact identities.
 type catalog struct {
-	targets  map[string]string
-	facts    map[string]factEntry
-	subjects map[string]subjectEntry
+	targets          map[string]string
+	facts            map[string]factEntry
+	subjects         map[string]subjectEntry
+	evidence         map[string]any
+	requiredEvidence map[string]bool
 }
 
 func newCatalog() catalog {
@@ -156,6 +160,7 @@ func newCatalog() catalog {
 		targets:  make(map[string]string),
 		facts:    make(map[string]factEntry),
 		subjects: make(map[string]subjectEntry),
+		evidence: make(map[string]any),
 	}
 }
 
@@ -206,7 +211,7 @@ func buildOverview(input Input) (overviewRequest, catalog, error) {
 		connections = append(connections, rows...)
 	}
 	wire.Connections = collapseConnections(connections)
-	writer := newRowWriter(input.Graph)
+	writer := newRowWriter(input.Graph, input.GraphPresentation)
 	for _, index := range indexes {
 		var seeds []string
 		for _, seed := range index.Target.Seeds {
@@ -216,7 +221,20 @@ func buildOverview(input Input) (overviewRequest, catalog, error) {
 		}
 		wire.Seeds = append(wire.Seeds, builder.members(writer, index, seeds)...)
 	}
+	bindContextEvidence(builder.catalog, wire)
 	return wire, builder.catalog, nil
+}
+
+// Final closed citation choices retain the same portable native evidence that
+// the complete reader received; provenance IDs alone cannot locate a command.
+func bindContextEvidence(cat catalog, wire overviewRequest) {
+	for _, fact := range wire.Facts {
+		cat.evidence[fact.Ref] = fact
+	}
+	for _, seed := range wire.Seeds {
+		seed.Calls, seed.Evidence = nil, nil
+		cat.evidence[seed.Ref] = seed
+	}
 }
 
 // members writes the rows of one program's subjects, in the given order,
@@ -291,6 +309,13 @@ func (input Input) declarationPlaces(targetID string, subjectIDs []string) map[s
 				keys[atlas.ScopedObjectID(index.Target.ID, subject.ID)] = key
 			}
 		}
+	}
+	if input.GraphPresentation != nil {
+		sort.SliceStable(own, func(i, j int) bool {
+			left, lok := input.GraphPresentation.SymbolPosition(own[i].ID)
+			right, rok := input.GraphPresentation.SymbolPosition(own[j].ID)
+			return lok && rok && left < right
+		})
 	}
 	byObject := make(map[string]*atlas.Place, len(own))
 	byKey := make(map[string]*atlas.Place)
@@ -463,10 +488,60 @@ func (builder *requestBuilder) factWire(fact facts.Fact) factWire {
 		Method: fact.Method, Path: fact.Path, Key: fact.Key, Value: fact.Value,
 		Symbol: fact.Symbol, Text: fact.Text,
 	}
+	if fact.Kind == facts.KindManifest && builder.input.RepositoryRoot != "" {
+		// Generated build descriptions may write the actual checkout root.
+		// The source fact stays complete; the model sees the same commands
+		// rooted at the repository, rather than a host-specific checkout.
+		row.Value = portableManifestValue(row.Value, builder.input.RepositoryRoot)
+	}
 	if fact.Anchor != nil {
 		row.Anchor = fact.Anchor.String()
 	}
 	return row
+}
+
+// Only the known checkout path is represented differently. A matching suffix
+// inside another directory or URL is not that checkout, while include/link
+// flags may attach directly to their path argument.
+func portableManifestValue(value, repositoryRoot string) string {
+	root := strings.TrimRight(repositoryRoot, "/")
+	if root == "" || !strings.HasPrefix(root, "/") {
+		return value
+	}
+	boundary := func(text string, last bool, punctuation string) bool {
+		if text == "" {
+			return true
+		}
+		r, _ := utf8.DecodeRuneInString(text)
+		if last {
+			r, _ = utf8.DecodeLastRuneInString(text)
+		}
+		return unicode.IsSpace(r) || strings.ContainsRune(punctuation, r)
+	}
+	var out strings.Builder
+	cursor := 0
+	for {
+		position := strings.Index(value[cursor:], root)
+		if position < 0 {
+			out.WriteString(value[cursor:])
+			return out.String()
+		}
+		position += cursor
+		before, after := value[:position], value[position+len(root):]
+		left := boundary(before, true, "\"'`=,:;(&|")
+		for _, flag := range []string{"-I", "-L"} {
+			if strings.HasSuffix(before, flag) && boundary(strings.TrimSuffix(before, flag), true, "\"'`=,:;(&|") {
+				left = true
+			}
+		}
+		out.WriteString(value[cursor:position])
+		if left && boundary(after, false, "/\"'`;)&|:") {
+			out.WriteByte('.')
+		} else {
+			out.WriteString(root)
+		}
+		cursor = position + len(root)
+	}
 }
 
 // orderedIndexes lists the GroupsIndexes in facts-target order so refs do not
@@ -615,10 +690,12 @@ func anchorString(path string, line int) string {
 // on t2.g10 entirely. Invalid refs still have a deterministic lexical order,
 // while validation remains responsible for refusing them.
 func compactRefLess(left, right string) bool {
-	leftParts, rightParts := strings.Split(left, "."), strings.Split(right, ".")
-	for position := 0; position < min(len(leftParts), len(rightParts)); position++ {
-		leftPrefix, leftOrdinal, leftOK := compactRefSegment(leftParts[position])
-		rightPrefix, rightOrdinal, rightOK := compactRefSegment(rightParts[position])
+	leftRest, rightRest := left, right
+	for {
+		leftPart, nextLeft, moreLeft := strings.Cut(leftRest, ".")
+		rightPart, nextRight, moreRight := strings.Cut(rightRest, ".")
+		leftPrefix, leftOrdinal, leftOK := compactRefSegment(leftPart)
+		rightPrefix, rightOrdinal, rightOK := compactRefSegment(rightPart)
 		if !leftOK || !rightOK {
 			return left < right
 		}
@@ -628,11 +705,14 @@ func compactRefLess(left, right string) bool {
 		if leftOrdinal != rightOrdinal {
 			return leftOrdinal < rightOrdinal
 		}
+		if !moreLeft || !moreRight {
+			if moreLeft != moreRight {
+				return !moreLeft
+			}
+			return left < right
+		}
+		leftRest, rightRest = nextLeft, nextRight
 	}
-	if len(leftParts) != len(rightParts) {
-		return len(leftParts) < len(rightParts)
-	}
-	return left < right
 }
 
 func compactRefSegment(value string) (string, int, bool) {
@@ -641,7 +721,7 @@ func compactRefSegment(value string) (string, int, bool) {
 		return "", 0, false
 	}
 	ordinal, err := strconv.Atoi(value[firstDigit:])
-	if err != nil || ordinal <= 0 || value[:firstDigit]+strconv.Itoa(ordinal) != value {
+	if err != nil || ordinal <= 0 || value[firstDigit] == '0' {
 		return "", 0, false
 	}
 	return value[:firstDigit], ordinal, true

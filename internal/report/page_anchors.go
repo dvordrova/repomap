@@ -17,6 +17,9 @@ import (
 // marked NoSource (no remote, a source unavailable at the captured revision,
 // or a served path with no openable ID), keyed by its place.
 type pageAnchor struct {
+	// Column retains the original native name position for author ownership.
+	// Display links remain line based; the existing declaration Key is exact.
+	Column   int `json:"-"`
 	Path     string
 	Line     int
 	Href     string
@@ -112,7 +115,7 @@ func (links pageLinks) rootURL() string {
 }
 
 func (links pageLinks) anchor(path string, line, column int) pageAnchor {
-	anchor := pageAnchor{Path: path, Line: line, Text: path}
+	anchor := pageAnchor{Path: path, Line: line, Column: column, Text: path}
 	if line > 0 {
 		anchor.Text = path + ":" + strconv.Itoa(line)
 	}

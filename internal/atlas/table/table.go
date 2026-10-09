@@ -162,6 +162,12 @@ type Definition struct {
 	// keeps the probability of yes (ProbabilityCell) and none is refused as
 	// uncertain, because the owner orders rows instead of thresholding them.
 	Ranked bool
+	// TopChoice makes a choice column take the categorizer's leading option
+	// even when it leads its runner-up by less than ClassifierMargin (owner,
+	// 2026-10-08: the grouping assignment resolves fully, no cautious
+	// unknown). An unanswered row or a choice outside the options is still
+	// refused.
+	TopChoice bool
 	// Pack is the lossless compact form of a row whose categorizer question
 	// is over the envelope (FitClassifierWindows): the same row with every
 	// observation, written shorter. A row that fits is never packed, so its

@@ -3,6 +3,7 @@ package facts
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
@@ -198,6 +199,16 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 		if call, bound := r.boundCall(branch, *value.Owner); bound {
 			calls = []routeSourceCall{call}
 		} else if owner := r.ownerID(*value.Owner); owner != "" {
+			// An unbound parameter reads what every caller supplies,
+			// whatever path reached it: one read of one argument walks its
+			// callers once. Walking them again from each path through the
+			// callers' own callers never ended on nats-server's server
+			// package; a second path adds no text, only its own evidence.
+			seen := "callers\x00" + key + "\x00" + strings.Join(fields, "\x01")
+			if active[seen] {
+				return nil
+			}
+			active[seen] = true
 			calls = r.callers[owner]
 		}
 		var result []routeLiteral

@@ -89,6 +89,19 @@ clang for C, with make for a repository that has a makefile ([C](C.md)).
 Without clang, C targets are not analyzed with the required-tool reason;
 other adapters' targets are unaffected.
 
+Explicit read-only cumulative expectations may reuse immutable native results
+within the test binary: Go authorities and sealed JS/TS results and their exact
+ProgramIndex/dependency projections use independent snapshots; C AST and
+Python/Clojure input helpers copy the
+complete typed graph, including fields omitted from JSON and shared AST node
+identity. Keys bind complete current source/configuration bytes, inventory,
+selected target/build/seeds and native environment. Each consumer owns its
+copy; C's unsealed physical project root names the current checkout, while
+native commands and observations remain unchanged and are never replayed.
+Source mutation and native-command contrasts keep fresh execution. The reuse
+helpers report their native executions and hits; they neither skip assertions
+nor change the five-minute test budget. This adds no product cache.
+
 ## Before full expensive runs
 
 An output-limit or request-packing change must first pass one saved complete-window probe; it does not replace ordinary acceptance. Preserve the exact compared inputs, accepted rows, rejected rows, timings and token accounting. Do not repeat Airflow while the prerequisite fixes and Freqtrade acceptance remain outstanding. See [CURRENT](../agent-room/CURRENT.md#acceptance-and-open-work).
@@ -196,6 +209,17 @@ run directory, the test server renders it once with `.bin/repomap render`
 toolbar's breadcrumb up from a part at 1440×900 and 1280×800; without it
 that spec is skipped.
 
+On the completed recursive SQLite run, `visual/program-overview.spec.mjs`
+walks the exact saved area/part forest through ordinary inventory and zoom
+controls. Its ledger records every original ID, closed child inventory,
+opened chain, leaf reading, full original declaration inventory, one original
+declaration's reading/source coordinates, return, and non-vacuous checks of
+all drawn arrow IDs/endpoints. This exhaustive keyboard activation receipt
+does not establish mouse/Tab reachability at every camera or visual inspection
+of every saved screenshot. Those remain separate browser journeys and review.
+Nested fault-check runners use their own temporary browser output directory
+and port; cleaning their artifacts must not remove a sibling test's traces.
+
 `visual/invariants.spec.mjs` (`visual/invariants.mjs`) is the canvas's
 invariant table (REPORT, canvas invariants), the acceptance of the scene
 canvas. On each rendered report named by `REPOMAP_INVARIANT_REPORTS`
@@ -283,4 +307,3 @@ readable names inside their frames, nothing overlapping, levels reachable,
 geometry reused. Open the review page with
 `npx playwright show-report --host 127.0.0.1`; images and the viewer are
 ignored build artifacts and no image is committed.
-

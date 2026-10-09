@@ -26,7 +26,7 @@ import (
 // writes without a value, Python sets no path, JS/TS and Clojure record no
 // field write).
 func TestCFixtureFieldWritesKeepTheValueTheyStore(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	server := buildCIndex(t, fixture, "c:kvd")
 	names := map[string]string{}
 	for _, object := range server.Objects {
@@ -125,7 +125,7 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 		return result
 	}
 	t.Run("c", func(t *testing.T) {
-		fixture := loadCFixture(t)
+		fixture := sharedCFixture(t)
 		index := buildCIndex(t, fixture, "c:kvd")
 		layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
 		if err != nil {
@@ -165,7 +165,7 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
 		writePublishedGoFixtureModule(t, root)
-		authorities := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "files")
+		authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "files")
 		index, err := goadapter.Build(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -217,7 +217,7 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 		if err != nil || len(targets) != 1 {
 			t.Fatalf("Clojure discovery: %v %v", targets, err)
 		}
-		result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+		result, err := sharedClojureFixture(t, root, repository, targets[0])
 		if err != nil {
 			t.Fatal(err)
 		}

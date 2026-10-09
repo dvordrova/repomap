@@ -58,7 +58,7 @@ func TestExtractQuotesFixtureRepository(t *testing.T) {
 	})
 	assertClaim(t, bySource[SourceDocstring], Claim{
 		Source: SourceDocstring, Path: "tools/gen.go", Line: 3, Date: "2024-01-10",
-		AgeDays: fixtureAgeDays, Text: "Generate writes the level table. It is idempotent.",
+		DeclarationLine: 5, DeclarationColumn: 6, AgeDays: fixtureAgeDays, Text: "Generate writes the level table. It is idempotent.",
 	})
 	assertClaim(t, bySource[SourceDocstring], Claim{
 		Source: SourceDocstring, Path: "front/src/http.ts", Line: 1, Date: "2024-02-20",

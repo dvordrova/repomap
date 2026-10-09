@@ -478,10 +478,11 @@ func (w walker) with(conditional bool) walker {
 	return w
 }
 
-// in walks an arm of a construct deciding whether it runs.
-func (w walker) in(site Position, node *Node) walker {
+// in walks an arm of a construct deciding whether it runs: condition
+// decides it, the arm running when it does (Guard.When).
+func (w walker) in(site Position, node, condition *Node, when string) walker {
 	w.conditional = true
-	w.arms = append(append([]arm(nil), w.arms...), arm{site: site, node: node})
+	w.arms = append(append([]arm(nil), w.arms...), arm{site: site, node: node, condition: condition, when: when})
 	return w
 }
 
@@ -532,7 +533,11 @@ func (w walker) walk(n *Node) {
 				operands = w.b.joinOperands(n)
 			}
 			w.walk(n.Inner[0])
-			w.in(n.Begin.Site(), n.Inner[1]).walk(n.Inner[1])
+			when := programindex.GuardWhenHolds
+			if n.Opcode == "||" {
+				when = programindex.GuardWhenFails
+			}
+			w.in(n.Begin.Site(), n.Inner[1], n.Inner[0], when).walk(n.Inner[1])
 			w.b.joinOr(operands)
 			return
 		}
@@ -544,7 +549,11 @@ func (w walker) walk(n *Node) {
 		for i, child := range n.Inner {
 			next := w
 			if i > 0 {
-				next = w.in(n.Begin.Site(), child)
+				when := programindex.GuardWhenHolds
+				if i > 1 {
+					when = programindex.GuardWhenFails
+				}
+				next = w.in(n.Begin.Site(), child, n.Inner[0], when)
 			}
 			next.branch = nil
 			if i == 0 && len(n.Inner) > 1 {
@@ -557,9 +566,19 @@ func (w walker) walk(n *Node) {
 		}
 		return
 	case "ConditionalOperator", "BinaryConditionalOperator":
+		// a ? b : c: b when a holds, c when it fails; a ?: b has no one
+		// condition its arms are said by.
 		for i, child := range n.Inner {
 			if i > 0 {
-				w.in(n.Begin.Site(), child).walk(child)
+				var condition *Node
+				when := programindex.GuardWhenHolds
+				if n.Kind == "ConditionalOperator" && len(n.Inner) == 3 {
+					condition = n.Inner[0]
+					if i == 2 {
+						when = programindex.GuardWhenFails
+					}
+				}
+				w.in(n.Begin.Site(), child, condition, when).walk(child)
 				continue
 			}
 			w.walk(child)
@@ -569,7 +588,11 @@ func (w walker) walk(n *Node) {
 		w.b.switchComparison(w, n)
 		for i, child := range n.Inner {
 			if i == len(n.Inner)-1 {
-				w.in(n.Begin.Site(), nil).walk(child)
+				var subject *Node
+				if len(n.Inner) >= 2 {
+					subject = n.Inner[len(n.Inner)-2]
+				}
+				w.in(n.Begin.Site(), nil, subject, programindex.GuardWhenMatches).walk(child)
 				continue
 			}
 			w.walk(child)

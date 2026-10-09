@@ -5,16 +5,20 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 28
+const CONTRACT_VERSION = 31
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
 const COMPILER_UNAVAILABLE_EXIT_CODE = 2
 
-function fail(message, exitCode = 1) {
-  process.stderr.write(`jsts helper: ${message}\n`)
-  process.exit(exitCode)
+class HelperFailure extends Error {
+  constructor(message, exitCode) { super(message); this.exitCode = exitCode }
 }
+function fail(message, exitCode = 1) { throw new HelperFailure(message, exitCode) }
+
+let nativeAPI
+let nativeSnapshot
+try {
 
 const inputChunks = []
 for await (const chunk of process.stdin) {
@@ -146,8 +150,6 @@ for (const file of request.files) {
 
 let ts
 let compilerFlavor = "legacy"
-let nativeAPI
-let nativeSnapshot
 try {
   const projectRequire = createRequire(path.join(root, "package.json"))
   const repositoryRootRequire = createRequire(path.join(repositoryRoot, "package.json"))
@@ -470,11 +472,16 @@ if (compilerFlavor === "legacy") {
     const program = ts.createProgram({ rootNames: [...fileRefByPath.keys()].sort(compareText).map(absolute), options })
     compilerProjects.push({ key: "", options, program, checker: program.getTypeChecker(), rootFiles: new Set(fileRefByPath.keys()) })
   } else {
+    const outputDirectories = []
     for (const record of configRecords) {
       const read = ts.readConfigFile(absolute(record.path), ts.sys.readFile)
       if (read.error) fail(ts.flattenDiagnosticMessageText(read.error.messageText, " "))
       const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(absolute(record.path)), undefined, absolute(record.path))
-      if (parsed.errors.length > 0) fail(ts.flattenDiagnosticMessageText(parsed.errors[0].messageText, " "))
+      // An empty config's include is not an error in the explicitly supplied
+      // script/tool roots. Every other configuration diagnostic stays fatal.
+      const configErrors = parsed.errors.filter((diagnostic) => diagnostic.code !== 18003 || parsed.fileNames.length !== 0)
+      if (configErrors.length > 0) fail(ts.flattenDiagnosticMessageText(configErrors[0].messageText, " "))
+      if (parsed.options.outDir) outputDirectories.push(path.resolve(parsed.options.outDir))
       const rootFiles = new Set(parsed.fileNames.map(relative).filter((value) => fileRefByPath.has(value)))
       if (rootFiles.size === 0) continue
       const options = { ...parsed.options, noEmit: true }
@@ -483,8 +490,7 @@ if (compilerFlavor === "legacy") {
     }
     // What a written config names as its output directory is what the
     // compiler wrote from the sources already read, not more source.
-    const outputDirectories = compilerProjects.map((project) => project.options.outDir ? relative(project.options.outDir) : "").filter(Boolean)
-    const compiled = (filePath) => outputDirectories.some((directory) => filePath === directory || filePath.startsWith(directory + "/"))
+    const compiled = (filePath) => outputDirectories.some((directory) => absolute(filePath) === directory || absolute(filePath).startsWith(directory + path.sep))
     const additionalRoots = additionalFiles.filter((filePath) => !compiled(filePath) && !compilerProjects.some((project) => project.rootFiles.has(filePath)))
     if (additionalRoots.length > 0) {
       // These exact script/config files are additional roots even when the
@@ -1007,6 +1013,26 @@ function overloadImplementation(node) {
 // implementation alone (ProgramIndex Overload).
 const overloadsOf = new Map()
 
+// Compiler attachment supplies the comment source, while the declaration's
+// existing name location remains its owner. A keyword line is no substitute
+// for that name when a valid declaration spans lines.
+function docstringRanges(node) {
+  const nodes = [node, ...(overloadsOf.get(declarationRefByNode.get(node)) || [])]
+  const ranges = new Map()
+  for (const owner of nodes) {
+    const docs = typeof ts.getJSDocCommentsAndTags === "function" ? ts.getJSDocCommentsAndTags(owner) : (owner.jsDoc || [])
+    for (const doc of docs) {
+      if (ts.SyntaxKind.JSDocComment === undefined || doc.kind !== ts.SyntaxKind.JSDocComment || doc.pos < 0) continue
+      const source = owner.getSourceFile()
+      const start = source.getLineAndCharacterOfPosition(doc.pos)
+      const end = source.getLineAndCharacterOfPosition(doc.end)
+      const range = { line: start.line + 1, column: start.character + 1, end_line: end.line + 1, end_column: end.character }
+      ranges.set(JSON.stringify(range), range)
+    }
+  }
+  return [...ranges.values()].sort((a, b) => a.line-b.line || a.column-b.column || a.end_line-b.end_line || a.end_column-b.end_column)
+}
+
 for (const { sourceFile, path: filePath } of sourceFiles) {
   const stubs = []
   for (const { node, kind, name } of collectDeclarationNodes(sourceFile)) {
@@ -1045,6 +1071,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         exported: declarationExported(node),
         owner_ref: ownerRef,
         location: locationOf(node.name || node),
+        docstring_ranges: docstringRanges(node),
         end_line: node.getSourceFile().getLineAndCharacterOfPosition(node.getEnd()).line + 1,
         ...declarationCodeLines(node),
         ...(ts.isFunctionLike(node) ? typedSignature(node) : {}),
@@ -1892,6 +1919,27 @@ function externalMethodForInvocation(node) {
   return { package: packageName, exportName: owner.name, resolution: "exact", repositoryPath: "", viaType: true }
 }
 
+// Keep the selected signature's raw package separately from proof that the
+// invoked merged symbol belongs to the compiler's default library. Exact
+// imports retain their own authority; a type's package cannot hide that proof.
+function externalInvocation(node) {
+  const imported = externalImportForExpression(node.expression)
+  if (imported.package) return imported
+  const signature = externalMethodForInvocation(node)
+  const platform = platformTargetForInvocation(node)
+  if (platform) return {
+    package: signature?.package || "platform:javascript",
+    exportName: signature?.exportName || "",
+    repositoryPath: "", resolution: "exact", viaType: true,
+    receiver: platform.receiver, name: platform.name, defaultLibrarySymbol: true,
+  }
+  if (ts.isIdentifier(node.expression)) {
+    const symbol = resolvedCallableSymbol(node, checkerForNode(node))
+    if (symbolDeclarations(symbol).some((declaration) => fileRefByPath.has(relative(declaration.getSourceFile().fileName)))) return imported
+  }
+  return signature || imported
+}
+
 function declarationPackages(symbol) {
   const packages = new Set()
   if (!symbol) return packages
@@ -2126,42 +2174,46 @@ function exactLocalReceiverRef(node) {
   return refs.length === 1 ? refs[0] : ""
 }
 
-function externalProgramObjectRef(packagePath, receiver, name, repositoryPath = "") {
+function externalProgramObjectRef(packagePath, receiver, name, repositoryPath = "", defaultLibrarySymbol = false) {
   const symbolName = name || packagePath
-  const prefix = repositoryPath ? `workspace:${Buffer.from(repositoryPath).toString("hex")}` : "external"
+  const prefix = repositoryPath ? `workspace:${Buffer.from(repositoryPath).toString("hex")}` : defaultLibrarySymbol && packagePath !== "platform:javascript" ? "platform" : "external"
   return `${prefix}:${packagePath}:${receiver}:${symbolName}`
 }
 
-function invocationOrigin(node) {
-  let refs = (ts.isNewExpression(node) ? localRefsForInvocation(node) : expressionRefs(node.expression))
+function resolvedInvocation(node) {
+  const conditional = ts.isConditionalExpression(unwrapReceiverExpression(node.expression))
+  const construct = ts.isNewExpression(node)
+  let localRefs = (construct ? (conditional ? [] : localRefsForInvocation(node)) : expressionRefs(node.expression))
     .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+  const chosen = localRefs.length === 0 && conditional
+    ? conditionalCalleeRefs(node.expression, (leaf) => valueRefs(leaf, construct)) : []
+  if (chosen.length > 0) localRefs = chosen
+  const stored = conditional ? undefined : storedCallee(node)
+  if (stored) localRefs = stored.refs
+  const externalImport = localRefs.length === 0 && !stored ? externalInvocation(node) : { package: "", resolution: "unresolved" }
+  return { localRefs, chosen, stored, externalImport }
+}
+
+function invocationOrigin(node) {
+  const { localRefs: refs, externalImport: imported } = resolvedInvocation(node)
   let resolution = refs.length > 1 ? "alternatives" : refs.length === 1 ? "exact" : ""
   if (refs.length > 0) return { refs, resolution, observed: refs.length }
 
-  const imported = externalImportForExpression(node.expression)
   if (imported.package && imported.resolution === "exact") {
     const exportName = imported.exportName
-    let receiver = ""
-    let name = propertyName(node.expression)
-    if (ts.isIdentifier(node.expression)) name = exportName
-    if (exportName && name && name !== exportName) receiver = exportName
-    if (exportName && name) {
+    let receiver = imported.receiver || ""
+    let name = imported.name || propertyName(node.expression)
+    if (ts.isIdentifier(node.expression) && !imported.viaType) name = exportName
+    if (!imported.defaultLibrarySymbol && !receiver && exportName && name && name !== exportName) receiver = exportName
+    if (name) {
       return {
-        refs: [externalProgramObjectRef(imported.package, receiver, name, imported.repositoryPath)],
+        refs: [externalProgramObjectRef(imported.package, receiver, name, imported.repositoryPath, imported.defaultLibrarySymbol)],
         resolution: "exact",
         observed: 1,
       }
     }
   }
 
-  const platformTarget = platformTargetForInvocation(node)
-  if (platformTarget) {
-    return {
-      refs: [externalProgramObjectRef("platform:javascript", platformTarget.receiver, platformTarget.name)],
-      resolution: "exact",
-      observed: 1,
-    }
-  }
   return { refs: [], resolution: "unresolved", observed: 1 }
 }
 
@@ -2889,52 +2941,33 @@ for (const { sourceFile } of sourceFiles) {
       const callerRef = refForDeclarationNode(node)
       // A class a condition chooses is no one constructor the compiler's
       // signature for the union names (conditionalCalleeRefs).
-      const conditional = ts.isConditionalExpression(unwrapReceiverExpression(node.expression))
-      let localRefs = (ts.isNewExpression(node) ? (conditional ? [] : localRefsForInvocation(node)) : expressionRefs(node.expression))
-        .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
       // A callee a condition chooses among functions calls one of them:
       // several are alternatives through a function value, one the call.
-      const construct = ts.isNewExpression(node)
-      const chosen = localRefs.length === 0 && conditional
-        ? conditionalCalleeRefs(node.expression, (leaf) => valueRefs(leaf, construct)) : []
-      if (chosen.length > 0) localRefs = chosen
       // A call through a variable calls what the stores reaching it put
       // there (storedCallee); a variable some write cannot be followed
       // through leaves it open, and no outside authority stands in.
-      const stored = conditional ? undefined : storedCallee(node)
-      if (stored) localRefs = stored.refs
-      let externalImport = localRefs.length === 0 && !stored ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
-      if (localRefs.length === 0 && !stored && !externalImport.package) externalImport = externalMethodForInvocation(node) || externalImport
+      const { localRefs, chosen, stored, externalImport } = resolvedInvocation(node)
       let externalPackage = externalImport.package
       let externalExport = externalPackage ? externalImport.exportName : ""
-      let externalReceiver = ""
-      let externalName = externalPackage ? propertyName(node.expression) : ""
+      let externalReceiver = externalImport.receiver || ""
+      let externalName = externalImport.name || (externalPackage ? propertyName(node.expression) : "")
       if (externalPackage && ts.isIdentifier(node.expression) && !externalImport.viaType) externalName = externalExport
       // A call through an element access or a call result has no word of its own; the export names it.
       if (externalPackage && !externalName) externalName = externalExport
-      if (externalPackage && externalExport && externalName && externalName !== externalExport) externalReceiver = externalExport
-      let platformTarget
-      if (localRefs.length === 0 && externalPackage === "" && !stored) {
-        platformTarget = platformTargetForInvocation(node)
-        if (platformTarget) {
-          externalPackage = "platform:javascript"
-          externalExport = ""
-          externalReceiver = platformTarget.receiver
-          externalName = platformTarget.name
-        }
-      }
+      if (!externalImport.defaultLibrarySymbol && !externalReceiver && externalPackage && externalExport && externalName && externalName !== externalExport) externalReceiver = externalExport
       // A property name is not program-call authority. In a large project,
       // mapping `value.test()` or `console.error()` to every local declaration
       // named `test` or `error` creates false edges and an unbounded candidate
       // set. Retain compiler/type-resolved local refs, exact external-import
       // authority, or an explicit unresolved frontier with no invented target.
-      let resolution = localRefs.length > 1 ? "alternatives" : localRefs.length === 1 ? "exact" : platformTarget ? "exact" : externalPackage ? externalImport.resolution : "unresolved"
+      let resolution = localRefs.length > 1 ? "alternatives" : localRefs.length === 1 ? "exact" : externalPackage ? externalImport.resolution : "unresolved"
       const displayExpression = callDisplayExpression(node)
       const call = {
         ref: callFactRef(node), caller_ref: callerRef, callee_refs: localRefs,
         invocation, external_package: externalPackage, external_export: externalExport,
         repository_path: externalImport.repositoryPath,
         external_receiver: externalReceiver, external_name: externalName,
+        default_library_symbol: externalImport.defaultLibrarySymbol || false,
         expression: displayExpression, resolution, location: callSiteLocation(node),
       }
       if (chosen.length > 1 || stored?.refs.length > 1) call.dispatch = "function_value"
@@ -3196,7 +3229,14 @@ for (const file of files) {
 }
 result.source_sha256 = sourceDigest.digest("hex")
 
-const encodedResult = JSON.stringify(result)
-if (nativeSnapshot) nativeSnapshot.dispose()
-if (nativeAPI) nativeAPI.close()
-process.stdout.write(encodedResult)
+await writeNativeJSON(result, process.stdout)
+} catch (error) {
+  process.stderr.write(`jsts helper: ${error instanceof Error ? error.message : String(error)}\n`)
+  process.exitCode = error instanceof HelperFailure ? error.exitCode : 1
+} finally {
+  try {
+    if (nativeSnapshot) await nativeSnapshot.dispose()
+  } finally {
+    if (nativeAPI) await nativeAPI.close()
+  }
+}

@@ -129,14 +129,14 @@ func projectInput(name string) bool {
 		return true
 	}
 	switch base {
-	case "go.mod", "go.sum", "go.work", "go.work.sum", "package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml", "bun.lock", "bun.lockb", "pyproject.toml", "poetry.lock", "uv.lock", "pipfile", "pipfile.lock", "setup.cfg", "requirements.txt", "makefile", "dockerfile", "compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", ".gitignore", ".repomapignore", "license":
+	case "go.mod", "go.sum", "go.work", "go.work.sum", "package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml", "bun.lock", "bun.lockb", "pyproject.toml", "poetry.lock", "uv.lock", "pipfile", "pipfile.lock", "setup.cfg", "requirements.txt", "makefile", "gnumakefile", "dockerfile", "compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", ".gitignore", ".repomapignore", "license":
 		return true
 	}
 	if base == "readme" || strings.HasPrefix(base, "readme.") || base == "agents.md" || strings.HasPrefix(base, "tsconfig") && strings.HasSuffix(base, ".json") || strings.HasPrefix(base, "jsconfig") && strings.HasSuffix(base, ".json") {
 		return true
 	}
 	switch strings.ToLower(filepath.Ext(base)) {
-	case ".go", ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".clj", ".cljc", ".cljs", ".edn", ".c", ".cc", ".cpp", ".h", ".hpp", ".s", ".proto", ".sh", ".bash", ".sql", ".graphql", ".gql", ".vue", ".svelte", ".html", ".css", ".scss", ".md", ".rst", ".adoc":
+	case ".go", ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".clj", ".cljc", ".cljs", ".edn", ".c", ".cc", ".cpp", ".h", ".hpp", ".s", ".proto", ".sh", ".bash", ".sql", ".graphql", ".gql", ".vue", ".svelte", ".html", ".css", ".scss", ".md", ".rst", ".adoc", ".mk":
 		return true
 	}
 	return false

@@ -94,6 +94,23 @@ func TestCumulativePythonDocstringsStayOnTheirDeclarationsAndOutOfBoundaryReques
 	}
 }
 
+func TestJSTSUnboundCommentsNeverBecomeDeclarationOrModuleCaptions(t *testing.T) {
+	const source = "src/claims.ts"
+	b := builder{docs: map[string][]claims.Claim{source: {
+		{Line: 1, Text: "Counts levels with an unknown native owner."},
+		{Line: 5, DeclarationLine: 7, DeclarationColumn: 3, Text: "Reads the authored count."},
+	}}}
+	decls := []atlas.Decl{{LineNo: 3}, {LineNo: 4}, {LineNo: 7}, {LineNo: 8}}
+	for line, want := range map[int]string{3: "", 4: "", 7: "Reads the authored count.", 8: ""} {
+		if got := b.docstringFor(source, line, decls, 3); got != want {
+			t.Errorf("declaration %d: quote %q, want %q", line, got, want)
+		}
+	}
+	if got := b.moduleDoc(source, &fileState{decls: decls}); got != "" {
+		t.Fatalf("unbound comment became a file description: %q", got)
+	}
+}
+
 func TestCallableBindingsKeepAnonymousHandlersAndQualifiedCalls(t *testing.T) {
 	loc := &programindex.Location{Path: "app/main.go", Line: 8, Column: 2}
 	index := programindex.Index{Target: programindex.Target{ID: "app", Language: "go"}, Objects: []programindex.Object{
@@ -224,6 +241,9 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 		if len(members) != 1 {
 			t.Fatalf("lost, duplicated or guessed ownership: %+v", place)
 		}
+		if !reflect.DeepEqual(members[0].TargetIDs, []string{"target"}) {
+			t.Fatalf("method native observers lost: %+v", members[0])
+		}
 		if place.Path == "a/type.go" && (members[0].Path != "a/methods.go" || members[0].Decl.Doc != "Renew extends the ticket's validity. Pending jobs remain available." || members[0].Decl.LineNo != 4) {
 			t.Fatalf("cross-file member context lost: %+v", members)
 		}
@@ -277,6 +297,9 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 		}
 		if got, want := symbol.Symbol.Members[0].Decl.ObjectID, "other-python-target.0-"+symbol.Symbol.Decl.Name+"-copy"; got != want {
 			t.Fatalf("class field representative = %s, want original native-ID ordering %s", got, want)
+		}
+		if !reflect.DeepEqual(symbol.Symbol.Members[0].TargetIDs, []string{"other-python-target", "python"}) {
+			t.Fatalf("shared field lost original observers: %+v", symbol.Symbol.Members[0])
 		}
 	}
 }
@@ -706,14 +729,14 @@ func TestDispatchViewsKeepPossibleReceiversWithoutInventingExtraCalls(t *testing
 		calls        int
 		unresolved   int
 	}{
-		{"same dispatch in two views", []observation{unresolved, possible}, 1, 0},
-		{"all possible receivers", []observation{unresolved, possible, otherReceiver}, 2, 0},
+		{"same dispatch in two views", []observation{unresolved, possible}, 2, 1},
+		{"all possible receivers", []observation{unresolved, possible, otherReceiver}, 3, 1},
 		{"different column", []observation{otherSite, possible}, 2, 1},
 		{"different receiver detail", []observation{otherDetail, possible}, 2, 1},
 		{"independent evidence", []observation{withEvidence, possible}, 2, 1},
 		{"exact view cannot erase uncertainty", []observation{unresolved, exact}, 2, 1},
 		{"no precise source position", []observation{unknownColumn, missingColumn}, 2, 1},
-		{"same function called twice on one line", []observation{unresolved, possible, repeatedCall}, 2, 0},
+		{"same function called twice on one line", []observation{unresolved, possible, repeatedCall}, 3, 1},
 		{"local column does not reorder evidence", []observation{zulu, alpha}, 2, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

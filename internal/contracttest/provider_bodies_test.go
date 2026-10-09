@@ -24,7 +24,7 @@ import (
 // overview and its Main flow's splits alike). Redis's orientation
 // once sent "callee_id":"sym:redis.c:1398:beforeSleep".
 func TestProviderBodiesCarryNoCanonicalIDsOrHostPaths(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
 	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: server, Root: "."}, {Index: client, Root: "."}}})
@@ -118,7 +118,7 @@ func assertNoLocalIdentities(t *testing.T, bodies [][]byte, hostPaths ...string)
 // the doc comments its places hold (kvd.c's "Runs every complete line of
 // the query buffer as a command.").
 func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
 	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: server, Root: "."}, {Index: client, Root: "."}}})
@@ -127,7 +127,7 @@ func TestProviderBodiesCarryNoAuthorDocs(t *testing.T) {
 	}
 	// Claims carry their commit's date.
 	runFixtureGit(t, fixture.root, "-c", "user.email=fixture@example.test", "-c", "user.name=fixture", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture")
-	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: fixture.repository, RepoPath: fixture.root, Revision: "HEAD"})
+	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: fixture.repository, RepoPath: fixture.root, Revision: "HEAD", ReadIndexes: []func() (programindex.Index, error){func() (programindex.Index, error) { return server, nil }, func() (programindex.Index, error) { return client, nil }}})
 	if err != nil {
 		t.Fatal(err)
 	}

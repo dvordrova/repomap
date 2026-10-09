@@ -170,3 +170,57 @@ func TestRouteValuesReadACycleFromEitherEnd(t *testing.T) {
 		}
 	}
 }
+
+// An address argument may also carry diagnostics through a branching caller
+// graph. Reading the address must not enumerate 2^40 diagnostic paths after
+// the admission walk already established which branches can carry addresses.
+// Both written address sites and concatenations keep their original evidence;
+// a direct command name still names the registration whatever its spelling.
+func TestRegistrationAddressReadSkipsNonAddressCallerBranches(t *testing.T) {
+	const layers = 40
+	var index programindex.Index
+	for i := 0; i <= layers; i++ {
+		index.Objects = append(index.Objects, routeTestFunction("f"+strconv.Itoa(i), "branch.c", 10*i+1))
+	}
+	for i := 1; i <= layers; i++ {
+		for _, line := range []int{10*i + 2, 10*i + 3} {
+			index.Relations = append(index.Relations, routeTestCall("f"+strconv.Itoa(i), "f"+strconv.Itoa(i-1), "branch.c", line,
+				programindex.PatternArgument{Position: 1, Kind: programindex.PatternDynamic, Origin: routeTestParameter("branch.c", 10*i+1, line)}))
+		}
+	}
+	index.Objects = append(index.Objects, routeTestFunction("main", "branch.c", 500))
+	index.Relations = append(index.Relations, routeTestCall("main", "f"+strconv.Itoa(layers), "branch.c", 501,
+		programindex.PatternArgument{Position: 1, Kind: programindex.PatternLiteralString, Value: "diagnostic"}))
+	target, err := newTargetContext(TargetInput{Index: index, Root: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(line int) *sourcevalue.Anchor {
+		return &sourcevalue.Anchor{Path: "branch.c", Line: line, Column: 4}
+	}
+	root := &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{
+		{Kind: "literal", Text: "/health", Anchor: at(510)},
+		*routeTestParameter("branch.c", 1, 511),
+		{Kind: "literal", Text: "/health", Anchor: at(512)},
+		{Kind: "concat", Parts: []sourcevalue.Value{{Kind: "literal", Text: "/", Anchor: at(513)}, {Kind: "literal", Text: "items", Anchor: at(514)}}},
+	}}
+	values := newRouteValueReader(target)
+	got := routeTestRead(t, func() []routeLiteral {
+		return addressLiterals(values, programindex.PatternArgument{Kind: programindex.PatternDynamic, Origin: root})
+	})
+	anchors := func(lines ...int) []Anchor {
+		var result []Anchor
+		for _, line := range lines {
+			result = append(result, Anchor{Path: "branch.c", Line: line, Column: 4})
+		}
+		return result
+	}
+	if len(got) != 2 || got[0].text != "/health" || !got[0].possible || !reflect.DeepEqual(got[0].evidence, anchors(510, 512)) ||
+		got[1].text != "/items" || !got[1].possible || !reflect.DeepEqual(got[1].evidence, anchors(513, 514)) {
+		t.Fatalf("address read lost a real branch or its evidence: %+v", got)
+	}
+	named := addressLiterals(values, programindex.PatternArgument{Kind: programindex.PatternLiteralString, Value: "orders.created"})
+	if len(named) != 1 || named[0].text != "orders.created" || named[0].possible {
+		t.Fatalf("a direct registration name changed: %+v", named)
+	}
+}

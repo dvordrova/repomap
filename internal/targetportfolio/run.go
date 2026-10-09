@@ -252,7 +252,7 @@ func requestFitResult(err error) (bool, error) {
 		return true, nil
 	}
 	var resourceErr *llm.ResourceLimitError
-	if errors.As(err, &resourceErr) && resourceErr.Kind == llm.ResourceLimitRequestBytes {
+	if errors.As(err, &resourceErr) && (resourceErr.Kind == llm.ResourceLimitRequestBytes || resourceErr.Kind == llm.ResourceLimitContextTokens) {
 		return false, nil
 	}
 	return false, err

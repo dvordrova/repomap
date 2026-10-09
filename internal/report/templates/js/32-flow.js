@@ -205,9 +205,11 @@ function rmFlowList(ctx,data,own,opts){
 }
 // A declaration's flow, kept whole across "Show helper calls": what is open
 // stays open, a step's helpers opened by their line too.
-function rmFlowTree(ctx,data,own,auto){
-  var root=rmEl('div','map-flow-root'),open=new Set(),key=(data.decls[own.decl]||{}).key||'';
+function rmFlowTree(ctx,data,own,auto,saved){
+  var root=rmEl('div','map-flow-root'),open=new Set(saved||[]),key=(data.decls[own.decl]||{}).key||'';
   root.rmRender=function(){root.replaceChildren(rmFlowList(ctx,data,own,{parentPart:'',ancestors:new Set([key]),open:open,path:'',auto:auto||0}));};
+  root.captureCalls=function(){return Array.from(open);};
+  root.restoreCalls=function(saved){open=new Set(saved||[]);root.rmRender();};
   root.rmRender();
   return root;
 }
@@ -229,10 +231,15 @@ function rmFlowStep(ctx,step,part,key){
   if(!target)return;
   var twist=rmEl('button','map-flow-step-twist');twist.type='button';twist.setAttribute('aria-expanded','false');twist.setAttribute('aria-label',rmT('Open its calls'));
   var holder=null;
+  twist.captureCalls=function(){return holder?holder.captureCalls():null;};
+  twist.setExpanded=function(open,saved){
+    if(!holder&&!open&&saved===undefined)return;
+    if(!holder){holder=rmFlowTree(ctx,target.data,target.own,0,saved);holder.classList.add('map-flow-step-code');step.appendChild(holder);holder.hidden=true;}
+    else if(saved!==undefined)holder.restoreCalls(saved);
+    holder.hidden=!open;twist.setAttribute('aria-expanded',String(open));step.classList.toggle('map-flow-step-open',open);
+  };
   twist.addEventListener('click',function(event){
-    event.stopPropagation();
-    if(!holder){holder=rmFlowTree(ctx,target.data,target.own);holder.classList.add('map-flow-step-code');step.appendChild(holder);holder.hidden=true;}
-    holder.hidden=!holder.hidden;twist.setAttribute('aria-expanded',String(!holder.hidden));step.classList.toggle('map-flow-step-open',!holder.hidden);
+    event.stopPropagation();twist.setExpanded(twist.getAttribute('aria-expanded')!=='true');
   });
   step.insertBefore(twist,step.firstChild);
 }

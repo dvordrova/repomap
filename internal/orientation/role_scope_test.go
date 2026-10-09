@@ -14,7 +14,7 @@ import (
 // A shared makefile's rule is the own evidence of the program it builds.
 func TestARoleIsReadFromItsOwnTargetsEvidence(t *testing.T) {
 	cat := newCatalog()
-	for _, ref := range []string{"t1", "t2", "t3", "t5", "t6"} {
+	for _, ref := range []string{"t1", "t2", "t3", "t4", "t5", "t6"} {
 		cat.targets[ref] = ref
 	}
 	// Lua's root makefile is the lua program's and liblua.a's manifest; its
@@ -29,6 +29,7 @@ func TestARoleIsReadFromItsOwnTargetsEvidence(t *testing.T) {
 	result, err := normalizeOverview([]byte(`{"roles":[
 		{"target":"t2","role":"Example and helper sources","purpose":"Holds public-domain extras.","refs":["a6"]},
 		{"target":"t2","role":"Parser stub","purpose":"Stands in for the parser when it is left out.","refs":["a30"]},
+		{"target":"t4","role":"Parser stub","purpose":"Stands in for the parser when it is left out.","refs":["a30"]},
 		{"target":"t3","role":"Minimal interpreter","purpose":"Runs Lua from stdin.","refs":["a6","t5.n1","a9"]},
 		{"target":"t5","role":"Interpreter","purpose":"Runs Lua scripts.","refs":[]},
 		{"target":"t6","role":"Core static library","purpose":"Packages the core objects into liblua.a.","refs":["a477","a478"]}
@@ -40,8 +41,11 @@ func TestARoleIsReadFromItsOwnTargetsEvidence(t *testing.T) {
 	for _, role := range result.roles {
 		roles[role.TargetID] = role
 	}
-	if role, kept := roles["t2"]; !kept || role.Role != "Parser stub" || len(role.FactIDs) != 0 {
-		t.Fatalf("t2 has no fact or seed of its own: its role stands without refs, never on another target's: %+v", roles["t2"])
+	if _, kept := roles["t2"]; kept {
+		t.Fatal("refused known role was repaired by a later row")
+	}
+	if role, kept := roles["t4"]; !kept || role.Role != "Parser stub" || len(role.FactIDs) != 0 {
+		t.Fatalf("independent target with no own facts must stand without refs: %+v", role)
 	}
 	if role := roles["t3"]; len(role.FactIDs) != 2 || role.FactIDs[0] != "a6" || role.FactIDs[1] != "a9" || len(role.SubjectIDs) != 0 {
 		t.Fatalf("t3 keeps its own facts and drops t5's seed: %+v", role)

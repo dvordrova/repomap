@@ -53,6 +53,8 @@ func TestTheCategorizerAloneDecidesTheClosedTables(t *testing.T) {
 		asked[column]++
 		mu.Unlock()
 		switch column {
+		case "helper", "grouping", "box":
+			return closedDecisions().Decide(key, question)
 		case "key_symbol":
 			return typesafetest.Choose("yes"), true
 		case "role":

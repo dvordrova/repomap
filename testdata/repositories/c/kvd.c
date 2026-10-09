@@ -369,3 +369,9 @@ int main(int argc, char **argv) {
     loopMain(server.el);
     return 0;
 }
+
+/* The first function keeps its own description. */
+int documentedNeighbor(void) { return 1; } int undocumentedNeighbor(void) { return 2; }
+
+/* The prototype owns this distinct author contract. */
+int documentedPrototype(void); int prototypeNeighbor(void) { return 3; }

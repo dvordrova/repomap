@@ -1069,6 +1069,9 @@ func (b *builder) input() (p.Input, error) {
 		sources[file] = string(id)
 		return nil
 	}
+	if program.Manifest != "" {
+		sources[program.Manifest] = program.ManifestFileRef
+	}
 	for _, unit := range b.parsed.Units {
 		if err := addSource(unit.Path); err != nil {
 			return p.Input{}, err
@@ -1080,7 +1083,7 @@ func (b *builder) input() (p.Input, error) {
 	if program.Kind == ProgramShared {
 		kind = string(ProgramLibrary)
 	}
-	target := p.TargetInput{Language: "c", Kind: kind, Name: program.Name, Selector: program.Selector, AnchorFileRef: program.AnchorFileRef}
+	target := p.TargetInput{Language: "c", Kind: kind, Name: program.Name, Selector: program.Selector, AnchorFileRef: program.TargetAnchorFileRef()}
 	// The executable a link line writes is named by its output (Makefile:49
 	// links redis-server); a program built by hand from its main unit has
 	// no name the build gives it.

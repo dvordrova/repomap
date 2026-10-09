@@ -23,19 +23,11 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-//go:embed prompts/design_parts.md
-var designPartsPrompt string
-
 //go:embed prompts/design_describe.md
 var designDescribePrompt string
 
-//go:embed prompts/design_areas.md
-var designAreasPrompt string
-
 const (
-	designPartsTask    = "repomap.atlas.parts.v2"
 	designDescribeTask = "repomap.atlas.describe.v1"
-	designAreasTask    = "repomap.atlas.areas.v1"
 
 	// designDescriptionOutputTokens is the measured allowance of one part
 	// description: a sentence of at most twelve words.
@@ -99,6 +91,70 @@ type designView struct {
 	// name is every unit's declaration name: the name of the row a split
 	// file gives a unit no box took.
 	name map[string]string
+	// Supporting observations never change the atomic membership units.
+	declarations map[string]partsDeclaration
+	ownedFields  map[string][]partsDeclaration
+	callSites    []designCallSite
+	roots        map[string]string
+	err          error
+}
+
+// These projections carry source structure, never native identities or docs.
+// d* refs are allocated once for this target's evidence, before packing.
+type partsDeclaration struct {
+	Ref       string               `json:"ref"`
+	OwnerRef  string               `json:"owner_ref,omitempty"`
+	Path      string               `json:"path"`
+	Name      string               `json:"name"`
+	Kind      string               `json:"kind"`
+	Signature string               `json:"signature,omitempty"`
+	Aliases   string               `json:"aliases,omitempty"`
+	Line      int                  `json:"line"`
+	Column    int                  `json:"column,omitempty"`
+	EndLine   int                  `json:"end_line,omitempty"`
+	Exported  bool                 `json:"exported"`
+	Anonymous bool                 `json:"anonymous,omitempty"`
+	Macro     bool                 `json:"macro,omitempty"`
+	Overloads []atlas.DeclOverload `json:"overloads,omitempty"`
+}
+
+func partsDeclarationOf(ref, sourcePath string, decl atlas.Decl) partsDeclaration {
+	return partsDeclaration{Ref: ref, Path: sourcePath, Name: decl.Name, Kind: decl.Kind, Signature: decl.Signature, Aliases: decl.Aliases,
+		Line: decl.LineNo, Column: decl.Column, EndLine: decl.EndLine, Exported: decl.Exported, Anonymous: decl.Anonymous, Macro: decl.Macro, Overloads: slices.Clone(decl.Overloads)}
+}
+
+type partsEndpoint struct {
+	Ref       string `json:"ref"`
+	UnitRef   string `json:"unit_ref,omitempty"`
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	Signature string `json:"signature,omitempty"`
+	Line      int    `json:"line"`
+	Column    int    `json:"column,omitempty"`
+}
+
+type partsCallSite struct {
+	Caller           partsEndpoint        `json:"caller"`
+	Path             string               `json:"path"`
+	Kind             string               `json:"kind"`
+	Name             string               `json:"name"`
+	Line             int                  `json:"line"`
+	Column           int                  `json:"column,omitempty"`
+	Invocation       string               `json:"invocation,omitempty"`
+	Dispatch         string               `json:"dispatch,omitempty"`
+	Detail           string               `json:"detail,omitempty"`
+	Resolution       string               `json:"resolution,omitempty"`
+	Values           []string             `json:"values,omitempty"`
+	Arguments        []string             `json:"arguments,omitempty"`
+	API              *atlas.CallAPI       `json:"api,omitempty"`
+	CalleeCandidates []partsEndpoint      `json:"callee_candidates,omitempty"`
+	Evidence         []atlas.EdgeEvidence `json:"evidence,omitempty"`
+}
+type designCallSite struct {
+	caller      string
+	callees     []string
+	observation partsCallSite
 }
 
 // unitSite is one exact call site: the unit whose code it is in and the
@@ -116,6 +172,7 @@ func (r *reader) designView(targetID string) *designView {
 		targetID: targetID, byID: map[string]*designFile{}, decls: map[string][]string{},
 		follows: map[string]string{}, unitFile: map[string]string{}, kind: map[string]string{}, text: map[string]string{}, imports: map[[2]string]bool{},
 		seedName: map[string]string{}, name: map[string]string{},
+		declarations: map[string]partsDeclaration{}, ownedFields: map[string][]partsDeclaration{}, roots: map[string]string{},
 	}
 	var files []atlas.Place
 	for _, place := range r.opts.Graph.Places {
@@ -129,7 +186,7 @@ func (r *reader) designView(targetID string) *designView {
 	inTarget := map[string]bool{}
 	for _, file := range files {
 		for _, decl := range file.File.Decls {
-			if id := r.symbolID(file.Path, decl.LineNo, decl.Name); id != "" {
+			if id := r.symbolID(file.Path, decl.LineNo, decl.Name); id != "" && contains(r.places[id].TargetIDs, targetID) {
 				inTarget[id] = true
 			}
 		}
@@ -139,7 +196,7 @@ func (r *reader) designView(targetID string) *designView {
 		for _, decl := range file.File.Decls {
 			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
 			symbol := r.places[id].Symbol
-			if decl.Kind != "type" || symbol == nil {
+			if decl.Kind != "type" || symbol == nil || !inTarget[id] {
 				continue
 			}
 			for _, member := range symbol.Members {
@@ -157,7 +214,9 @@ func (r *reader) designView(targetID string) *designView {
 	for _, file := range files {
 		view.all = append(view.all, file.ID)
 		row := &designFile{id: file.ID, path: file.Path, dir: path.Dir(file.Path), test: file.File.Test, generated: file.File.Generated}
-		decls := file.File.Decls
+		decls := slices.DeleteFunc(slices.Clone(file.File.Decls), func(decl atlas.Decl) bool {
+			return !inTarget[r.symbolID(file.Path, decl.LineNo, decl.Name)]
+		})
 		// named is the first unit of the file under each name: a declaration
 		// that repeats it (a second Go init, a Clojure declare and its defn)
 		// follows it, one unit shown with the first one's signature. Python's
@@ -167,10 +226,11 @@ func (r *reader) designView(targetID string) *designView {
 		named := map[string]string{}
 		for position, decl := range decls {
 			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
-			if id == "" {
+			if id == "" || !inTarget[id] {
 				continue
 			}
 			view.decls[file.ID] = append(view.decls[file.ID], id)
+			view.declarations[id] = partsDeclarationOf(fmt.Sprintf("d%d", len(view.declarations)+1), file.Path, decl)
 			if decl.ObjectID != "" {
 				r.designSubjects[decl.ObjectID] = id
 			}
@@ -219,6 +279,46 @@ func (r *reader) designView(targetID string) *designView {
 			view.byID[file.ID] = row
 		}
 	}
+	// Resolve every native ancestry before any interpretation request. A cycle
+	// or missing owner is a source-format error, never a partial membership.
+	for _, file := range view.all {
+		for _, id := range view.decls[file] {
+			view.root(id)
+			if view.err != nil {
+				return view
+			}
+		}
+	}
+	// Followers retain their full headers and immediate owner without becoming
+	// assignment rows. Fields retain their exact native observer scope.
+	nextRef := len(view.declarations)
+	for _, file := range view.all {
+		for _, id := range view.decls[file] {
+			decl := view.declarations[id]
+			if owner := view.follows[id]; owner != "" {
+				decl.OwnerRef = view.declarations[owner].Ref
+				view.declarations[id] = decl
+			}
+			if r.places[id].Symbol == nil {
+				continue
+			}
+			for _, member := range r.places[id].Symbol.Members {
+				if !slices.Contains(member.TargetIDs, targetID) {
+					continue
+				}
+				if memberID := r.symbolID(member.Path, member.Decl.LineNo, member.Decl.Name); memberID != "" {
+					continue // A lifted declaration occurs only through its eligible source row.
+				}
+				if member.Decl.Kind != "variable" && member.Decl.Kind != "field" {
+					continue // Only native unlifted fields supplement source declarations.
+				}
+				nextRef++
+				field := partsDeclarationOf(fmt.Sprintf("d%d", nextRef), member.Path, member.Decl)
+				field.OwnerRef = decl.Ref
+				view.ownedFields[id] = append(view.ownedFields[id], field)
+			}
+		}
+	}
 	// A call site counts from the unit whose code holds it: a method's from
 	// its type's unit, wherever the method is declared.
 	for _, file := range view.all {
@@ -229,6 +329,18 @@ func (r *reader) designView(targetID string) *designView {
 				continue
 			}
 			for _, call := range symbol.Calls {
+				if !contains(callTargets(r.places[id], call), targetID) {
+					continue
+				}
+				site := designCallSite{caller: id, observation: partsCallSite{Path: r.places[id].Path, Kind: call.Kind, Name: call.Name,
+					Line: call.Line, Column: call.Column, Invocation: call.Invocation, Dispatch: call.Dispatch, Detail: call.Detail, Resolution: call.Resolution,
+					Values: slices.Clone(call.Values), Arguments: slices.Clone(call.Arguments), API: call.API, Evidence: slices.Clone(call.Evidence)}}
+				for _, callee := range call.CalleeIDs {
+					if inTarget[callee] {
+						site.callees = append(site.callees, callee)
+					}
+				}
+				view.callSites = append(view.callSites, site)
 				if call.Kind != "calls" || call.Resolution != "exact" {
 					continue
 				}
@@ -255,16 +367,47 @@ func (r *reader) designView(targetID string) *designView {
 	return view
 }
 
+func (view *designView) partsEndpoint(id string, rowOf map[string]string) partsEndpoint {
+	decl := view.declarations[id]
+	return partsEndpoint{Ref: decl.Ref, UnitRef: rowOf[view.root(id)], Path: decl.Path, Name: decl.Name, Kind: decl.Kind, Signature: decl.Signature, Line: decl.Line, Column: decl.Column}
+}
+
 // root is the unit a declaration's membership comes from.
 func (view *designView) root(id string) string {
-	for seen := 0; seen < 64; seen++ {
-		next, ok := view.follows[id]
-		if !ok {
-			return id
-		}
-		id = next
+	if view.roots == nil {
+		view.roots = map[string]string{}
 	}
-	return id
+	if root := view.roots[id]; root != "" {
+		return root
+	}
+	var ancestry []string
+	seen := map[string]bool{}
+	current := id
+	for {
+		if seen[current] {
+			view.err = fmt.Errorf("parts source ownership has a cycle at %s", current)
+			return ""
+		}
+		seen[current] = true
+		ancestry = append(ancestry, current)
+		if root := view.roots[current]; root != "" {
+			current = root
+			break
+		}
+		next, ok := view.follows[current]
+		if !ok {
+			break
+		}
+		if next == "" || view.declarations[next].Ref == "" {
+			view.err = fmt.Errorf("parts source ownership of %s has no known declaration %s", current, next)
+			return ""
+		}
+		current = next
+	}
+	for _, declaration := range ancestry {
+		view.roots[declaration] = current
+	}
+	return current
 }
 
 // enclosingCallable is the innermost function or method of a file whose
@@ -334,206 +477,6 @@ func (view *designView) designUnitOf(ref string, file *designFile, box string, u
 	return unit
 }
 
-// groupingUnits are the rows of a target's parts request, in f* order: a
-// file the role split splits gives one c* row per box that holds a unit, in
-// naming order (c1, c2… across the target), then one per seed and one per
-// unit no box took, each named by its declaration; a whole file that joined
-// a box gives no row; any other file gives one whole row under its f* ref. A
-// row also holds the units code placed there from other files. A unit no
-// box took stays undecided in the split (its box question had no decided
-// answer); its own row lets the parts request place it with its calls, and
-// only a row that request leaves unplaced is off the map. A blocked helper
-// stays off the map.
-func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) []*designUnit {
-	if split == nil {
-		split = &unitSplit{}
-	}
-	var units []*designUnit
-	boxes := 0
-	for _, file := range view.files {
-		if roles := split.splits[file.id]; roles != nil {
-			for i, box := range roles.boxes {
-				held := append(slices.Clone(roles.holds[i]), split.into[groupKey{file: file.id, box: i}]...)
-				if len(held) == 0 {
-					continue
-				}
-				boxes++
-				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, box.Name, held))
-			}
-			// A seed is never assigned a box: it is its own row, named by
-			// its declaration, with the helpers only it uses.
-			for _, id := range file.units {
-				name := view.seedName[id]
-				if name == "" {
-					continue
-				}
-				boxes++
-				held := append([]string{id}, split.into[groupKey{file: file.id, box: -1, seed: id}]...)
-				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, name, held))
-			}
-			for _, id := range roles.undecided {
-				boxes++
-				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, view.name[id], []string{id}))
-			}
-			for _, id := range roles.blocked {
-				outcome.unitReason[id] = atlas.OffMapBlocked
-			}
-			continue
-		}
-		if _, joined := split.attachedFiles[file.id]; joined {
-			continue
-		}
-		units = append(units, view.designUnitOf(file.id, file, "", append(slices.Clone(file.units), split.into[groupKey{file: file.id, box: -1}]...)))
-	}
-	return units
-}
-
-// designPartsInput is the parts request: the listed units with the calls
-// and the imports among them, aggregated over refs the request advertises.
-type designPartsInput struct {
-	Task    string          `json:"task"`
-	Units   []designUnitRow `json:"units"`
-	Calls   []string        `json:"calls,omitempty"`
-	Imports []string        `json:"imports,omitempty"`
-}
-
-func (view *designView) partsInput(units []*designUnit) designPartsInput {
-	listed := map[string]bool{}
-	rowOf := map[string]string{}
-	input := designPartsInput{Task: designPartsTask}
-	for _, unit := range units {
-		listed[unit.ref] = true
-		input.Units = append(input.Units, unit.row())
-		for _, id := range unit.units {
-			rowOf[id] = unit.ref
-		}
-	}
-	input.Calls = pairCounts(view.siteCounts(rowOf), listed)
-	for _, pair := range sortedPairs(view.rowImports(units)) {
-		input.Imports = append(input.Imports, pair[0]+" -> "+pair[1])
-	}
-	return input
-}
-
-// rowImports are the file imports between the listed rows. A file stands
-// for one row: a whole file for its own, and a file that is no row of its
-// own for the one row every unit of it sits in (a whole file that joined a
-// box: redis-server's lzf_c.c and lzf_d.c, joined to redis.c's Persistence
-// box, import lzfP.h through it, which no call of redis-server reaches). That
-// is exact, as all its code is there. A file whose units sit in several
-// rows, as a split file's usually do, or in none stands for no row, and an
-// import within one row is none.
-func (view *designView) rowImports(units []*designUnit) map[[2]string]bool {
-	rowOf := map[string]string{}
-	fileRow := map[string]string{}
-	for _, unit := range units {
-		for _, id := range unit.units {
-			rowOf[id] = unit.ref
-		}
-		if unit.box == "" {
-			fileRow[unit.file] = unit.ref
-		}
-	}
-	for _, file := range view.files {
-		if _, whole := fileRow[file.id]; whole || len(file.units) == 0 {
-			continue
-		}
-		row := rowOf[file.units[0]]
-		for _, id := range file.units[1:] {
-			if rowOf[id] != row {
-				row = ""
-				break
-			}
-		}
-		if row != "" {
-			fileRow[file.id] = row
-		}
-	}
-	pairs := map[[2]string]bool{}
-	for pair := range view.imports {
-		if from, to := fileRow[pair[0]], fileRow[pair[1]]; from != "" && to != "" && from != to {
-			pairs[[2]string{from, to}] = true
-		}
-	}
-	return pairs
-}
-
-// siteCounts counts, per exact call site, each distinct row other than its
-// own that it reaches, by pair of rows; rowOf is each unit's row.
-func (view *designView) siteCounts(rowOf map[string]string) map[[2]string]int {
-	counts := map[[2]string]int{}
-	for _, site := range view.sites {
-		from := rowOf[site.from]
-		if from == "" {
-			continue
-		}
-		var reached []string
-		for _, unit := range site.to {
-			if to := rowOf[unit]; to != "" && to != from && !slices.Contains(reached, to) {
-				reached = append(reached, to)
-				counts[[2]string{from, to}]++
-			}
-		}
-	}
-	return counts
-}
-
-// pairCounts prints "a -> b (n)" for every pair both of whose ends are kept.
-func pairCounts(counts map[[2]string]int, kept map[string]bool) []string {
-	pairs := make(map[[2]string]bool, len(counts))
-	for pair := range counts {
-		pairs[pair] = true
-	}
-	var result []string
-	for _, pair := range sortedPairs(pairs) {
-		if kept[pair[0]] && kept[pair[1]] {
-			result = append(result, fmt.Sprintf("%s -> %s (%d)", pair[0], pair[1], counts[pair]))
-		}
-	}
-	return result
-}
-
-func sortedPairs(pairs map[[2]string]bool) [][2]string {
-	result := make([][2]string, 0, len(pairs))
-	for pair := range pairs {
-		result = append(result, pair)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i][0] != result[j][0] {
-			return compactIDLess(result[i][0], result[j][0])
-		}
-		return compactIDLess(result[i][1], result[j][1])
-	})
-	return result
-}
-
-// partsGroup is one element of a parts answer, read on its own.
-type partsGroup struct {
-	Name string
-	Refs []string
-	// Malformed says why the element is not a name with one list of units.
-	Malformed string
-}
-
-type partsAnswer struct {
-	Groups []partsGroup
-}
-
-// MarshalJSON writes the answer in its wire shape.
-func (answer partsAnswer) MarshalJSON() ([]byte, error) {
-	type group struct {
-		Name  string   `json:"name"`
-		Units []string `json:"units"`
-	}
-	groups := make([]group, 0, len(answer.Groups))
-	for _, g := range answer.Groups {
-		groups = append(groups, group{Name: g.Name, Units: g.Refs})
-	}
-	return json.Marshal(struct {
-		Groups []group `json:"groups"`
-	}{groups})
-}
-
 func cleanText(text string) string {
 	space := func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f }
 	return strings.Join(strings.FieldsFunc(text, space), " ")
@@ -557,280 +500,6 @@ func refList(raw json.RawMessage) ([]string, bool) {
 	return nil, false
 }
 
-// decodeParts reads {"groups":[{"name":…,"units":[…]}]} over the unit refs
-// one request listed. Every group is read on its own, and extra fields such
-// as an "about" are ignored; "files" is the same list as "units" (a form, as
-// the answers to the file-only request wrote it), the two given alike are
-// one list and given differently refuse that group alone; the list may also
-// be one string of refs. Only an answer that draws no part is refused
-// whole: it is not JSON, holds no groups, or no group holds a listed unit of
-// its own (every ref unknown, such as a path, every group without a name,
-// or every unit listed in two different groups).
-func decodeParts(raw []byte, listed []string) (partsAnswer, error) {
-	var envelope struct {
-		Groups json.RawMessage `json:"groups"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return partsAnswer{}, fmt.Errorf("parts: the answer is not a JSON object")
-	}
-	var elements []json.RawMessage
-	if len(envelope.Groups) == 0 || json.Unmarshal(envelope.Groups, &elements) != nil || len(elements) == 0 {
-		return partsAnswer{}, fmt.Errorf("parts: the answer has no groups")
-	}
-	answer := partsAnswer{Groups: make([]partsGroup, 0, len(elements))}
-	const notAList = "is not a name with a list of files or units"
-	for _, element := range elements {
-		var group struct {
-			Name  string          `json:"name"`
-			Units json.RawMessage `json:"units"`
-			Files json.RawMessage `json:"files"`
-		}
-		if err := json.Unmarshal(element, &group); err != nil {
-			answer.Groups = append(answer.Groups, partsGroup{Malformed: notAList})
-			continue
-		}
-		units, unitsOK := refList(group.Units)
-		files, filesOK := refList(group.Files)
-		switch {
-		case !unitsOK || !filesOK:
-			answer.Groups = append(answer.Groups, partsGroup{Malformed: notAList})
-			continue
-		case len(group.Units) > 0 && len(group.Files) > 0 && !sameRefs(units, files):
-			answer.Groups = append(answer.Groups, partsGroup{Malformed: "gives units and files that differ"})
-			continue
-		case len(group.Units) == 0:
-			units = files
-		}
-		answer.Groups = append(answer.Groups, partsGroup{Name: cleanText(group.Name), Refs: units})
-	}
-	for _, refs := range validatePartition(answer, listed).refs {
-		if len(refs) > 0 {
-			return answer, nil
-		}
-	}
-	return partsAnswer{}, fmt.Errorf("parts: no group holds a listed unit of its own")
-}
-
-// sameRefs says whether two lists hold the same refs, ignoring order,
-// repeats and surrounding space.
-func sameRefs(left, right []string) bool {
-	set := func(refs []string) []string {
-		result := make([]string, 0, len(refs))
-		for _, ref := range refs {
-			result = append(result, strings.TrimSpace(ref))
-		}
-		sort.Strings(result)
-		return slices.Compact(result)
-	}
-	return slices.Equal(set(left), set(right))
-}
-
-// partition is a validated parts answer: independent unit → part rows over
-// the units one request listed. Validation annotates; it refuses only the
-// memberships that are actually wrong and keeps every good neighbour.
-type partition struct {
-	// names and refs are the accepted groups in answer order, each with the
-	// units it alone holds. A group every unit of which conflicted keeps no
-	// unit and is not drawn.
-	names []string
-	refs  [][]string
-	// leftOut are listed units no accepted group holds.
-	leftOut []string
-	// conflicts are listed units two or more accepted groups hold, with
-	// those groups; both memberships are refused, never the first kept.
-	conflicts map[string][]int
-	// unknown are refs the request did not list; they are discarded.
-	unknown []string
-	// refused says why a group was not accepted: unreadable, no name or
-	// no listed unit. Its units are left out unless another group holds them.
-	refused []string
-	// repeated are names given to more than one accepted group, ignoring
-	// case; each group keeps its own units.
-	repeated []string
-	// repeatedGroups are groups that restate an earlier accepted group: the
-	// same name, ignoring case, over the same set of listed units. The same
-	// statement twice is one answer, so the repeat is not drawn again.
-	repeatedGroups []string
-}
-
-func validatePartition(answer partsAnswer, listed []string) partition {
-	known := make(map[string]bool, len(listed))
-	for _, ref := range listed {
-		known[ref] = true
-	}
-	result := partition{conflicts: map[string][]int{}}
-	holders := map[string][]int{}
-	unknown := map[string]bool{}
-	var sets [][]string // each accepted group's listed files, sorted
-	for position, group := range answer.Groups {
-		switch {
-		case group.Malformed != "":
-			result.refused = append(result.refused, fmt.Sprintf("group %d %s", position+1, group.Malformed))
-			continue
-		case group.Name == "":
-			result.refused = append(result.refused, fmt.Sprintf("group %d has no name", position+1))
-			continue
-		}
-		var refs []string
-		for _, ref := range group.Refs {
-			ref = strings.TrimSpace(ref)
-			switch {
-			case !known[ref]:
-				if !unknown[ref] {
-					unknown[ref] = true
-					result.unknown = append(result.unknown, ref)
-				}
-			case !slices.Contains(refs, ref):
-				refs = append(refs, ref)
-			}
-		}
-		if len(refs) == 0 {
-			result.refused = append(result.refused, fmt.Sprintf("group %q holds no listed unit", group.Name))
-			continue
-		}
-		set := slices.Clone(refs)
-		sort.Strings(set)
-		if earlier := sameGroup(result.names, sets, group.Name, set); earlier >= 0 {
-			result.repeatedGroups = append(result.repeatedGroups, fmt.Sprintf("group %d repeats group %q", position+1, result.names[earlier]))
-			continue
-		}
-		index := len(result.names)
-		result.names = append(result.names, group.Name)
-		result.refs = append(result.refs, nil)
-		sets = append(sets, set)
-		for _, ref := range refs {
-			holders[ref] = append(holders[ref], index)
-		}
-	}
-	for _, ref := range listed {
-		switch len(holders[ref]) {
-		case 0:
-			result.leftOut = append(result.leftOut, ref)
-		case 1:
-			part := holders[ref][0]
-			result.refs[part] = append(result.refs[part], ref)
-		default:
-			result.conflicts[ref] = holders[ref]
-		}
-	}
-	seen := map[string]int{}
-	for _, name := range result.names {
-		seen[strings.ToLower(name)]++
-	}
-	for _, name := range result.names {
-		if seen[strings.ToLower(name)] > 1 && !slices.Contains(result.repeated, name) {
-			result.repeated = append(result.repeated, name)
-		}
-	}
-	return result
-}
-
-// sameGroup returns the earlier accepted group with the same name, ignoring
-// case, and the same set of listed refs, or -1. Equal names alone never make
-// two groups one.
-func sameGroup(names []string, sets [][]string, name string, set []string) int {
-	for i := range names {
-		if strings.EqualFold(names[i], name) && slices.Equal(sets[i], set) {
-			return i
-		}
-	}
-	return -1
-}
-
-// designPartsCall is the parts request of one window of a target's units.
-// An answer refused whole leaves the window refused; it is not asked again.
-func designPartsCall(input designPartsInput) (llm.Call[partsAnswer], error) {
-	raw, err := json.Marshal(input)
-	if err != nil {
-		return llm.Call[partsAnswer]{}, err
-	}
-	listed := make([]string, len(input.Units))
-	for i, unit := range input.Units {
-		listed[i] = unit.Ref
-	}
-	return llm.Call[partsAnswer]{
-		State: []byte(designPartsTask),
-		Prompt: llm.Prompt{System: designPartsPrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
-			ResponseExample: `{"groups":[{"name":"Move search","units":["f4","c2"]},{"name":"Board state","units":["f2"]}]}`},
-		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Units))},
-		DecodeValidate: func(raw []byte) (partsAnswer, error) { return decodeParts(raw, listed) },
-	}, nil
-}
-
-// splitWindow halves a window of units along whole directory subtrees: the
-// items are the subtrees and the loose files directly under the deepest
-// directory all the units share, halved by unit count in path order, so the
-// boxes of one file stay in one window. A single flat directory thus splits
-// into contiguous halves. One file does not split.
-func splitWindow(files []*designUnit) ([]*designUnit, []*designUnit, bool) {
-	if len(files) < 2 {
-		return nil, nil, false
-	}
-	common := strings.Split(files[0].dir, "/")
-	if files[0].dir == "." {
-		common = nil
-	}
-	for _, file := range files[1:] {
-		parts := strings.Split(file.dir, "/")
-		if file.dir == "." {
-			parts = nil
-		}
-		n := 0
-		for n < len(common) && n < len(parts) && common[n] == parts[n] {
-			n++
-		}
-		common = common[:n]
-	}
-	sorted := slices.Clone(files)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].path < sorted[j].path })
-	item := func(file *designUnit) string {
-		rest := strings.Split(file.path, "/")[len(common):]
-		if len(rest) > 1 {
-			return rest[0] + "/"
-		}
-		return file.path
-	}
-	var items [][]*designUnit
-	for _, file := range sorted {
-		if len(items) > 0 && item(items[len(items)-1][0]) == item(file) {
-			items[len(items)-1] = append(items[len(items)-1], file)
-			continue
-		}
-		items = append(items, []*designUnit{file})
-	}
-	if len(items) < 2 {
-		return nil, nil, false
-	}
-	half, best := 0, len(files)
-	count := 0
-	for i := 0; i < len(items)-1; i++ {
-		count += len(items[i])
-		if gap := max(count, len(files)-count) - min(count, len(files)-count); gap < best {
-			half, best = i+1, gap
-		}
-	}
-	var left, right []*designUnit
-	for i, group := range items {
-		if i < half {
-			left = append(left, group...)
-		} else {
-			right = append(right, group...)
-		}
-	}
-	return left, right, true
-}
-
-// windowTooLarge says whether a prepared parts request cannot be sent whole:
-// the provider refused to prepare it or it passes the request envelope.
-func windowTooLarge(provider llm.Provider, call llm.Call[partsAnswer]) bool {
-	prepared, err := llm.Prepare(provider, call.Prompt, call.Limits)
-	var resource *llm.ResourceLimitError
-	if errors.As(err, &resource) {
-		return true
-	}
-	return err == nil && prepared.Len() > call.Limits.MaxRequestBytes
-}
-
 // inputRefused says whether the provider refused a request for its input or
 // context size, the one refusal a smaller window of complete files answers.
 func inputRefused(err error) bool {
@@ -838,161 +507,15 @@ func inputRefused(err error) bool {
 	return errors.As(err, &resource) && (resource.Kind == llm.ResourceLimitContextTokens || resource.Kind == llm.ResourceLimitRequestBytes)
 }
 
-// partsWindow is one answered window of a target's parts request.
-type partsWindow struct {
-	units     []*designUnit
-	partition partition
-	err       error
-}
-
-// askParts sends a target's units, split into directory-subtree windows
-// only when the request does not fit the provider. Parts never cross
-// windows and no unit is sampled or left unasked.
-func (r *reader) askParts(ctx context.Context, view *designView, round int, units []*designUnit) ([]partsWindow, error) {
-	if _, started := r.started[lines.StageZones]; !started {
-		r.started[lines.StageZones] = time.Now()
-	}
-	executor := debugdump.BindStage(r.opts.Executor, lines.StageZones)
-	provider := r.opts.Provider
-	use := r.use(lines.StageZones)
-	queue := [][]*designUnit{units}
-	var answered []partsWindow
-	index := 0
-	for len(queue) > 0 {
-		var windows [][]*designUnit
-		var calls []llm.Call[partsAnswer]
-		var next [][]*designUnit
-		for _, files := range queue {
-			call, err := designPartsCall(view.partsInput(files))
-			if err != nil {
-				return nil, err
-			}
-			if left, right, ok := splitWindow(files); ok {
-				recalled, err := llm.RecallAdaptiveSplit(executor, provider, call)
-				if err != nil {
-					return nil, err
-				}
-				if recalled || windowTooLarge(provider, call) {
-					next = append(next, left, right)
-					continue
-				}
-			}
-			windows = append(windows, files)
-			calls = append(calls, call)
-		}
-		results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		for i, result := range results {
-			if result.Err != nil && inputRefused(result.Err) {
-				if left, right, ok := splitWindow(windows[i]); ok {
-					if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], result.Outcome, result.Err); err != nil {
-						return nil, err
-					}
-					next = append(next, left, right)
-					continue
-				}
-			}
-			window := table.Window{Stage: lines.StageZones, Round: round, Index: index}
-			index++
-			answer := partsWindow{units: windows[i], err: result.Err}
-			use.Windows++
-			use.Rows += len(windows[i])
-			if result.Outcome.Cached {
-				use.Cached++
-			} else {
-				use.Live++
-			}
-			responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
-			fmt.Fprintf(&r.tables, "## %s · round %d · window %d · %s\n\n", lines.StageZones, round, window.Index, path.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json")))
-			// Validation records each annotation of an accepted answer as a
-			// rejected row that points at this window; an answer so annotated,
-			// like a refused one, keeps its payloads in the run.
-			recorded := len(r.rejected)
-			if result.Err == nil {
-				listed := make([]string, len(windows[i]))
-				for j, unit := range windows[i] {
-					listed[j] = unit.ref
-				}
-				answer.partition = validatePartition(result.Outcome.Value, listed)
-				r.recordPartition(view.targetID, answer.partition, responseRef, len(windows[i]))
-			}
-			if err := r.writeWindowExchange(window, []byte(calls[i].Prompt.System), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0 || len(r.rejected) > recorded); err != nil {
-				return nil, err
-			}
-			if result.Err != nil {
-				use.Rejected++
-				// A refusal that left no response has no response ref to name.
-				if len(result.Outcome.Response) == 0 {
-					responseRef = ""
-				}
-				r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Target: view.targetID, Kind: "window_rejected", Count: len(windows[i]), Reason: result.Err.Error(), ResponseRef: responseRef})
-				fmt.Fprintf(&r.tables, "%d units · parts answer refused: %s\n\n", len(windows[i]), result.Err)
-				answered = append(answered, answer)
-				continue
-			}
-			raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
-			if err != nil {
-				return nil, err
-			}
-			if err := r.writeWindowFile(window, "result.json", raw); err != nil {
-				return nil, err
-			}
-			answered = append(answered, answer)
-		}
-		queue = next
-	}
-	return answered, nil
-}
-
-// recordPartition prints what one window's validation kept and annotated,
-// and records every annotation without refusing the answer.
-func (r *reader) recordPartition(targetID string, result partition, responseRef string, listed int) {
-	drawn := 0
-	for i, name := range result.names {
-		if len(result.refs[i]) == 0 {
-			continue
-		}
-		drawn++
-		fmt.Fprintf(&r.tables, "- %s: %s\n", name, strings.Join(result.refs[i], " "))
-	}
-	note := func(kind string, samples []string, reason string) {
-		if len(samples) == 0 {
-			return
-		}
-		r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Target: targetID, Kind: kind, Count: len(samples), Samples: samples, Reason: reason, ResponseRef: responseRef})
-		fmt.Fprintf(&r.tables, "- %s: %s\n", reason, strings.Join(samples, " "))
-	}
-	var conflicts []string
-	for ref := range result.conflicts {
-		conflicts = append(conflicts, ref)
-	}
-	sort.Slice(conflicts, func(i, j int) bool { return compactIDLess(conflicts[i], conflicts[j]) })
-	note("part_conflict", conflicts, "listed in two parts; asked again")
-	note("part_left_out", result.leftOut, "in no part; asked again")
-	note("part_unknown_ref", result.unknown, "refs the request did not list, discarded")
-	note("part_refused_group", result.refused, "groups not drawn")
-	note("part_repeated_name", result.repeated, "names given to two parts, each kept")
-	note("part_repeated_group", result.repeatedGroups, "groups given twice, drawn once")
-	switch {
-	case drawn == 1 && listed > 1:
-		fmt.Fprintf(&r.tables, "- one part holds every placed unit; accepted as returned\n")
-	case drawn > 1 && drawn == listed:
-		fmt.Fprintf(&r.tables, "- one part per unit; accepted as returned\n")
-	}
-	r.tables.WriteString("\n")
-}
-
 // designPart is one drawn part of a target before it is a box: the units
 // of the rows its refs name.
 type designPart struct {
 	id, name string
+	holds    string
 	refs     []string
 }
 
-// designOutcome is a target's map of parts once the answer, the follow-up
-// and the membership rules have been applied.
+// designOutcome is a target's map after closed original-unit assignment.
 type designOutcome struct {
 	parts  []*designPart
 	partOf map[string]string // unit row ref → part ID
@@ -1003,49 +526,88 @@ type designOutcome struct {
 	failure              string
 	boxes                []*boxState
 	membership           map[string]string // declaration or file place → part ID
+	refusedParts         []atlas.RefusedPart
 }
 
 func (r *reader) readDesign(ctx context.Context) error {
-	r.opts.Stage(lines.StageZones, "splitting each target's files into boxes, grouping the files and boxes into parts, placing what the answer left out, then describing the parts")
+	r.opts.Stage(lines.StageZones, "reading complete original code, choosing responsibilities, and assigning every original unit to their accepted purposes")
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
 	r.helperOf = map[string]map[string]bool{}
+	r.treeZones = map[string][]zoneDraft{}
 	r.offMap = map[string][]offMapEntry{}
 	r.mapFailure = map[string]string{}
+	r.refusedParts = map[string][]atlas.RefusedPart{}
 	if r.designSubjects == nil {
 		r.designSubjects = map[string]string{}
 	}
 	targets := r.opts.Targets
-	// The views are built for every target first; the targets below only
-	// read them and the maps they fill.
-	views := make([]*designView, len(targets))
-	for position, target := range targets {
-		views[position] = r.designView(target.ID)
-		r.designBoxOf[target.ID] = map[string]string{}
+	// Validate every complete target view before any model work, as in the
+	// eager walk. Keep only its source-subject mapping; workers read this
+	// finalized mapping without any concurrent writer.
+	for _, target := range targets {
+		view := r.designView(target.ID)
+		if view.err != nil {
+			return view.err
+		}
 	}
-	// Every target is read on its own view at once. Its parts take their
-	// compact IDs in target order, the one place a target waits for the ones
-	// before it. The first failure cancels the other targets and is the
-	// error returned; nothing a view did reaches the reader then.
+	// Allocate the small result records up front. Each target acquires a
+	// preparation slot before rebuilding its complete native view.
+	readers := make([]*reader, len(targets))
+	for position, target := range targets {
+		r.designBoxOf[target.ID] = map[string]string{}
+		readers[position] = r.view(nil)
+	}
 	order := &designOrder{parts: newDesignTurns(len(targets))}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	readers := make([]*reader, len(targets))
+	concurrency := r.opts.Executor.BatchConcurrency
+	if concurrency <= 0 {
+		concurrency = llm.DefaultBatchConcurrency
+	}
+	slots := make(chan struct{}, min(concurrency, len(targets)))
 	var failed sync.Once
 	var failure error
+	fail := func(err error) {
+		failed.Do(func() {
+			failure = err
+			cancel()
+		})
+	}
+	// Freeze preparation's reader snapshot before workers can mutate owner
+	// counters. Subsequent builds copy this immutable base only.
+	preparationBase := *r
 	var wg sync.WaitGroup
-	for position := range targets {
-		readers[position] = r.view(nil)
+dispatch:
+	for position, target := range targets {
+		if err := ctx.Err(); err != nil {
+			fail(err)
+			break
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			fail(ctx.Err())
+			break dispatch
+		}
+		// Rebuilding has the same complete source input, but its temporary
+		// subject writes belong to this preparation, not the shared map.
+		preparation := preparationBase
+		preparation.designSubjects = map[string]string{}
+		view := preparation.designView(target.ID)
+		if view.err != nil {
+			fail(view.err)
+			<-slots
+			break
+		}
 		wg.Add(1)
-		go func(position int) {
+		go func(position int, view *designView) {
 			defer wg.Done()
-			if err := readers[position].designTarget(ctx, r, order, position, views[position]); err != nil {
-				failed.Do(func() {
-					failure = err
-					cancel()
-				})
+			defer func() { <-slots }()
+			if err := readers[position].designTarget(ctx, r, order, position, view); err != nil {
+				fail(err)
 			}
-		}(position)
+		}(position, view)
 	}
 	wg.Wait()
 	if failure != nil {
@@ -1054,13 +616,12 @@ func (r *reader) readDesign(ctx context.Context) error {
 	for _, view := range readers {
 		r.joinView(view)
 	}
-	for _, stage := range []string{lines.StageRoleHelper, lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
+	for _, stage := range []string{lines.StageRoleHelper, lines.StageGroupEnough, lines.StageGroupAssign} {
 		if _, asked := r.uses[stage]; asked {
 			r.reportStage(stage)
 		}
 	}
 	r.reportStage(lines.StageZones)
-	r.reportStage(lines.StagePlacement)
 	r.reportStage(lines.StageDescribe)
 	return nil
 }
@@ -1120,77 +681,17 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	target := r.opts.Targets[position]
 	round := position + 1
 	outcome := &designOutcome{partOf: map[string]string{}, unitPart: map[string]string{}, unitReason: map[string]string{}, membership: map[string]string{}}
-	var split *unitSplit
-	if !r.dry {
-		var err error
-		if split, err = r.readRoles(ctx, view, round); err != nil {
-			return err
-		}
+	units, drafts, tree, err := r.groupedUnits(ctx, view, round, target, outcome)
+	if err != nil {
+		return err
 	}
-	units := view.groupingUnits(split, outcome)
 	// Every declaration whose unit Jev decided is a helper carries the mark.
 	helpers := map[string]bool{}
-	if split != nil {
-		for _, file := range view.all {
-			for _, id := range view.decls[file] {
-				if split.helpers[view.root(id)] {
-					helpers[id] = true
-				}
+	for _, file := range view.all {
+		for _, id := range view.decls[file] {
+			if tree.helpers[view.root(id)] {
+				helpers[id] = true
 			}
-		}
-	}
-	var drafts []designPart
-	conflicts := map[string][]int{}
-	var leftOut []string
-	switch {
-	case len(units) == 0:
-		// A target without code has a legitimate empty map.
-	case len(units) == 1:
-		// Splitting one unit among parts is not a decision: the one part
-		// takes the target's name.
-		drafts = []designPart{{name: target.Name, refs: []string{units[0].ref}}}
-	case r.dry:
-		outcome.failure = atlas.MapFailureNoModel
-	default:
-		windows, err := r.askParts(ctx, view, round, units)
-		if err != nil {
-			return err
-		}
-		refused := 0
-		for _, window := range windows {
-			if window.err != nil {
-				refused++
-				for _, unit := range window.units {
-					leftOut = append(leftOut, unit.ref)
-				}
-				continue
-			}
-			drawnIndex := map[int]int{}
-			for i, name := range window.partition.names {
-				if len(window.partition.refs[i]) == 0 {
-					continue
-				}
-				drawnIndex[i] = len(drafts)
-				drafts = append(drafts, designPart{name: name, refs: window.partition.refs[i]})
-			}
-			leftOut = append(leftOut, window.partition.leftOut...)
-			for ref, holders := range window.partition.conflicts {
-				var drawn []int
-				for _, holder := range holders {
-					if at, ok := drawnIndex[holder]; ok {
-						drawn = append(drawn, at)
-					}
-				}
-				if len(drawn) == 0 {
-					leftOut = append(leftOut, ref)
-					continue
-				}
-				conflicts[ref] = drawn
-			}
-		}
-		if refused == len(windows) {
-			outcome.failure = atlas.MapFailureRefused
-			drafts, leftOut, conflicts = nil, nil, map[string][]int{}
 		}
 	}
 	// The parts take their compact IDs in target order, each target's in
@@ -1211,17 +712,8 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 			outcome.partOf[ref] = part.id
 		}
 	}
-	// A conflict is offered only the drawn parts that listed it.
-	offered := map[string][]string{}
-	for ref, holders := range conflicts {
-		for _, holder := range holders {
-			offered[ref] = append(offered[ref], drafts[holder].id)
-		}
-	}
-	if err := r.placeUnits(ctx, view, round, outcome, units, leftOut, offered); err != nil {
-		return err
-	}
 	r.drawParts(view, outcome, units)
+	zones := tree.zones(drafts)
 	if err := r.describeParts(ctx, view, round, outcome); err != nil {
 		return err
 	}
@@ -1235,168 +727,11 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 		membership[place] = part
 	}
 	owner.helperOf[target.ID] = helpers
+	owner.treeZones[target.ID] = zones
 	owner.offMap[target.ID] = r.offMapEntries(view, outcome)
+	owner.refusedParts[target.ID] = outcome.refusedParts
 	if outcome.failure != "" {
 		owner.mapFailure[target.ID] = outcome.failure
-	}
-	return nil
-}
-
-// placeUnits asks one closed-choice follow-up for the units the answer left
-// out or listed in two parts, when at least one part was drawn. An unknown,
-// missing or refused choice leaves the unit's declarations off the map with
-// its reason; a box left out leaves its file on the map through its other
-// boxes.
-func (r *reader) placeUnits(ctx context.Context, view *designView, round int, outcome *designOutcome, units []*designUnit, leftOut []string, conflicts map[string][]string) error {
-	reason := map[string]string{}
-	for _, ref := range leftOut {
-		reason[ref] = atlas.OffMapLeftOut
-	}
-	for ref := range conflicts {
-		reason[ref] = atlas.OffMapConflict
-	}
-	var asked []*designUnit
-	for _, unit := range units {
-		if reason[unit.ref] != "" {
-			asked = append(asked, unit)
-		}
-	}
-	defer func() {
-		for _, unit := range asked {
-			if outcome.partOf[unit.ref] == "" {
-				for _, id := range unit.units {
-					outcome.unitReason[id] = reason[unit.ref]
-				}
-			}
-		}
-	}()
-	if len(asked) == 0 || len(outcome.parts) == 0 {
-		return nil
-	}
-	if _, started := r.started[lines.StagePlacement]; !started {
-		r.started[lines.StagePlacement] = time.Now()
-	}
-	byRef := map[string]*designUnit{}
-	rowOf := map[string]string{}
-	for _, unit := range units {
-		byRef[unit.ref] = unit
-		for _, id := range unit.units {
-			rowOf[id] = unit.ref
-		}
-	}
-	rowImports := view.rowImports(units)
-	var catalogue []map[string]any
-	var all []string
-	for _, part := range outcome.parts {
-		var dirs []string
-		for _, ref := range part.refs {
-			dirs = appendUnique(dirs, byRef[ref].dir)
-		}
-		sort.Strings(dirs)
-		catalogue = append(catalogue, map[string]any{"ref": part.id, "name": part.name, "dirs": dirs})
-		all = append(all, part.id)
-	}
-	// A call site reaches a part through the rows it reaches there.
-	counts := view.siteCounts(rowOf)
-	rows := make([]table.Row, 0, len(asked))
-	offered := make([][]string, 0, len(asked))
-	for _, unit := range asked {
-		options := all
-		if holders, ok := conflicts[unit.ref]; ok {
-			options = holders
-		}
-		fields := []table.Field{{Name: "path", Value: unit.path}}
-		if unit.box != "" {
-			fields = append(fields, table.Field{Name: "box", Value: unit.box})
-		}
-		fields = append(fields, table.Field{Name: "units", Value: len(unit.units)})
-		if len(unit.types) > 0 {
-			fields = append(fields, table.Field{Name: "types", Value: unit.types})
-		}
-		if len(unit.functions) > 0 {
-			fields = append(fields, table.Field{Name: "functions", Value: unit.functions})
-		}
-		if len(unit.variables) > 0 {
-			fields = append(fields, table.Field{Name: "variables", Value: unit.variables})
-		}
-		out, in := map[string]int{}, map[string]int{}
-		for pair, count := range counts {
-			if pair[0] == unit.ref && outcome.partOf[pair[1]] != "" {
-				out[outcome.partOf[pair[1]]] += count
-			}
-			if pair[1] == unit.ref && outcome.partOf[pair[0]] != "" {
-				in[outcome.partOf[pair[0]]] += count
-			}
-		}
-		var calls []string
-		for _, part := range all {
-			if out[part] > 0 {
-				calls = append(calls, fmt.Sprintf("-> %s (%d)", part, out[part]))
-			}
-		}
-		for _, part := range all {
-			if in[part] > 0 {
-				calls = append(calls, fmt.Sprintf("%s -> (%d)", part, in[part]))
-			}
-		}
-		if len(calls) > 0 {
-			fields = append(fields, table.Field{Name: "calls", Value: calls})
-		}
-		// Imports are the parts request's, between rows (rowImports): a
-		// whole file's own, and a box's of the files that joined it.
-		imports, importedBy := map[string]bool{}, map[string]bool{}
-		for pair := range rowImports {
-			if pair[0] == unit.ref && outcome.partOf[pair[1]] != "" {
-				imports[outcome.partOf[pair[1]]] = true
-			}
-			if pair[1] == unit.ref && outcome.partOf[pair[0]] != "" {
-				importedBy[outcome.partOf[pair[0]]] = true
-			}
-		}
-		var importLines []string
-		for _, part := range all {
-			if imports[part] {
-				importLines = append(importLines, "-> "+part)
-			}
-		}
-		for _, part := range all {
-			if importedBy[part] {
-				importLines = append(importLines, part+" ->")
-			}
-		}
-		if len(importLines) > 0 {
-			fields = append(fields, table.Field{Name: "imports", Value: importLines})
-		}
-		fields = append(fields, table.Field{Name: "part_options", Value: options})
-		rows = append(rows, table.Row{ID: unit.ref, Fields: fields})
-		offered = append(offered, options)
-	}
-	r.opts.Stage(lines.StagePlacement, fmt.Sprintf("%s: placing %d files and boxes the parts answer left out or listed twice", r.opts.Targets[round-1].Name, len(rows)))
-	answers, err := r.runTableWith(ctx, lines.Placement(), round, []table.Field{{Name: "parts", Value: catalogue}}, rows, nil)
-	if err != nil {
-		return err
-	}
-	position := map[string]int{}
-	for i, unit := range units {
-		position[unit.ref] = i
-	}
-	for i, unit := range asked {
-		choice := ""
-		if answers[i].answer != nil {
-			choice = answers[i].answer["part"]
-		}
-		if !slices.Contains(offered[i], choice) {
-			continue
-		}
-		outcome.partOf[unit.ref] = choice
-		for _, part := range outcome.parts {
-			if part.id == choice {
-				part.refs = append(part.refs, unit.ref)
-			}
-		}
-	}
-	for _, part := range outcome.parts {
-		sort.Slice(part.refs, func(i, j int) bool { return position[part.refs[i]] < position[part.refs[j]] })
 	}
 	return nil
 }
@@ -1416,7 +751,7 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome, units []*de
 	}
 	boxes := map[string]*boxState{}
 	for _, part := range outcome.parts {
-		box := &boxState{id: part.id, targetID: view.targetID, title: part.name, open: true, dir: ".", symbols: map[string]bool{}, test: true}
+		box := &boxState{id: part.id, targetID: view.targetID, title: part.name, line: part.holds, open: true, dir: ".", symbols: map[string]bool{}, test: true}
 		for _, ref := range part.refs {
 			unit := byRef[ref]
 			box.unitIDs = append(box.unitIDs, unit.units...)
@@ -1641,9 +976,9 @@ func (r *reader) partDescribeInput(view *designView, box *boxState) describeInpu
 	return input
 }
 
-// describeParts asks one description per drawn part that is not made only of
-// test code, all at once. A refused description leaves the part in the
-// explicit no-description state; nothing fills it in.
+// describeParts describes only an automatic native part with no catalogue
+// purpose. Accepted responsibility purposes stay unchanged. A refused native
+// description leaves the explicit no-description state.
 func (r *reader) describeParts(ctx context.Context, view *designView, round int, outcome *designOutcome) error {
 	if r.dry {
 		return nil
@@ -1651,7 +986,7 @@ func (r *reader) describeParts(ctx context.Context, view *designView, round int,
 	var boxes []*boxState
 	var calls []llm.Call[description]
 	for _, box := range outcome.boxes {
-		if box.offCanvas() {
+		if box.offCanvas() || box.line != "" {
 			continue
 		}
 		input := r.partDescribeInput(view, box)

@@ -21,7 +21,7 @@ type Alias struct {
 }
 
 // Entry is a function or namespace a shadow-cljs build starts from: a
-// module's :init-fn or :entries, or a node script's :main.
+// module's :init-fn or :entries, a build's :entries, or a node script's :main.
 type Entry struct {
 	Key    string
 	Symbol string
@@ -255,6 +255,13 @@ func (m *Manifest) readShadow(root ednNode) {
 		}
 		if main, ok := pair[1].entry("main"); ok && main.kind == 'y' {
 			build.Entries = append(build.Entries, Entry{Key: "main", Symbol: main.text, Line: main.line})
+		}
+		if entries, ok := pair[1].entry("entries"); ok && entries.kind == '[' {
+			for _, ns := range entries.children {
+				if ns.kind == 'y' {
+					build.Entries = append(build.Entries, Entry{Key: "entries", Symbol: ns.text, Line: ns.line})
+				}
+			}
 		}
 		if modules, ok := pair[1].entry("modules"); ok {
 			for _, module := range modules.pairs() {

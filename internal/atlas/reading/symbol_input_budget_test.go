@@ -13,6 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe"
 	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
@@ -33,8 +34,8 @@ func (c *symbolQuestions) Complete(ctx context.Context, prepared llm.Prepared) (
 // Two of eight declarations are over the categorizer's envelope. Op3
 // registers 400 routes through one outside API, as casdoor's InitAPI does:
 // it is asked once, alone, in its packed form, and answered. Op4 holds 200
-// distinct observations that no packing shortens and cannot fit even at
-// the sparsest density: preparation refuses it with its measured size and
+// distinct observations that no packing shortens and exceed the conservative
+// preparation allowance: preparation refuses it with its measured size and
 // the envelope, and it is never sent. Every other row is asked byte for
 // byte as built, and a warm reading asks nothing.
 func TestSymbolsPackARowOverTheEnvelopeAndRefuseOneThatCannotFit(t *testing.T) {
@@ -80,7 +81,7 @@ func TestSymbolsPackARowOverTheEnvelopeAndRefuseOneThatCannotFit(t *testing.T) {
 	for _, fixture := range []struct {
 		place atlas.Place
 		over  int
-	}{{router, table.ClassifierQuestionBytes}, {large, table.ClassifierQuestionCeiling}} {
+	}{{router, (typesafe.QuestionTokenLimit - 1)}, {large, (typesafe.QuestionTokenLimit - 1)}} {
 		row := lines.SymbolRow(fixture.place, "File svc/core/c.go does things.")
 		alone, err := table.ClassifierCall(closedDecisions(), def, table.Window{Rows: []table.Row{row}})
 		if err != nil {
@@ -93,7 +94,7 @@ func TestSymbolsPackARowOverTheEnvelopeAndRefuseOneThatCannotFit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fits := len(packed.Prompt.User) <= table.ClassifierQuestionBytes; fits != (fixture.place.ID == routerID) {
+		if fits := len(packed.Prompt.User) <= (typesafe.QuestionTokenLimit - 1); fits != (fixture.place.ID == routerID) {
 			t.Fatalf("fixture %s packed is %d bytes", fixture.place.ID, len(packed.Prompt.User))
 		}
 	}
@@ -162,7 +163,7 @@ func TestSymbolsPackARowOverTheEnvelopeAndRefuseOneThatCannotFit(t *testing.T) {
 				t.Fatalf("a row that fits was packed: %s", id)
 			}
 		}
-		if len(request.Questions) > 1 && len(raw) > table.ClassifierBodyBytes {
+		if len(request.Questions) > 1 && len(raw) > (typesafe.RequestTokenLimit-1) {
 			t.Fatal("ordinary neighbours stopped respecting the body budget")
 		}
 	}
@@ -179,7 +180,7 @@ func TestSymbolsPackARowOverTheEnvelopeAndRefuseOneThatCannotFit(t *testing.T) {
 		}
 		refused++
 		if row.Stage != lines.StageSymbols || len(row.Samples) != 1 || row.Samples[0] != largeID ||
-			!strings.Contains(row.Reason, "was not sent: even packed") || !strings.Contains(row.Reason, fmt.Sprintf("over Jev's envelope of %d and %d", table.ClassifierQuestionTokens, table.ClassifierRequestTokens)) {
+			!strings.Contains(row.Reason, "was not sent: even packed") || !strings.Contains(row.Reason, "limit=context_tokens") || !strings.Contains(row.Reason, "jev_request_utf8_reservation") {
 			t.Fatalf("refusal does not record the row, its measured size and the envelope: %+v", row)
 		}
 	}

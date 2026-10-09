@@ -71,6 +71,12 @@ func SaveInput(opts Options) (atlas.Graph, error) {
 	if err != nil {
 		return atlas.Graph{}, err
 	}
+	return saveCanonicalInput(opts, graph, graphJSON)
+}
+
+// saveCanonicalInput is used only with the owned value produced by SealGraph,
+// or the strict DecodeGraph above. It never admits a Graph/byte pair from callers.
+func saveCanonicalInput(opts Options, graph atlas.Graph, graphJSON []byte) (atlas.Graph, error) {
 	input := savedInput{Version: InputVersion, Repository: opts.Repository, Revision: opts.Revision, Graph: graphJSON, Targets: opts.Targets, Budget: opts.Budget}
 	places, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, atlas.GraphFilename))
 	switch {
@@ -238,8 +244,17 @@ func (r *reader) writeWindowResult(window table.Window, answers table.Answers, s
 	}{Stage: window.Stage, Round: window.Round, Source: source, Reason: reason}
 	for i, item := range window.Rows {
 		value := row{ID: item.ID}
-		if place, ok := r.places[item.ID]; ok {
+		if place, ok := r.places[item.ID]; ok && !localRows(table.Definition{Stage: window.Stage}) {
 			value.Path, value.Line = place.Path, place.LineNo
+		}
+		if localRows(table.Definition{Stage: window.Stage}) {
+			for _, field := range append(append([]table.Field(nil), window.Context...), item.Fields...) {
+				if field.Name == "path" || field.Name == "file" {
+					if path, ok := field.Value.(string); ok {
+						value.Path = path
+					}
+				}
+			}
 		}
 		if window.Stage == lines.StageQuestion {
 			for _, field := range item.Fields {

@@ -16,31 +16,19 @@ import (
 const (
 	CompilationVersion = 8
 
-	PreparationVersion = "complete-readmes-agents-exhaustive-candidate-file-tree-shards-v9"
+	PreparationVersion = "complete-readmes-agents-provider-prepared-doc-file-cover-v10"
 	SchemaVersion      = "readme-entry-files-object-independent-members-ignore-extra-fields-v7"
 	ReducerVersion     = "readme-entry-files-independent-known-set-union-v11"
 
-	// MaxRequestBytes is a deterministic shard-packing window, not an
-	// acceptance or transport limit. Larger complete inputs are covered by
-	// deterministic shards; an indivisible shard proceeds to the shared
-	// semantic-record envelope without losing a byte.
-	MaxRequestBytes = 1536 << 10
-	// MaxProviderRequestBytes retains the former prepared-request estimate for
-	// scale comparisons. Ordinary execution uses llm.SemanticRecordByteLimit.
-	MaxProviderRequestBytes = 2*MaxRequestBytes + 64<<10
-	MaxResponseBytes        = llm.ProviderResponseByteLimit
-	MaxOutputTokens         = llm.DefaultMaxOutputTokens
+	MaxResponseBytes = llm.ProviderResponseByteLimit
+	MaxOutputTokens  = llm.DefaultMaxOutputTokens
 
 	// Former local acceptance thresholds are retained only as scale-warning
 	// baselines. Crossing one never truncates or rejects accepted data.
-	AdvisoryAtomicRequestBytes = 1536 << 10
-	AdvisoryResponseBytes      = 64 << 10
-	AdvisoryHypothesisBytes    = 160
-	AdvisoryHypothesesPerClass = 2
-	AdvisoryArtifactBytes      = 1 << 20
+	AdvisoryArtifactBytes = 1 << 20
 )
 
-const executionContract = "repository-guidance-entry-file-classifier-v14"
+const executionContract = "repository-guidance-entry-file-classifier-v15"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -184,7 +172,7 @@ func executionStateValue() any {
 		PreparationSHA256:  sha256Hex([]byte(preparationContract)),
 		SchemaVersion:      SchemaVersion, SchemaSHA256: sha256Hex([]byte(schemaContract)),
 		ReducerVersion: ReducerVersion, ReducerSHA256: sha256Hex([]byte(reducerContract)),
-		MaxRequestBytes: MaxRequestBytes, MaxResponseBytes: MaxResponseBytes,
+		MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: MaxResponseBytes,
 		MaxOutputTokens: MaxOutputTokens,
 	}
 }

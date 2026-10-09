@@ -135,8 +135,8 @@ func TestTargetRefAndCwdAreTrimmedButStillChecked(t *testing.T) {
 	if len(result.MainFlow.Steps) != 2 || result.MainFlow.Steps[0].TargetID != fixture.targetID("alpha") {
 		t.Fatalf("a padded flow target was not trimmed: %+v", result.MainFlow)
 	}
-	if len(rejected) != 2 || !strings.Contains(rejected[0].Reason, `unknown target ref "t9"`) || !strings.Contains(rejected[1].Reason, "cwd") {
-		t.Fatalf("an unknown target or a multi-line cwd was accepted: %+v", rejected)
+	if len(rejected) != 1 || !strings.Contains(rejected[0].Reason, "cwd") {
+		t.Fatalf("unknown target was promoted or a multi-line cwd was accepted: %+v", rejected)
 	}
 }
 

@@ -148,8 +148,8 @@ for(const [index,file] of reports.entries()){
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await open(page,index);
     // A component whose Main flow folds the rest of a way, else any.
-    const owner=await page.evaluate(()=>{const owners=[...document.querySelectorAll('[id^="system-component-"]')].map(n=>n.dataset.owner).filter(id=>document.getElementById(id)?.querySelector(':scope>.component-flow'));
-      return owners.find(id=>document.getElementById(id).querySelector(':scope>.component-flow details.flow-way-rest[data-folded]'))||owners[0]||'';});
+    const owner=await page.evaluate(()=>{const owners=[...document.querySelectorAll('[id^="system-component-"]')].map(n=>n.dataset.owner).filter(id=>rmHasMainFlow(document.getElementById(id)));
+      return owners.find(id=>rmComponentFlowData(document.getElementById(id))?.Flow?.Parts?.length)||owners[0]||'';});
     test.skip(!owner,'no component with a Main flow');
     await page.evaluate(owner=>document.querySelector('[data-map]').readMainFlow(owner),owner);
     await settleColumn(page);
@@ -160,10 +160,12 @@ for(const [index,file] of reports.entries()){
     const names=page.locator(`${flow} .map-flow-step-name[data-decl-key]`).filter({visible:true});
     test.skip(!await names.count(),'no step reads a declaration');
     const name=await rest.count()?rest.locator('.map-flow-step-name[data-decl-key]').first():names.last();
+    const twist=name.locator('xpath=ancestor::li[contains(@class,"flow-step")][1]').locator(':scope>.map-flow-step-twist');
+    if(await twist.count()&&await twist.getAttribute('aria-expanded')!=='true'){await twist.click();await settleColumn(page);}
     await name.evaluate(n=>n.scrollIntoView({block:'center'}));await settleColumn(page);
     // Places are read from the column's top: scrolling a name into view
     // moves the page too.
-    const look=()=>page.evaluate(()=>{const c=document.querySelector('.map-inspector-content');return {height:c.clientHeight,open:[...c.querySelectorAll('[data-main-flow] details')].map(d=>d.open)};});
+    const look=()=>page.evaluate(()=>{const c=document.querySelector('.map-inspector-content');return {height:c.clientHeight,open:[...c.querySelectorAll('[data-main-flow] details')].map(d=>d.open),calls:[...c.querySelectorAll('[data-main-flow] .map-flow-step-twist')].map(b=>b.getAttribute('aria-expanded'))};});
     const place=n=>{const c=n.closest('.map-inspector-content'),edge=c.getBoundingClientRect().top+c.clientTop,b=n.getBoundingClientRect();return {top:b.top-edge,bottom:b.bottom-edge};};
     const before=await look(),left=(await name.evaluate(place)).top,nth=await name.evaluate(n=>[...n.closest('[data-main-flow]').querySelectorAll('.map-flow-step-name')].indexOf(n));
     await name.click();await settleColumn(page);
@@ -171,6 +173,7 @@ for(const [index,file] of reports.entries()){
     await page.locator('.map-main-flow-link').first().click();await settleColumn(page);
     const after=await look();
     expect(after.open,'the Main flow folds as they were left').toEqual(before.open);
+    expect(after.calls,'the step calls as they were left').toEqual(before.calls);
     const back=page.locator(`${flow} .map-flow-step-name`).nth(nth);
     const at=await back.evaluate(place);
     expect(at.top>=0&&at.bottom<=after.height,'the step is in sight').toBe(true);

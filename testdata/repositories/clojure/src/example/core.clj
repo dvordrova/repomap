@@ -224,3 +224,10 @@
 (defn watch-run [name key]
   (when (= (watch-prepare key) 0)
     (watch-execute name)))
+
+;; A parameter vector is source code: its original line break, tab and Unicode
+;; survive the call selecting this arity. The long form's self call recurses.
+(defn greet-multiline
+  ([значение] (greet-multiline значение :ready))
+  ([значение
+	status] (if (= status :ready) значение (greet-multiline значение :ready))))

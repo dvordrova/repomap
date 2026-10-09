@@ -1,4 +1,4 @@
-{{define "map.html"}}<figure class="map{{if .System}} system-canvas{{end}}" data-map data-trace="{{.Trace}}"{{if .Explorer}} data-map-explorer{{end}}{{if .System}} data-system-map{{end}}{{if .Operations}} data-operation-map{{end}}>
+{{define "map.html"}}<figure{{if .System}} id="canvas"{{end}} class="map{{if .System}} system-canvas{{end}}" data-map data-trace="{{.Trace}}"{{if .Explorer}} data-map-explorer{{end}}{{if .System}} data-system-map{{end}}{{if .Operations}} data-operation-map{{end}}>
 {{range .Nodes}}{{$node := .}}{{range .Aliases}}<span id="{{.}}" data-map-alias="{{$node.ID}}" hidden></span>{{end}}{{end}}
 {{if .Operations}}<div class="operation-controls" data-operation-controls hidden>
 <label>{{t "Find an operation"}} <input type="search" data-operation-search placeholder="{{t "Name or description"}}"></label>

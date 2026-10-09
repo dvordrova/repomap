@@ -3,6 +3,7 @@ package corpus
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -473,6 +474,8 @@ func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 	repo := t.TempDir()
 	files := map[string]string{
 		"go.mod":                           "module example.test/generated\n\ngo 1.26\n",
+		"GNUmakefile":                      "all:\ninclude main.mk\n",
+		"main.mk":                          "all: app\n",
 		"main.go":                          "package main\nfunc main() { generated() }\n",
 		"generated.go":                     "// Code generated. DO NOT EDIT.\npackage main\nfunc generated() {}\n",
 		"build/client.ts":                  "export const endpoint = '/generated';\n",
@@ -509,7 +512,7 @@ func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", state, err)
 		}
-		for _, name := range []string{"main.go", "generated.go", "build/client.ts", "dist/models.py", "new/feature.py"} {
+		for _, name := range []string{"main.go", "generated.go", "build/client.ts", "dist/models.py", "new/feature.py", "GNUmakefile", "main.mk"} {
 			id, ok := opened.ID(name)
 			if !ok {
 				t.Fatalf("%s: missing working source %s", state, name)
@@ -545,6 +548,37 @@ func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 		if err := opened.Close(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestRepositoryPathResolvesOnlyTheBoundCheckoutNamespace(t *testing.T) {
+	root := t.TempDir()
+	writeCorpusFile(t, root, "build/main.mk", "all: app\n", 0o600)
+	repository, err := Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	for input, want := range map[string]string{
+		filepath.Join(root, "build", "main.mk"): "build/main.mk",
+		root:                                    ".",
+		"build/../build/main.mk":                "build/main.mk",
+	} {
+		if got, known := repository.RepositoryPath(input); !known || got != want {
+			t.Fatalf("repository mapping %q = %q/%v, want %q", input, got, known, want)
+		}
+	}
+	for _, input := range []string{root + "-neighbour/main.mk", filepath.Join(root, "..", "outside.mk"), "../outside.mk", ""} {
+		if got, known := repository.RepositoryPath(input); known {
+			t.Fatalf("outside path became checkout source: %q -> %q/%v", input, got, known)
+		}
+	}
+	encoded, err := json.Marshal(repository.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(root)) {
+		t.Fatal("local checkout root entered the persisted namespace")
 	}
 }
 

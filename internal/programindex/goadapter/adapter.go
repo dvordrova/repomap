@@ -875,24 +875,26 @@ func (projection *goProjection) guard(value *surfacediscovery.CallGuard) (*progr
 	if err != nil {
 		return nil, err
 	}
-	return &programindex.Guard{Kind: value.Kind, Location: location}, nil
+	condition, when := programindex.GuardCondition(value.Condition, value.When)
+	return &programindex.Guard{Kind: value.Kind, Location: location, Condition: condition, When: when}, nil
 }
 
 // sitesGuard folds the guards of a relation's call sites: one unguarded
 // site, or one the walk did not see, leaves none.
 func (projection *goProjection) sitesGuard(callsites []surfacediscovery.Location) (*programindex.Guard, error) {
-	var folded *surfacediscovery.CallGuard
-	for position, callsite := range callsites {
+	guards := make([]*programindex.Guard, 0, len(callsites))
+	for _, callsite := range callsites {
 		guard, ok := projection.direct.CallGuards[callsite]
 		if !ok {
 			return nil, nil
 		}
-		if position == 0 || folded != nil && (guard.Kind == surfacediscovery.CallGuardBranch && folded.Kind != surfacediscovery.CallGuardBranch) {
-			copied := guard
-			folded = &copied
+		value, err := projection.guard(&guard)
+		if err != nil {
+			return nil, err
 		}
+		guards = append(guards, value)
 	}
-	return projection.guard(folded)
+	return programindex.WeakestGuard(guards), nil
 }
 
 func (projection *goProjection) callPatterns(

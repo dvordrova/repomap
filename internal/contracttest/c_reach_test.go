@@ -52,7 +52,7 @@ func buildCSet(t *testing.T, fixture cFixture, selectors ...string) map[string]p
 // shared functions it never runs, and what that code reads or calls out to
 // stays with the program that runs it.
 func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
 	dump := buildCIndex(t, fixture, "c:tools/dump.c")
@@ -64,14 +64,16 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 		// casts name still run: the table exists before main.
 		// loopNowMs is util/watch.c's clock: neither program reads it, nor
 		// strbuf.c's reservation example (TestCFixtureACallSaysWhatItRunsUnder).
-		{server, []string{"loop.c:loopNowMs", "net.c:netConnect", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
+		{server, []string{"kvd.c:documentedNeighbor", "kvd.c:prototypeNeighbor", "kvd.c:undocumentedNeighbor", "loop.c:loopNowMs", "net.c:netConnect", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbCheckedBranches", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbTrace"}},
 		{client, []string{"loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopMain", "loop.c:loopNowMs", "loop.c:loopProcessEvents",
 			"loop.c:loopSetBeforeSleep", "loop.c:loopStop", "loop.c:oom", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiPoll",
-			"net.c:netListen", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbRewind", "strbuf.c:sbTrace", "strbuf.c:sbTruncate"}},
+			"net.c:netListen", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbCheckedBranches", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbRewind", "strbuf.c:sbTrace", "strbuf.c:sbTruncate"}},
 		// sbRewind and sbTruncate, written on one line, are the server's
 		// freeClient's (TestCDeclarationsWrittenOnOneLineAreReadApart).
-		{dump, []string{"strbuf.c:sbCheckOrAbort", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbRewind", "strbuf.c:sbTrace", "strbuf.c:sbTruncate"}},
+		{dump, []string{"strbuf.c:sbCheckOrAbort", "strbuf.c:sbCheckedBranches", "strbuf.c:sbConsume", "strbuf.c:sbDrainForever", "strbuf.c:sbReserve", "strbuf.c:sbRewind", "strbuf.c:sbTrace", "strbuf.c:sbTruncate"}},
 	} {
+		want.names = append(want.names, "strbuf.c:sbNativeCommon", "strbuf.c:sbNativeDefault")
+		slices.Sort(want.names)
 		if got := cUnreachable(want.index); !reflect.DeepEqual(got, want.names) {
 			t.Errorf("%s never runs %v, want %v", want.index.Target.Name, got, want.names)
 		}
@@ -127,7 +129,7 @@ type kvdPair struct {
 
 func readKvdPair(t *testing.T) kvdPair {
 	t.Helper()
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
 	targets := []facts.TargetInput{{Index: server, Root: "."}, {Index: client, Root: "."}}

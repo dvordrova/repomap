@@ -11,6 +11,15 @@ import (
 // source phrase is the stable key shared by Go templates and browser code.
 // Parameters are inserted as text, once; source names and links are not translated.
 var russianUI = map[string]string{
+	"Groupings not established": "Объединения не установлены",
+	"These are model proposals, not parts of the map. Their original code remains available below.": "Это предложения модели, не части карты. Их исходный код доступен ниже.",
+	"Proposed purpose": "Предложенное назначение",
+	"The model identified independent jobs rather than a common responsibility.": "Модель определила отдельные задачи без общей ответственности.",
+	"The model could not establish a common responsibility for all members.":     "Модель не смогла установить общую ответственность всех участников.",
+	"The common responsibility could not be decided from an accepted answer.":    "Принятый ответ не позволил определить общую ответственность.",
+	"The complete grouping exceeded the model's request capacity.":               "Полное объединение превысило допустимый размер запроса к модели.",
+	"Opening report…": "Открываем отчёт…",
+	"This report could not be opened. Reload the page.": "Не удалось открыть отчёт. Перезагрузите страницу.",
 	// The reading column (31-reading-column.js, owner 2026-09-28).
 	"written by the model":             "написано моделью",
 	"passed as a callback":             "передаётся как колбэк",
@@ -84,6 +93,8 @@ var russianUI = map[string]string{
 	"to {0}":                     "в {0}",
 	"then, back in":              "затем, снова в",
 	"only if":                    "только если",
+	"only if not":                "только если не",
+	"in a case of":               "в ветке выбора по",
 	"or":                         "или",
 	"may call":                   "может вызвать",
 	"hands over":                 "передаёт",

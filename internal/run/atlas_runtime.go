@@ -29,15 +29,16 @@ import (
 type atlasOutcome struct {
 	// DeclarationKeys waits for the lookup pass of the group projection,
 	// read while the tables wait on the models.
-	DeclarationKeys func() (groupindex.DeclarationKeys, error)
-	Graph           atlas.Graph
-	TablesPath      string
-	Atlas           atlas.Atlas
-	Facts           facts.Result
-	Claims          claims.Result
-	Orientation     *orientation.Result
-	Questions       []atlas.QuestionRoute
-	Learning        *atlas.LearningPlan
+	DeclarationKeys   func() (groupindex.DeclarationKeys, error)
+	Graph             atlas.Graph
+	GraphPresentation *atlas.GraphPresentation
+	TablesPath        string
+	Atlas             atlas.Atlas
+	Facts             facts.Result
+	Claims            claims.Result
+	Orientation       *orientation.Result
+	Questions         []atlas.QuestionRoute
+	Learning          *atlas.LearningPlan
 }
 
 // readRepositoryAtlas is the atlas path after every target page has its
@@ -123,12 +124,23 @@ func readRepositoryAtlas(
 	if err != nil {
 		return atlasOutcome{}, err
 	}
+	dirs, files, boundaries := 0, 0, 0
+	for _, place := range graph.Places {
+		switch place.Kind {
+		case atlas.PlaceDirectory:
+			dirs++
+		case atlas.PlaceFile:
+			files++
+		case atlas.PlaceBoundary:
+			boundaries++
+		}
+	}
 	// Seal once: places.json and the reading's saved input share these bytes.
-	sealed, err := atlas.EncodeGraph(graph)
+	sealed, err := atlas.SealGraph(graph)
 	if err != nil {
 		return atlasOutcome{}, err
 	}
-	if err := atlas.WriteGraph(owner.RunDir, sealed); err != nil {
+	if err := sealed.WriteGraph(owner.RunDir); err != nil {
 		return atlasOutcome{}, err
 	}
 	// The group projection looks up the declaration keys of what the atlas
@@ -141,22 +153,13 @@ func readRepositoryAtlas(
 		keyTargets[i] = meta.ID
 	}
 	declarationKeys := startDeclarationKeys(keyTargets, runs)
-	dirs, files, boundaries := 0, 0, 0
-	for _, place := range graph.Places {
-		switch place.Kind {
-		case atlas.PlaceDirectory:
-			dirs++
-		case atlas.PlaceFile:
-			files++
-		case atlas.PlaceBoundary:
-			boundaries++
-		}
-	}
 	options.Output.State("Atlas places", "ready",
 		fmt.Sprintf("directories: %d", dirs), fmt.Sprintf("files: %d", files), fmt.Sprintf("boundaries: %d", boundaries),
 		fmt.Sprintf("edges: %d", len(graph.Edges)), fmt.Sprintf("seeds: %d", len(graph.Seeds)),
 		formatRunOutputWallDuration(time.Since(started)),
 	)
+
+	graph = atlas.Graph{} // Release the unsealed producer before model work.
 
 	var provider llm.Provider
 	if !options.NoModel {
@@ -187,8 +190,8 @@ func readRepositoryAtlas(
 		questions = nil
 		options.Output.State("Questions", "off", "no --learn: skipping generation, retrieval and answers")
 	}
-	result, err := reading.Read(ctx, reading.Options{
-		Graph: graph, SealedGraph: sealed, Targets: metas,
+	result, canonicalGraph, presentation, err := reading.ReadSealed(ctx, reading.Options{
+		Targets:    metas,
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
 		Executor: executor, Provider: provider, Categorizer: options.Categorizer, OwnerRunDir: owner.RunDir,
 		Questions: questions, Learn: options.Learn, NoCaptions: !options.Captions,
@@ -203,8 +206,7 @@ func readRepositoryAtlas(
 			}
 			return content.Bytes, nil
 		},
-		Stage: options.Output.Stage, State: options.Output.State,
-	})
+		Stage: options.Output.Stage, State: options.Output.State}, sealed)
 	if err != nil {
 		return atlasOutcome{}, err
 	}
@@ -226,7 +228,7 @@ func readRepositoryAtlas(
 		))
 	}
 	options.Output.State("Atlas", "ready", details...)
-	return atlasOutcome{DeclarationKeys: declarationKeys, Graph: graph, TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
+	return atlasOutcome{DeclarationKeys: declarationKeys, Graph: canonicalGraph, GraphPresentation: presentation, TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
 }
 
 // startDeclarationKeys reads the runs' declaration keys in the background
@@ -319,23 +321,25 @@ func orientAtlasRuns(
 	outcome *atlasOutcome,
 ) error {
 	firstDay := firstDayOptions{
-		Graph:            outcome.Graph,
-		RepoPath:         options.Repo,
-		RepositoryName:   repoRunLabel(options.Repo),
-		Revision:         options.RepositoryState.Head,
-		Corpus:           options.Corpus,
-		Runs:             runs,
-		CacheRoot:        options.DebugDir,
-		NoCache:          options.NoCache,
-		BatchConcurrency: options.Deps.llmBatchConcurrency,
-		BatchController:  options.Deps.llmBatchController,
-		ProviderFactory:  options.Deps.newCubeProvider,
-		Runner:           options.Deps.runOrientation,
-		Output:           options.Output,
-		Categorizer:      options.Categorizer,
+		Graph:             outcome.Graph,
+		GraphPresentation: outcome.GraphPresentation,
+		RepoPath:          options.Repo,
+		RepositoryName:    repoRunLabel(options.Repo),
+		Revision:          options.RepositoryState.Head,
+		Corpus:            options.Corpus,
+		Runs:              runs,
+		CacheRoot:         options.DebugDir,
+		NoCache:           options.NoCache,
+		BatchConcurrency:  options.Deps.llmBatchConcurrency,
+		BatchController:   options.Deps.llmBatchController,
+		ProviderFactory:   options.Deps.newCubeProvider,
+		Runner:            options.Deps.runOrientation,
+		Output:            options.Output,
+		Categorizer:       options.Categorizer,
 	}
 	orientationResult, rejected, err := runRepositoryOrientation(ctx, firstDay, outcome.Facts, outcome.Claims)
 	outcome.Graph = atlas.Graph{}
+	outcome.GraphPresentation = nil
 	if err != nil {
 		return err
 	}

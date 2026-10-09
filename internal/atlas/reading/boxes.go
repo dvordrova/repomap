@@ -195,6 +195,9 @@ func (r *reader) foldArrows() {
 					continue
 				}
 				for _, call := range place.Symbol.Calls {
+					// A shared file edge cannot supply a target-local call
+					// count. Every located pair is owned by the observations
+					// below, including a call absent from this native view.
 					for _, callee := range call.CalleeIDs {
 						nativePairs[[2]string{r.boxFor(target.ID, place.ID), r.boxFor(target.ID, callee)}] = true
 					}
@@ -235,6 +238,9 @@ func (r *reader) foldArrows() {
 				}
 				from := r.boxFor(target.ID, place.ID)
 				for _, call := range place.Symbol.Calls {
+					if !contains(callTargets(place, call), target.ID) {
+						continue
+					}
 					for _, callee := range call.CalleeIDs {
 						to := r.boxFor(target.ID, callee)
 						if from == "" || to == "" || from == to {
@@ -1273,19 +1279,20 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 		}
 	}
 	handedOn := r.handedOnExchanges(calledAt, callAt)
+	claims := r.factClaimIndex()
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
 		}
 		// A target whose program never runs the declaration does not make
 		// the calls it writes.
-		targets := runningTargets(place)
-		if len(targets) == 0 {
-			continue
-		}
 		decl := place.Symbol.Decl
 		inTest := r.testFile(place.Parent)
 		for _, call := range place.Symbol.Calls {
+			targets := runningCallTargets(place, call)
+			if len(targets) == 0 {
+				continue
+			}
 			// A call to a symbol that talks to another system is that
 			// outgoing boundary at every site; a call to a symbol that
 			// publishes is the listener at every site.
@@ -1301,7 +1308,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			// handler is not established. A call giving no word to a symbol
 			// whose words are an entry at another call may declare one: the
 			// launch walk says it is unsure.
-			if !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
+			if !inTest && !claims.claims(place.Path, call.Line, call.Column) {
 				if len(call.Values) == 0 && r.entering[symbol] {
 					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordNoWords, "")
 				}
@@ -1449,13 +1456,30 @@ func (r *reader) handedOnExchanges(calledAt map[sourceSite]string, callAt map[so
 	return handed
 }
 
-// factClaims reports a call a fact boundary already names, in or out: the
-// SQL statement a query call sends, a registration at the call. A fact with
-// a column names exactly its call, one without a column its whole line.
-func (r *reader) factClaims(path string, line, column int) bool {
+// factClaimIndex is the columns of the fact boundaries by their line: the
+// boundaries the model's answers add are never facts, so it holds through
+// the loop that adds them. A scan of every boundary per call had taken
+// Metabase's reading minutes.
+type factClaimIndex map[sourceSite][]int
+
+func (r *reader) factClaimIndex() factClaimIndex {
+	index := factClaimIndex{}
 	for _, existing := range r.boundaries {
 		p := existing.place
-		if p.Boundary.Source != "model" && p.Path == path && p.LineNo == line && (p.Column == 0 || p.Column == column) {
+		if p.Boundary.Source != "model" {
+			key := sourceSite{p.Path, p.LineNo, 0}
+			index[key] = append(index[key], p.Column)
+		}
+	}
+	return index
+}
+
+// claims reports a call a fact boundary already names, in or out: the SQL
+// statement a query call sends, a registration at the call. A fact with a
+// column names exactly its call, one without a column its whole line.
+func (index factClaimIndex) claims(path string, line, column int) bool {
+	for _, at := range index[sourceSite{path, line, 0}] {
+		if at == 0 || at == column {
 			return true
 		}
 	}
@@ -1475,6 +1499,19 @@ func runningTargets(place atlas.Place) []string {
 		}
 	}
 	return targets
+}
+
+// callTargets retains native observation scope separately from declaration
+// availability. A call without a narrower scope belongs to all holder views.
+func callTargets(place atlas.Place, call atlas.SymbolCall) []string {
+	if len(call.TargetIDs) == 0 {
+		return place.TargetIDs
+	}
+	return intersectTargets(place.TargetIDs, call.TargetIDs)
+}
+
+func runningCallTargets(place atlas.Place, call atlas.SymbolCall) []string {
+	return intersectTargets(runningTargets(place), callTargets(place, call))
 }
 
 // An equal terminal identifier is only a candidate for the model to confirm.

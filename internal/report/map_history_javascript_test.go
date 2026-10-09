@@ -218,7 +218,7 @@ func TestAReadingsFoldsAreRememberedByTheirWords(t *testing.T) {
 	code := systemJSPiece(t, "30-map.js", "function rmFolds(card){", "// \"Expand all\" opens")
 	runSystemJS(t, code+`
 const fold=(words,open)=>({open,closest(){return null;},querySelector(){return {textContent:words};}});
-const card=list=>({querySelectorAll(){return list;}});
+const card=list=>({querySelector(){return null;},querySelectorAll(){return list;}});
 const first=[fold('Called from · 3',true),fold('+2',false),fold('+2',true),fold('Source details',false)];
 const keys=rmOpenFolds(card(first));
 assert.deepEqual(keys,['Called from · 3#1','+2#2']);
@@ -226,5 +226,65 @@ assert.deepEqual(keys,['Called from · 3#1','+2#2']);
 const again=[fold('Calls',false),fold('Called from · 3',false),fold('+2',false),fold('+2',false),fold('Source details',true)];
 rmRestoreFolds(card(again),keys);
 assert.deepEqual(again.map(f=>f.open),[false,true,false,true,false]);
+`)
+}
+
+func TestMainFlowCallsAndTheirEvidenceSurviveReturn(t *testing.T) {
+	code := systemJSPiece(t, "30-map.js", "function rmFolds(card){", "// \"Expand all\" opens")
+	runSystemJS(t, code+`
+const fold=(words,open)=>({open,querySelector(){return {textContent:words};}});
+function reading(states){
+ const evidence=fold('Source details',false),flowFold=fold('Main flow',true);
+ const steps=states.map((expanded,i)=>{
+   const twist={expanded,calls:null,getAttribute(){return String(this.expanded);},captureCalls(){return this.calls;},setExpanded(open,saved){this.expanded=open;if(saved!==undefined)this.calls=saved.slice();if(open&&i===0&&!details.includes(evidence))details.push(evidence);}};
+   return {dataset:{stepPart:'#t16-g23',stepKey:i===2?'another':'bootstrap-main'},closest(){return null;},querySelector(){return twist;},twist};
+ });
+ const details=[flowFold];if(states[0])details.push(evidence);
+ const flow={querySelectorAll(){return steps;}};
+ return {steps,evidence,querySelector(){return flow;},querySelectorAll(){return details;}};
+}
+
+const before=reading([true,false,true]);before.evidence.open=true;
+before.steps[0].twist.calls=['>calls:first','>calls:first>calls:second','\u0000helpers'];
+before.steps[1].twist.calls=['\u0000helpers'];
+const saved=rmOpenFolds(before);
+const after=reading([false,false,false]);rmRestoreFolds(after,saved);
+assert.deepEqual(after.steps.map(s=>s.twist.expanded),[true,false,true],'same declaration repeated independently');
+assert.equal(after.evidence.open,true,'calls are mounted before restoring their evidence');
+assert.deepEqual(after.steps[0].twist.calls,before.steps[0].twist.calls,'serialized nested-call and helper state returns to its own root');
+assert.deepEqual(after.steps[1].twist.calls,['\u0000helpers'],'a closed repeated root keeps its own helper state');
+rmRestoreFolds(after,saved);
+assert.equal(after.querySelectorAll().filter(d=>d===after.evidence).length,1,'return mounts calls once');
+`)
+}
+
+func TestNativeCallTreeRestoresTwoLazyLevelsFromOriginalPaths(t *testing.T) {
+	code := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers=false;", "// The one quiet toggle")
+	runSystemJS(t, fakeElements+`
+El.prototype.querySelectorAll=function(selector){const cls=selector.slice(1);return this.all(e=>e!==this&&e.classList.contains(cls));};
+function rmDotBreaks(e){return e;}
+function rmCallableName(d){return d.name;}
+const rmEndWords={out:{}};
+const data={decls:['entry','first','second','leaf'].map(name=>({key:name,name})),own:[
+ {decl:0,flow:[{decl:1}]},{decl:1,flow:[{decl:2}]},{decl:2,flow:[{decl:3}]}]};
+const ctx={};
+`+code+`
+const tree=rmFlowTree(ctx,data,data.own[0]);
+const rows=()=>tree.all(e=>e.tagName==='DETAILS');
+assert.equal(rows().length,1,'closed call has no fabricated descendants');
+rows()[0].open=true;rows()[0].listeners.toggle();
+assert.equal(rows().length,2,'first native toggle mounts the next call');
+rows()[1].open=true;rows()[1].listeners.toggle();
+const state=tree.captureCalls();
+assert.deepEqual(state,['>calls:first','>calls:first>calls:second']);
+const returned=rmFlowTree(ctx,data,data.own[0],0,state);
+const restored=returned.all(e=>e.tagName==='DETAILS');
+assert.deepEqual(restored.map(r=>r.open),[true,true],'both lazy levels exist open before asynchronous toggle events');
+assert.ok(returned.textContent.includes('leaf'),'deepest call is reachable on return');
+restored.forEach(r=>r.listeners.toggle());
+assert.equal(returned.all(e=>e.tagName==='DETAILS').length,2,'queued toggle events do not duplicate descendants');
+returned.restoreCalls(state);
+assert.deepEqual(returned.captureCalls(),state,'original path state survives redraw');
+assert.equal(returned.all(e=>e.tagName==='DETAILS').length,2,'redraw replaces the original tree once');
 `)
 }

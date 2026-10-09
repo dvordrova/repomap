@@ -109,3 +109,28 @@ func TestKeywordArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestShadowBuildLevelLiteralEntriesKeepOriginalLines(t *testing.T) {
+	text := `{:builds {:app {:target :npm-module
+                        :entries [example.web
+                                  example.service
+                                  "not-a-namespace" :not-a-namespace [example.nested]]}
+                  :computed {:target :npm-module :entries (discover-entries)}
+                  :scalar {:target :npm-module :entries example.scalar}}}`
+	manifest := ReadManifest("shadow-cljs.edn", []byte(text))
+	if len(manifest.Builds) != 3 || !slices.Equal(manifest.Builds[0].Entries, []Entry{
+		{Key: "entries", Symbol: "example.web", Line: 2},
+		{Key: "entries", Symbol: "example.service", Line: 3},
+	}) || len(manifest.Builds[1].Entries) != 0 || len(manifest.Builds[2].Entries) != 0 {
+		t.Fatalf("literal namespace entries: %+v", manifest.Builds)
+	}
+	var rows []Row
+	for _, row := range manifest.Rows("shadow-cljs.edn") {
+		if row.Key == "builds.app.entries" {
+			rows = append(rows, row)
+		}
+	}
+	if !slices.Equal(rows, []Row{{Key: "builds.app.entries", Value: "example.web", Line: 2}, {Key: "builds.app.entries", Value: "example.service", Line: 3}}) {
+		t.Fatalf("original manifest rows: %+v", rows)
+	}
+}

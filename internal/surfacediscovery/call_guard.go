@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
+	"strings"
 )
 
 // CallGuard is the strongest construct of its function a call runs under
@@ -13,10 +15,50 @@ import (
 // a value of the predeclared error type is not nil (`if err != nil`, the else
 // of `if err == nil`, a conjunct of the condition). A call in a condition, a
 // switch's tag or a case's list is in no arm; a function literal's body
-// starts afresh. Location is the construct's.
+// starts afresh. Location is the construct's; Condition the code deciding
+// the arm as written and When the outcome it runs on (ProgramIndex
+// Guard.When): an if's condition, a switch's tag (a tagless switch's case
+// list), the operand before && or ||. A select clause has none.
 type CallGuard struct {
-	Kind     string   `json:"kind"`
-	Location Location `json:"location"`
+	Kind      string   `json:"kind"`
+	Location  Location `json:"location"`
+	Condition string   `json:"condition,omitempty"`
+	When      string   `json:"when,omitempty"`
+}
+
+// The outcomes an arm runs on (ProgramIndex Guard.When).
+const (
+	callGuardHolds   = "holds"
+	callGuardFails   = "fails"
+	callGuardMatches = "matches"
+)
+
+// codeText is a node's code as the repository file writes it, trimmed of
+// surrounding whitespace; empty outside the repository or when unread.
+func (a *analyzer) codeText(node ast.Node) string {
+	if node == nil {
+		return ""
+	}
+	file := a.program.Fset.File(node.Pos())
+	if file == nil || !validRepositoryDirectCallLocation(a.location(node.Pos())) {
+		return ""
+	}
+	name := file.Name()
+	if a.sourceFiles == nil {
+		a.sourceFiles = map[string][]byte{}
+	}
+	source, read := a.sourceFiles[name]
+	if !read {
+		if data, err := os.ReadFile(name); err == nil && len(data) == file.Size() {
+			source = data
+		}
+		a.sourceFiles[name] = source
+	}
+	from, to := file.Offset(node.Pos()), file.Offset(node.End())
+	if source == nil || from < 0 || to > len(source) || from >= to {
+		return ""
+	}
+	return strings.TrimSpace(string(source[from:to]))
 }
 
 // The Go call guard kinds.
@@ -37,15 +79,22 @@ func callGuardStrength(guard *CallGuard) int {
 }
 
 // weakerCallGuard folds two sites of one call edge: an unguarded site
-// leaves none, else the weaker stands.
+// leaves none, else the weaker stands. A condition shared by the folded
+// edge must be written with the same polarity at both sites.
 func weakerCallGuard(a, b *CallGuard) *CallGuard {
 	if a == nil || b == nil {
 		return nil
 	}
+	weakest := a
 	if callGuardStrength(b) < callGuardStrength(a) {
-		return b
+		weakest = b
 	}
-	return a
+	if a.Condition != b.Condition || a.When != b.When {
+		copied := *weakest
+		copied.Condition, copied.When = "", ""
+		return &copied
+	}
+	return weakest
 }
 
 // callGuard is the guard a call site runs under, or nil.
@@ -121,13 +170,19 @@ func (a *analyzer) buildCallGuards() {
 			}
 			return binary.Op == op && (isError(binary.X) && isNil(binary.Y) || isError(binary.Y) && isNil(binary.X))
 		}
-		stronger := func(outer *CallGuard, kind string, at token.Pos) *CallGuard {
+		stronger := func(outer *CallGuard, kind string, at token.Pos, condition ast.Node, when string) *CallGuard {
 			inner := &CallGuard{Kind: kind, Location: a.location(at)}
+			if text := a.codeText(condition); text != "" {
+				inner.Condition, inner.When = text, when
+			}
 			if callGuardStrength(outer) > callGuardStrength(inner) {
 				return outer
 			}
 			return inner
 		}
+		// subject is, while a switch's clauses are walked, its tag (or the
+		// type switch's assignment); nil for a tagless switch.
+		var subject ast.Node
 		var walk func(node ast.Node, guard *CallGuard)
 		walk = func(node ast.Node, guard *CallGuard) {
 			if node == nil {
@@ -149,14 +204,33 @@ func (a *analyzer) buildCallGuards() {
 				if errorTest(n.Cond, token.NEQ) || endsInPanic(n.Body) {
 					kind = CallGuardError
 				}
-				walk(n.Body, stronger(guard, kind, n.Pos()))
+				walk(n.Body, stronger(guard, kind, n.Pos(), n.Cond, callGuardHolds))
 				if n.Else != nil {
 					kind = CallGuardBranch
 					if block, ok := n.Else.(*ast.BlockStmt); errorTest(n.Cond, token.EQL) || ok && endsInPanic(block) {
 						kind = CallGuardError
 					}
-					walk(n.Else, stronger(guard, kind, n.Else.Pos()))
+					walk(n.Else, stronger(guard, kind, n.Else.Pos(), n.Cond, callGuardFails))
 				}
+				return
+			case *ast.SwitchStmt:
+				walk(n.Init, guard)
+				walk(n.Tag, guard)
+				outer := subject
+				subject = nil
+				if n.Tag != nil {
+					subject = n.Tag
+				}
+				walk(n.Body, guard)
+				subject = outer
+				return
+			case *ast.TypeSwitchStmt:
+				walk(n.Init, guard)
+				walk(n.Assign, guard)
+				outer := subject
+				subject = n.Assign
+				walk(n.Body, guard)
+				subject = outer
 				return
 			case *ast.CaseClause:
 				for _, expression := range n.List {
@@ -166,20 +240,33 @@ func (a *analyzer) buildCallGuards() {
 				if endsInPanic(&ast.BlockStmt{List: n.Body}) {
 					kind = CallGuardError
 				}
+				// A tagged switch's case runs on its tag's value; a tagless
+				// one's when its listed condition holds.
+				var condition ast.Node
+				when := callGuardMatches
+				if subject != nil {
+					condition = subject
+				} else if len(n.List) == 1 {
+					condition, when = n.List[0], callGuardHolds
+				}
 				for _, statement := range n.Body {
-					walk(statement, stronger(guard, kind, n.Pos()))
+					walk(statement, stronger(guard, kind, n.Pos(), condition, when))
 				}
 				return
 			case *ast.CommClause:
 				walk(n.Comm, guard)
 				for _, statement := range n.Body {
-					walk(statement, stronger(guard, CallGuardBranch, n.Pos()))
+					walk(statement, stronger(guard, CallGuardBranch, n.Pos(), nil, ""))
 				}
 				return
 			case *ast.BinaryExpr:
 				if n.Op == token.LAND || n.Op == token.LOR {
 					walk(n.X, guard)
-					walk(n.Y, stronger(guard, CallGuardBranch, n.Pos()))
+					when := callGuardHolds
+					if n.Op == token.LOR {
+						when = callGuardFails
+					}
+					walk(n.Y, stronger(guard, CallGuardBranch, n.Pos(), n.X, when))
 					return
 				}
 			case *ast.CallExpr:
@@ -191,7 +278,7 @@ func (a *analyzer) buildCallGuards() {
 					}
 				}
 				if isPanic(n) {
-					inner := stronger(guard, CallGuardError, n.Pos())
+					inner := stronger(guard, CallGuardError, n.Pos(), nil, "")
 					for _, argument := range n.Args {
 						walk(argument, inner)
 					}

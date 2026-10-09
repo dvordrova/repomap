@@ -13,7 +13,7 @@ import (
 // row keeps its decision.
 func TestAMissingVerdictRefusesOnlyItsRow(t *testing.T) {
 	result, err := DecodeClassifierAnswers(closedDefinition(), closedWindow(), map[string]llm.Verdict{
-		"s1|part": chose("Serving", map[string]float64{"Serving": 0.9}),
+		"s1|part": chose("Serving", map[string]float64{"Serving": 0.9, "none": 0.1}),
 	})
 	if err != nil || result.Answers[0]["part"] != "c1" || result.Answers[1] != nil || len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, "not answered") {
 		t.Fatalf("one missing verdict refused its neighbours: %+v / %v", result, err)

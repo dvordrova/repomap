@@ -25,7 +25,7 @@ func TestSharedCodesInterfaceCallIsTheLinkingProgramsWiring(t *testing.T) {
 	var inputs []places.TargetInput
 	ids := map[string]string{}
 	for _, pkg := range []string{goFixtureAppPackage, goFixtureRootPackage + "/cmd/worker"} {
-		authorities := analyzeGoFixture(t, root, repository, pkg, "shared wiring")
+		authorities := sharedGoFixtureAuthorities(t, root, repository, pkg, "shared wiring")
 		index, err := goadapter.Build(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 		if err != nil {
 			t.Fatal(err)

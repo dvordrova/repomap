@@ -32,6 +32,7 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 			continue
 		}
 		entity := &atlas.EntityFacts{Data: facts.CloneData(fact.Data), Name: fact.Symbol, Extractor: fact.Extractor, Status: fact.Value, Files: []string{}}
+		var inventory []atlas.Edge
 		// Code belongs to the programs that hold it, never to a target only
 		// because its root holds the path: a test file no load selects
 		// (`//go:build integration`, another program's test) is no program's.
@@ -45,7 +46,7 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 				for target := range file.targets {
 					targets[target] = struct{}{}
 				}
-				graph.Edges = append(graph.Edges, atlas.Edge{From: "entity:" + fact.ID, To: atlas.FileID(member.Path), Kind: "inventory", Count: 1, Witnesses: []atlas.Witness{},
+				inventory = append(inventory, atlas.Edge{From: "entity:" + fact.ID, To: atlas.FileID(member.Path), Kind: "inventory", Count: 1, Witnesses: []atlas.Witness{},
 					Evidence: &atlas.EdgeEvidence{Label: "file at or beneath referenced path", Path: member.Path, LineNo: 1}})
 			}
 		}
@@ -85,6 +86,9 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 			}
 		}
 		graph.Places = append(graph.Places, place)
+		// An unowned source file can remain in the corpus inventory without
+		// becoming a program's data. Publish its edges only with its entity.
+		graph.Edges = append(graph.Edges, inventory...)
 	}
 	for _, fact := range b.input.Facts.Facts {
 		if fact.Kind != facts.KindRelation || outside[fact.Refs[0]] || outside[fact.Refs[1]] {

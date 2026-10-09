@@ -11,6 +11,7 @@
 import {emphasis,recedes,focusAncestors} from './emphasis.mjs';
 import {overlayAt} from './overlay.mjs';
 import {tileRoom,tileHeader} from './symbols.mjs';
+import {programContents} from './model.mjs';
 
 // What can be entered: a level of its own opens inside it (a program
 // holding nothing has none).
@@ -36,7 +37,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
   const inner=level.at(-1)||'',top=level[0]||'';
   const program=top&&model.nodes.get(top)?.kind==='program'?top:'';
   const rectOf=id=>geometry.boxes.get(id);
-  const frameOf=id=>geometry.scales.get(id)?.frame||rectOf(id);
+  const frameOf=id=>['area','program'].includes(model.nodes.get(id)?.kind)?rectOf(id):geometry.scales.get(id)?.frame||rectOf(id);
   const box=(id,display,rect,text,extra={})=>{
     const node=model.nodes.get(id);
     nodes.push({id,kind:node?.kind||'',display,rect,text,band:display==='frame'?bands.frame:bands.box,
@@ -53,9 +54,9 @@ export function sceneAt(model,geometry,level=[],selection={}){
     text=inner?geometry.text.get(inner)||unit:unit;
     for(const id of model.roots){
       const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
-      // A program's card holds its drawing's outline: where its areas and
-      // loose parts stand, seen once the card is drawn large.
-      if(node.kind==='program')box(id,'program',rect,geometry.programText||unit,{ghosts:node.children.map(child=>rectOf(child)).filter(Boolean)});
+      // The closed component names every existing area and loose part.
+      if(node.kind==='program')box(id,'program',rect,geometry.programText||unit,
+        {contents:programContents(model,node),inventoryHeight:geometry.programInventoryHeights.get(id)});
       else if(node.kind==='inputs'){
         // Closed: its kinds' marks in a row under its title, each read alone.
         if(!open.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
@@ -105,29 +106,33 @@ export function sceneAt(model,geometry,level=[],selection={}){
   // program's text, their words as large as their cards (owner,
   // 2026-10-02: litestream's loose "Replica client backends" had read at
   // the area's text in a card twice its parts' size, four fifths empty).
-  const programNode=model.nodes.get(program),partText=geometry.scales.get(program)?.scale||1;
+  const partText=geometry.scales.get(program)?.scale||1;
   const own=geometry.text.get(program)||partText;
-  text=level.length>1?geometry.text.get(level[1])||partText:own;
+  const open=new Set(level);
+  const deepestArea=[...level].reverse().find(id=>model.nodes.get(id)?.kind==='area');
+  text=geometry.text.get(deepestArea||program)||own;
   box(program,'frame',frameOf(program),own,{program:true});
-  for(const child of programNode.children){
-    const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
-    if(node.kind==='area'&&level[1]===child){
-      box(child,'frame',frameOf(child),text,{area:true,lane:node.item?.lane||''});
-      for(const part of node.children){
-        if(!rectOf(part))continue;
-        box(part,level[2]===part?'deep':'card',rectOf(part),text,{lane:model.nodes.get(part).item?.lane||'',ghosts:tilesOf(part)});
-        if(level[2]!==part)markersFor(part);else deepFor(part);
+  function drawChildren(container){
+    const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;
+    for(const child of parent.children){
+      const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
+      if(node.kind==='area'&&open.has(child)){
+        box(child,'frame',frameOf(child),geometry.text.get(child)||localText,{area:true,lane:node.item?.lane||''});
+        drawChildren(child);
+      }else if(node.kind==='area'){
+        box(child,'area',rect,localText,{lane:node.item?.lane||'',contents:programContents(model,node),inventoryHeight:geometry.areaInventoryHeights.get(child)});
+        markersFor(child,localText);
+      }else{
+        box(child,open.has(child)?'deep':'card',rect,localText,{lane:node.item?.lane||''});
+        if(open.has(child))deepFor(child);else markersFor(child);
       }
-      for(const route of geometry.routes.get(child)||[])edges.push(edgeOf(route,model,new Set([...looked,...node.children])));
-    }else if(node.kind==='area'){
-      // A closed area shows where its parts stand, never a blank box.
-      box(child,'area',rect,own,{lane:node.item?.lane||'',ghosts:node.children.map(id=>rectOf(id)).filter(Boolean)});markersFor(child,own);
     }
-    else{box(child,level[1]===child?'deep':'card',rect,own,{lane:node.item?.lane||'',ghosts:tilesOf(child)});if(level[1]!==child)markersFor(child,own);else deepFor(child);}
+    const lookedHere=new Set([...looked,...parent.children.filter(id=>open.has(id))]);
+    if(container!==program)for(const child of parent.children)lookedHere.add(child);
+    for(const route of geometry.routes.get(container)||[])edges.push(edgeOf(route,model,lookedHere));
   }
-  // A program's own arrows; those of the area entered count as looked at.
-  const lookedHere=new Set([...looked,...(level[1]?[level[1]]:[])]);
-  for(const route of geometry.routes.get(program)||[])edges.push(edgeOf(route,model,lookedHere));
+  drawChildren(program);
+
   for(const port of geometry.ports.get(program)||[])
     ports.push({id:port.id,programs:port.programs,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
   return finish();
@@ -140,16 +145,6 @@ export function sceneAt(model,geometry,level=[],selection={}){
     const {grid,box:card}=drawn,s=r.width/card.width,{inset,columnGap:gap}=tileRoom;
     return {x:r.x+s*(1+(inset+row.column*(grid.tileWidth+gap))/grid.divisor),
       y:r.y+s*(1+tileHeader(grid.divisor)+(inset+row.y)/grid.divisor),width:s*grid.tileWidth/grid.divisor,height:s*row.height/grid.divisor};
-  }
-  // A closed part's card holds its declarations' outline, as a program's
-  // card holds its parts' (owner via the coordinator, 2026-10-03): seen
-  // while its words cannot fill it, drawn larger than they may grow or too
-  // small to read (scene.css .scene-part-ghosts). Its top tiles only, a
-  // type's members inside its own.
-  function tilesOf(id){
-    const drawn=geometry.grids.get(id),r=rectOf(id),symbols=model.nodes.get(id)?.item?.symbols||[];
-    if(!drawn||!r)return [];
-    return symbols.flatMap((symbol,index)=>{const row=drawn.grid.rows[index];return row&&!symbol.owner?[tileRect(r,drawn,row)]:[];});
   }
   function deepFor(id){
     const drawn=geometry.grids.get(id),r=rectOf(id);

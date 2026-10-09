@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/cproject"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -181,20 +182,46 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	}
 
 	server := fixture.program(t, "c:kvd")
-	serverRule, _ := fixture.at(t, "Makefile", "kvd: kvd.o", "")
-	if server.Kind != cproject.ProgramExecutable || server.Closure || server.Anchor != (cproject.Site{Path: "Makefile", Line: serverRule}) ||
+	serverRule, _ := fixture.at(t, "build/main.mk", "kvd: kvd.o", "")
+	manifestRef, _ := fixture.repository.ID("Makefile")
+	fragmentRef, _ := fixture.repository.ID("build/main.mk")
+	if server.Kind != cproject.ProgramExecutable || server.Closure || server.Anchor != (cproject.Site{Path: "build/main.mk", Line: serverRule}) ||
+		server.AnchorFileRef != string(fragmentRef) || server.Manifest != "Makefile" || server.ManifestFileRef != string(manifestRef) ||
 		!reflect.DeepEqual(cSpecPaths(server.Units), []string{"kvd.c", "loop.c", "net.c", "strbuf.c"}) || !reflect.DeepEqual(server.LinkArgs, []string{"-pthread"}) {
 		t.Fatalf("kvd: %+v", server)
 	}
-	if len(server.Evidence) != 1 || server.Evidence[0].Kind != "c_link" || server.Evidence[0].Fields["output"] != "kvd" {
+	if len(server.Evidence) != 1 || server.Evidence[0].Kind != "c_link" || server.Evidence[0].Fields["output"] != "kvd" || server.Evidence[0].Path != "build/main.mk" || server.Evidence[0].Line != serverRule {
 		t.Fatalf("kvd evidence: %+v", server.Evidence)
 	}
 	client := fixture.program(t, "c:kvcli")
-	clientRule, _ := fixture.at(t, "Makefile", "kvcli: kvcli.o", "")
+	clientRule, _ := fixture.at(t, "build/main.mk", "kvcli: kvcli.o", "")
 	// The client links the server's event loop too, as redis-cli links
 	// adlist.o, and never runs it.
-	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "loop.c", "net.c", "repl.c", "strbuf.c"}) {
+	if client.Anchor != (cproject.Site{Path: "build/main.mk", Line: clientRule}) || client.Manifest != "Makefile" || client.ManifestFileRef != string(manifestRef) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "loop.c", "net.c", "repl.c", "strbuf.c"}) {
 		t.Fatalf("kvcli: %+v", client)
+	}
+	projected, err := cproject.Index(fixture.repository, fixture.parsed[server.Selector])
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(projected.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.Target.AnchorFileRef != string(manifestRef) || !slices.ContainsFunc(index.Target.Sources, func(source programindex.TargetSource) bool {
+		return source.Path == "Makefile" && source.FileRef == string(manifestRef)
+	}) || !slices.ContainsFunc(index.Target.Sources, func(source programindex.TargetSource) bool {
+		return source.Path == "build/main.mk" && source.FileRef == string(fragmentRef)
+	}) {
+		t.Fatalf("native source site replaced its owning target manifest: %+v", index.Target)
+	}
+	assertNativeAdjacentCommentOwners(t, fixture.root, fixture.repository, index, "kvd.c", "documentedNeighbor", "undocumentedNeighbor")
+	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(layer.Targets) != 1 || layer.Targets[0].Root != "." || layer.Targets[0].Manifest != "Makefile" {
+		t.Fatalf("included source changed invocation root/manifest: %+v", layer.Targets)
 	}
 	// Every unit keeps the flags that change what clang reads and drops
 	// optimisation, debug and warnings.
@@ -461,6 +488,9 @@ func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
 // never the one beside it; selftest's wireEscape is escape.c's, which
 // libwire.a archives with encode.c, never escape_none.c beside them.
 func TestCFixtureReadsADirectorysOwnMakefile(t *testing.T) {
+	// The expected flags come from this fixture's makefiles. Make's implicit
+	// object rule also reads the developer's ambient preprocessor flags.
+	t.Setenv("CPPFLAGS", "")
 	fixture := loadCFixture(t)
 	var runs []string
 	for _, build := range fixture.project.Nested {

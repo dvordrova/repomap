@@ -56,8 +56,7 @@ export const invariants=[
   ['marker-size','ports and markers are 20-28 px at every camera, one size per level',{phase:'sizes',none:'no port or marker in sight'}],
   ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box',{phase:'markers',none:'no marker in sight'}],
   ['titles','titles at one level within ±10% of their median',{phase:'titles',none:'fewer than two titles in sight'}],
-  ['title-sight','a frame whose body is in sight has its title wholly in sight, and on the whole map so does a closed program or Inputs box',{phase:'titles',none:'no frame or closed box in sight'}],
-  ['name-sight','a closed card, program or part-group whose part in sight can hold its words shows them wholly in sight',{phase:'titles',none:'no closed box partly in sight'}],
+  ['word-anchor','card words and frame titles stay anchored to their own box during pan',{phase:'titles',none:'no words drawn'}],
   ['dark-top','dark arrows are drawn after grey ones',{phase:'cards',none:'no arrow turned dark while pointed at'}],
   ['cards','every arrow opens its card when pointed at',{phase:'cards',none:'no arrow in sight to point at'}],
   ['no-labels','no digit, plaque or kind label on the canvas',{phase:'texts',none:'no text in sight'}],
@@ -164,7 +163,7 @@ export function invariantKit(){
     // target, its head pointing in, sharing no run, in the level's frame.
     // `skip` maps the arrows already checked to their paths: pointed at a
     // port or marker, only the lines it adds or redraws are checked again.
-    arrows(frame,skip=null){
+    arrows(frame,skip=null,{all=false}={}){
       const cam=camera(),c=canvas(),nodes=geometry(),parent=new Map((nodes||[]).map(n=>[n.id,n.parentId||'']));
       const result={};const add=(name,ok,example)=>{const r=result[name]||={checked:0,failed:0,examples:[]};r.checked++;if(!ok){r.failed++;if(r.examples.length<8)r.examples.push(example);}};
       const rectOf=id=>{const el=nodeEl(id);return el&&shown(el)?box(el.getBoundingClientRect()):null;};
@@ -181,7 +180,7 @@ export function invariantKit(){
       const drawn=[];
       for(const g of edges()){
         const path=line(g);if(!path||!shown(g)||!shown(path))continue;
-        const r=box(path.getBoundingClientRect());if(!inSight({l:r.l-1,t:r.t-1,r:r.r+1,b:r.b+1}))continue;
+        const r=box(path.getBoundingClientRect());if(!all&&!inSight({l:r.l-1,t:r.t-1,r:r.r+1,b:r.b+1}))continue;
         const subs=polylines(path.getAttribute('d'),cam,c).filter(points=>points.length>1);if(!subs.length)continue;
         const ends=(g.dataset.edgeEnds||'').split(/\s+/).filter(Boolean),from=ends[0]||'',to=ends.at(-1)||'';
         const marked=a=>{const v=path.getAttribute(a)||getComputedStyle(path)[a==='marker-end'?'markerEnd':'markerStart'];return !!v&&v!=='none';};
@@ -292,40 +291,10 @@ export function invariantKit(){
       }
       return out;
     },
-    // Frames (and, on the whole map, closed program and Inputs boxes) whose
-    // body is in sight, each with whether its title is wholly in sight: its
-    // own, or the one the overlay names at the canvas's top, and no other
-    // name the overlay places there covers it.
-    titleSight(home){
-      const c=canvas(),out=[];
-      const stuck=[...root().querySelectorAll('[data-stuck-title]')].filter(shown).map(el=>[el,el.getBoundingClientRect()]);
-      const covered=(el,r)=>stuck.some(([s,q])=>s!==el&&Math.min(r.right,q.right)-Math.max(r.left,q.left)>2&&Math.min(r.bottom,q.bottom)-Math.max(r.top,q.top)>2);
-      const inside=(el,r)=>r.left>=c.l-1&&r.right<=c.r+1&&r.top>=c.t-1&&r.bottom<=c.b+1&&!covered(el,r);
-      const nodes=[...root().querySelectorAll('.react-flow__node-frame'+(home?',.react-flow__node-program,.react-flow__node-inputs':''))].filter(shown);
-      for(const n of nodes){
-        const r=n.getBoundingClientRect();
-        if(Math.min(r.right,c.r)-Math.max(r.left,c.l)<80||Math.min(r.bottom,c.b)-Math.max(r.top,c.t)<40)continue;
-        const id=n.dataset.id,q=CSS.escape(id);
-        const own=n.querySelector(`[data-box-title="${q}"]`),named=root().querySelector(`[data-stuck-title="${q}"]`);
-        const ok=[own,named].some(el=>shown(el)&&inside(el,el.getBoundingClientRect()));
-        out.push({id,ok,title:(own?.textContent||'').trim().slice(0,30)});
-      }
-      return out;
-    },
-    // Closed cards, programs' cards and part-groups cut by the canvas's
-    // edge whose part in sight can hold their words, each with whether its
-    // words stand wholly in sight (scene-canvas.jsx useWordsInSight).
-    nameSight(){
-      const c=canvas(),inside=r=>r.left>=c.l-1&&r.right<=c.r+1&&r.top>=c.t-1&&r.bottom<=c.b+1,out=[];
-      for(const n of [...root().querySelectorAll('.react-flow__node-card,.react-flow__node-area,.react-flow__node-program,.react-flow__node-bucket')].filter(shown)){
-        const words=n.querySelector('.scene-words,.scene-bucket-words'),name=n.querySelector('[data-box-title],.flow-chip-name');
-        if(!words||!name||!shown(name))continue;
-        const r=n.getBoundingClientRect(),w=words.getBoundingClientRect();
-        if(inside(r))continue;
-        const across=Math.min(r.right,c.r)-Math.max(r.left,c.l),down=Math.min(r.bottom,c.b)-Math.max(r.top,c.t);
-        if(across<w.width+20||down<w.height+20)continue;
-        out.push({id:n.dataset.id,ok:inside(w),title:name.textContent.trim().slice(0,30)});
-      }
+    wordAnchor(){
+      const out=[...root().querySelectorAll('.scene-words,.scene-bucket-words,.scene-frame-title-place')].map(el=>({
+        id:el.closest('.react-flow__node')?.dataset.id,ok:getComputedStyle(el).transform==='none',title:el.textContent.trim().slice(0,30)}));
+      for(const el of root().querySelectorAll('[data-stuck-title]'))out.push({id:el.dataset.stuckTitle,ok:false,title:'screen-pinned duplicate'});
       return out;
     },
     // Each program on the whole map by its name as drawn at rest: present,

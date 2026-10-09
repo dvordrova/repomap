@@ -108,6 +108,8 @@ type pageSection struct {
 	TestFiles  []pageOffMapRow
 	OffMap     []pageOffMapRow
 	MapFailure string
+	// RefusedParts retain unaccepted model groupings beside their original code.
+	RefusedParts []pageRefusedPart
 	// OffMapEntries are the program's launch points no part holds, with why
 	// (GroupsIndex's Entries): the map then draws no entry part, and the
 	// component's reading names them.
@@ -153,6 +155,20 @@ type pageOffMapRow struct {
 	Members []pageChip
 }
 
+// pageRefusedPart is a provisional model claim the common-purpose question
+// did not accept. Its sources remain ordinary subjects, never substitute groups.
+type pageRefusedPart struct {
+	Name, Holds, Reason string
+	Members             []pageChipRow
+}
+
+var refusedPartReasons = map[string]string{
+	"independent_jobs": "The model identified independent jobs rather than a common responsibility.",
+	"not_established":  "The model could not establish a common responsibility for all members.",
+	"decision_refused": "The common responsibility could not be decided from an accepted answer.",
+	"over_envelope":    "The complete grouping exceeded the model's request capacity.",
+}
+
 // offMapReasons are the reader's words for why a file is off the map.
 var offMapReasons = map[string]string{
 	"left_out":    "Left out of the parts",
@@ -177,6 +193,10 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		return
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
+	for _, proposal := range index.RefusedParts {
+		members, _ := builder.memberChips(index.Target.ID, proposal.SubjectIDs)
+		section.RefusedParts = append(section.RefusedParts, pageRefusedPart{Name: proposal.Name, Holds: proposal.Holds, Reason: refusedPartReasons[proposal.Reason], Members: members})
+	}
 	section.EntryPart, section.EntrySource = builder.entryLanding(section.ID, index)
 	section.EntryGroup = entryGroup(index)
 	offEntries := map[string]bool{}
@@ -447,7 +467,7 @@ type pageFlowStep struct {
 	// and BackIf the condition its call is written under: "then, back in
 	// luaD_call, only if (ldo.c:377): luaV_execute".
 	Back   *pageStepName
-	BackIf *pageAnchor
+	BackIf *pageGuard
 	Fork   *pageFlowFork
 	// Passed, on a step where the walk decided a split, are the candidates
 	// the path did not follow, read folded under "also calls:"; Handed,
@@ -909,7 +929,7 @@ func (builder *pageBuilder) unreachedRows(programTargetID string) []pageChipRow 
 	if builder.data.ProgramPortfolio == nil {
 		return nil
 	}
-	for _, index := range builder.data.ProgramPortfolio.Entries {
+	for _, index := range builder.nativeTargets(programTargetID) {
 		if index.Target.ID != programTargetID {
 			continue
 		}
@@ -962,29 +982,8 @@ func (builder *pageBuilder) runByJoin() *runByOthers {
 	if builder.runBy != nil {
 		return builder.runBy
 	}
-	join := &runByOthers{programs: make(map[string][]string), keys: make(map[string]string)}
+	join := builder.nativeCatalogue().runBy
 	builder.runBy = join
-	if builder.data.ProgramPortfolio == nil {
-		return join
-	}
-	for _, index := range builder.data.ProgramPortfolio.Entries {
-		if !slices.ContainsFunc(index.Objects, func(object programindex.Object) bool { return object.Unreachable }) {
-			continue
-		}
-		for _, object := range index.Objects {
-			key := groupindex.DeclarationKey(object)
-			if key == "" || !object.Kind.Callable() {
-				continue
-			}
-			if object.Unreachable {
-				join.keys[subjectKey(index.Target.ID, object.ID)] = key
-				continue
-			}
-			if !slices.Contains(join.programs[key], index.Target.ID) {
-				join.programs[key] = append(join.programs[key], index.Target.ID)
-			}
-		}
-	}
 	return join
 }
 
@@ -1203,16 +1202,7 @@ func (builder *pageBuilder) packageOwners() []packageOwner {
 	if builder.owners != nil {
 		return builder.owners
 	}
-	byTarget := make(map[string][]string)
-	if builder.data.ProgramPortfolio != nil {
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
-			for _, object := range entry.Objects {
-				if object.Kind == programindex.ObjectPackage || object.Kind == programindex.ObjectModule {
-					byTarget[entry.Target.ID] = append(byTarget[entry.Target.ID], object.Name)
-				}
-			}
-		}
-	}
+	byTarget := builder.nativeCatalogue().packages
 	builder.owners = make([]packageOwner, 0, len(builder.sections))
 	for _, section := range builder.sections {
 		packages := append([]string(nil), byTarget[section.programTargetID]...)
@@ -1351,7 +1341,7 @@ func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]
 		seen[key] = struct{}{}
 		chip := pageChip{
 			Name: name, Line: anchor.Line, Anchor: *anchor,
-			Doc: builder.docstringFor(anchor.Path, anchor.Line), objectID: id,
+			Doc: builder.docstringFor(anchor.Path, anchor.Line, anchor.Column), objectID: id,
 		}
 		if ref.subject.Interpretation != nil {
 			chip.Summary = ref.subject.Interpretation.Line
@@ -1626,29 +1616,43 @@ func laneShare(index groupindex.Index, group groupindex.Group) int {
 	return len(group.MemberSubjectIDs) * 100 / len(index.Subjects)
 }
 
-// docstringReach is how far above a declaration its docstring may start.
-// A Go doc comment sits directly above; a long one starts a dozen lines up.
+// docstringReach bounds the legacy fallback for quotes without an exact owner.
+// Native-bound comments use their declaration line regardless of this distance.
 const docstringReach = 12
 
 // docstringFor is the docstring written above the symbol declared at this
 // line of this file, if one was quoted into the claims. A C docstring names
 // the declaration it sits on, the same rule places reads it with, so a C
 // file's description or a comment above a prototype is no symbol's.
-func (builder *pageBuilder) docstringFor(path string, line int) string {
+func (builder *pageBuilder) docstringFor(path string, line int, column ...int) string {
 	if claims.CPath(path) {
-		return claims.CDocstring(builder.docstrings[path], line, builder.declarations[path])
+		return claims.CDocstring(builder.docstrings[path], line, builder.declarations[path], column...)
 	}
-	return nearestDocstring(builder.docstrings[path], builder.declarations[path], line)
+	if claims.JSTSPath(path) || claims.ClojurePath(path) {
+		for _, doc := range builder.docstrings[path] {
+			if doc.DeclarationLine != 0 && doc.DeclarationLine == line && doc.DeclarationColumn > 0 && len(column) > 0 && doc.DeclarationColumn == column[0] {
+				return doc.Text
+			}
+		}
+		return ""
+	}
+	return nearestDocstring(builder.docstrings[path], builder.declarations[path], line, column...)
 }
 
-// nearestDocstring picks, from a file's docstrings in line order, the last
-// one that starts above the line and within reach of it — and belongs to
-// this symbol and not to one declared between them. Matched by reach alone,
-// the sentence above adminRouter was also NewRouter's, declared nine lines
-// below it.
-func nearestDocstring(docs []claims.Claim, declarations []int, line int) string {
+// nearestDocstring first reads exact declaration ownership. For unbound legacy
+// quotes it uses the last nearby quote with no declaration between it and this
+// symbol; bound quotes never participate in that fallback.
+func nearestDocstring(docs []claims.Claim, declarations []int, line int, column ...int) string {
+	for _, doc := range docs {
+		if doc.DeclarationLine != 0 && doc.DeclarationLine == line && (doc.DeclarationColumn == 0 || len(column) > 0 && doc.DeclarationColumn == column[0]) {
+			return doc.Text
+		}
+	}
 	found := ""
 	for _, doc := range docs {
+		if doc.DeclarationLine != 0 {
+			continue
+		}
 		if doc.Line > line {
 			break
 		}
@@ -1768,8 +1772,10 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 // ("never returns", "on an error path", "only under a condition") and the
 // construct's place, a link into the code.
 type pageGuard struct {
-	Key string
-	At  *pageAnchor
+	Key          string
+	ConditionKey string
+	Condition    string
+	At           *pageAnchor
 }
 
 // pageOwnCall is one call an entry makes itself: its name linked to where
@@ -1844,6 +1850,7 @@ func (builder *pageBuilder) ownCalls(programTargetID, objectID string) ([]pageOw
 // callRelations are a program's call relations (its own code's and code
 // outside it) by caller, in written order, read once a program.
 func (builder *pageBuilder) callRelations(programTargetID string) map[string][]programindex.Relation {
+	builder.activateNativeScope(programTargetID)
 	if builder.callsFrom == nil {
 		builder.callsFrom = map[string]map[string][]programindex.Relation{}
 	}
@@ -1852,7 +1859,7 @@ func (builder *pageBuilder) callRelations(programTargetID string) map[string][]p
 	}
 	from := map[string][]programindex.Relation{}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
-		for _, entry := range builder.data.ProgramPortfolio.Entries {
+		for _, entry := range builder.nativeTargets(programTargetID) {
 			if entry.Target.ID != programTargetID {
 				continue
 			}
@@ -1874,6 +1881,7 @@ func (builder *pageBuilder) callRelations(programTargetID string) map[string][]p
 // objectNames are a program's declarations' names by object ID, an
 // external symbol's by its last path element, read once a program.
 func (builder *pageBuilder) objectNames(programTargetID string) map[string]string {
+	builder.activateNativeScope(programTargetID)
 	if builder.namesOf == nil {
 		builder.namesOf = map[string]map[string]string{}
 	}
@@ -1881,7 +1889,7 @@ func (builder *pageBuilder) objectNames(programTargetID string) map[string]strin
 		return names
 	}
 	names := map[string]string{}
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
+	for _, entry := range builder.nativeTargets(programTargetID) {
 		if entry.Target.ID != programTargetID {
 			continue
 		}

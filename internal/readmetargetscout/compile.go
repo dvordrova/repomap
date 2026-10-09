@@ -15,7 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const preparationContract = "complete canonical corpus FileID-to-path authority restricted to candidate entry files: no prose file and no .claude, .github or .vscode tree; complete current bytes of every tracked regular README and AGENTS.md; aggregate compilation never size-rejected; deterministic guidance-group by file-group product covers every guidance byte against every candidate file through lossless path-component-tree requests; former packing windows never reject an indivisible document or file row; an indivisible prepared request is terminal only after crossing the shared semantic-record envelope; no semantic filtering, truncation, prefix selection, or partial result-v9"
+const preparationContract = "complete canonical corpus FileID-to-path authority restricted to candidate entry files: no prose file and no .claude, .github or .vscode tree; complete current bytes of every tracked regular README and AGENTS.md; aggregate compilation never size-rejected; actual provider preparation and adaptive document-by-file rectangles cover every complete guidance document against every candidate file through lossless path-component-tree requests; no fixed packing windows; an indivisible prepared document-and-file request is terminal only at the actual provider envelope; shard absence never proves global uniqueness; no semantic filtering, truncation, prefix selection, or partial result-v10"
 
 // HasGuidanceFiles is the cheap metadata-only applicability check. Compile
 // repeats the authoritative check while building its exact request.
@@ -33,7 +33,7 @@ func HasGuidanceFiles(repository *corpus.Corpus) bool {
 
 // Compile captures the complete aggregate evidence authority. It never drops
 // or rejects repository facts merely because their combined encoding is larger
-// than one provider request; Batches creates the exhaustive bounded exchange.
+// than one provider request; Run creates the exhaustive provider-prepared exchange.
 // Only candidate entry files enter the authority: prose files and the
 // excluded configuration trees can never be the entry the guidance names.
 func Compile(

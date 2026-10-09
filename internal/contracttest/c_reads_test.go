@@ -47,7 +47,7 @@ func cReads(t *testing.T, index programindex.Index) map[string][]string {
 // staticsyms.h's, and each program's lookupCommand its own command table.
 // The variable itself as the destination of = is written, not read.
 func TestCFixtureReadsFileScopeVariables(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	site := func(path, needle, within string) string {
 		line, _ := fixture.at(t, path, needle, within)
 		return strconv.Itoa(line)

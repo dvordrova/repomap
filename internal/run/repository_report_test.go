@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -218,10 +219,14 @@ func orientationPresetOptions(
 	}
 }
 
-// The report is assembled while the orientation is asked; the published
-// page still carries the orientation that was accepted.
-func TestOrientationAskedBesideTheReportAssemblyReachesThePage(t *testing.T) {
+// The report is assembled after orientation; the complete published page
+// still carries the orientation that was accepted.
+func TestOrientationBeforeReportAssemblyReachesThePage(t *testing.T) {
 	root, runs, inventory := repositoryReportRunsFixture(t, 2)
+	wantGroups := make([]groupindex.Overlay, len(runs))
+	for i := range runs {
+		wantGroups[i] = groupindex.OverlayFromIndex(runs[i].GroupIndex.Snapshot())
+	}
 	const summary = "Two fixture parts that the orientation preset summarizes."
 	options := orientationPresetOptions(root, func(
 		_ context.Context, _ llm.Executor, _ llm.Provider, input orientation.Input,
@@ -240,16 +245,48 @@ func TestOrientationAskedBesideTheReportAssemblyReachesThePage(t *testing.T) {
 	if data := receipt.Data(); data.Orientation == nil || data.Orientation.Summary != summary {
 		t.Fatalf("published orientation = %+v", receipt.Data().Orientation)
 	}
+	for _, run := range runs {
+		if !reflect.DeepEqual(run.GroupIndex, groupindex.Index{}) {
+			t.Fatal("publication retained the original group set beside its owned snapshots")
+		}
+	}
+	if !reflect.DeepEqual(receipt.Data().GroupGraph.Indexes, wantGroups) {
+		t.Fatal("releasing producer groups changed the complete published overlays")
+	}
 	html, err := os.ReadFile(filepath.Join(runs[0].RunDir, "report.html"))
 	if err != nil || !strings.Contains(string(html), summary) {
 		t.Fatalf("page omits the orientation summary: %v", err)
 	}
+	got, err := report.RenderSavedHTML(runs[0].RunDir)
+	if err != nil || !bytes.Equal(got, html) {
+		t.Fatalf("saved render changed after releasing producer groups: %v", err)
+	}
 }
 
-// A refused orientation is the run's cause even though the report was being
-// assembled beside it, and no report artifact is written without it.
+func TestRefusedAssemblyPreservesOriginalGroupSet(t *testing.T) {
+	_, runs, inventory := repositoryReportRunsFixture(t, 2)
+	runs[1].GroupIndex.Target.ID = "t999"
+	want := []groupindex.Index{runs[0].GroupIndex.Snapshot(), runs[1].GroupIndex.Snapshot()}
+	_, err := orientAndPublishRepositoryReport(t.Context(), repositoryTargetDispatchOptions{
+		NoModel: true, Output: newRunOutput(io.Discard),
+	}, runs, &atlasOutcome{}, inventory)
+	if err == nil {
+		t.Fatal("mismatched graph binding was accepted")
+	}
+	for i := range runs {
+		if !reflect.DeepEqual(runs[i].GroupIndex, want[i]) {
+			t.Fatal("failed assembly released producer groups")
+		}
+	}
+	if _, err := os.Stat(filepath.Join(runs[0].RunDir, "report.html")); !os.IsNotExist(err) {
+		t.Fatal("failed assembly published HTML")
+	}
+}
+
+// A refused orientation is the run's cause and no report artifact is written.
 func TestRefusedOrientationPublishesNothingOfTheAssembledReport(t *testing.T) {
 	root, runs, inventory := repositoryReportRunsFixture(t, 2)
+	want := []groupindex.Index{runs[0].GroupIndex.Snapshot(), runs[1].GroupIndex.Snapshot()}
 	refused := errors.New("orientation preset refused")
 	options := orientationPresetOptions(root, func(
 		context.Context, llm.Executor, llm.Provider, orientation.Input,
@@ -259,6 +296,11 @@ func TestRefusedOrientationPublishesNothingOfTheAssembledReport(t *testing.T) {
 	outcome := atlasOutcome{}
 	if _, err := orientAndPublishRepositoryReport(t.Context(), options, runs, &outcome, inventory); !errors.Is(err, refused) {
 		t.Fatalf("publication error = %v, want the orientation refusal", err)
+	}
+	for i := range runs {
+		if !reflect.DeepEqual(runs[i].GroupIndex, want[i]) {
+			t.Fatal("refused orientation released producer groups")
+		}
 	}
 	for _, name := range []string{
 		"report.json", "report.html", report.RunManifestFilename,
@@ -288,6 +330,53 @@ func TestRestoredTargetIndexIsReleasedAfterReading(t *testing.T) {
 	}
 	if _, err := run.programIndex(); err == nil {
 		t.Fatal("reading a removed index reused a retained child index")
+	}
+}
+
+func TestCompletedTargetReleaseKeepsItsExactSavedIndexForReportAssembly(t *testing.T) {
+	_, runs, inventory := repositoryReportRunsFixture(t, 3)
+	want := make(map[string]string)
+	for position := range runs {
+		run := &runs[position]
+		index := *run.ProgramIndex
+		want[index.Target.ID] = index.SHA256
+		if err := programindex.Persist(run.RunDir, programindex.ArtifactFilename, index); err != nil {
+			t.Fatal(err)
+		}
+		run.releaseProgramIndex()
+		if run.ProgramIndex != nil || run.programTarget().ID != index.Target.ID {
+			t.Fatal("completed target retained native graph or lost its exact owner")
+		}
+	}
+	assembled, err := assembleRepositoryReport(t.Context(), inventory, runs, atlasOutcome{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assembled.data.ProgramPortfolio.Len() != len(runs) || len(assembled.data.ProgramPortfolio.Entries) != 0 {
+		t.Fatal("released targets were not all restored into the report")
+	}
+	seen := 0
+	if err := assembled.data.ProgramPortfolio.ReadProgramIndexes(func(index programindex.Index) error {
+		if want[index.Target.ID] != index.SHA256 {
+			t.Fatal("saved native target binding changed")
+		}
+		seen++
+		return nil
+	}); err != nil || seen != len(want) {
+		t.Fatalf("complete saved native visit: count=%d error=%v", seen, err)
+	}
+	for _, run := range assembled.runs {
+		if run.ProgramIndex != nil {
+			t.Fatal("report assembly reattached the decoded native set to child runs")
+		}
+	}
+	// A later consumer must read the original file again, not borrow a native
+	// graph that happened to survive in the child run or the prior assembly.
+	if err := os.Remove(filepath.Join(runs[1].RunDir, programindex.ArtifactFilename)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := assembleRepositoryReport(t.Context(), inventory, runs, atlasOutcome{}); err == nil {
+		t.Fatal("missing sealed target was repaired from a retained previous native set")
 	}
 }
 

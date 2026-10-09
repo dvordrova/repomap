@@ -83,31 +83,18 @@ func (p *inputsPreset) Complete(_ context.Context, prepared llm.Prepared) (llm.C
 		Fill    []map[string]any `json:"fill"`
 		Context map[string]any   `json:"context"`
 		Rows    []map[string]any `json:"rows"`
-		Units   []struct {
-			Ref  string `json:"ref"`
-			Path string `json:"path"`
-			Box  string `json:"box"`
-		} `json:"units"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	var answer any
-	switch request.Task {
-	case "repomap.atlas.parts.v2":
-		var groups []map[string]any
-		for _, unit := range request.Units {
-			name := unit.Path
-			if unit.Box != "" {
-				name = unit.Path + ": " + unit.Box
-			}
-			groups = append(groups, map[string]any{"name": name, "units": []string{unit.Ref}})
-		}
-		answer = map[string]any{"groups": groups}
-	case "repomap.atlas.describe.v1":
+	answer, handled, err := presetGroupsAnswer(prepared.Bytes(), sourcePartName)
+	if err != nil {
+		return llm.Completion{}, err
+	}
+	switch {
+	case handled:
+	case request.Task == "repomap.atlas.describe.v1":
 		answer = map[string]any{"description": "Preset description."}
-	case "repomap.atlas.areas.v1":
-		answer = map[string]any{"areas": []any{}}
 	default:
 		if request.Table == "" {
 			return llm.Completion{}, fmt.Errorf("inputs preset: no answer for task %q", request.Task)
@@ -184,11 +171,14 @@ func (p *inputsPreset) Complete(_ context.Context, prepared llm.Prepared) (llm.C
 
 func (p *inputsPreset) categorizer() *typesafetest.Categorizer {
 	neutral := map[string]string{
-		"role": "domain", "key_symbol": "yes", "boxes": "one box", "helper": "responsibility",
+		"role": "domain", "key_symbol": "yes", "helper": "responsibility",
 		"binds": "none", "talks": "none", "argument": "none", "enters": "none", "becomes": "none", "starts": "none",
 	}
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		column := key[strings.LastIndex(key, "|")+1:]
+		if verdict, ok := presetGrouping(column, question, sourcePartName); ok {
+			return verdict, true
+		}
 		p.record(column, question.Item)
 		var options []string
 		for _, option := range question.Options {

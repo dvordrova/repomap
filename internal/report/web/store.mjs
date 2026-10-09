@@ -30,7 +30,7 @@ export const initialState={
   member:{hover:null,chosen:null},
   // Cards kept open by a click, by their arrow's id.
   pinned:[],
-  // The arrow whose card the look opened (look.mjs), or ''.
+  // The arrow or marker whose card the look opened (look.mjs), or ''.
   look:'',
   // The inputs the column points at.
   lit:[],

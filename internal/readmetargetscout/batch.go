@@ -8,105 +8,44 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-// batches returns a deterministic exhaustive provider-request cover. Guidance
-// documents are grouped only when their complete bytes fit together. Every
-// guidance group is then paired with a complete disjoint cover of the global
-// candidate file authority, so no candidate file or guidance byte disappears
-// at a request boundary.
-func batches(compilation Compilation) ([]Compilation, error) {
-	if err := validateReadyCompilation(compilation); err != nil {
-		return nil, err
+// guidanceBatch is a rectangle of the original document-by-file authority.
+// Splitting one axis preserves every pair exactly once; a complete document
+// and a candidate leaf are indivisible at this owning boundary.
+type guidanceBatch struct {
+	compilation Compilation
+	err         error
+}
+
+func splitGuidanceBatch(item guidanceBatch) (guidanceBatch, guidanceBatch, bool) {
+	batch := item.compilation
+	documents := batch.Request.GuidanceDocuments
+	refs := canonicalAuthorityRefs(batch.authority)
+	if len(refs) <= 1 && len(documents) <= 1 {
+		return guidanceBatch{}, guidanceBatch{}, false
 	}
-	documentGroups, err := guidanceGroups(compilation)
+	// Divide the larger complete encoded axis. Otherwise a shared oversized
+	// document catalogue could be repeated for every singleton file before it
+	// is finally divided. This is a planning choice only after actual refusal.
+	documentBytes, err := json.Marshal(documents)
 	if err != nil {
-		return nil, err
+		return guidanceBatch{err: err}, guidanceBatch{err: err}, true
 	}
-	refs := canonicalAuthorityRefs(compilation.authority)
-	batches := make([]Compilation, 0)
-	for _, documents := range documentGroups {
-		start := 0
-		for start < len(refs) {
-			end, batch, err := largestFileWindow(compilation, documents, refs, start)
-			if err != nil {
-				return nil, err
-			}
-			if end <= start {
-				return nil, fmt.Errorf("README file classifier: bounded file shard made no progress")
-			}
-			batches = append(batches, batch)
-			start = end
-		}
+	treeBytes, err := json.Marshal(batch.Request.FileTree)
+	if err != nil {
+		return guidanceBatch{err: err}, guidanceBatch{err: err}, true
 	}
-	if len(batches) == 0 {
-		return nil, fmt.Errorf("README file classifier: exhaustive batching produced no requests")
+	leftDocs, rightDocs := documents, documents
+	leftRefs, rightRefs := refs, refs
+	if len(documents) > 1 && (len(refs) <= 1 || len(documentBytes) > len(treeBytes)) {
+		at := len(documents) / 2
+		leftDocs, rightDocs = documents[:at], documents[at:]
+	} else {
+		at := len(refs) / 2
+		leftRefs, rightRefs = refs[:at], refs[at:]
 	}
-	return batches, nil
-}
-
-func guidanceGroups(compilation Compilation) ([][]RequestGuidanceDocument, error) {
-	documents := compilation.Request.GuidanceDocuments
-	// The smallest file window measures a document group: one candidate leaf
-	// keeps the request shape complete while the documents decide the size.
-	probe := canonicalAuthorityRefs(compilation.authority)[:1]
-	groups := make([][]RequestGuidanceDocument, 0)
-	for start := 0; start < len(documents); {
-		low, high := start+1, len(documents)
-		best := start
-		for low <= high {
-			middle := low + (high-low)/2
-			candidate, err := compileBatchSubset(compilation, documents[start:middle], probe)
-			if err != nil {
-				return nil, err
-			}
-			if len(candidate.wire) <= MaxRequestBytes {
-				best = middle
-				low = middle + 1
-			} else {
-				high = middle - 1
-			}
-		}
-		if best == start {
-			// Keep the complete document as a singleton. Run checks the exact
-			// prepared request against the shared semantic-record envelope.
-			best = start + 1
-		}
-		groups = append(groups, append([]RequestGuidanceDocument(nil), documents[start:best]...))
-		start = best
-	}
-	return groups, nil
-}
-
-func largestFileWindow(
-	compilation Compilation,
-	documents []RequestGuidanceDocument,
-	refs []corpus.FileID,
-	start int,
-) (int, Compilation, error) {
-	low, high := start+1, len(refs)
-	best := start
-	var bestBatch Compilation
-	for low <= high {
-		middle := low + (high-low)/2
-		candidate, err := compileBatchSubset(compilation, documents, refs[start:middle])
-		if err != nil {
-			return start, Compilation{}, err
-		}
-		if len(candidate.wire) <= MaxRequestBytes {
-			best = middle
-			bestBatch = candidate
-			low = middle + 1
-		} else {
-			high = middle - 1
-		}
-	}
-	if best == start {
-		candidate, err := compileBatchSubset(compilation, documents, refs[start:start+1])
-		if err != nil {
-			return start, Compilation{}, err
-		}
-		return start + 1, candidate, nil
-	}
-	return best, bestBatch, nil
+	left, leftErr := compileBatchSubset(batch, leftDocs, leftRefs)
+	right, rightErr := compileBatchSubset(batch, rightDocs, rightRefs)
+	return guidanceBatch{left, leftErr}, guidanceBatch{right, rightErr}, true
 }
 
 func compileBatchSubset(

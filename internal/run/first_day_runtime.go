@@ -33,20 +33,21 @@ type orientationRunner func(
 // firstDayOptions carries what the three first-day stages read. Every value is
 // already validated repository authority; the stages add no new inputs.
 type firstDayOptions struct {
-	Graph            atlas.Graph
-	RepoPath         string
-	RepositoryName   string
-	Revision         string
-	Corpus           *corpus.Corpus
-	Sources          repositoryFactSources
-	Runs             []targetPublishedRun
-	CacheRoot        string
-	NoCache          bool
-	BatchConcurrency int
-	BatchController  *llm.BatchController
-	ProviderFactory  targetPortfolioProviderFactory
-	Runner           orientationRunner
-	Output           *runOutput
+	Graph             atlas.Graph
+	GraphPresentation *atlas.GraphPresentation
+	RepoPath          string
+	RepositoryName    string
+	Revision          string
+	Corpus            *corpus.Corpus
+	Sources           repositoryFactSources
+	Runs              []targetPublishedRun
+	CacheRoot         string
+	NoCache           bool
+	BatchConcurrency  int
+	BatchController   *llm.BatchController
+	ProviderFactory   targetPortfolioProviderFactory
+	Runner            orientationRunner
+	Output            *runOutput
 	// Categorizer chooses where the Main flow goes on at a split.
 	Categorizer llm.Categorizer
 }
@@ -156,18 +157,23 @@ func buildRepositoryFacts(ctx context.Context, options firstDayOptions) (facts.R
 
 func buildRepositoryClaims(ctx context.Context, options firstDayOptions) (claims.Result, error) {
 	roots := make([]claims.TargetRoot, 0, len(options.Runs))
+	var readIndexes []func() (programindex.Index, error)
 	for position := range options.Runs {
 		run := &options.Runs[position]
 		index := programindex.Index{Target: run.programTarget()}
+		if index.Target.Language == "javascript" || index.Target.Language == "typescript" || index.Target.Language == "c" {
+			readIndexes = append(readIndexes, run.programIndex)
+		}
 		roots = append(roots, claims.TargetRoot{
 			ID: index.Target.ID, Root: filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index))),
 		})
 	}
 	result, err := claims.Extract(ctx, claims.Input{
-		Revision:   options.Revision,
-		RepoPath:   options.RepoPath,
-		Repository: options.Corpus,
-		Targets:    roots,
+		Revision:    options.Revision,
+		RepoPath:    options.RepoPath,
+		Repository:  options.Corpus,
+		Targets:     roots,
+		ReadIndexes: readIndexes,
 	})
 	if err != nil {
 		return claims.Result{}, fmt.Errorf("repository claims: %w", err)
@@ -217,12 +223,14 @@ func runRepositoryOrientation(
 	}
 	started := time.Now()
 	result, rejected, err := runner(ctx, executor, provider, orientation.Input{
-		RepositoryName: options.RepositoryName,
-		Facts:          factsResult,
-		Claims:         claimsResult,
-		Groups:         indexes,
-		Graph:          options.Graph,
-		Categorizer:    options.Categorizer,
+		RepositoryName:    options.RepositoryName,
+		RepositoryRoot:    options.RepoPath,
+		Facts:             factsResult,
+		Claims:            claimsResult,
+		Groups:            indexes,
+		Graph:             options.Graph,
+		GraphPresentation: options.GraphPresentation,
+		Categorizer:       options.Categorizer,
 	})
 	if err != nil {
 		return orientation.Result{}, nil, fmt.Errorf("orientation: %w", err)

@@ -16,6 +16,50 @@ import (
 	"github.com/dvordrova/repomap/internal/claims"
 )
 
+func TestDisplayNameRareRunPreservesCompleteWholeNameProtection(t *testing.T) {
+	// Shared namespaces are common in real repositories. The reference searches
+	// every eligible full name, independent of either candidate-selection rule.
+	names := []string{"metabase", "Run", "pkg.Run", "foo/foo", "foo.bar/foo", "東京.処理/実行", "пакет.имя/метод", "--", "$$", "a/b", "a/b/c", "src/file.ts", "TypeName", "lowerUpper"}
+	for i := 0; i < 600; i++ {
+		names = append(names, fmt.Sprintf("metabase.core/handler_%d", i))
+	}
+	all := &displayNameIndex{}
+	for _, name := range names {
+		if displayUnambiguousName(name) {
+			all.bare = append(all.bare, name)
+		}
+	}
+	indexed := newDisplayNameIndex(names)
+	if got := len(indexed.byRun["metabase"]); got != 0 {
+		t.Fatalf("common namespace selected despite unique necessary runs: %d", got)
+	}
+	texts := []string{
+		"Metabase prose mentions metabase and Run; pkg.Run is exact.",
+		"foo/foo foo.bar/foo 東京.処理/実行 пакет.имя/метод -- $$ a/b/c src/file.ts TypeName lowerUpper",
+		"x東京.処理/実行 東京.処理/実行x $pkg.Run pkg.Run_ XTypeName TypeNameX",
+		"Read `src/file.ts` and /tmp/code.go. Do not freeze src/File.ts or PKG.Run.",
+	}
+	for _, name := range names {
+		texts = append(texts, name, "See "+name+" then "+name+".", "x"+name+"_", "`"+name+"`")
+	}
+	for _, text := range texts {
+		wantText, wantProtected := protectedDisplayTextIndexed(text, all)
+		gotText, gotProtected := protectedDisplayTextIndexed(text, indexed)
+		if gotText != wantText || !reflect.DeepEqual(gotProtected, wantProtected) {
+			t.Fatalf("candidate selection changed exact protection for %q: %q %#v, want %q %#v", text, gotText, gotProtected, wantText, wantProtected)
+		}
+	}
+}
+
+func TestDisplayNameRareRunCountsEachRunOncePerNameAndBreaksTiesStably(t *testing.T) {
+	index := newDisplayNameIndex([]string{"aa/aa/bb", "bb.cc", "bb.dd", "xx/yy", "--"})
+	if !reflect.DeepEqual(index.byRun["aa"], []string{"aa/aa/bb"}) ||
+		!reflect.DeepEqual(index.byRun["xx"], []string{"xx/yy"}) ||
+		!reflect.DeepEqual(index.bare, []string{"--"}) {
+		t.Fatalf("repeated runs, equal-frequency ties or bare names changed: %#v", index)
+	}
+}
+
 func TestQuestionExcerptHeadingsTranslateWithoutChangingOriginalText(t *testing.T) {
 	const sourceText = "我来到北京清华大学 <cut> & test (executable)"
 	anchor := pageAnchor{Path: "jieba/__init__.py", Text: "jieba/__init__.py:53", Href: "https://example.test/jieba.py#L53"}

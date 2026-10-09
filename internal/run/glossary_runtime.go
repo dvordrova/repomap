@@ -21,6 +21,32 @@ import (
 // analysis cube. Reduction happens once, before localization and publication.
 // indexes are the sealed ProgramIndexes of every published target.
 func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData, indexes []programindex.Index) error {
+	if options.Deps.terminology == nil || options.NoModel {
+		return nil
+	}
+	return reduceReportGlossaryNames(ctx, options, runDir, data, glossaryCodeNames(indexes, data.Facts))
+}
+
+func reduceReportGlossaryPortfolio(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData) error {
+	if options.Deps.terminology == nil || options.NoModel {
+		return nil
+	}
+	names := map[terminology.CodeNameKind][]string{}
+	if err := data.ProgramPortfolio.ReadProgramIndexes(func(index programindex.Index) error {
+		for kind, items := range glossaryCodeNames([]programindex.Index{index}, nil) {
+			names[kind] = append(names[kind], items...)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for kind, items := range glossaryCodeNames(nil, data.Facts) {
+		names[kind] = append(names[kind], items...)
+	}
+	return reduceReportGlossaryNames(ctx, options, runDir, data, names)
+}
+
+func reduceReportGlossaryNames(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData, codeNames map[terminology.CodeNameKind][]string) error {
 	collector := options.Deps.terminology
 	if collector == nil || options.NoModel {
 		return nil
@@ -45,7 +71,7 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	options.Output.Stage("Glossary", "explaining unfamiliar names from accepted prose")
 	progress := func(state, detail string) { options.Output.State("Glossary", state, detail) }
 	collector.Progress = progress
-	for kind, names := range glossaryCodeNames(indexes, data.Facts) {
+	for kind, names := range codeNames {
 		collector.ExcludeCodeNames(kind, names...)
 	}
 	// The report's own summary of the program is the shared context of every

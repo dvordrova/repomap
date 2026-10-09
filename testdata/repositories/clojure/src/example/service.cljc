@@ -34,3 +34,20 @@
 (def ^:private key->command {:n :new-greeting :u :undo})
 
 (defn command-for [key] (get key->command key))
+
+;; Adjacent forms retain separate documentation owners even on one line.
+(defn documented-neighbor "The first function keeps its own description." [] 1) (defn undocumented-neighbor [] 2)
+
+;; Both runtimes declare this same protocol and callable interface method.
+;; A method declaration does not reveal a runtime implementation.
+(defprotocol Reporter
+  (report! [this message] "Deliver a message through the installed reporter."))
+
+(def protocol-placeholder nil)
+
+;; Native constructor declarations are callable; the type header is not.
+(defrecord Report [message])
+(deftype ReportBox [message])
+
+(defn report-message! [reporter message]
+  (report! reporter message))

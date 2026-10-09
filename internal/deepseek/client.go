@@ -71,7 +71,8 @@ type Client struct {
 	// then refuses a request whose estimated prompt tokens plus the output
 	// reservation exceed it, before any transport attempt, with the same
 	// context resource refusal the provider would send; the owning stage
-	// partitions it as usual. Zero leaves the check to the provider.
+	// partitions it as usual. Zero uses the known official model's window;
+	// an unknown model or custom endpoint leaves the check to the provider.
 	ContextTokens      int
 	Endpoint           string
 	Auth               string

@@ -295,7 +295,7 @@ func prepareRunManifest(
 	if data.ProgramPortfolio == nil {
 		return RunManifest{}, fmt.Errorf("report manifest: program portfolio is missing")
 	}
-	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	defaultEntry, err := data.ProgramPortfolio.defaultBinding()
 	if err != nil {
 		return RunManifest{}, fmt.Errorf("report manifest: program portfolio: %w", err)
 	}

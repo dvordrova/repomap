@@ -10,7 +10,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
   the orientation and the publication read. A box is a group of explicitly
   selected declarations and their native lexical children; a zone is a
-  container; original native relations give cross-part connections with
+  container in the saved parent tree, with direct group membership; original native relations give cross-part connections with
   exact endpoints and source locations. Containers keep the atlas's zone
   order, the order the areas answer listed them, never a key sort. A joint
   is a connection into another target. A group is `triggers` only when it
@@ -33,7 +33,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   GroupsIndex carries the record as `off_map`: off-map declarations in a file
   a part still holds by `subject_ids` under their own reason (`undecided`,
   `blocked`, or `left_out`/`conflict` for a box or a stray method), never as
-  an off-map file; a file no part holds whole; the files of test-only parts
+  an off-map file; a file no part holds also keeps all its exact declaration
+  `subject_ids` when declarations exist, including `map_failure` (a genuine
+  `no_units` file stays path-only); the files of test-only parts
   as `tests`, and by file with their subjects the declarations of a part its
   program never runs (atlas `unreached`, READING) as `unreachable`, both with
   their part's name; and `map_failure`. Off-map subjects keep their
@@ -46,6 +48,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   file), not a model decision; it and a part its program never runs are not
   groups: they draw no arrow and leave
   that program's canvas.
+
+- `refused_parts` is an annotation of provisional model groupings, never
+  accepted GroupsIndex groups or substitute graph nodes. Atlas original
+  `member_ids` bind strictly to the target's existing native `subject_ids` in
+  projection. The saved overlay, seal, restoration and snapshot retain the
+  unchanged proposed `name`/`holds`, exact members, and closed admission reason
+  (`independent_jobs`, `not_established`, `decision_refused`, `over_envelope`).
+  Unknown, duplicate or admitted members are refused at the ordinary schema
+  boundary. The component reading lists **Groupings not established** with
+  explicit model provenance, proposed purpose, the reason in reader words and
+  every original source chip. Those declarations also remain in **Not on the
+  map** and Find. An all-refused map remains explicitly unavailable; neither
+  a refusal notice nor a source list establishes an accepted architecture.
 
 - The component card lists, after its link to its parts on the system map
   and before its main flow, the compact inventories **Tests** (test-only
@@ -74,6 +89,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   since commands a client sends by name are listed there too; a method badge
   appears only when the registration states a method.
 
+- The common system-map figure keeps the public `#canvas` anchor used by
+  published examples. Opening that anchor enters the repository map, with the
+  same reset as `#repository-map`; it does not create a separate report route.
+
 - The report is one static page rendered in Go for a newcomer. Pipeline
   vocabulary is banned on screen: retained, source-bound, authority,
   projection, selector, outcome, target contract and raw selector strings.
@@ -95,18 +114,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   removes an element; pointing changes only emphasis and drawing order;
   dark arrows are drawn after grey ones; every arrow opens its card; ports
   keep 20–28 screen pixels at every camera; titles at one level read within
-  ±10% of each other; a frame whose body is in sight has its title wholly
-  in sight and uncovered, and on the whole map so does a closed program or
-  Inputs box (`title-sight`, below); a closed card, program or part-group
-  whose part in sight can hold its words shows them wholly in sight
-  (`name-sight`); a marker's or a port's tip names each of what it stands
+  ±10% of each other; card words and frame titles remain anchored to their
+  own boxes during pan (`word-anchor`), allowing ordinary viewport clipping;
+  a marker's or a port's tip names each of what it stands
   for whole and stands wholly in the canvas (`tip-whole`); no digit and no
   label (a badge, an arrow's caption) is printed on the canvas.
 
 - The home page has one common System map built from the translated
   component maps; components and saved areas are frames holding their
-  parts. Every selected target is present; unread components keep their
-  failure note. An exact remote href can resolve to a local part; names and
+  parts. Only complete analyzed program pages enter the canvas. Failed
+  targets and their arrows stay off it (owner, 2026-10-05: "не собирается -
+  нахуй с полянки, не знаю как тебя собирать"); every selected outcome and
+  failure explanation remains in the home reading and Component details.
+  An exact remote href can resolve to a local part; names and
   file paths never establish that identity. The node readings keep every
   original relation and its source endpoints. The canvas draws one arrow per
   directed visible-node pair, combining its operation membership and short
@@ -212,8 +232,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   "POST · /v3electionpb.…", etcd's Server and Client registrations alike
   (final journeys, 2026-10-02). The tip stands on its marker's side (an
   input's left), or on the other where that has more room and its own too
-  little, within the canvas. It lights every marker reaching one of its systems or
-  taking one of its inputs. A click reads that kind in its collection, that
+  little, within the canvas. Its complete original names are buttons: choosing
+  one reads that exact input, system or program ID. The shared hover intent and
+  safe corridor keep the card while the pointer crosses its gap; actual vertical
+  overflow scrolls without sampling its members. The icon is centered in its
+  screen hit rectangle. Tab from a focused marker reaches its card's names;
+  focus keeps the card until blur, selection or Escape. It lights every marker
+  reaching one of its systems or taking one of its inputs. A click reads that kind in its collection, that
   system (the Outside frame when the marker stands for several) or the
   program its port names first, the camera staying; reached by the
   keyboard, each is a button, Enter reading it. Markers and ports keep one
@@ -407,6 +432,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   answering on the other, "cliConnect ⇢ acceptHandler"), the first dozen
   then "…", never a list of caller → callee rows; every call and its caller
   are read in the column, a click on the arrow away.
+  A displayed name retains its exact declaration key and owning part; clicking
+  it or pressing Enter reads that declaration through the same ordinary member
+  selection as a tile. Missing upstream source links do not disable this internal
+  reading. Different known declarations with the same name remain distinct rows;
+  repeated exact identities may share a row. Unknown declarations use only their
+  existing source link, if any; no name/path lookup invents a transition.
   In the column a connection (owner, 2026-09-27) is headed by the two frames its arrow
   joins, from → into, and one line of counts: calls of each kind, from how
   many parts of one frame into how many of the other ("{n} calls, from all
@@ -451,16 +482,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   invents no relation. A program is a member of its own connections: a
   call reaching a running copy of it (page_system_map.go) has its card and
   column line.
-- A closed area's card shows faint outlines where its parts stand, never a
-  blank box, as a program's card does once drawn large and while its role
-  and description are too small to read (owner via the coordinator,
-  2026-10-02: etcd's contrib/lock/storage and tools/etcd-dump-db had stood
-  on the whole map as a name over a blank card), and as a closed part's card
-  does its declarations' tiles under the same rule (owner via the
-  coordinator, 2026-10-03: casdoor's Shared UI components and etcd's
-  Snapshot engine, neighbours drawn larger than their words may grow under
-  the 1.6× cap, had stood as words over a blank card); an outline's line
-  keeps its screen width; only a box that can be
+- A closed program or architectural area lists every existing direct saved area and loose part by
+  its original name and ID, in saved order, as a mouse/keyboard navigation row.
+  Equal names do not merge children. Row wrapping and the full measured list
+  participate in card sizing before layout; a list taller than the available
+  viewport scrolls without discarding rows. Clicking a row enters its existing
+  level and reading; it never also selects the parent or starts a canvas pan.
+  Closed cards do not paint unnamed internal outlines behind their words.
+  Area cards size their named inventory independently of the inner graph's
+  aspect ratio. On entry that graph fits within the original card rectangle;
+  the opened area's outer frame preserves the border that parent connections
+  already reach. Nonoverflowing rows let two-finger pan and pinch reach the
+  canvas. An actually overflowing list owns vertical scrolling only; horizontal
+  pan and pinch continue moving/zooming the map. Only a box that can be
   entered has a magnifier. An architectural area holds at least two parts
   (reading draws none smaller; GroupsIndex keeps no container of fewer than
   two groups), and the canvas draws every area it is given; Inputs and Outside
@@ -680,7 +714,20 @@ a type (final journeys, 2026-10-02: lua_gettop, opened from liblua.a's Entry
 list, had read from "Called by" with no name above it); who calls it
 ("Called by", "Used by" for a variable or a type), by the part at the other
 end, its own part first, one line per declaration; the author's comment as written,
-when there is one, marked as the author's claim; the model's line only when
+when there is one, marked as the author's claim. A claim with an exact
+`declaration_line` belongs only to that declaration, regardless of the
+comment's length or whether its body follows the header (Python). The
+original quote line remains its source location. Native Go and JSTS attachment
+also retains `declaration_column`, so adjacent names on one line cannot
+inherit one another's quote; the original comment column remains its own
+source location when supplied. JSTS requires both name coordinates and quotes
+without an exact native attachment remain unbound;
+proximity cannot supply their declaration
+or file owner. A variable's compiler type
+is preserved as a complete token: `a` with type `any` reads `a: any`.
+Removing a repeated written name requires the whole name followed by a
+declaration delimiter or space; sharing its first letters is insufficient.
+The model's line only when
 there is one (without it, nothing is said about one); one closed "Reads and
 writes" holding "Writes:" and "Reads:" (below); for a type, every field with its type, linking that type when it is
 the repository's (ProgramIndex `Object.Types`), and the functions of its part
@@ -854,8 +901,28 @@ shows them as its calls. What is open stays open across the toggle. A step of th
 Main flow opens in place to its code flow the same way, the model's sentence
 kept in its style above it.
 
-The Main flow is read once, at the top of the component's reading; the
-component's page keeps it hidden as the column's source (owner, 2026-09-29).
+A walked call's saved native condition reads beside it as "only if
+`script`", "only if not `script`" or "in a case of `mode`", with the
+construct's original source link. The expression is escaped code as written,
+never translated or supplied to a model; only the surrounding words are
+localized. An error/noreturn guard keeps that role before its condition.
+Where the walk resumes in a caller, the condition reads once before the call
+("then, back in luaD_call, only if `luaD_precall(L, func, nResults) == PCRLUA`").
+An unavailable or non-common expression keeps the existing generic guard
+and its source location. The report never substitutes one folded site's
+condition for all sites (PROGRAM_INDEX 28).
+
+The Main flow is read once, at the top of the component's reading. Its
+complete prepared model path, native start list, other connections and
+independent work are one `componentFlow` value in the ordinary shared page
+data. The component keeps only that reference and its original empty deep
+anchor; it prints no hidden flow or independent-work reading. Selecting the
+component formats those saved values into the column without another call
+walk, path decision, sorting or loss of alternatives. Input readings obtain
+their original independent-work row from the same value. Exact declaration
+keys, registration sources, native conditions and model display refs survive
+page-data compaction. The return link detects the saved path rather than a
+hidden DOM copy; existing step order and fold/scroll memory remain unchanged.
 No other reading repeats or links it, save one small "Main flow" link above
 every reading of a part, declaration, input or frame of a component that has
 one, reading the component at that section without moving the camera. When
@@ -1144,7 +1211,11 @@ its tile or the column), reads from its top (owner, 2026-09-29). Returning to
 a part (Back, or the same part shown again) restores its expanded evidence,
 reading scroll and canvas camera; a reading reached anew by a click opens in
 its default state, whatever "Expand all" or a fold opened before (owner,
-2026-09-29). Every reading ends with one small line of the home's text pages
+2026-09-29). Returning through Main flow also restores the calls opened by
+each step's own twist, including the evidence opened inside those calls.
+Original part/declaration identities and occurrence distinguish repeated
+steps; calls are mounted before their evidence is restored, without creating
+another navigation click. Every reading ends with one small line of the home's text pages
 ("How do I run it?", the glossary, what is missing, …), the links the home's
 reading lists, in the column's muted meta text (owner, 2026-09-29). Saved
 core/entry/dependency lanes stay named in map and reading; an import is not
@@ -1243,14 +1314,24 @@ post-layout edits are deleted.
   runtime) and a frame's connections for the reading column
   `frameGroups(id)`. Levels, scene and overlay read only the model.
 - `levels.mjs` `layoutLevels(model, canvas)` lays every level out once per
-  canvas size with ELK, bottom-up, each level its own graph with final
-  routes: an area its parts (layered down, arrows on the boxes' tops and
+  canvas size with ELK, each level its own graph with final routes, the
+  areas top down a level at once over a pool of ELK workers (a closed
+  area's card is its words, never its drawing; Metabase's 1,262 areas laid
+  out one by one in one worker had taken 348 seconds of a browser): an
+  area its direct child areas and loose parts. Only the first two levels of
+  areas inside a program are drawn open, and one deeper only where its
+  parent's level draws its cards at least 0.3 of their size (`units`
+  `openDepth`, `leastShrink`, 2026-10-09): each level stands inside its card
+  some ten times smaller, and Metabase's seven levels had made every card
+  one pixel. A deeper area is a closed card naming what it holds, read in
+  the column; reading something inside it frames its nearest open level
+  (layered down, arrows on the boxes' tops and
   bottoms, the left and right edges left to the markers); a program its
-  closed areas (cards of their open drawing's proportion, holding that
-  drawing when entered) and loose parts, of both directions the one fitting
+  closed areas (compact cards naming all saved direct children, fitting their
+  inner drawing on entry) and loose parts, of both directions the one fitting
   the canvas larger, a link to another program ending on a port of the
   program's border (one port a way per box, naming its programs on hover);
-  the whole map its programs (cards of their name and role), Inputs frames (their kinds' marks) and
+  the whole map its programs (cards of their name, role and complete named direct-child inventory), Inputs frames (their kinds' marks) and
   Outside frames, of the arrangements tried (across or down, the Outside
   packed to four proportions) the one fitting the canvas best among those
   whose lanes stand at least four fifths of ELK's spacing apart, the one
@@ -1277,23 +1358,11 @@ post-layout edits are deleted.
   a framed name out, and an Outside frame likewise at its title's corner
   (`levels.mjs` `keepTitles`; owner via the coordinator, 2026-10-02:
   casdoor's second Inputs box had read "ts", etcd's tools/etcd-dump-db
-  stood past the right edge of the harness's canvas). A frame whose body is in sight keeps its title in sight: its left
-  edge out of the canvas, the title moves in along its own band, never out
-  of the frame; its top out, the overlay names it at the canvas's top at
-  its title's size, the frames holding it a row above where their names
-  would overlap, and a frame whose own title such a name would cover is
-  named below it (etcd's "Inputs" had read "puts", othello's program
-  "hello", casdoor's Outside lost its title above the canvas). A closed
-  card, program or part-group cut at the left or top edge moves its words
-  in, under those names, never out of its own inside (etcd's "gRPC proxy",
-  casdoor's "Email providers" beside an opened part-group); cut at the
-  right or bottom edge, it moves them left or up into its padding, never
-  past its border, where the part of it in sight holds them
-  (synthetic-no-inputs' "Invoice audit" beside Report queue, its words cut
-  at the canvas's foot; harness table, 60e7ea98); a box all but out of
-  sight keeps them where they stand (casdoor's Outside buckets, a sliver of
-  each at the canvas's foot, had had their centred words pulled to their
-  tops).
+  stood past the right edge of the harness's canvas). During a reader's pan, frame titles,
+  card headings, descriptions and child inventories keep their own coordinates.
+  They may leave the viewport with their box; no translated words or duplicate
+  screen-fixed title tries to hold them on screen. The existing navigation
+  breadcrumb retains the complete entered chain.
   The camera framing a box (entering a level, a reading's declaration or
   arrow end, "Show input") stops where that level's words read at 1.35
   times their size, and no word on the canvas, nor a chip's or a bucket's
@@ -1305,7 +1374,13 @@ post-layout edits are deleted.
   world is drawn a power of two larger, keeping every level's entry camera
   at most four screen pixels to a world pixel: the browser sizes a box in
   steps of 1/64 of a pixel, and at etcd's deepest levels arrows' ends had
-  stood 2px off their boxes. A card's title, role and description each stand whole
+  stood 2px off their boxes. The world stays under ten million pixels,
+  though: the browser clamps a length near 2^25 pixels, and Metabase's
+  frontend had stood its cards off where its markers were. A level larger
+  than the canvas is entered framed by its own boxes' bounds, centred
+  where they fit and from their first corner where they do not (its
+  frame's corner had been empty margin: nats-server's and Metabase's
+  components had opened on a blank canvas). A card's title, role and description each stand whole
   or are left out, never cut mid-text (a program's purpose in two lines at
   most, a part's or an area's description in four; the rest reads in the
   column), its size and its drawing by the same rule. No wrapping, grid, size floor or edit after layout.
@@ -1349,14 +1424,23 @@ post-layout edits are deleted.
   arrows' order (dark over grey); one `hitTest` answers hover and click,
   a box's outer two pixels belonging to an arrow meeting it there (its
   head, all a close camera may show of it).
-  The level is the chain of entered boxes (program, area, part; an Inputs
+  The level is the complete saved chain (program, zero or more nested areas, part; an Inputs
   frame; a bucket): entered by an action (the magnifier, a reading) or by
   a zoom with hysteresis, its text reading at 12.75px to enter and under
   10.5px to leave, one pinch crossing one level boundary; a pan never
   changes it. Entered, a program draws nothing beyond itself; a part is
   entered at the zoom its declarations read at.
-- `overlay.mjs` places markers, ports and magnifiers at one screen size on
-  every camera tick: a marker touches its box's edge from outside, the
+- `overlay.mjs` keeps markers and ports at 22 screen pixels. Magnifiers grow
+  with their card text scale from 22 to at most 32 screen pixels, with a picture
+  filling the button minus 6 pixels. Closed program cards retain a 10px screen
+  corner radius so this inset keeps the button inside the painted rounded frame
+  at every camera zoom. The same world rectangle supplies drawing
+  and pointer hit testing on every camera tick. A magnifier under the pointer shows the `zoom-in` cursor
+  on the actual canvas pane through the same hit test that owns its click;
+  pointer-transparent overlay buttons do not create another mouse dispatch.
+  The cursor clears on leaving, panning, changing camera, or entering a reading
+  card/list without resetting semantic emphasis during a drag.
+  A marker touches its box's edge from outside, the
   stack from the top, stepping past every arrow running through its
   column (one meeting that edge, one bending beside the box), shown once
   the box's title reads and the stack fits beside it. A box's words fade
@@ -1400,10 +1484,9 @@ again (owner, 2026-09-28); the targets the run could not read are named
 there with why: the closed reason, then the failure in its own words as the
 outcome saved it (litestream's `src`: "no build line compiles
 src/litestream-vfs.c; parsed with clang's defaults …"), line breaks kept and
-never translated. On the canvas they are one note, "Not analysed", naming
-them, sized with its words as a summary among the programs' and taking
-their connections; read, the note shows each target's card from Component
-details (`targets-not-read`) with the same words. The introductory sentence
+never translated. They stay off the canvas, without a collective placeholder
+or arrows to missing program pages. Component details (`targets-not-read`)
+keep their individual cards with the same words. The introductory sentence
 has no model badge or source popover;
 its saved citations and model attribution live in Repository summary
 sources, reachable from the home reading. The summary and useful links
@@ -1531,6 +1614,11 @@ project's index with the project's other programs, whose files are the
 whole project's: freqtrade's build_helpers scripts and `freqtrade` itself
 had each read 373 files.
 
+The closed inventory and each closed folder create their contents only when
+opened, from the same complete `sources` value. Opening a branch leaves its
+peers closed; reopening keeps one original list, in order. This delays DOM
+construction, not source collection, search or evidence.
+
 A component chosen on the map is read without moving the camera, as every
 first click is (above). Its reading names it without the kind its label adds
 (heading "Component · {language} {kind}"; the kind stays in the name only
@@ -1614,6 +1702,9 @@ in the home's list of programs and in the component's reading alike, folds
 by those parts, each closed under its box and its count (liblua.a's
 156: Core API · 83, Auxiliary library · 34, Standard libraries · 24,
 Debugging · 8, Runtime and calls · 7), the entries no part holds after them.
+Closed part folds create their complete entry lists on first opening. Every
+original entry and declaration key remains available, including the last one;
+no count, limit or sampling changes the saved inventory.
 Its full-reference section keeps the main flow, configuration, its parts (each
 reading the part on the canvas), dependencies, coverage and TODO lists.
 
@@ -1848,6 +1939,16 @@ endpoint-to-table flow. No additional semantic stage or graph is introduced.
 - Translation requests, their windows, refusals and deadline are in
   [Execution](EXECUTION.md#display-translation).
 
+Source-name protection searches every eligible exact name under its existing
+UTF-8 whole-name boundaries. Its candidate index chooses the least frequent
+maximal name-rune run across the complete name inventory, counting each run
+once per name; ties prefer the longest byte run, then the first original run.
+Every such run is necessary for a whole-name occurrence, so this changes only
+candidate work, not admitted spans. Names without any run retain their direct
+search. Exact byte matching, span ordering, placeholders, glossary ownership
+and contextual term lookup stay unchanged; no source name is sampled or
+discarded to accelerate publication.
+
 ## Translation persistence
 
 `--lang ru` selects one physical `report.<repo>.ru.html`, named after the
@@ -1866,6 +1967,19 @@ without analysis or provider access.
 
 ## One publication
 
+The one physical HTML preserves complete generated JSON bytes in its ordinary
+embedded blocks. A block uses gzip plus base64 only when that complete physical
+representation is smaller, otherwise it stays raw. This changes no saved native
+or report JSON schema, reference, source or interpretation. Before the classic
+application executes, the embedded boot loader restores each encoded block
+sequentially with the browser's gzip decoder and strict UTF-8 decoding. The
+original classic bundle executes once in its original global context. Its final
+acknowledgement is required before the loader claims readiness; missing decoder,
+invalid/truncated gzip, decoding error, blocked or failed startup remains a
+visible load failure. No second/fallback report is constructed. Saved hash
+restoration also runs when the page load event preceded decoding. Physical
+compression does not bound the decoded browser page or total server memory.
+
 The current manifest records the repository and publication source. A
 successful repository run persists, as applicable:
 
@@ -1882,7 +1996,53 @@ successful repository run persists, as applicable:
 
 Multi-target publication keeps each target's ProgramIndex, dependency
 catalogue and GroupsIndex. Shared artifacts, the manifest, report JSON and
-HTML are published once in the owner run from values already in memory. A
+HTML are published once in the owner run. Orientation finishes before native
+report assembly starts, so provider waits do not overlap retention of the
+orientation's complete group snapshots and the report's complete native set.
+A returned orientation error never starts report assembly; independent semantic
+refusals still preserve accepted neighbours and proceed through the ordinary
+publication contract. Completed target pages release
+their native index after exact artifact persistence. Ordinary assembly binds
+all original complete native files, validating each before installing the
+portfolio; it retains owned target metadata, native seals and exact byte seals,
+rather than all decoded native bodies. Native consumers and glossary visit
+each complete original index in canonical target order. Page native caches
+hold the current target and release its relation/source-value caches when the
+target changes. Direct public in-memory inputs keep their existing isolated
+snapshots. Path-only collection shares the complete inventory gathered from the
+original validated native file, including unresolved relation and witness paths;
+it rechecks the complete raw-byte SHA before using it. Saved restoration gathers
+that same inventory. Each page builder gathers its existing declaration-end,
+package-name, run-by and native-test-witness lookup tables in one complete
+canonical native visit. Its overview shares those tables; native bodies are not
+retained in them. Last eligible declaration-end overwrite, duplicate package
+names, target-qualified run-by membership and current group-view test sources
+keep their original rules. Section pointers remain local to the builder. A first
+native read failure stays fatal, without a repair or retry. Shared-code ownership
+and declaration identities consume one complete native read per section: the
+same target supplies its held-file inventory and its ordered declaration
+holders. Full and test-free page views keep independent ownership joins; neither
+retains the complete native bodies in its cross-target lookup tables.
+Repeated same-name questions use `groupindex.OwnUseReader` over that current
+immutable native body. Its tables contain original object and relation offsets,
+not copied bodies; changing target releases them with the native scope. Each
+question still computes its own unique-use decision. Last duplicate object and
+query identities, original relation/ToIDs order, stable source ties, repository
+before external choices and source locations keep the original `OwnUses` rules.
+Inline naming with custom owner/inline rules keeps its existing complete scan.
+The part's type catalogue visits original members once
+and joins functions' exact native result/parameter TypeIDs, preserving original
+membership, duplicate suppression and the displayed sort order.
+Missing, invalid or mismatched files refuse the complete binding;
+later missing or changed bytes refuse reading/rendering/publication, including
+errors encountered through non-error page helpers. No native file, target or
+source is omitted. After successful assembly, the ordinary owner releases its
+producer GroupsIndex references: the report already owns complete isolated
+snapshots. An orientation or assembly error leaves the producer set intact.
+The transient peak while creating the snapshots is not removed by that lifetime
+change. Complete hydrated GroupsIndexes and final reader values
+still grow with the evidence; this is not a claim of bounded total report
+memory or full Airflow acceptance. A
 served report has the same complete set of target sections and needs no
 sibling report files. Saved report restoration reads the common JSON, the
 manifest and the files the JSON names in the run's own target directories:
@@ -2087,3 +2247,23 @@ code; a field or table links to where it is first changed, that place on its
 hover; no line is printed and no hedge line stands. A part's reading lists
 its types' changes, by input. A matched input's changes join as a possible
 integration; sibling inputs gain none.
+
+Recursive area navigation (format 98): the ordinary GroupsIndex parent tree
+supplies every child edge. Empty-direct-membership parents survive while a
+descendant does. Nested cards name all direct saved children and fit their exact
+inner drawing on entry. Opened programs and areas keep the original outer world
+rectangle; letterboxing the internal drawing does not replace that border.
+Program ports remain on its original west/east border; their original routes
+extend orthogonally across the letterbox gutter without changing native IDs or
+child transforms. Role badges straddle the original border in a separate
+scaled layer; clipping the card text/inventory never clips the badge.
+Closed Inputs kinds are native buttons that read their exact
+kind in the original collection, with centered icons and a pointer cursor.
+Scene traversal
+follows the complete selected chain, preserving ancestor frames, original leaf
+connections, magnifier hit testing, declaration reading and Back/reload identity
+at every accepted depth. Original source/operation endpoints remain on their
+leaves. Remote area IDs include target identity, avoiding peer/local collisions.
+Screen-space magnifier/marker overlays never scroll independently of the world
+camera. Only marks wholly inside the canvas participate in Tab order; panning
+brings other original marks into that order without changing the scene's facts.

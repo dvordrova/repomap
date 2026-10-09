@@ -405,7 +405,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		decl := &reading.Decls[position]
 		decl.Bold = ref.subject.Interpretation != nil && ref.subject.Interpretation.Key
-		decl.Doc = builder.docstringFor(anchor.Path, anchor.Line)
+		decl.Doc = builder.docstringFor(anchor.Path, anchor.Line, anchor.Column)
 		if !slices.Contains(lists[kind], position) {
 			lists[kind] = append(lists[kind], position)
 		}
@@ -644,8 +644,10 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 	}
 	// A type of the part is returned or taken by the part's functions.
-	for id, typePosition := range types {
-		var returns, takes []int
+	// Read each original member once; constructing its source link for every
+	// type made this catalogue grow as types multiplied by all declarations.
+	returnsByType, takesByType := map[string][]int{}, map[string][]int{}
+	if len(types) > 0 {
 		for _, member := range group.MemberSubjectIDs {
 			ref, known := builder.subject(targetID, member)
 			if !known || ref.subject.Object == nil {
@@ -657,16 +659,19 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 				continue
 			}
 			for _, result := range ref.subject.Object.Results {
-				if result.TypeID == id && !slices.Contains(returns, position) {
-					returns = append(returns, position)
+				if _, known := types[result.TypeID]; known && !slices.Contains(returnsByType[result.TypeID], position) {
+					returnsByType[result.TypeID] = append(returnsByType[result.TypeID], position)
 				}
 			}
 			for _, parameter := range ref.subject.Object.Parameters {
-				if parameter.TypeID == id && !slices.Contains(takes, position) {
-					takes = append(takes, position)
+				if _, known := types[parameter.TypeID]; known && !slices.Contains(takesByType[parameter.TypeID], position) {
+					takesByType[parameter.TypeID] = append(takesByType[parameter.TypeID], position)
 				}
 			}
 		}
+	}
+	for id, typePosition := range types {
+		returns, takes := returnsByType[id], takesByType[id]
 		if len(returns)+len(takes) == 0 {
 			continue
 		}
@@ -865,11 +870,18 @@ func (builder *pageBuilder) tellDeclsApartByUse(decls []pageReadingDecl, subject
 			program = subject[0]
 			ids = append(ids, subject[1])
 		}
-		index, found := builder.programIndex(program)
-		if len(ids) < 2 || !found {
+		if len(ids) < 2 {
 			continue
 		}
-		for at, use := range groupindex.OwnUses(index, ids) {
+		builder.activateNativeScope(program)
+		if builder.ownUseReader == nil {
+			index, found := builder.programIndex(program)
+			if !found {
+				continue
+			}
+			builder.ownUseReader = groupindex.NewOwnUseReader(index)
+		}
+		for at, use := range builder.ownUseReader.OwnUses(ids) {
 			if use.Word == "" {
 				continue
 			}
@@ -887,7 +899,7 @@ func (builder *pageBuilder) programIndex(programTargetID string) (programindex.I
 	if builder.data == nil || builder.data.ProgramPortfolio == nil || programTargetID == "" {
 		return programindex.Index{}, false
 	}
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
+	for _, entry := range builder.nativeTargets(programTargetID) {
 		if entry.Target.ID == programTargetID {
 			return entry, true
 		}

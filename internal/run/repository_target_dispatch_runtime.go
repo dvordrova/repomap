@@ -563,9 +563,11 @@ func (pages targetPageDispatcher) page(ctx context.Context, slot *targetPageSlot
 		slot.stop = analyzedErr
 		return
 	}
-	// The saved child artifacts are complete. The sealed program index stays
-	// in memory for facts, places, the group projection and the report; the
-	// empty child group index is replaced by the atlas projection.
+	// The saved child artifacts are complete. Subsequent consumers read the
+	// sealed program index one target at a time, so completed pages do not
+	// accumulate all native graphs while the remaining targets are parsed.
+	// The empty child group index is replaced by the atlas projection.
+	published.releaseProgramIndex()
 	published.GroupIndex = groupindex.Index{}
 	slot.outcome = &analyzed
 	slot.published = &published

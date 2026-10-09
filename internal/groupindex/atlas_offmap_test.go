@@ -77,7 +77,7 @@ func offMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T, box string) 
 	if len(index.Operations) != 1 || index.Operations[0].GroupID != "" || index.Operations[0].SubjectID != objectIn("loose/b.go") || index.Operations[0].Name != "GET /loose" {
 		t.Fatalf("the route off the map was lost or given a group: %+v", index.Operations)
 	}
-	want := []OffMapFile{{Path: "api/a.go", Reason: atlas.OffMapLeftOut, SubjectIDs: []string{stray}}, {Path: "api/a_test.go", Reason: OffMapTests, Part: "API checks"}, {Path: "loose/b.go", Reason: atlas.OffMapLeftOut}}
+	want := []OffMapFile{{Path: "api/a.go", Reason: atlas.OffMapLeftOut, SubjectIDs: []string{stray}}, {Path: "api/a_test.go", Reason: OffMapTests, Part: "API checks"}, {Path: "loose/b.go", Reason: atlas.OffMapLeftOut, SubjectIDs: []string{objectIn("loose/b.go")}}}
 	if !reflect.DeepEqual(index.OffMap, want) {
 		t.Fatalf("off the map: %+v", index.OffMap)
 	}

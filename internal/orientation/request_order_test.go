@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -17,6 +19,72 @@ func TestQualifiedCompactRefsUseNaturalOrder(t *testing.T) {
 	want := []string{"t1.g3", "t1.g20", "t2.g2", "t2.g10", "t10.g1"}
 	if !reflect.DeepEqual(refs, want) {
 		t.Fatalf("qualified refs = %v, want %v", refs, want)
+	}
+}
+
+// Independent original comparator: invalid later segments must not change an
+// earlier numeric decision, and overflowing/zero-prefixed refs stay lexical.
+func originalCompactRefLess(left, right string) bool {
+	segment := func(value string) (string, int, bool) {
+		first := strings.IndexFunc(value, func(r rune) bool { return r >= '0' && r <= '9' })
+		if first <= 0 {
+			return "", 0, false
+		}
+		n, err := strconv.Atoi(value[first:])
+		if err != nil || n <= 0 || value[:first]+strconv.Itoa(n) != value {
+			return "", 0, false
+		}
+		return value[:first], n, true
+	}
+	a, b := strings.Split(left, "."), strings.Split(right, ".")
+	for i := 0; i < min(len(a), len(b)); i++ {
+		ap, an, aok := segment(a[i])
+		bp, bn, bok := segment(b[i])
+		if !aok || !bok {
+			return left < right
+		}
+		if ap != bp {
+			return ap < bp
+		}
+		if an != bn {
+			return an < bn
+		}
+	}
+	if len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return left < right
+}
+
+func TestCompactRefOrderingPreservesOriginalPairDecisions(t *testing.T) {
+	refs := []string{"", ".", "t", "1", "t0", "t01", "t+1", "t-1", "t1.", "t1..g2", "t2.bad", "t10.bad", "t1.g0", "t1.g01", "t1.g1.", "α2.n10", "α2.n2", "t9999999999999999999999999", "t1.g9999999999999999999999999"}
+	for _, target := range []int{1, 2, 9, 10, 99, 100, 450} {
+		for _, member := range []int{1, 2, 10, 100} {
+			refs = append(refs, "t"+strconv.Itoa(target), "t"+strconv.Itoa(target)+".n"+strconv.Itoa(member), "t"+strconv.Itoa(target)+".g"+strconv.Itoa(member)+".n2")
+		}
+	}
+	for _, a := range refs {
+		for _, b := range refs {
+			if got, want := compactRefLess(a, b), originalCompactRefLess(a, b); got != want {
+				t.Fatalf("%q < %q = %v, original %v", a, b, got, want)
+			}
+		}
+	}
+}
+
+func BenchmarkQualifiedCompactRefComparison(b *testing.B) {
+	for _, item := range []struct {
+		name string
+		less func(string, string) bool
+	}{{"original", originalCompactRefLess}, {"current", compactRefLess}} {
+		b.Run(item.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if !item.less("t450.g20.n2", "t450.g100.n2") {
+					b.Fatal("wrong natural order")
+				}
+			}
+		})
 	}
 }
 

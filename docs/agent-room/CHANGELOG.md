@@ -1,4 +1,2081 @@
+## 2026-10-08/09 — the owner's grouping loop; facts, render and canvas at scale
+
+The Codex-era map machinery (source readings, rejoin, catalogues, admission,
+catalogue contexts, areas discover/catalogue/assign) and the role
+gate/boxes/assign stages are replaced by the owner's loop (READING "The
+grouping"): helper question → Jev "grouped enough?" for a box of more than
+four declarations → DeepSeek proposes the next level only → Jev puts each
+declaration in a box (its leading box even under the margin) → recurse; areas
+are the divided boxes, drawn without a model. Removed files are in
+`~/repomap-snapshots/removed/`, the whole prior tree in
+`refs/wip/codex-2026-10-08`. Core asks each part beside its area's siblings.
+
+Ladder (ordinary online runs, exit 0): chi 24s; nats-server cold 4m38s,
+15.3M input tokens (Jev ~14.8M), 84 parts/17 areas, 1.6GB peak; freqtrade
+7m26s (grouping cold), 2.0M tokens, 180 parts/40 areas, 2.3GB; Metabase
+1h3m30s with the grouping re-asked, 104M tokens (Jev 87M, DeepSeek 17M),
+frontend 4,346 parts/1,262 areas, backend 1,591/367, 15GB peak. Codex's
+last Metabase grouping alone had been 184M DeepSeek tokens with no map of
+the main targets.
+
+Fixed on the way: nats-server's facts never ended (route values walked
+every path through callers' callers; now each caller once per argument);
+report part connections scanned every edge per part (indexed by subject);
+portfolio reads re-validated and re-hashed every index (`DecodeVerified`
+after the byte hash matches); the browser's `nodeByHref` scanned every node
+per name; ELK laid out 1,262 areas one by one (worker pool, top down, two
+open levels: 348s → 50s) and the world exceeded the browser's 2^25-pixel
+length (unit capped, levels entered framed by their content). A profiling
+build (`-tags profile`, `REPOMAP_CPUPROFILE`) writes per-minute CPU profiles.
+
+## 2026-10-08 — root cache/repetition audit; Go build cache recovered
+
+The resource audit initially omitted ordinary compilation caches. A stat-only
+census finds 35,914 Go build-cache files allocating10,561,417,216B, all born
+October6–8. This associates growth with task dates but is not exclusive process
+attribution without a baseline. Ambient module/npm caches measured21.18GB/1.80GB;
+module version-directory births are mostly older, with one October5 addition,
+not an exact pre-existing byte census. The actual shared response cache is
+`runs/.llm-cache`,8.86GB. The earlier23,378 cache hits and exact sent-request
+key implementation contradict a cold alternate-cache hypothesis for this run.
+
+After independent draft checks completed and no Go compiler/vet remained,
+ordinary `go clean -cache` exits0 in17.308s, preserving modules, model answers,
+native indexes, reports and the running binary. Build cache is then8KiB; free
+disk changes1,826,045,952→12,468,101,120B (+10,642,055,168B observed, not
+exclusive filesystem attribution). No Go cache relocation or native/model
+recomputation is introduced.
+
+The current Metabase orientation completes at3493.585s with0 roles,0 run steps,
+1 flow step and754 ignored response items; report assembly is still live and
+reader acceptance is withheld. Fifteen examined orientation exchanges have
+distinct sent hashes and one transport attempt each. Several answers instead
+waste generation on complete URL/support objects or repeated Clojure command
+combinations. One required role receives no eligible native/citation choices:
+preparation checks size but sends it, and the decoder later refuses its empty
+own support. Byte fit is not semantic answer feasibility or useful reading.
+A five-second process sample also observes local GC scanning; duplicated graph
+ownership/eager views remain current root lifetime concerns. Isolated fixes
+are not integrated or accepted. Tiny window diagnostic files allocate489.7MB
+for25.8MB logical data; they are not119,451 paid requests.
+
+Receipts: `/private/tmp/gallery/root-resource-and-repetition-audit-20261008.json`,
+`go-build-cache-birthtime-census-20261008.json`,
+`go-build-cache-cleanup-20261008.json`,
+`metabase-current-orientation-output-and-repetition-diagnosis.json`.
+
+## 2026-10-08 — full32 Metabase native completion; disk reserve recovered
+
+The Node8 ordinary `20261008-111504-metabase-51b391099912` reaches all32 actual
+native completions/seals. Frontend t10:152,104 objects/428,099 relations, native
+ready at601.429s; backend t16:65,522/572,414, ready at440.878s. Complete Facts and
+Claims follow; model grouping remains live under owned handle71012. No terminal
+status, final report or reader acceptance is claimed. Generic completion-only
+storage maintenance preserves all bytes/seals and releases694,456,320B across
+new app/frontend/backend indexes, complete32 census with no missing targets.
+
+A running journal snapshot records23,856 exchanges:23,378 local cache hits,
+476 accepted and2 rejected new answers. Reported live usage: DeepSeek37,193,099in /
+192,497out over441 calls, Jev275,838in /8,031out over37 calls. Current-tariff
+live-only estimate $5.656938486–$11.302291776 is a partial snapshot, not final
+accounting or an invoice. Historical paid usage is not charged again here.
+
+Paging and growing artifacts reduce actual free disk below1GB. Supervisor verifies
+terminal receipt/log/metadata ownership before exact transparent compression of
+16 closed historical common artifacts, releasing866,709,504B; full SHA/size/time/
+mode match, no source/native/provider-cache deletion or active-file changes.
+Two further closed knowledge files release480,661,504B after the same checks:
+urgent batches total1,347,371,008B, actual free disk about1.94GB. A bounded stat
+census distinguishes model artifacts from paging: current owner tables/payloads/
+journals stop changing at11:34:58UTC while free disk continues to fall; system
+swap usage is12,658.75MiB at11:42UTC. Over55.531s free disk falls57,868,288B
+while those complete active-owner artifact classes have no byte/count/mtime
+change; swap usage falls32MiB. Large swap is measured, but exclusive paging
+causality is unproved. This is not evidence of repeated paid requests. Performance lookup draft remains isolated; supervisor requests requested-key-only maps and
+complete real native old/new Encode/seal equality before production acceptance.
+Receipts under `/private/tmp/gallery`:
+`current-metabase32-node8-sealed-native-storage.readiness.json`,
+`current-metabase32-node8-provider-usage-snapshot.json`,
+`closed-historical-common-compression-20261008-urgent.json`,
+`closed-two-knowledge-compression-20261008-urgent.json`.
+
+## 2026-10-08 — current Freqtrade completes; bounded reader acceptance
+
+
+## 2026-10-08 — Metabase native heap failure diagnosed; full32 retry uses Node8
+
+Current full32 first attempt explicitly logs frontend t10 `target_preparation` /
+`analysis_failed` at200.518s: Node/V8 abort trap, `JavaScript heap out of memory`
+with mark-compacts around4,029–4,062MB. Its child never reaches native persistence;
+31 siblings retain complete sealed native indexes. This is a failed core reader
+journey, not successful full32 preparation. The temporary audit was corrected
+from old container-count assumptions to exact outcome/source availability.
+Root SIGINT cancels only its owned ordinary after the authoritative failure,
+not an observation timeout: handle93378 reaped, exit130/768.079s, peak RSS
+9,309,261,824B, no final report. Original indexes and accepted raw responses survive.
+The canceled attempt contains6,346 journals: new DeepSeek usage22,212,847in /
+148,283out, Jev149,696in /6,096out;12 transported DeepSeek calls have no numeric
+usage. Available live-only tariff estimate $3.394067922–$6.781848612, excluding
+cached origins, is incomplete accounting rather than an invoice. Official rates
+rechecked2026-10-08 at api-docs.deepseek.com/quick_start/pricing and docs.typesafe.ai/models
+agree with the estimator; legacy DeepSeek-v4-flash names are documented as served
+by Flash4.1, not a newly inferred answer-quality guarantee.
+
+A 5s CPU sample identifies a separate finite native hot path:343 top samples
+inside `programindex.resolvePatternArgumentReference`, which scans all relations
+per argument reference, followed by another authority scan. Skeptic confirms the
+constructor-local exact tuple/offset index candidate; no code, graph, cache key
+or current binary change is made here, and this does not prove a loop.
+
+Fresh full32 ordinary retry started11:15:04UTC, same canonical b523/c636 and clean
+Metabase HEAD15082c54, explicit NODE_OPTIONS=--max-old-space-size=8192,
+GOMAXPROCS=2/GOMEMLIMIT=6GiB. Existing runtime-options real fixture covers forwarding
+this heap option with complete compiler graph unchanged. The paid cache is shared;
+no scope narrowing, native replay adapter or duplicate active process. Handle71012,
+pid34126; still running, not accepted. Driver/log/receipt prefix:
+`/private/tmp/gallery/current-metabase32-node8-ordinary`.
+
+Storage maintenance stays exact: current completed backend compression releases
+345,133,056B (in addition to40,058,880B app); closed failed Airflow common artifacts
+release465,854,464B, with all full SHA/size/time/mode unchanged. Places compression
+with no physical gain is left unchanged. Full450 still needs staged completion-only
+compression and actual Metabase source/browser acceptance.
+Receipts: `current-metabase32-{frontend-oom-stop-20261008,canceled-provider-usage,native-completion-gap-20261008}.json`,
+`metabase-current-native-frontend-failure-diagnosis.json`,
+`current-metabase32-native-cpu-sample-20261008.txt`,
+`airflow-c49a-closed-common-compression-20261008.json` under `/private/tmp/gallery`.
+
+
+## 2026-10-08 — Redis counterexamples checked; current full32 Metabase started
+
+Fresh ordinary Redis `20261008-104847-redis-1-3-6-37f097ca83d3` on canonical
+source `b5232873` / binary `c6361f6f` exits 0 in 104.756 s, peak RSS
+243,544,064 bytes. All four complete artifact chains, one common manifest/report
+JSON/physical HTML, exact native subjects (923/271/81/184), projected lexical
+membership and original refused source records pass. The temporary audit's
+initial tests-only box exclusion failed on CLI's native-unreachable adlist;
+correcting that oracle to ordinary ForTests/Unreached policy preserved all
+subjects and off-map reasons, without a product edit.
+
+Independent skeptic/source and actual browser checks keep VM swap, RDB/AOF,
+MULTI and blocked-key waiting separate with no misleading ancestor. Actual
+vmInit function navigation preserves original calls/source; transaction selection
+survives reload once the page finishes loading. Immediate post-reload shell text
+was not accepted as the final reading. Screenshot inspected, console warn/error
+empty. This checks those named journeys, not all UI or model prose. Singleton
+area proposals are assigned as direct parts; no explicit semantic-stop or useful
+higher-level grouping certificate is claimed. Live-only reported-usage tariff
+estimate $0.520542306–$1.035573498 excludes cache origins and is not an invoice.
+Receipts: `/private/tmp/gallery/current-redis-prerequisite-{ordinary-receipt,artifacts-and-usage,browser}.json`
+and `/private/tmp/gallery/redis-current-area-skeptic.json`.
+
+Supervisor and reader prerequisite inventories preserve all32 Metabase selectors
+on clean HEAD `15082c54`, including tools/tests/hosts/drivers. Seven exact-source
+journeys distinguish Home redirect, setup, Metabot/native agent state, metadata,
+login/MFA, query processing and the JS algorithm/interface. Current ordinary
+full Metabase started at 11:00:04 UTC with the same canonical binary, GOMAXPROCS=2,
+GOMEMLIMIT=6GiB, shared model cache and no explicit narrowing. Start free disk
+7,708,893,184 bytes; process handle 93378 is owned by root. Still running, not
+accepted. Fresh receipt/log: `/private/tmp/gallery/current-metabase32-prerequisite-ordinary.log` and
+`/private/tmp/gallery/current-metabase32-prerequisite-ordinary-receipt.json`;
+source checklist and storage readiness remain under `/private/tmp/gallery/`.
+Full450 Airflow stays behind actual Metabase acceptance and staged exact sealed-
+native compression: its old uncompressed native alone exceeds current free disk.
+At 11:02 UTC, current native Node/clj-kondo children are actively computing
+(~101%/~98% CPU), not an observed stuck provider call. Exact sealed-native
+compression of the completed app file releases 40,058,880 bytes with SHA/time/
+mode equality. Free disk is about 6.2GiB after native preparation/paging; no
+repository narrowing, deletion or repeated run. Progress receipt:
+`/private/tmp/gallery/current-metabase32-native-progress-20261008.json`.
+
+- Frozen source `b5232873`, binary `c6361f6f`: full seven-target ordinary
+  `20261008-102056-freqtrade-fc3b4db0b81f` exits 0 in 463.279 s,
+  peak RSS 2,434,678,784 bytes. Full native/GroupsIndex/report seals, original
+  subjects, all seven analyzed outcomes and one common manifest/report JSON/HTML
+  pass. Main 63 groups and 15 refusals are counts, not semantic acceptance.
+  Receipt: `/private/tmp/gallery/parts-title-interpretation-freqtrade-artifacts-and-usage.json`.
+- Independent source review accepts corrected deployment-only public title and
+  coherent Exchange/Bot/ORM/Worker scopes. Original code and inherited-method
+  unknown remain; two intermediate owned-work claims are false (Worker exception
+  retry branch and LocalTrade ORM mapping). Gate identity/coherence retains
+  those claims unchanged and does not certify native effects. Public captions
+  omit both false claims; full prose/end-to-end scenario acceptance stays open.
+  Receipt: `parts-title-interpretation-freqtrade-reader-quality.json`.
+- Browser follows Worker._worker → _process_running → FreqtradeBot.process →
+  Trade.commit; Back and reload preserve reading. Search opens Exchange and
+  create_order with original dry-run call. Observed source permalink at `9f10e357`
+  is verified by direct GitHub navigation, including conditional entry/free slots;
+  heading click itself did not visibly open a source tab. One current map
+  screenshot is inspected; no broad mouse/zoom or all-node certificate.
+  Receipt: `parts-title-interpretation-freqtrade-browser.json`; no provider calls.
+- Live-only current tariff estimate is $0.85875699–$1.688862714, excluding cache
+  origins; not invoice/balance attribution. Free disk before closed compression
+  is 8,516,538,368 bytes. Exact transparent compression of ten closed audited
+  native/common files releases 375,230,464 bytes, preserves SHA/size/time/mode,
+  and finishes with 8,889,790,464 bytes free. Receipt:
+  `freqtrade-title-interpretation-closed-transparent-compression-20261008.json`.
+  Paid/native artifacts stay intact. Final independent boundary and skeptic audits
+  pass exact all79 original rows/support and all82 DeepSeek/14 Jev sent wires,
+  with zero HTTP in the auditors. Current Jev maximum request/question+state is
+  60,019/23,460 bytes, within both actual bounds. Two original DeepSeek nonfits
+  remain explicit. Receipts: `freqtrade-title-admission-boundary-supervisor.json`,
+  `freqtrade-title-interpretation-skeptic.json` and
+  `parts-title-interpretation-freqtrade-support-evidence-diagnosis.json`.
+  Bounded ordinary Freqtrade prerequisite is accepted with documented unknowns;
+  no universal prose truth or new gallery promotion. Redis and full32 Metabase
+  counterexamples still precede full450 Airflow.
+
+## 2026-10-08 — complete Freqtrade exposes title and admission scope defects
+
+- Full seven-target `20261008-092527-freqtrade-b96c60578ac7` exits 0 in
+  472.250 s, peak RSS 2,288,017,408 bytes on source `da1d52af`, binary
+  `1be8924e`. Independent audit accepts all seven original native/GroupsIndex
+  chains and one common manifest/report JSON/physical HTML. All 435 assignment
+  rows occur once; catalogue returns one valid combined reading and 87 choices.
+  This is artifact acceptance, not reader acceptance or publication.
+- Of 81 default candidates, 59 actual preparations are over-envelope: two
+  complete DeepSeek captions, 57 Jev gates even after existing exact packing
+  (31 fail the whole-request bound, 26 the single-question bound). Exchange,
+  FreqtradeBot and ORM are withheld. Exact independent inverse preserves all
+  359 member rows, 6,212 headers and 32,107 incident site occurrences across
+  77 gate inputs. These are local preparation refusals, not Jev negative votes.
+  Five transported candidates receive independent-job decisions; two other
+  captions correctly refuse known source ownership/role errors. Default map
+  has 15 accepted groups and 66 refused proposals with complete off-map sources.
+- Actual browser/source audit confirms accepted `r4`/`g9` promises secret
+  redaction despite owning only `configuration/deploy_config.py`. Its finalized
+  description correctly describes questions and file creation. Actual
+  `sanitize_config:27` lives in separately withheld `config_secrets.py`, whose
+  source remains reachable at captured revision `9f10e357`. Thus catalogue
+  title still overrules actual composition. No renderer rename or member repair
+  was used. Console warnings/errors are empty in this bounded walkthrough;
+  this does not certify all source-navigation or reload states.
+- Reader, skeptic and supervisor agree that existing Describe must finalize
+  required title and description before admission, with refs/membership fixed.
+  Admission may instead judge coherence of the complete attributed per-row
+  model work/use and exact original source identities, uniformly for every size.
+  This changes its evidence question and assurance; it cannot independently
+  detect an omitted native job or false source effect. Full native evidence
+  stays in source-reading owners, ProgramIndex and report. All 77 saved work
+  sets fit actual Jev preparation without HTTP at 2,338–15,592 bytes; old titles
+  are sizing stand-ins, not accepted new finalizer responses.
+- Describe v3 now requires title and description from the same complete native
+  actual set. Missing/null/conflicting title refuses that candidate without
+  provisional-name fallback; identical titles preserve distinct refs and sets.
+  Focused owning tests pass in 0.794 s and scoped vet exits 0. Admission v5
+  uniformly reads complete model work/use plus exact original row identities;
+  native-reading stages retain the same exact pack through the explicit shared
+  helper. All five real native whole/split consumers and C client pass with
+  unchanged native declarations/calls; final consumer receipt is
+  `/private/tmp/gallery/parts-title-consumers-five-native-receipt.json`.
+  Current-production saved77 preparation (1.042 s, HTTP/Complete zero) proves
+  exact original identity order and complete work/use text/order, fitting all
+  single candidates at 5,463–24,303 bytes and fifteen ordinary windows.
+  Receipt: `freqtrade-current-production77-interpreted-admission-preparation.json`.
+  Neither presets nor old sizing titles establish real new model/source quality.
+  First canonical attempt preserves unchanged sources but fails (`make test`
+  exit 2 in 256.120 s): one stale test still expected the full native body in
+  admission; actual Go SSA and Node-hardlink tests also fail in the restricted
+  execution environment. The native oracle now compares identical full native
+  inputs across discovery/assignment/Describe and exact attributed identity/work
+  across admission, including whole and subset scopes and unchanged Graph bytes.
+  Focused test passes in 0.573 s; vet exits 0. The original failed receipt/log
+  remain intact. Correctly authorized frozen canonical test/vet/build pass in
+  291.198/2.666/11.675 s on unchanged source `b5232873`, binary `c6361f6f`.
+  All Go/Node checks also pass; no paid ordinary run was launched from the
+  failed check. A fresh complete seven-target ordinary Freqtrade now runs on
+  that exact binary. Its source/browser acceptance remains pending.
+- Exact live-only usage and complete-chain audit:
+  `/private/tmp/gallery/parts-catalogue-boundary-freqtrade-artifacts-and-usage.json`;
+  independent source reviews: `parts-catalogue-boundary-freqtrade-reader-quality.json`,
+  `freqtrade-current-main-reader-refusals-skeptic.json` and
+  `freqtrade-main-admission-capacity-supervisor.json` in the same directory.
+  Current tariff estimate $2.10296–$4.18462 excludes cache origins and is not
+  invoice/balance attribution. Free disk is about 9.8 GiB; retained paid answers
+  and native artifacts have not been deleted. Exact transparent compression
+  of ten closed audited native/common artifacts releases another 374,013,952
+  bytes; SHA, size, timestamp and permissions all survive readback. Receipt:
+  `freqtrade-catalogue-closed-transparent-compression-20261008.json`.
+  No new Metabase/Airflow run or
+  gallery promotion follows from these failures.
+
+## 2026-10-08 — align catalogue intent with actual-member captions
+
+- Full seven-target Freqtrade `20261008-090214-freqtrade-8c01944f6275`
+  exits 0 in 416.099 s, peak RSS 2,219,425,792 bytes. Four previously oversized
+  original discovery rows now complete; sixty other windows reuse paid cached
+  answers. The main catalogue remains refused: its raw 138,400-byte response
+  has two valid JSON roots, first lacking responsibilities, second with 360.
+  HTTP 200 / one transport, 56,758 input / 28,512 output tokens at 128,000
+  reserve establish no truncation or capacity failure. No main caption or Jev
+  admission ran; choosing the second root would complete a missing known decision.
+- Reader, skeptic and supervisor independently find 359 exact Name/Holds copies
+  from 362 local proposals. The owning prompts incorrectly called catalogue
+  intent the final public purpose despite actual-member finalization. They now
+  retain fixed names and provisional assignment jobs, describe program-wide
+  synthesis from all readings, and request one combined response. This changes
+  no evidence, decoder, quota, assignment, admission or cache implementation;
+  it does not prove a better future grouping. A required-field regression keeps
+  both root orders and wrapped known incomplete answers refused.
+- Focused catalogue/partition/packing and shared JSON checks pass in
+  4.390/0.537 s. Frozen canonical test/vet/build pass in
+  252.560/2.644/8.691 s, source `da1d52af`, binary `1be8924e`;
+  fresh seven-target ordinary is running. Actual reader acceptance remains
+  pending. Exact response and review receipts survive under
+  `/private/tmp/gallery/parts-native-atomic-freqtrade-reader-quality.json` and
+  `freqtrade-catalogue-two-root-response-supervisor.json`. Free disk is about
+  11 GiB; transparent compression of ten closed audited artifacts recovers
+  372,199,424 bytes with exact readback hashes, times and permissions. No source
+  artifacts or model-cache answers were deleted. The complete artifact audit
+  retains all seven native/Groups chains and one common report/HTML; actual
+  new usage is DeepSeek five calls / 645,795 input / 33,989 output, Jev zero
+  live calls. Current tariff estimate $0.11679–$0.23358 excludes cache-origin
+  usage and is not an invoice or balance attribution.
+
+## 2026-10-08 — retain large original rows through parts preparation
+
+- Full seven-target ordinary Freqtrade exits 0 in 416.517 s, peak RSS
+  2,385,231,872 bytes, but default `t1` has zero parts / explicit map refusal.
+  Four complete original discovery rows exceed actual 1M DeepSeek byte
+  reservation; their 1,729–2,388 distinct sites repeatedly spell the same
+  complete endpoints. All sibling/native artifacts survive; this is not reader
+  acceptance. Native `_throttle(func=…)` dispatch reaches `FreqtradeBot.process`;
+  the separate multiple-base `Trade.get_open_trades` uncertainty stays explicit.
+- Discovery and assignment now reuse existing lossless native dictionaries only
+  for an indivisible original row after an actual input/context refusal. Fitting
+  windows, original scope/choices/decoder closures and output reserves survive;
+  remaining nonfit is terminal, technical preparation errors are fatal.
+- Independent HTTP0 probe restores all four entire saved JSON windows exactly,
+  including headers, endpoints, call sites and repeated associations. Packed
+  input sizes 331,151/481,076/327,053/339,760 bytes fit actual DeepSeek preparation
+  at unchanged 8,192 output reserve and also at 128,000. Focused atomic packing
+  and partition checks pass in 2.321 s; frozen canonical test/vet/build pass
+  in 254.287/2.909/8.871 s, source `a5a7246f`. Fresh ordinary acceptance
+  is pending. Free disk remains about 11 GiB, sampled every ten seconds during
+  the ordinary run. No current artifacts or model cache were deleted.
+
+## 2026-10-08 — bind part descriptions to actual assigned source
+
+- The existing `atlas_describe` owner now finalizes a caption before admission
+  using each complete actual assigned set, its fixed name and separately retained
+  provisional intent. Closed owned-work rows cover every actual member; optional
+  related-use rows cannot promote a neighbour to ownership. No old-purpose fallback,
+  regrouping, post-refusal rescue or renderer repair is added.
+- Owning full reading/lines checks pass in 39.497/0.351 s with scoped vet exit 0.
+  Five real native whole/split consumers plus C unreachable-source reading pass
+  (contract 21.271 s, JS/TS 4.951 s), retaining old source, membership, reach and
+  native-graph assertions. Stale catalogue-caption expectations were migrated to
+  the newly authoritative actual-member purpose; earlier failures remain saved.
+- Complete saved ordinary d4 preparation passes all 19 candidates / 28 original
+  source rows, actual DeepSeek output reservation and both Jev envelopes, HTTP 0.
+  All 38 independently expanded caption/admission inputs exactly retain source
+  evidence and support. A genuine C singleton refusal (packed 32,164 > 32,000
+  bytes) was preserved; removing 453 bytes of repeated static instructions per
+  window resolves it without changing evidence, support or limits. No cache
+  implementation changed. Frozen canonical test/vet/build pass
+  (211.937/2.289/10.058 s; source `0de38be6`, binary `2ad13b28`).
+- Fresh full two-target ordinary `20261008-070410-python-tutorial-game-cf150d5c040f`
+  exits 0 in 40.345 s, peak RSS 658,210,816 bytes. All 28 original assignment
+  rows, 220/261 native objects and exact common report/native/Groups artifact
+  bindings survive. Nineteen accepted actual-set descriptions and seven Jev
+  admission windows use the same exact support; both provider gates fit all 19.
+  One valid near-margin and one independent-jobs refusal remain source-readable.
+  Independent source/browser acceptance is bounded: old Field/Robot ownership
+  error fixed, useful page-layer/level/Award jobs supported, source journeys and
+  reload/return verified, byte-identical render and no browser console errors.
+- The same audit records two remaining effect errors in hidden owned/related
+  support (metrics no-op without handler; Rootpage indirect through route pages).
+  Public captions omit them, but admission consumed them. Closed refs do not
+  certify causal prose; overall semantic truth, brief captions, full UI/camera,
+  Metabase/Airflow and gallery promotion remain unaccepted. No paid reroll follows.
+  DS actual new 95,907 input / 8,086 output (12,800 prefix cache-hit input);
+  Jev 123,823 / 2,666. Thirty-nine live and 54 local-cache semantic calls have
+  186 exact payload bindings. Current tariff estimate $0.02256–$0.03991 excludes
+  local-cache origins and is not invoice attribution.
+- Evidence: `/private/tmp/gallery/parts-caption-owning-receipt.json`,
+  `parts-caption-consumers-five-native-receipt.json`,
+  `parts-actual-caption-supervisor-review.json`, and
+  `parts-actual-caption-preparation-receipt.json`.
+
+## 2026-10-08 — complete structural evidence exposes caption ownership mismatch
+
+- Frozen source `18006fe1` initially fails canonical checks under the sandbox:
+  ambient Go build-cache access and native Node hardlinks are denied before
+  analysis. The failed receipt/log are retained. Unchanged authorized native
+  checks pass: test 233.807 s, vet 2.247 s, build 11.289 s; binary `d019af17`.
+  Five cumulative real-language whole/split consumers and complete saved c499
+  preparation retain all original task-defined native observations.
+- Ordinary full two-target `20261008-062445-python-tutorial-game-d4c461be63d1`
+  exits 0 in 48.3 s (peak RSS 658,935,808 bytes). Exact 220/261 native subjects,
+  complete common/sibling artifacts and one physical HTML pass independent
+  audit. Saved render exits 0 with HTTP 0 and identical HTML SHA `02ccdbf8`.
+  Actual 19 assigned candidate sets pass both Jev preparation gates; eight
+  live admission windows have three valid near-margin undecided cells.
+- Actual usage: 15 DeepSeek calls, 144,768 input / 9,382 output tokens
+  (10,240 provider-prefix hits), and 12 Jev calls, 123,310 input / 2,646 output.
+  Forty-eight local/shared cache origins are excluded from new charges.
+  Current-tariff estimate $0.0310–$0.0569 is not an invoice/account balance.
+- Reader, skeptic, supervisor and actual browser reject semantic acceptance:
+  Field-only group g4 still says it contains Robot from a separate g3.
+  Catalogue intent is preserved exactly, but it is not an actual-member-bound
+  caption. Validation/Award and levels/settings are separated and generic
+  utilities withheld; useful shared page composition remains undecided.
+  No gallery version is published from this counterexample.
+- Browser evidence covers Home, Field/private method/source at captured
+  `78714d3`, Playground→HTTP→backend source references, source-readable refused
+  page composition, reload/return and zero console warnings/errors. It does
+  not reaccept every canvas control or exact camera restoration.
+- Receipts are preserved under `/private/tmp/gallery/parts-native-evidence-d4-closed-checks/`.
+  The next agreed correction is existing-owner purpose finalization over fixed
+  complete actual membership before admission; implementation/checks pending.
+
+## 2026-10-08 — responsibility evidence belongs to its question
+
+- The reader/skeptic/supervisor follow-up finds the missing grouping evidence
+  before discovery and assignment: original method/lexical headers, private
+  signatures and named within-unit calls. Their original membership stays
+  unchanged; native type members retain actual observing targets separately
+  from their representative object identity (places graph 29).
+- The provisional full-origin parts DTO is losslessly reversible on all 13
+  saved c499 candidate sets, but not accepted. Its recursive value/write
+  retrieval has no demonstrated common-purpose reader requirement. Exact
+  packing reduces the largest single request from 144,013 to 68,109 reserved
+  bytes; it still exceeds Jev's 64k total gate and would also face its separate
+  32k state-plus-single-question gate. Five native consumers expose remaining
+  complete-candidate refusals rather than silently accepting missing rows.
+  All probes are HTTP 0; original refusals and receipts are preserved under
+  `/private/tmp/gallery/parts-native-c499-probe/`.
+- The unanimous decision defines one size-independent parts evidence scope:
+  all eligible original headers, owned fields and all incident named call sites,
+  API identities, literal values/argument words, exact sources and uncertainty.
+  Recursive source-value and field-write retrieval stays in the complete native
+  graph and its existing destination/configuration/data readers. This removes
+  an unrelated capability from the question, not source rows to fit a budget.
+  Discovery v5, assignment v4 and admission v3 use the same structural evidence;
+  no shallow-origin substitute, depth quota or runtime-effect inference is
+  introduced. Canonical and ordinary acceptance of this scope remain pending.
+
+## 2026-10-08 — actual-membership admission and refusal source access
+
+- The resumed reader/skeptic/supervisor meeting chose admission of complete
+  actual groups, with source preservation, before an expensive rerun. This
+  does not regroup rejected members or establish architectural quality.
+- `atlas_parts_admission` asks Jev one strict closed `common_purpose` decision
+  per complete assigned candidate before drawing. Name/purpose/members remain
+  unchanged; independent-job, unknown, undecodable and intrinsic input-envelope
+  refusals retain a typed model proposal and exact original native subjects.
+  Candidate members are never sharded into local votes. Technical failures
+  remain fatal; all rejected candidates give explicit map-unavailable status.
+- Fully unheld files and complete map failures now retain exact off-map
+  declaration IDs through Atlas, GroupsIndex, saved overlay and ordinary
+  report/source chips. A real cumulative C fixture passes Discover/Parse/Index
+  and native projection through the ordinary report with the original helper
+  source identities. Existing independent native fixture assertions are intact.
+- Complete saved ordinary `8336` preparation preserves front 19/backend 9
+  original rows and all 13 candidate Name/Holds/member sets: real Jev Prepare
+  28,680/21,667 bytes, HTTP 0. This is exact preparation/decoder evidence,
+  not a paid verdict or semantic regrouping proof. Final focused reading,
+  groupindex/atlas/report consumer suites and vet pass; full reading 34.987 s,
+  full report 22.275 s, external native consumers 119.880 s.
+- First frozen canonical test run fails in 217.366 s only because the new
+  semantic stage was missing from the existing exchange registry. This was
+  fixed without weakening its scanner; debugdump suite 0.592 s/vet exit 0.
+  The first failure receipt/log is preserved under `/private/tmp/gallery`.
+  Final frozen canonical passes test 286.530 s, vet 4.377 s and build
+  13.964 s with source `54386925` unchanged; binary `12fac7fd`.
+
+- Frozen `12fac7fd` full two-target python-tutorial-game ordinary exits 0 in
+  27.915 s (RSS 650,260,480 bytes); all common/sibling/native/member artifact
+  bindings and exact zero-provider saved-render readback pass. Actual admission
+  preserves all 13 prior claims/member sets; 7 admitted, 6 refused. All three
+  previously source-verified unions are refused as independent jobs. Useful
+  Field/Robot simulation is undecided (unknown .48 versus common .45), and
+  page composition unknown (.72), so semantic quality remains unaccepted.
+  Exact original 220/261 native subjects survive. Browser details, declined
+  proposal/source chips, Find, accepted POST-to-handler, captured-revision code,
+  function/input reload, frontend drawing and Home return journeys pass; the
+  visible POST path also exposes the missing admitted simulation steps.
+  Current-tariff actual live usage (cache origins excluded): DeepSeek 14,581
+  input / 2,634 output, Jev 38,178 / 1,873; estimated USD .004260882–.006918288,
+  not an invoice. Admission alone: two Jev calls, 14,102 / 638, USD .000592284.
+  Receipts: `/private/tmp/gallery/parts-admission-small-{ordinary-receipt,
+  artifacts-and-usage,browser-receipt}.json`; HTML SHA `792642e8`.
+- The actual counterexample reveals shared native evidence loss before admission:
+  method and lexical followers inherit correct membership but their names and
+  signatures were omitted from the request; private root signatures were also
+  omitted. Calls were reduced to inter-unit counts, losing within-unit and
+  callable evidence. Fixing the shared discovery/assignment/admission preparation
+  is next; classification uncertainty is not proof that simulation is unrelated.
+  The single global native revision design is already falsified by complete
+  Metabase t10 Prepare: 9,544 original rows, 14,398,518 input bytes, 15,735,913
+  reserved tokens versus 1,000,000; HTTP 0. No semantic reroll loop is accepted.
+
+## 2026-10-07 — Metabase/Airflow reading fixes and funded publication runs
+
+- The direct Metabase renderer/audit now exits 0: 429.348 s, maximum RSS
+  10,626,727,936 bytes, all 32 analyzed target stage chains, identical complete
+  HTML SHA to `4bab`. `metabase-own-use-reuse-30ba-direct-exit-result.json`
+  records the actual child wait status. The ordinary Home renderer now creates
+  closed file inventories, nested folders and grouped library exports on first
+  opening. The complete page data, order and original declaration navigation
+  remain unchanged; own/child/repeated toggles never duplicate rows. Focused
+  Home/reading tests pass (1.304 s), full report tests pass (17.395 s), vet
+  exits 0 and supervisor review finds no blocker. Actual DOM/browser acceptance
+  and the remaining hidden flow/catalogue representation work are pending.
+  One exact full450 probe now runs with explicit standard `GOMEMLIMIT=20GiB`;
+  preparation keeps all original identities and records binary/source/input
+  hashes, actual runtime environment, managed memory, GC and direct exit usage.
+  This is current-code-plus-runtime-budget evidence, never ordinary acceptance.
+  Evidence: `/private/tmp/gallery/artifact-memory-probe-single-reads-30ba/`
+  and `/private/tmp/gallery/metabase-own-use-reuse-30ba-direct-exit-result.json`.
+
+- Frozen `30ba5f0843cf` produces byte-identical full Metabase HTML to `4bab`
+  (SHA `b5fbb09ffea4ce5750df0905d1804d6c45f2a8795b0fc43fc1803e591a20e841`),
+  and every original embedded payload still matches. The temporary timing
+  wrapper exits 1 after rendering because a system counter is denied; no child
+  exit or successful audit is inferred from that wrapper. The corrected helper
+  captures the direct child's wait status and resource usage; independent exit
+  0/7 probes pass. A direct complete audit is running. Browser backend main,
+  frontend variable, Shadow callable and shared protocol reading/source journeys
+  succeed; Reporter/reload/Home checks remain pending. Read-only browser census
+  measures 459,208 live DOM elements. Independent review traces eager hidden
+  flow/catalogue markup and closed source trees, plus reading clones. This is
+  an open representation/lifetime issue, not proof of every tool timeout's cause.
+  Evidence: `/private/tmp/gallery/own-use-reader-reuse-implementation-receipt.json`,
+  `metabase-own-use-reuse-30ba-{wrapper-failure,payload-equality}.json`,
+  `metabase-browser-4bab-partial-receipt.json` in the same directory.
+
+- The complete 32-target Metabase saved render on frozen `4bab410876b0`
+  exits 0 in 647.091 s, producing 54,303,647-byte HTML. Complete original page,
+  terminology and scene payload SHA comparisons pass; original vocabulary
+  entries survive with two explicit boot messages. This proves saved rendering,
+  not browser or public acceptance. An actual CPU sample exposes same-name
+  readings repeatedly building the full object table and scanning all relations.
+  `OwnUseReader` now borrows the current immutable native graph and stores
+  original offsets, released on target changes. The independent prechange
+  oracle passes 341 ordered queries, including duplicate/missing IDs; real
+  JS/TS/Python same-name fixtures and cross-target same-ID/reuse/release checks
+  pass. Full groupindex/report tests pass (0.707/18.120 s), changed-package vet
+  exits 0 and both independent reviewers find no blocker. Latest full saved
+  rendering and full450 memory/ordinary acceptance remain pending.
+  Evidence: `/private/tmp/gallery/metabase-current-render-shared-4bab-result.json`,
+  `metabase-current-render-shared-4bab-payload-equality.json` and
+  `metabase-current-render-shared-4bab-cpu-8m.txt` in the same directory.
+
+- The next full450 CPU sample reaches the shared-code ownership join after
+  the common native catalogue. That join decoded the entire portfolio once for
+  held files and again for declaration holders. It now computes both from one
+  complete target read, with original section/object order and separate
+  full/test-free ownership. Explicit tests retain OffMap-only and unmapped
+  targets, nil versus empty held-file inventories, unlocated declarations,
+  helpers in held files, exact identity and unreachable observations.
+  File-backed joins equal complete inline values and latch missing/tampered
+  last-file errors even after external restoration. Focused checks pass in
+  3.767 s, the full report suite in 17.471 s, vet/build exit 0, both independent
+  reviews find no blocker. Frozen binary: `4bab410876b0`.
+  The preceding measurement exits 143 after explicit SIGTERM at 2,573.52 s,
+  with physical peak 32,282,759,168 bytes; no complete page or speed/memory
+  acceptance is claimed. Original450 bindings and paid artifacts are unchanged.
+  Receipts: `/private/tmp/gallery/artifact-memory-probe-current/interrupted-result.json`
+  and `/private/tmp/gallery/shared-native-join-single-read-implementation-receipt.json`.
+
+- Fresh current-code full450 measurement retains the exact old target/selector,
+  native/group seal and object/relation binding rows (6,287,591 / 8,241,535).
+  It reaches `before-page` in 1,015.850 s, with 8,788,105,120 heap bytes after
+  GC. The one full reader is still running; no `complete-page`, ordinary Airflow
+  report or browser acceptance is claimed. Receipt:
+  `/private/tmp/gallery/artifact-memory-probe-current/binding-identity-comparison.json`.
+  Public readback independently confirms all existing 16 English HTML byte
+  hashes, both removed RU URLs at 404 and Metabase still at 404. Temporary
+  accounting preparation derives publication from actual accepted/public bytes
+  rather than a Metabase name exception; the final README update requires all
+  18 published measurements and preserves the remote text outside Examples.
+  Official Jev/DeepSeek rates are reverified on 2026-10-07. Receipt:
+  `/private/tmp/repomap-gallery-20261006/funded-publication-accounting-preparation-receipt.json`.
+  The complete original Metabase embedded payload hashes are preserved for the
+  next actual saved-render comparison; its new UI vocabulary may add only the
+  two boot loader status messages. No new HTML or publication has been accepted.
+
+- The four existing page-native lookups (declaration ends, package names,
+  run-by joins and native Go-test witness paths) now share one complete canonical
+  native visit and an internal lookup pointer across the overview copy. No
+  native bodies or section pointers enter that catalogue. Golden reader tests
+  retain t2/t10/t11 overwrite order, duplicate packages, the original
+  any-Unreachable guard, group-view vs native-witness test scope and both access
+  orders. First last-file loss/tamper latches fatal even after external restoration;
+  helpers do not retry it. Actual ordinary saved-render/report-JSON comparisons
+  pass with the focused suite (2.497 s). Full report/run suites pass in
+  33.175/121.088 s; focused vet and build exit 0. Supervisor review finds no
+  blocker. Current owner binary is `27eec8f56bec`.
+  The old full450 baseline was explicitly stopped with SIGTERM (exit 143,
+  4,026.35 s, peak physical footprint 33,015,595,008 bytes); it never reached
+  `complete-page`. Its latest CPU sample shows declaration-end collection
+  decoding whole native indexes, after earlier path and overview passes.
+  This is finite observed progress, not evidence of an infinite loop.
+  Exact old binary, inventory, phase log and samples remain in
+  `/private/tmp/gallery/artifact-memory-probe/`. One fresh sequential full450
+  measurement on current code runs in `artifact-memory-probe-current`, with
+  the same inventory SHA and original object/relation expectations; it is not
+  ordinary Generate, report/HTML or browser acceptance. Full450 memory,
+  ordinary completion and large-report browser acceptance remain pending.
+
+- Exact current450 Airflow directory metadata separates data volume from file
+  count: native JSON is 8,862,444,138 logical bytes / 1,338,060,800 allocated;
+  provider payloads and journals total 68,075,636 logical bytes. The 51,997
+  `tables/*.json` files hold 14,912,582 logical bytes but allocate 216,059,904:
+  input/prompt/request/response references and saved window results, not that
+  many live model calls. `airflow-current-disk-category-detail.json` records
+  the complete metadata census without reading graph bodies or deleting data.
+
+- Saved Metabase render on frozen `207c8169d72c` was explicitly terminated
+  (exit 143) after about 22 minutes when simultaneous full450 measurement
+  reduced disk free space to 3.8 GiB. It is no finished HTML or acceptance.
+  Existing paid ordinary artifacts are unchanged. Remaining Air sample at
+  14:15 advances from path collection to `overviewBuilder`'s complete native
+  pass (25.3 GiB footprint, 25.7 GiB peak), proving phase progress rather than
+  completion. Heavy measurements will run sequentially. Closed original Meta
+  report JSON/HTML transparent compression preserves exact SHA, timestamps and
+  mode and releases 329,666,560 allocated bytes; the same attempt on places
+  releases zero. Receipts: `/private/tmp/gallery/metabase-current-render-interrupted-20261007.json`
+  and `metabase-closed-common-compression-20261007.json`.
+
+- Actual CPU samples at 13:59 local time distinguish Airflow's finite full
+  `collectOpenablePaths` native decode pass from Metabase's quadratic type/member
+  scan in `groupReading`. Samples: `/private/tmp/gallery/airflow-probe-cpu-20261007-1407.txt`
+  and `metabase-render-cpu-20261007-1407.txt`. Type result/parameter catalogues now
+  visit each original member once with the same TypeIDs, listed functions,
+  duplicate suppression and name sort. Native paths are gathered during original
+  validated binding and saved restoration; path-only consumers stream-check
+  original byte SHA rather than decode another complete graph. Inline mutable
+  values remain current. Missing/changed last files refuse without installing
+  partial paths. An actual sealed saved unresolved relation and separate witness,
+  neither path in Target.Sources, retain both paths after restoration. Initial
+  review caught the missing saved-file constructor and it was corrected before
+  acceptance. Full report/run suites pass in 35.778/110.204 s; the final added
+  saved-file/type/path contrasts pass in 1.396 s. Full450 timing and memory on
+  these changes remain unmeasured; existing live probes use earlier binaries.
+- Ordinary embedded HTML uses exact complete gzip/base64 JSON only when smaller,
+  restoring all bytes before its original classic bundle executes. Actual browser
+  tests pass valid delayed-after-load startup plus invalid base64, CRC corruption,
+  truncated gzip, unavailable decoder, throwing/syntax-invalid bundle and CSP
+  blocking (3.647 s). Each failure remains visible and does not claim readiness
+  or start a fallback report. Full report/run suites pass in 22.690/93.634 s
+  before the path/type changes. Ordinary large Metabase saved render and its real
+  deep-hash scroll/source/browser walkthrough remain pending.
+- Independent current Metabase artifact audit finds no blockers: all 32 planned
+  targets match analyzed outcomes, original native/index-set/group seals and all
+  36 common bindings. Core maps retain 52/27/23 groups, 33/2/8 containers; all
+  60 corrected native kind positions survive both Clojure views. Receipt:
+  `/private/tmp/gallery/metabase-current-acceptance-audit.json`
+  (`450542b295171bdd059ed2914950b20c98283fd86232b236fe7fddcff8f52828`).
+  Static anchors are checked; this is not browser acceptance or publication.
+
+- Successful ordinary report assembly now releases the original run-held group
+  set before glossary and HTML generation; the report retains its complete
+  isolated snapshots. Assembly and orientation refusal retain every producer
+  graph. Exact original overlays, accepted orientation and byte-identical
+  ordinary saved render pass (3.524 s); the full run suite passes (54.815 s),
+  run vet and owner build exit 0. Independent supervisor finds no later ordinary
+  consumer of the released group set. Transient snapshot peak remains, and the
+  full450 saved-stage memory measurement is running, not yet accepted.
+- Funded Metabase owner `20261007-064833-metabase-8bcb1adc5c05` exits 0 in
+  9,530.002 s with all 32 outcomes analyzed. Common report JSON/HTML are
+  210,676,831/161,832,764 bytes. Full artifact/source/browser checks and public
+  publication remain pending; an exit alone is not product acceptance.
+
+- The actual old Metabase publication CPU sample follows `encodeReportJSON`
+  through `ProgramPortfolio.Validate` to complete native `indexDigest` JSON
+  serialization (12 GiB footprint, 14 GiB peak). File-backed portfolio validation
+  now avoids hashing a freshly `Decode`-validated graph immediately again;
+  mutable inline values still validate independently. Complete mixed inline/file
+  validation refuses an edited inline graph or a missing original file. Focused
+  portfolio/saved-JSON tests pass in 1.005 s; report vet and owner build exit 0.
+  This does not alter the already running frozen Metabase or establish full450
+  memory acceptance. Sample: `/private/tmp/gallery/metabase-publication-cpu-current.txt`.
+
+- Ordinary report portfolios now bind all original full native artifacts with
+  exact target/native/byte seals and canonical complete visitation, rather than
+  retaining every decoded body. Saved format/file paths remain unchanged;
+  public in-memory constructor snapshots stay isolated. Native page relation,
+  field and data caches release the previous target on scope changes. Missing
+  or changed files refuse binding, persistence and rendering, including helper
+  reads through the page's shared error latch. Complete native artifact equality,
+  one/two-target identical HTML, target switch/return, mixed inline/file saved
+  roundtrips and last-file failure preserving an existing binding pass. Full
+  report/run suites pass in 14.063/52.206 s with ambient caches/native tools;
+  sandbox-only native tool/cache failures were corrected by the authorized
+  environment, not by weakening assertions. Focused added cross-target checks
+  pass in 0.710 s. Independent skeptic/supervisor reviews identify no concrete
+  semantic/format blocker; complete hydrated GroupsIndexes remain resident.
+  Canonical `make test GO_PACKAGE_PARALLELISM=2`, `make vet` with the same
+  package bound, and `make build` exit 0; contract tests finish in 172.515 s.
+  Owner-facing binary is `cfdc1d5f2b44`. The full450 saved measurement was
+  explicitly interrupted after 116.07 s before its first25-target checkpoint
+  to avoid competing with the funded Metabase's old overlapping assembly
+  (11,297,052 KiB RSS, swap7,942.75 MiB). This is no completed memory probe.
+  Full450 memory measurement and ordinary acceptance remain pending.
+  Current binary ordinary saved render of accepted two-target self-repomap
+  `20261006-231808-repomap-23e2f4e27bd8` exits 0 with zero provider requests.
+  Actual loopback8795 browser walkthrough inspects the overview, report area,
+  parsing part, NewData's original captured839fa signature/source/callers,
+  parent return, reload and the second JavaScript component. This is saved
+  consumer evidence, not a new ordinary run or complete450 acceptance. Receipt:
+  `/private/tmp/gallery/artifact-portfolio-implementation-receipt.json`.
+  Evidence: `/private/tmp/gallery/artifact-portfolio-packages-unsandboxed.log`,
+  `/private/tmp/gallery/artifact-portfolio-cross-target.log`.
+
+- Full Airflow owner `20261007-045425-airflow-bd823626b183` exits -9 in
+  11,542.951 s with no final report. Kernel evidence at 12:06:39 local time
+  records failed swap-file creation (errno 28), no paging space and killing
+  the largest compressed process, PID 12551, at 41,119 MB. All 450 native/maps
+  and paid responses remain. Exact scoped metadata census measures 8,862,444,138
+  logical native bytes / 1,338,060,800 allocated native bytes after compression;
+  all current-run artifacts allocate 3,369,033,728 bytes, excluding the global
+  provider cache. Receipts: `airflow-sigkill-root-memory-receipt.json`,
+  `airflow-current-disk-census.json` under `/private/tmp/gallery/`.
+- Both independent reviewers find simultaneous orientation snapshots, eager
+  complete native portfolio binding, and original/copied GroupsIndex retention.
+  Equal SourceSHA and row counts do not establish identical views: the actual
+  small t13/t18 pair has distinct native object IDs, relations and locations.
+  A complete sealed t30 core-library probe (117,817 objects / 166,418 relations)
+  exits 0 in 6.608 s and retains 478,547,008 heap bytes; exact string-content
+  span accounting offers only 11,670,806 bytes of potential within-index reuse,
+  not an allocator release measurement. No string interner was added. Receipt:
+  `/private/tmp/gallery/native-string-memory-probe-receipt.json`.
+- Orientation now finishes and releases its group snapshots/source graph before
+  report-native assembly begins; a returned orientation error keeps its cause
+  and writes no report. This is a lifetime correction, not full Airflow memory
+  acceptance. Native/group scoped consumption, saved rendering and a fresh
+  complete ordinary run remain open. Existing publication/orientation/released-
+  target regressions pass (3.756 s); the complete changed run package passes
+  (49.460 s) and focused vet exits 0 with the authorized ambient Go cache.
+  Independent supervisor review finds no semantic blocker; a returned error,
+  rather than independent semantic refusals, is the boundary preventing
+  assembly. `make build` exits 0 (`acb4b307798f` before comment clarification).
+
+- Additional transparent compression of four exact closed native artifacts
+  exits 0, freeing 1,308,794,880 allocated bytes: current Metabase t10 and three
+  older Metabase native files. Interleaved log output is bound by each exact
+  run-specific Artifacts/completion block; native seals, complete file SHA,
+  original time/mode and source identity are checked before atomic replacement.
+  Sources, paid cache, provider evidence and current common artifacts remain.
+  Filesystem free space recovers from an observed 238 MiB low to 6.7 GiB;
+  swap fluctuations mean the whole filesystem change is not compression savings.
+  Receipt: `/private/tmp/gallery/native-disk-maintenance-0757-receipt.json`.
+- The actual Metabase core-context output refusal `f080345c` preserves its
+  raw degenerating response (518 occurrences of `d1692`, 49,728 output tokens).
+  Existing adaptive handling divides all 3,108 original records into two exact
+  consecutive halves of 1,554; both ordinary child exchanges are accepted,
+  retaining every ref/value/order (18,418 and 13,066 output tokens). The next
+  refinement is still pending, so this proves the actual output handler, not
+  final core or report acceptance. Receipt:
+  `/private/tmp/gallery/metabase-core-output-adaptive-review.json`.
+- Orientation CPU-only changes remove the quadratic prior-citation scan and
+  compact-ref split/canonical-string allocations, retaining first-use order,
+  full evidence and every original comparison decision. Full orientation tests
+  exit 0 (13.928 s), focused tests/benchmark exit 0 (2.760 s), and vet exits 0.
+  A complete accepted saved Airflow context retains all 181 sources: old/new
+  final wires and actual prepared provider bytes match for roles, recipe and
+  repository. The isolated comparator measures 1,151 → 254.4 ns/op and
+  5 → 0 allocations; this is not a full builder speedup or new ordinary
+  acceptance. Both independent reviews find no semantic blocker. Receipt:
+  `/private/tmp/gallery/orientation-saved-airflow-byte-equality.json`.
+  `make build` exits 0; owner binary SHA `de8cddf443cd`. The ordinary Go
+  stat-cache write warning is resolved by the authorized ambient-cache build.
+  Build/source/check receipt: `orientation-exact-index-build-receipt.json` in
+  the same probe directory. Active frozen runs are not restarted.
+- The active Airflow orientation request `155e9240` receives HTTP 200 but its
+  5,420-byte answer ends with an unfinished member, so ordinary decoding refuses
+  the complete leaf without inventing its value. One transport attempt, 208,076
+  input and 1,470 output tokens; no retry or repair was introduced. Its completed
+  450 maps survive; final overview/report state remains pending. Receipt:
+  `/private/tmp/gallery/airflow-orientation-malformed-window-review.json`.
+- Fresh ten-second process samples at 07:30 UTC show Airflow in orientation
+  context fitting and native portfolio reader binding after complete projection,
+  and Metabase advancing past API into role/classifier preparation, accepted-cache
+  I/O and destination indexing. Allocation/GC and 18,544 MiB used swap show
+  substantial memory pressure; samples do not quantify CPU shares or prove
+  every future loop terminates. Both independent reviews find current progress.
+  One sealed, closed native sibling of the new Metabase run is compressed with
+  exact byte preservation, freeing 345,133,056 allocated bytes (exit 0); latest
+  filesystem free space is 3.5 GiB. Receipt:
+  `/private/tmp/gallery/live-cpu-current-review-20261007.json`.
+- Actual process-specific ten-second stack dumps show Airflow advancing from
+  connection sorting to final `ValidateSet`, and Metabase performing native
+  target rebinding, hashing and validation. Airflow subsequently persists all
+  450 group views: 1,316 groups and 56,312 detailed connections, then starts
+  orientation. Its exact current CLI/library/UI overlays have 21/10/49 groups
+  and match their native index-set seals. The complete native counter totals
+  6,287,591 objects and 8,241,535 relations across selected views, not unique
+  repository entities. No loop or new failure was observed; final report and
+  browser/publication acceptance remain pending. Receipts:
+  `/private/tmp/gallery/live-cpu-review-20261007.md` and
+  `/private/tmp/gallery/airflow-funded-current-core-maps.json`.
+- Disk maintenance preserves the complete funded v2 Metabase report and exact
+  32-target artifact chain. Transparent compression of one verified closed
+  native sibling frees 345,133,056 allocated bytes; another 11 completed
+  artifacts free 703,451,136. Both commands exit 0 with full byte readback,
+  original identity/mode/time checks and atomic replacement only on savings.
+  Sources, paid cache, provider payloads/journals and active files remain
+  untouched. Observed free space is 9.2 GB after the preceding 6.6 GB low;
+  that whole filesystem change is not attributed to compression alone.
+  Receipts: `ready-metabase-native-compression-batches.jsonl` and
+  `closed-funded-metabase-compression-receipt.json` in the gallery run directory.
+- Final parts-v3/name-index canonical vet and build exit 0. The first full
+  test run at package parallelism four times out in contracttest (302.695 s);
+  the same-source quieter canonical repeat at parallelism two passes all 56
+  test packages, contracttest 241.001 s, with the five-minute bound unchanged.
+  Frozen `528624479042` (source fingerprint `a17edf9f`) starts a complete ordinary
+  32-target Metabase run `20261007-064833-metabase-8bcb1adc5c05`, retaining the
+  8 GiB Node heap and accepted paid cache. The preceding v2 refusal/report
+  remains preserved and unpublished. Airflow's original funded 450-target run
+  continues; final acceptance is pending.
+- Exact saved-report name-protection comparison exits 0 (13.924 s body): all
+  5,479 distinct original texts reconstruct every one of 28,982 ordered
+  display slots byte for byte under the independent original longest-run
+  matcher, the new index and actual owner traversal. All metadata, including
+  11,765 term rows and 223 owned contexts, remains unchanged. Both ordered
+  output SHA-256 values are `1ba54e8807eb794676542839746f006b30b5e1b6681fc063cab31362b49aabcc`.
+  This is exact saved report `20261006-210050-metabase-9340ba690560` only,
+  not the later funded report, new ordinary acceptance or a measured speedup.
+  Receipt: `/private/tmp/gallery/metabase-display-equality-000000-005479.json`.
+- Parts catalogue v3 retains the complete closed input, returns one combined
+  reading with independently accepted hypotheses, and keeps original-unit
+  assignment separate. Malformed hypotheses retain exact refusal annotations;
+  empty choices explicitly refuse dependent membership. Full reading tests
+  exit 0 (42.481 s), as does vet. One actual complete funded JVM window through
+  the ordinary owner/provider accepts 24 hypotheses with all 25 input readings,
+  429 hypotheses and 4,080 original source refs unchanged: 51,024 input and
+  2,261 output tokens, one live attempt, 12.859 s provider latency. Receipt:
+  `/private/tmp/gallery/parts-catalogue-v3-current-jvm-receipt.json`.
+  The preceding ordinary v2 Metabase run exits 0 with HTML, but its whole JVM
+  map remains refused and publication is withheld. Fresh v3 ordinary and
+  browser acceptance are required.
+- Full saved Metabase name census strictly restores all 32 views and retains
+  177,275 distinct names, including 175,567 eligible exact source names; its
+  15,743 openable paths equal ordinary closure. The longest-run index places
+  20,241 names under `metabase`. Least-frequency necessary-run selection keeps
+  exact full-name matching and contextual terms unchanged; focused tests
+  against unfiltered name search exit 0 (1.541 s). Actual full display equality
+  and ordinary performance remain pending. Census/inventory receipts:
+  `/private/tmp/gallery/metabase-display-name-bucket-census.json` and
+  `/private/tmp/gallery/metabase-complete-display-names.json`.
+- README measurement preparation binds all 16 public pages to their exact
+  completed runs: owner `timing.command_ms`, all saved/logged child exchanges,
+  live input/output and paid provider prefix-cache tokens. All live-call sums
+  match ordinary timing. Local cache/shared origin usage is excluded; transport
+  retries already contribute cumulative usage and reasoning is not added twice.
+  Costs are explicitly current official-tariff estimates, not invoices or cold
+  builds. k6/Moby native-failed child journals and two unavailable wrapper logs
+  remain explicit limitations. Independent reviews and the unrelated-run-log
+  negative probe pass. Pages commit `0c085c6` publishes the 16-run measurement
+  JSON; HTTP 200 returns its exact SHA `9930cae8`. README commit `ca5c5df`
+  adds the table only inside the existing gallery span, with exact API readback
+  and unchanged surrounding bytes. A browser walkthrough displays all 16 rows
+  and cache/pricing notes. Metabase/Airflow measurements remain pending.
+- A fifth completed Airflow compression batch exits 0: 122 closed native
+  files, another 2,581,168,128 allocated bytes freed, retaining the same full
+  byte/seal/time/mode checks. Disk is 13 GB free; both ordinary jobs remain live.
+- Independent map QA of funded Metabase finds a whole JVM map refusal:
+  65,522 subjects, zero groups/containers, 4,031 explicitly off-map files.
+  The complete synthesis request has 25 readings, 429 hypotheses and 4,080
+  original units; its completed response covers every reading but omits required
+  hypothesis `b32`, despite mentioning its data-complexity responsibility.
+  Current v2 validation correctly refuses that dependent catalogue. No ref is
+  repaired from prose. The aggregate 549 groups and native-kind proof below
+  establish neither an accepted JVM map nor publication readiness. Receipt:
+  `/private/tmp/gallery/metabase-funded-jvm-map-refusal-review.json`.
+- Fresh funded Metabase builds all 32 atlas/group views (549 groups), then
+  continues orientation. The exact original 60 source tuples are present in
+  both actual Shadow/JVM native indexes, with zero kind regressions:
+  60 drawn in Shadow and 60 explicitly off-map in the wholly refused JVM map.
+  The read-only native-kind audit exits 0; ordinary saved restoration and browser
+  source journeys remain separate required checks. Receipt:
+  `/private/tmp/repomap-gallery-20261006/metabase-funded-native60-audit.json`.
+  Independent review confirms three core responses genuinely omit refs
+  (4/600, 57/841, 8/618), while actual output cuts divide complete record
+  sequences and preserve accepted siblings. Orientation's two output-cut
+  context parents likewise divide into exact ordered 512-record children;
+  all four children are accepted. These are handled provider/model refusals,
+  not an unobserved implementation fix or final acceptance.
+- A fourth completed compression batch brings the total to 143 closed child
+  native files and 4,818,927,616 allocated bytes freed; all aggregate proof
+  flags and exact sums pass. The two child-run timestamp prefixes are taken
+  from the current ordinary log, with the same completion/seal/byte gates.
+  Disk has 14 GB free; both ordinary processes are still live.
+- Two bounded transparent-compression batches over completed Airflow native
+  child artifacts exit 0: 41 files, 2,683,863,040 allocated bytes freed.
+  Each candidate requires the exact completion marker, target/header and
+  artifact-set seal, unchanged source inode/size/time/mode and identical full
+  readback SHA before atomic replacement. Owner files, GroupsIndex, sources,
+  provider cache and journals are excluded. Receipts and aggregate proof:
+  `/private/tmp/repomap-gallery-20261006/ready-airflow-native-compression*.jsonl`.
+  Free disk is 16 GB at 05:35 UTC; both ordinary processes remain live.
+  Metabase's root frontend materializes all 11,377 files with the restored
+  8 GiB Node setting. This is native progress and storage maintenance,
+  not final report or publication acceptance.
+- At 04:53 UTC the official DeepSeek balance endpoint returns available,
+  USD 49.90; disk has 25 GB free. Both complete ordinary English runs are
+  restarted on verified frozen `1767979190dd`, without target narrowing or
+  separate response caches. Prior terminal failure receipts are preserved.
+  New owner runs are `20261007-045421-metabase-188dd738023e` and
+  `20261007-045425-airflow-bd823626b183`; actual exit statuses, complete
+  artifact chains, browser journeys and publication remain pending.
+  Independent supervisor review adds the promised original Airflow UI
+  (`jsts:airflow-core/src/airflow/ui/package.json`) to the temporary publication
+  gate and browser plan alongside the Python CLI/library. Fresh remote README
+  contains 16 examples; the prepared 18-example draft replaces only the
+  gallery span and preserves surrounding bytes. It is not published yet.
+  A separate temporary streaming native60-to-Atlas/Groups audit is prepared
+  for sealed Metabase outputs; it does not repair or substitute native results.
+- The first funded Metabase retry omitted the previously verified 8 GiB
+  Node setting. Root frontend native preparation hits the default V8 heap
+  OOM at 301.730 s, leaving 31 native views and 45,476 facts rather than a
+  complete frontend/backend report. The verified owned process is canceled;
+  actual child exit is 130 at 839.472 s, no final report is published, and
+  the failure receipt is preserved. A new complete ordinary run on the same
+  frozen `1767979190dd` explicitly supplies `NODE_OPTIONS=--max-old-space-size=8192`.
+  All selected targets are retained; Airflow continues on its original live
+  handle. Disk has 22 GB free. This is execution configuration correction,
+  not source sampling or a product change.
+- After the default-heap retry terminates, transparent filesystem compression
+  of its three completed large native artifacts exits 0 and frees 725,643,264
+  allocated bytes in 14.980 s. Every file retains exact readback SHA and
+  original timestamp; aggregate receipts match. Active funded runs, sources,
+  paid cache and request/response journals are untouched. Disk returns to
+  23 GB free; original failure evidence survives.
+- Final canonical checks on frozen `1767979190dd` pass with authorized
+  ambient-cache/native-tool access: all 56 packages pass, actual test exit 0
+  in 547.669 s and vet exit 0 in 3.523 s. Source fingerprint `752298a9`
+  and binary SHA remain unchanged, package parallelism is one and per-binary
+  timeout remains five minutes. Fresh contract, JS/TS and run packages pass
+  in 203.100, 160.981 and 81.824 s respectively. The failed restricted
+  attempt remains recorded separately; no expectation or source was changed
+  to obtain this result. Receipt:
+  `/private/tmp/gallery/final-canonical-clojure-native-kinds-ambient-receipt.json`.
+  Disk remains at 22 GB free. Official DeepSeek balance rechecked at
+  01:50 UTC still reports `is_available=false`, USD -0.09, with zero
+  completion calls. Metabase/Airflow ordinary completion and publication
+  remain pending funding; native verification does not substitute for them.
+- Continued goal work checks free disk space (23 GB) and the documented
+  official DeepSeek `GET /user/balance`: HTTP 200, `is_available=false`,
+  total USD -0.09; no completion requests, keys or headers are recorded.
+  Native Metabase protocol rows expose the source of the 60 saved cross-view
+  kind mismatches: the adapter recognized only JVM type-form operators and
+  classified their protocol methods/constructors as types. Both core operator
+  namespaces now retain type headers and callable members using native
+  `protocol-name`/argument-list evidence, without projection fallback or
+  implementation guessing. The shared cumulative `.cljc` fixture checks eight
+  declarations with matching kind/name/coordinates in real JVM/Shadow views,
+  an ordinary-variable contrast and the original protocol method call.
+  Focused native checks pass (2.254 s; final method-call contrast 0.768 s),
+  six consuming packages and owning vet pass; owner build exits 0, frozen
+  binary `1767979190dd`. Exact Go declared-interface-method coverage is reused;
+  missing Python abstract-protocol and JS/TS method-signature cases and the
+  absence of a C language equivalent are recorded in CLOJURE. Full canonical
+  checks pass as recorded above; fresh online Metabase/Airflow acceptance remains blocked
+  by the actual provider balance, not replaced by this native probe.
+- Independent exact-source native review covers all 60 saved kind mismatches
+  across 14 Metabase files: both dialects now agree on all 60 declarations
+  (21 types, 39 functions), zero missing or unequal kinds. Potemkin custom
+  protocol/type forms use actual native lint-as metadata. The limited-file
+  native invocation exits 3 for one unresolved symbol (`v` in
+  `composed_provider.cljc:77:13`); its 28 namespace views/509 definitions are
+  present, with no syntax failure. This is classification evidence, not a
+  complete native build or regenerated GroupsIndex/browser acceptance.
+  Receipt: `/private/tmp/gallery/metabase60-native-definition-classification-readonly.json`.
+- The first full canonical attempt on `1767979190dd` uses the restricted
+  execution context and exits 2 in 549.743 s; contract, JS/TS and run packages
+  report native-environment failures. Exact `go list` reports `operation not
+  permitted` opening the ambient Go build cache; JS/TS contrasts cannot
+  hardlink the installed Node executable into their temporary fixtures.
+  Native Clojure and reading checks pass, and vet exits 0 in 5.472 s. Source
+  fingerprint `752298a9` and binary remain unchanged; failed receipts are
+  preserved. The exact Go cumulative contract test passes in 23.218 s with
+  authorized ambient-cache/tool access. Full canonical tests/vet are repeated
+  with that access, package parallelism one and unchanged five-minute bounds;
+  caches are not relocated and no test expectation is relaxed.
+- Fresh `86d2540b5fc9` Metabase run completes all 32 native views, 107,810
+  facts and both expanded catalogues. Final root assignments retain all
+  9,544/4,068 original rows: 9,096/3,879 accepted, 197/86 conflicting and
+  251/103 missing decisions remain explicit refusals. Independent review
+  confirms the session API and bootstrap source memberships. Core output
+  refusals divide complete record lists into accepted children; genuine
+  incomplete context coverage remains refused. All 32 atlas/group stages finish
+  before orientation fails with actual DeepSeek HTTP 402 `Insufficient Balance`.
+  Ordinary child exit is 1; no final report/HTML is produced. Saved frontend/JVM
+  maps contain 402/273 drawn parts and 250/158 areas; session API and bootstrap
+  retain their original declaration/group/ancestor chains. Browser usefulness
+  and publication remain unaccepted. Airflow `eb41bcd8c9a8` completes all 450
+  native views and all 364,525 facts (fact stage 546.419 s); places completes in
+  438.663 s, passing the former unowned-source inventory-edge failure. CLI and
+  library core maps contain 20/8 parts, but subsequent core reading also fails
+  with DeepSeek HTTP 402: child exit 1, no report/HTML. Neither failed attempt is
+  added to the successful publication ledger. Accepted responses are preserved;
+  finishing both examples requires funding DeepSeek, separately from Jev.
+- Independent saved Metabase GroupsIndex review preserves all visible part
+  sets and valid ancestor/direct-owner chains; all 448/189 frontend/JVM final
+  source-row refusals retain their path/reason, and no refused explicit
+  declaration is promoted. A distinct reader-QA gap remains: 60 CLJS/JVM
+  declaration-key bindings differ by native kind. `Reporter` at
+  `src/metabase/analytics_interface/core.cljc:26:1` is a CLJS variable/JVM type;
+  `-inc!` at 27:3 is a CLJS function/JVM type. JVM subjects remain available
+  without groups or explicit refusal diagnostics; no kind guessing repairs
+  them. Shadow's 18 seeds resolve as seven direct groups, ten source-part
+  paths and one explicit schema `no_units` outcome. These saved checks do not
+  establish browser acceptance. Receipt:
+  `/private/tmp/gallery/metabase6-final-groups-readonly.json`.
+- After both ordinary processes terminate, transparent filesystem compression
+  checks 275 explicitly completed artifacts, compresses 273 and leaves two
+  unchanged when compression is not smaller. It frees 8,536,109,056 allocated bytes in
+  106.655 s; the compression process exits 0 and disk free space reaches 22 GB.
+  Every replacement retains exact readback SHA-256 and original timestamp;
+  paid response caches and journals are excluded. Per-file receipts and actual
+  failed-run outcomes remain under `/private/tmp/repomap-gallery-20261006/`.
+- Frozen `86d2540b5fc9` canonical serial-package retry passes: `make test`
+  exits 0 in 321.331 s, all 56 packages pass (54 cached; fresh contract
+  252.847 s and C project 11.967 s), followed by vet exit 0 in 3.945 s.
+  Source fingerprint `59904b74` and binary remain unchanged. The preceding
+  parallelism-two attempt exits 2 after 503.136 s: only the contract package
+  times out at five minutes; 55 packages and sequential vet pass. Both receipts
+  are preserved. Concurrent native-job memory pressure was observed, but the
+  repeat does not establish exclusive timeout causality. Ambient caches and
+  five-minute bounds remain unchanged; product/browser acceptance is separate.
+- Catalogue output capacity now uses the provider-capped full output envelope,
+  with complete-interpretation subdivision/rejoin only after an actual resource
+  refusal. Initial and terminal preparation failures remain errors; every known
+  duplicate contribution occurrence addresses required validation instead of
+  being hidden by an earlier null/unknown occurrence. Focused 2.279 s, full
+  reading 42.882 s, vet and independent supervisor review pass. Exact saved
+  frontend/backend requests differ only in `max_tokens` (128,000), retaining
+  39/26 readings, 483/420 hypotheses and 9,544/4,068 original references; both
+  preparation probes use zero HTTP. One actual complete backend catalogue probe
+  exits 0 in 67.966 s: 53,230 input / 24,643 output tokens, one attempt, 411
+  accepted responsibility boxes with the complete 4,068-reference provenance
+  union. Frozen owner binary `86d2540b5fc9` builds; fresh ordinary Metabase and
+  canonical checks are running. The probe does not establish report usefulness
+  or browser/publication acceptance.
+- Fresh Metabase `20261006-231810-metabase-8c36cfb7985f` completes all 32
+  native views in 1,031 s and 107,810 facts in 1,133 s. V2 discovery accepts all
+  39/26 root windows, preserving all 9,544/4,068 original units and 483/420
+  hypotheses. Actual catalogue requests (298,408/221,771 bytes) reach their
+  borrowed 8,352/8,192-token output allowances: 124 distinct frontend names,
+  135 backend names (133 distinct), without repetitive output. Finish-length
+  refuses both complete catalogues before decoding; the input-only synthesis
+  subdivision gate leaves both root maps empty. Skeptic and supervisor confirm
+  the output budget belongs to the expanded catalogue response rather than
+  membership-row estimation. The unusable run is canceled at publication
+  (exit 130; no HTML), preserving accepted paid responses and exact refusal
+  artifacts. Catalogue-specific provider allowance/resource handling is under
+  correction; fresh saved-window and ordinary acceptance remain required.
+- Frozen `eb41bcd8c9a8` ordinary repomap run
+  `20261006-231808-repomap-23e2f4e27bd8` exits 0 in 247.985 s; both selected
+  Go/JS targets are analyzed, with no live provider calls. Complete artifact
+  audit and ordinary saved render pass (17,738,081-byte HTML). Browser search
+  `buildRepositoryFacts` reaches original calls/caller and the captured `839fa463`
+  source link; Home, reload, zoom and pan pass without console warnings/errors.
+  Pages commit `7db5bfb` builds successfully; HTTP 200 returns exact rendered SHA
+  `ca64e353bc432909016b16824485130489ab959f8b2fef507a2677d73e7352f4`,
+  English locale and one canvas. Public reload retains the same declaration and
+  source link; screenshot `repomap-parts-v2-public.png`. Metabase/Airflow acceptance
+  remains pending, and the public gallery still contains 16 examples.
+- Final quiet canonical `make test` exits 0 in 367.728 s with all 56 packages
+  passing, including contract 211.152 s, JS/TS 162.357 s, reading 44.920 s and
+  run 66.215 s. Sequential `make vet` exits 0 in 3.503 s. Frozen source inventory
+  (1,515 files) and owner binary `eb41bcd8c9a8` remain unchanged; package
+  parallelism two, five-minute bounds and ambient caches remain unchanged.
+  Fresh complete ordinary Metabase, Airflow and repomap retries start on that
+  exact binary; their product/browser/publication acceptance remains pending.
+- Parts discovery v2 retains the complete source inventory and whole-window
+  reading independently of responsibility hypotheses; catalogue synthesis reads
+  every accepted reading/hypothesis, and final assignment alone decides original
+  memberships. Unknown metadata stays harmless while conflicting known rows
+  refuse their scope. Full reading tests pass in 39.442 s, focused partition and
+  saved-window checks in 4.435 s; vet and independent supervisor review pass.
+  Complete Metabase inputs retain all 9,544/4,068 rows in 39/25 provider-sized
+  windows (HTTP 0). Two actual saved complete discovery requests pass without
+  retries: JVM 234 rows/740,636 prepared bytes/224,427 input tokens/13.746 s;
+  JS/TS 834 rows/910,956 bytes/267,454 input tokens/9.802 s. Original inventories
+  survive exactly with 36/17 hypotheses and no refused rows. These window probes
+  do not replace ordinary catalogue, assignment or browser acceptance. Owner
+  build `eb41bcd8c9a8` exits 0; quiet canonical checks are running before retries.
+- After both large processes terminate, transparent filesystem compression of
+  explicitly completed target artifacts frees 8,418,873,344 allocated bytes.
+  Every compressed file retains exact readback SHA-256 and original timestamp;
+  paid response caches stay outside that scope. Free disk space reaches 31 GB.
+- Metabase ordinary run `20261006-210050-metabase-9340ba690560` exits 0 after
+  all 32 native targets, with one complete common report/artifact chain. Browser
+  searches for `sessionApi` and `metabase.core.bootstrap/-main` fail: root
+  TypeScript/JVM maps contain zero groups. Exact discovery inputs preserve all
+  9,544/4,068 original units; 18/10 leaves contain genuine omissions or overlapping
+  memberships, and the premature exhaustive discovery gate refuses both catalogues.
+  The unpublished HTML is held outside Pages; ordinary/browser acceptance is pending.
+- Airflow ordinary run `20261006-193517-airflow-aa25d0a29971` completes all 450
+  native views and 364,525 facts, then exits 1 at places construction in
+  11,333.446 s. An inventory edge names omitted entity `a47757`, the SQL text
+  in `airflow-core/src/airflow/utils/db_cleanup.py:385`. Entity admission now
+  precedes publication of its inventory edges, preserving original facts and
+  existing ownership. The collected-but-unowned Python contrast and positive
+  extraction graph pass; full places tests (3.162 s) and vet exit 0. The complete
+  119,547,566-byte saved facts artifact validates and its exact offending entity
+  retains source/data in the owned contrast while leaving no edge when unowned
+  (7.592 s, HTTP 0). Supervisor finds no scoped blocker; ordinary retry is pending.
+- Frozen `626efe497dd6` canonical `make test` exits 2 (contract 301.110 s and
+  JS/TS 301.377 s timeouts, 54 packages pass); `make vet` exits 0 in 21.217 s.
+  No five-minute bound or cache location changed; final quiet acceptance is pending.
+- Complete source lookup uses the ordinary reader's already complete immutable source index, including known misses, instead of rescanning the whole places catalogue on each miss. Full reading tests exit 0 in 261.243 s, vet passes; complete saved Metabase's 169,344 places and 126,931 declarations retain every original hit and all 25 genuine misses, with both fork views equal and index unchanged. Frozen build 626efe497dd6 completes the ordinary two-target self-run in 229.654 s (driver), with the complete artifact audit and saved render passing. Pages commit 886b4e7 replaces only the self-report; all 16 public HTML hashes/English canvases and both removed Russian 404s pass. Public reload preserves buildRepositoryFacts, original calls/callers and its exact source link; screenshot repomap-symbol-source-public.png. Existing Metabase/Airflow processes still use their original binaries; full canonical acceptance remains pending after the preceding two package timeouts.
+- Refreshed self-report publication: Pages commit `2d60394`; all 16 public English URLs again match their exact staged HTML SHA, have one canvas, and removed Russian URLs return 404. The public self-report search opens `buildRepositoryFacts`, its original callers/calls and the captured `839fa463` source link; no console warnings/errors, screenshot `repomap-parameter-lookup-public.png`. This rechecks that public reader journey, not every model interpretation.
+- Latest full canonical command finishes with failure: contract tests hit their unchanged five-minute limit (305.288 s), three seconds into the current Go subcommand option test's ordinary classifier preparation; run tests also time out (308.205 s), 55 s into the current combined Python/JS report test during ordinary artifact metadata rename. JSTS (206.831 s), Python (31.756 s), facts (5.806 s), report and other packages pass; full vet exits 0. Canonical acceptance remains pending a quieter run after the new lookup fix is frozen. The initial tail-only progress message missed the run timeout and was corrected against the complete supervisor receipt.
+- Metabase first ordinary attempt exited 0 with 26 analyzed siblings and five explicit native failures; its root JVM/TypeScript views failed and the ClojureScript app was not discovered, so that report was withheld from publication. Sources are the published `15082c54ff98ed59c8a38e4075d21272cb399835` revision; Airflow uses published `dc2ee91115169502a1dc1953ff9c0d7b277fabcd`.
+- Native corrections: retain configured output exclusions while an empty TS config's explicitly owned tool roots are compiled; installed dependency aliases are configuration metadata, without admitting dependency sources; literal build-level Shadow `:entries` retains all 18 actual Metabase namespaces and original lines. Real cumulative native fixtures, exact inventories, ownership contrasts and focused tests/vet pass. The TS-specific configuration forms and Clojure namespace-vector form have no fabricated equivalent in other languages; their existing native ownership/entry checks pass.
+- The complete original `liquibase.clj` reproduces rejection of its multiline cross-arity parameter vector. Clojure now stores that vector as `Witness.SourceExpression` and uses the stable caption `selected arity`; the shared field validates UTF-8 source while names, identities and paths remain strict. The exact expression and call `387:4` survive native parsing, validation and report reading. Cumulative cross-arity/same-arity contrasts, shared roundtrip/identity checks, full owning package tests and vet pass; HTTP 0. Skeptic found no scoped blocker. This single-file probe does not claim numerical identity with the full-run relation or replace ordinary acceptance.
+- The second Metabase attempt exposed that the native helper discarded the explicitly supplied Node heap setting; it again reached the default 4 GiB OOM and was cancelled (exit 130). The helper now forwards only `PATH` and supplied `NODE_OPTIONS`. Frozen owner binary `0eaf6857607a2891520f7db449ec0242a48c9c62e3cc8f5729d02c33842c4158` starts a third ordinary run: the complete root JVM native view succeeds with 65,522 objects/572,403 relations, and Shadow app with 8,132 objects/65,291 relations. The root TypeScript view instead reaches V8's aggregate JSON string representation overflow; incremental complete native transport is being checked. Airflow's complete online run is in progress with 450 selected targets; neither new report is published yet. Durable logs and before/after native receipts remain under `/private/tmp/repomap-gallery-20261006/` and `/private/tmp/gallery/`.
+- Native lifecycle releases each sealed original index before later sequential readers build the complete owned report portfolio; saved restoration uses the same reader seam. Focused ordinary/saved/mutation/failure checks and owning vet pass. Canonical vet passes; three canonical test attempts hit the contract-test binary's five-minute timeout during real native fixture work, including package parallelism one. This is not a green canonical test result.
+- Incremental TypeScript native transport keeps one complete JSON value with unchanged schema and ordering, acknowledges stdout writes and runs snapshot/API cleanup on success or failure. A real Node result makes the former serializer throw at V8's 536,870,888-character boundary; the new writer preserves all 8,193 rows/537,115,612 bytes with exact expected SHA. Unicode/frame-boundary, invalid-value and closed-pipe contrasts pass; the complete 65-file native fixture has identical former/new serialized bytes and ProgramIndex SHA. Full JSTS tests exit 0 in 248.820 s, owning vet exits 0, and supervisor finds no scoped blocker. Frozen owner build `10cfe3e34a27288716b451f37d0660bb526b11a8f3c8389686cc32376fee4ad0` exits 0; a complete ordinary Metabase retry remains required. This removes aggregate string overflow, without claiming bounded full native graph memory.
+- Contract tests explicitly reuse identical complete native fixture inputs with independent consumer snapshots; source/config/selector/environment and Go replacement-module differences remain distinct. Changed-source and deleted-checkout contrasts run real native tools and current-corpus projections; native command/mutation tests stay fresh. The complete package now exits 0 in 238.764 s under the original five-minute bound, with owning vet and independent skeptic review passing. Shared-helper counters alone (not total native executions) are Go 7/23 analyses/hits, JSTS 2/13, C 11/352 program parses/hits, Python 4/25 and Clojure 1/15. Production remains unchanged by this test work; the final canonical run is in progress.
+- Third Metabase ordinary run exits 0 in 2,798.495 s with 31 analyzed targets and the explicit root TypeScript representation failure; its 24 MiB HTML remains withheld. Output-token refusals of complete 1,022/1,023-record orientation windows recover through four accepted exact child windows; all 8,182 original records survive. Conflicting single-target roles refuse that role alone, while independent final sections continue. Report assembly profiling finds real page-data decode/encode work; the complete ordinary page has only 12,222 bytes of duplicate registrations among 23,274,494 expanded bytes, so a proposed repeat cache is not implemented without evidence. The complete frozen transport retry starts after this run finishes.
+- Fourth Metabase preparation now retains all 32 selected native views, including root TypeScript's 11,377 files/152,104 objects/428,099 relations, JVM's 65,522/572,403 and all 18 literal Shadow entries. Common online reading and final publication remain in progress. Airflow finishes all 450 native views; a real two-second profile of its subsequent fact stage finds 155 active samples in the repeated full-object/full-relation parameter-holder scan, with footprint 17.6 GiB (peak 27.5 GiB). These measurements do not establish bounded final-portfolio memory.
+- Parameter-holder lookup now reuses the existing complete target-local owner/caller indexes, preserving native order, first callable at the original path/line, relation filters, omitted-target behavior and per-walk recursive visited state. Full facts tests/vet and real Go/Python/JSTS consuming expectations pass; all 251 parameter expressions in the complete 71-file Python native fixture match the original scan, including visited state, without changing native bytes. Independent skeptic and supervisor find no blocker. Frozen build `e7fab8f84f8830c549e7436f2bbc1c5a9251a050c4bbff5c9cc888fbc126565d` exits 0; ordinary repomap exits 0 in 194.126 s with both targets analyzed, and its complete artifact audit/saved render pass. Real loopback browser search → declaration/calls → exact GitHub revision → Home, reload and pan pass; screenshots and receipts are under the gallery task directory. Active Metabase/Airflow processes continue on their original binaries; this does not claim their speedup.
+- A further canonical attempt times out at 301.015 s late in the contract suite, only one second into the current Python word-given test's ordinary local payload write. The remaining identical JSTS fixture projection is now shared through independent complete Index/Catalog snapshots, with fresh-projection equality and changed-source/mutation contrasts passing; its measured saving is only 3–4 s and does not explain the whole load-dependent drift. The latest full canonical vet exits 0; full tests are being repeated after heavy native preparation finishes, under the unchanged five-minute bound and ambient caches.
+- Cleanup preserves paid responses and acceptance artifacts: 7.3 GiB disposable ambient Go build cache and 886,254,653 bytes of four raw Lua clang scratch AST files were removed. An APFS transparent-compression probe keeps the existing sealed index path and exact SHA while reducing allocated storage from 175,575,040 to 17,563,648 bytes. Frozen older artifact compression checks each exact SHA before atomic replacement; formats and decoded bytes are unchanged, active Airflow/Metabase files and the paid cache are excluded.
+- Transparent compression completes with 1,657 exact-byte artifacts preserved and 27,807,965,184 fewer allocated bytes in its file receipts; filesystem free space then measures 30 GiB. The existing 16 reports' 97 analyzed child artifact chains pass the independent strengthened audit without rendering or provider calls. New two reports and their publication remain pending.
+
 # Implementation and acceptance journal
+
+## 2026-10-06 — English gallery publication and source ownership checks
+
+- First publication: 14 ordinary English reports on GitHub Pages, commit `2733874`; two Russian reports removed. All 14 public extensionless URLs returned HTTP 200 with the exact staged HTML SHA. A public game journey followed `run_level` to the Python handler and linked TypeScript caller.
+- Final publication: Python render refresh `6cdd637`, Moby `2b93efa`, repomap `97e3754`; README-only commit `bc32a7e` in repomap's public repository. All 16 extensionless URLs return HTTP 200 with the exact final staged SHA, English locale and one `canvas` anchor; both removed Russian URLs return 404. The exact remote README matches the reviewed language/type table. Each page has a recorded browser reading journey; this does not certify every model interpretation. Receipts and screenshots remain in `/private/tmp/repomap-gallery-20261006/`.
+- Moby ordinary run `20261006-182024-moby-b02b7a34950e` exits 0 with 22 analyzed targets and six explicit host/native failures. No model overview/main flow was produced. The browser follows `postContainersCreate` to `Daemon.ContainerCreate`, verifies the original comment and implementation at the captured GitHub revision, and returns Home.
+- Documentation output refusal exposed an unnecessary completion of an already accepted singleton. The ordinary owner now carries it unchanged, including observed framing nonfit; real preparation/payment/transport errors and indivisible source refusal remain errors. The exact saved 90,246-byte source and 11,946-byte merge probe preserves all 16 document bindings without HTTP or synthesized overview. Skeptic's final review found no scoped blocker. Public-source repomap run `20261006-185503-repomap-c8b82cbecbac` exits 0 in 186.664s, both Go/JS targets analyzed, documentation zero live/two cached calls. Browser follows `runDefaultWithDeps` to `UnavailableSourcePaths`, verifies the actual published source, and returns Home; a public-page reading also passes.
+- Final owner build and canonical `make test`/`make vet` exit 0 with package parallelism two and five-minute per-binary bounds. The last singleton-framing delta additionally passes its full owning package and vet. Saved reports were rendered without provider calls with recorded renderer hashes; not every example was reanalyzed by the final binary. C/Clojure exact comment ownership remains covered by native cumulative fixtures rather than fresh ordinary gallery acceptance.
+- Go/JSTS author quotes now use original native owner positions and exact compiler comment ranges; long JSDoc, inline/same-line owners, LF/CRLF and UTF16 contrasts passed. Six owning packages, vet and real cumulative Go checks passed; existing saved reports remain compatible, with absent exact ownership unknown.
+- C/Clojure same-line ownership uses exact native declaration/form positions. C prototype-only or ambiguous ownership retains a quote with explicit unresolved attachment; legacy saved C line-only association requires a unique native site. Clojure namespace quotes cannot attach to nearby symbols; columns follow native UTF16 semantics. Focused claims/places/report/Clojure and real cumulative C/Clojure checks passed, six-owner vet passed; skeptic and supervisor independently reviewed the frozen delta. Fresh ordinary acceptance of these new C/Clojure properties remains pending.
+- Removed 22 GiB of reproducible Go build cache at the owner’s request, preserving paid model caches and saved report artifacts. Ordinary acceptance uses the authorized ambient Go cache and report directories; sandbox-only write failures are not language-analysis acceptance.
+
+## 2026-10-06 — English examples and provider-sized repository guidance (in progress)
+
+- The owner authorized publishing English examples, replacing old reports and
+  removing the two Russian Pages files. README's draft language/type gallery
+  uses extensionless GitHub Pages URLs with `#canvas`; the ordinary common-map
+  figure and existing navigation now recognize that anchor. Publication is not
+  accepted merely because an old HTML exists or HTTP returns 200. Its local
+  gate binds the expected pages, README links, ordinary artifact hashes, fresh
+  rendered HTML and previously published bytes; deployment/browser checks are
+  separate.
+- Freed about 22 GiB with successful ambient Go build-cache cleanup after
+  ENOSPC. Paid model responses, accepted/failed run artifacts and source trees
+  remain intact. Official TypeScript 5.9.3 was installed after space recovery;
+  repeated ordinary Casdoor exits 0 with both Go and JS/TS views analyzed
+  (`20261006-162506-casdoor-a77abe3d90b1`). Its browser journey reads frontend
+  login, its receiving Go handler, the exact GitHub source at revision
+  `2b9a05239da8ea70b8f401ca94a3808ebfd755cf`, and returns Home. SQLite and
+  Othello saved-current-format rendering/journeys also pass; SQLite's generated
+  amalgamation has explicit No source, and Othello's accepted model cursor/db
+  mistake remains recorded rather than repaired by the browser.
+- Moby's former fixed packing accepted the 1,258,414-byte aggregate despite a
+  framed provider request plus output reserve exceeding its envelope. Guidance
+  now uses the shared adaptive independent executor, complete document/file
+  rectangles, exact local request state and compatible closed-ref union.
+  Accepted neighbours survive; an indivisible resource failure and HTTP 402
+  remain errors. The prompt prevents smaller candidate shards from proving
+  global uniqueness.
+- A current ordinary `corpus.Open` reconstruction (not the original unsaved
+  refused payload) contains 11,038 refs and 240 whole documents; all 2,649,120
+  document/file pairs occur once. Parent preparation observes 1,480,444 against
+  1,000,000; three framed leaves of 574,963/693,763/817,056 bytes each fit with
+  128,000 output reservation. HTTP calls: zero. Full temporary evidence:
+  `/private/tmp/gallery/moby-guidance-window.json` and
+  `moby-guidance-receipt.json`; aggregate SHA-256
+  `97b1b8b11f0e0b6b732f2bffcd23dbdfa77f94dbfe83b03bfac87543c07f6d8c`.
+  Actual online Moby acceptance remains pending.
+- Owning tests and vet exit 0; focused LLM/run/report/guidance/corpus integration
+  tests and final `make build` exit 0 with ambient caches, bounded parallelism
+  and five-minute test binary limits. Skeptic implemented/probed the owner;
+  supervisor checked failure/coverage semantics and publication gates. Current
+  task logs and intermediate receipts are under
+  `/private/tmp/repomap-gallery-20261006/`.
+
+## 2026-10-06 — Original controls, stable frames and complete role badges
+
+- The owner's screenshots exposed unclickable category/name controls,
+  disappearing marker cards, off-centre icons, magnifiers outside rounded
+  corners, changing program frames on pinch and clipped role badges. Ordinary
+  native buttons now preserve exact original IDs; marker cards use the shared
+  hover corridor, full inventories and focus ownership until blur/selection/
+  Escape. Icon SVGs are centred. Program/area frames retain original world
+  rectangles; program ports reach their original outer border through
+  orthogonal gutter routes. A constant 10px painted program radius keeps the
+  magnifier inside the curve. Role badges are siblings of the clipped word/list
+  layer, preserving complete arrows and diamonds without unclipping the text.
+- Skeptic review found a focus guard preventing mouse resumption after Escape;
+  it now guards only the exact active marker/card. Supervisor review checked
+  frame/route identities and explained the native browser's rounding of a
+  fractional wheel aim. The test uses the emitted integer point; production
+  camera math was not changed for that driver discrepancy.
+- Final ordinary render of saved online SQLite
+  `20261006-111103-sqlite-e98dca0af76a` exits 0 with zero provider calls.
+  `make ui-test` passes all 177 tests and embedded bundle consistency;
+  `make ui-visual-test` exits 0 with 24 passed and 11 saved checks skipped.
+  Focused report Go tests/vet and `.bin/repomap` build exit 0. Actual saved
+  report mouse journeys separately accept all eight category buttons and six
+  original stat_init/stat_push readings, checking handler, registration row and
+  file. Native pinch opens/closes all three programs with unchanged world
+  frames and world aim, plus actual rounded-corner containment. Warnings/errors
+  are empty. Source URLs are absent in this saved run; raw-source navigation
+  and visible registration-line UI are not accepted by these checks.
+- The initial combined browser run exits 1: its input journey exhausted 240s
+  during the sixth click while its independent pinch journey passed. The whole
+  input route later passes independently with 300s; incomplete attempts are
+  not counted. Final IAB mouse/trackpad walkthrough and screenshot show both
+  complete role symbols. Durable hashes, logs, original-ID ledgers, scope and
+  corrected driver failures: `reviews/sqlite-controls-audit-20261006/`.
+  Delivery: `/controls-verified.html` on the narrow loopback QA server.
+  Earlier exhaustive 64-area/99-part acceptance belongs to its earlier binary
+  and was not rerun here; this receipt accepts the specified control journeys.
+
+## 2026-10-06 — Named closed areas and canvas gesture ownership
+
+- The owner's screenshots identified gaps in the preceding UI acceptance:
+  gesture routing over child text, sticky word/title movement, small magnifiers,
+  and unnamed SVG outlines beneath titles/descriptions were not exercised.
+  Ordinary `ProgramNode` now renders both program and area cards with every
+  saved direct child ID/name/order. Closed cards paint no ghost rectangles.
+  Area cards size the named inventory independently of their inner graph;
+  opened area frames retain the original outer rectangle for parent arrow ends.
+- Removed pan-dependent word translation, frame title translation and duplicate
+  screen-fixed titles. Replaced title-sight/name-sight checks with word-anchor.
+  The current breadcrumb remains the entered-chain orientation. Nonoverflowing
+  child rows pass wheel pan and pinch to the map; only genuine vertical list
+  overflow owns native scrolling. Mouse row/scrollbar dragging cannot start a
+  canvas pan or a child selection. Magnifiers grow 22–32px with their local
+  card scale, with the same geometry used by projection and hitTest.
+- Canonical UI build/check and all 176 UI unit tests pass; focused report Go
+  tests/vet and `.bin/repomap` build pass. Existing endpoint/head checks caught
+  and rejected an initial compact-card/open-frame mismatch; preserving the
+  original area border repaired it at all tested recursive depths.
+- Same saved three-target SQLite `20261006-111103-sqlite-e98dca0af76a`, ordinary
+  render exit 0, no provider calls. Fifteen scene browser scenarios pass,
+  including row pan/pinch, anchored pan, overflow scrolling/pinch, actual-pane
+  magnifier cursor, monotonic icon sizing, complete area rows and declaration
+  navigation. Saved-report keyboard/offscreen-overlay and all-three-component
+  first/last-child navigation regressions pass. New native mouse QA reaches four
+  Unix hierarchy levels and original `n-t1-g35` reading; an obsolete source-ID
+  selector and locator click on pointer-transparent canvas text were corrected
+  in the new test rather than bypassing the canvas hit test.
+- CUA screenshot inspection: closed Core runtime/Storage engine cards show named
+  children below their own description; open SQL-front-end and four-level Unix
+  diagrams preserve their original parts. Native wheel over Name resolution
+  moved the camera and its heading by the same 98.2px without changing level.
+  No browser warnings/errors. Proofs: `reviews/sqlite-named-cards-20261006.jpg`,
+  `reviews/sqlite-named-area-open-20261006.jpg`, and
+  `reviews/sqlite-named-area-four-levels-20261006.jpg`. Delivery is the narrow
+  QA loopback `/named-parts.html?ui=20261006#t1-area-k2`, not a product command.
+- Follow-up after the owner's completeness challenge: the preceding checks were
+  selective, not exhaustive UI acceptance. Full `make ui-visual-test` exposed a
+  test-runner defect: nested invariant fault checks cleaned the parent's trace
+  directory. Each nested runner now owns its temporary browser output and port;
+  the repeated canonical suite exits 0 with 19 passed/9 saved-report checks
+  skipped (`/private/tmp/repomap-ui-fix-canonical-visual2.log`). SQLite's real
+  report checks run separately. The new exhaustive traversal initially had
+  driver mistakes (missing root-level attribute and a fixture-only source
+  attribute); these were corrected to ordinary reading/name/source-key evidence.
+  Interrupted traversals remain partial receipts, never passes. The completed
+  full forest traversal exits 0: three passed in 29.2 minutes, all 64 original
+  areas and 99 parts (28/41, 17/29, 19/29). It matches every saved direct-child
+  inventory and original part-reading member catalogue, opens one declaration
+  per part and returns to the exact parent chain. Four arrow invariants check
+  every drawn edge in every entered scene: 323/497/328 observations, with no
+  failures or browser errors; these are repeated scene observations, not unique
+  repository connections. All 67 initial-camera component/area screenshots were
+  inspected for empty outlines and text overlap. Breadcrumb journeys pass at
+  1440×900 and 1280×800. Durable ledgers and logs:
+  `reviews/sqlite-ui-audit-20261006/`. This is exhaustive saved-node keyboard
+  coverage; it does not cover every mouse/Tab path, camera, declaration source
+  or model interpretation, nor newly accept the historical full invariant table.
+- Real call-name acceptance also exits 0: five original R-tree callees retain
+  their exact key/owner/hash/source. Four use ordinary arrow → complete
+  connection → Expand all, one uses the brief card. The first full-connection
+  attempt tried to choose a name inside a closed R-tree disclosure and failed;
+  the driver now performs the visible disclosure action. No production call
+  route or original identity was changed. Interaction receipts are saved in
+  `reviews/sqlite-ui-audit-20261006/call-card-interactions.json`.
+- Manual return-after-reload retains the four-level Unix chain, selected
+  `unixShmMap` and original reading. Returning from the declaration to its part
+  and from the deep breadcrumb to the component also works. Additional proof:
+  `reviews/sqlite-named-source-restored-20261006.jpg`.
+
+## 2026-10-06 — Recursive architectural areas and native view ownership
+
+- The owner requested another architectural level over the SQLite parts.
+  Accepted areas now recursively ask over their complete original parts and
+  exact local call counts. Children strictly reduce scopes; model stop,
+  accepted direct assignments and refused subdivisions remain distinct.
+  Original parts/declarations/source identities survive through one atlas,
+  GroupsIndex parent tree and ordinary recursive report scene. Provider
+  packing retains complete discovery, global catalogue and original assignment;
+  packing windows never become architectural groups. No depth/count quota,
+  tokenizer, provider fit probe or browser grouping was added.
+- Saved complete SQLite compiler window: 28 original parts, 195 exact call pairs,
+  11,504 prepared UTF-8 bytes through the actual DeepSeek adapter, without
+  transport. Closed/wrapped conflicting answers, malformed known wrappers,
+  unknown metadata, all-direct assignments, remote byte-progress attribution,
+  full packing and five-level navigation have executable contrasts.
+- Ordinary acceptance exposed inherited declaration ownership: every shared
+  file owner had inherited conditional declarations absent from its native
+  build. Places 28 records actual declaration observers before merging;
+  target-local units filter before lexical-parent selection. Native call
+  observations also retain actual observers, independent of both endpoints'
+  availability. Identical calls merge observer sets immutably; alternatives
+  remove only overlapping unresolved scopes. Original calls into a separately
+  owned source remain. Roles, exact area counts, arrows, reverse callers,
+  runtime boundaries and destination traversal retain those call scopes.
+- Two real compiler configurations of cumulative C strbuf.c verify shared and
+  conditional declarations and a call observed in only one build although both
+  endpoints exist in both. Focused native test passes; direct/wrapped decoder,
+  original tree/seal, excluded-parent and same-anchor destination contrasts pass.
+  `make test` (package parallelism 1, five-minute binaries, ambient caches),
+  `make vet` (2), `make build`, UI tests (176) and bundle consistency pass.
+  Final Go receipts: `/private/tmp/repomap-tree-canonical-test5.log`,
+  `/private/tmp/repomap-tree-scope-canonical-vet.log`,
+  `/private/tmp/repomap-tree-scope-build2.log`.
+- Earlier checks did not pass: missing installed TypeScript on PATH, a real
+  contract suite timeout under contention, old C unreachable inventories,
+  a new test serializing a function-bearing helper, and exhausted local disk
+  were corrected. The exclusive full native contract suite completes in
+  217.097 s under its unchanged five-minute limit. Interrupted/wrong-target,
+  native ownership publication failure and disk publication failure runs remain
+  complete in byte-verified `/private/tmp/repomap-*-20261006.tar.gz` archives;
+  only their unpacked copies and archived temporary diagnostics were removed.
+  Accepted old reports and the default model cache were preserved.
+- Current ordinary online SQLite acceptance:
+  `20261006-111103-sqlite-e98dca0af76a`, explicitly selecting sqlite3,
+  libsqlite3.a and libsqlite3.dylib, exit 0 in 622.358 s. Original parts
+  41/29/29, recursive areas 28/17/19 and depths 4/3/3. All 99 original
+  parts and native members map exactly from atlas to the target GroupsIndex;
+  strict descendant progress, exclusive direct membership and native observer
+  bindings pass independent supervisor audit. All seven bound file hashes,
+  native/set bindings and thin overlays match. One common JSON/manifest/HTML;
+  both sibling native/set/dependency/GroupsIndex/document chains are complete.
+  Areas stage: 317 rows in 99 windows, 98 live and one cached, no scope refusal.
+  Seven explicit stops and nine single-part annotations preserve original parts.
+  Orientation's 33-step native flow remains complete; undecided forks stay
+  explicit. The run's 6m58s orientation stage explains most elapsed time.
+- Browser QA on the new ordinary saved renderer found an independent UI bug:
+  overflow:hidden allowed focus to scroll screen magnifiers without moving
+  world geometry. overflow:clip prevents that offset; offscreen marks retain
+  their world identity but leave Tab order until panned into view. Real mouse
+  follows CLI OS interface → Unix file system implementation → File locking
+  and shared memory → Unix locking and shared memory, then unixShmMap's
+  declaration reading. Reload and function/part/area return preserve identity.
+  Both library journeys reach their third-level statement/trigger areas.
+  No browser warnings/errors. Existing large-frame reading-size camera policy
+  remains; this does not measure performance or accept all other layouts.
+  Ordinary render replaces only the owner HTML, with zero provider calls.
+- Final UI checks: 176 unit tests, bundle consistency, report tests/vet/build,
+  and two saved-run overview/keyboard browser regressions pass. Chromium first
+  failed before page load on macOS sandbox MachPort permissions; the authorized
+  local test rerun passes. Earlier bundle checks used Node 26 for build and
+  Node 24 for make: their zlib produced different compressed worker bytes.
+  Canonical make ui-build/ui-test use the same runtime and pass; the skeptic
+  proved equal worker bytes yield equal JS in both runtimes. Receipts:
+  `/private/tmp/repomap-tree-overlay-ui-test4.log`,
+  `/private/tmp/repomap-tree-overlay-visual2.log`,
+  `/private/tmp/repomap-tree-overlay-report-test.log`,
+  `/private/tmp/repomap-tree-overlay-report-vet.log` and
+  `/private/tmp/repomap-tree-recursive-final-render.log`.
+
+
+## 2026-10-06 — Magnifier cursor and exact arrow-name reading
+
+- Reader's new screenshots exposed interaction gaps beyond the accepted closed
+  component overview. Magnifiers are intentionally pointer-transparent: the
+  ordinary hit test now gives their actual canvas pane a zoom-in cursor. It
+  clears on camera moves, pointer down/leave and entry into a card/list without
+  dropping semantic emphasis during a drag.
+- `briefCard` had discarded exact `calleeAt` while retaining only an upstream
+  URL; all five reported SQLite names have native declaration keys but no such
+  URL. Normal and folded call summaries now retain that key and owning part.
+  BriefRows uses the existing Name/chooseMember path. Distinct known keys of
+  equal names survive; repeated exact identities share a row. Unknown keys are
+  not guessed from name/path, and existing code links retain their behavior.
+- `make ui-test` passes 175 tests plus bundle consistency; build and focused
+  report/run tests/vet pass. Twelve fixture browser cases pass, including the
+  actual element-under-pointer cursor at program/area/part magnifiers, clearing
+  off the mark and old drag/pinch/arrow behaviors, and exact declaration reading
+  with no upstream URL. Real saved SQLite browser regression passes (1.9 min):
+  actual CLI magnifier entry and real zoom cursor, mouse/Enter on all five
+  rtreeShadowName/BeginTransaction/Savepoint/Disconnect/BestIndex rows, each
+  opening its own declaration reading and sqlite3.c location. Inspected
+  [call names](../../reviews/sqlite-call-names-20261006.png) and
+  [selected declaration](../../reviews/sqlite-call-declaration-20261006.png).
+  No provider calls or native analysis changes. Earlier failed test assertions
+  and fixture setup were corrected; a default-sandbox Go cache refusal and an
+  attempted Go 1.26 build running out of temporary disk space were aborted
+  checks, not passes. The final ambient Go report/run recheck with ordinary
+  cache access exits 0 (`/private/tmp/repomap-cursor-calls-go-final.log`).
+  Final ordinary render replaces the original saved SQLite HTML (exit 0);
+  its bytes match the inspected temporary report, and report.json stays unchanged.
+- The reader's dense SQL compiler screenshot contains 28 existing parts and
+  1818 declarations, with 263 directed structural part-pair relations (plus
+  three separate operation records). This is a readability issue of the entered
+  area, still open; this narrow interaction receipt does not accept that layout.
+
+## 2026-10-06 — Named component overview; actual desktop visual receipt
+
+- Fixed the screenshot's ordinary closed `ProgramNode`: all saved direct areas
+  and loose parts are named in order, with original IDs. Complete wrapped rows
+  are measured before ELK layout; viewport scrolling retains every row. Names
+  use existing child navigation, with mouse/Enter/Space isolated from parent
+  canvas gestures. Unnamed program ghosts are removed; area/part detail and
+  native/model/artifact data are unchanged. REPORT owns the changed contract.
+- Built `.bin/repomap`; ordinary saved SQLite render exits 0 without provider
+  calls. Replaced the original `20261006-005426-sqlite-2eeb1f3e5625/report.html`
+  through that renderer (exit 0); its bytes match the inspected temporary HTML.
+  The saved `report.json` hash remains `1467359b7e3410e6…` before and after.
+  `make ui-test` passes 174 tests and bundle consistency, focused
+  report/run tests and vet pass. Fourteen existing browser geometry/navigation
+  checks and the new saved-run exact-inventory/navigation test pass. Test
+  assertions were corrected to cover the actual area-heading/part-reading
+  panel forms; initial failed assertions did not establish acceptance.
+- Inspected corrected screenshots at 1280×720 and 1440×900: all three cards
+  show 7/4/4 named children without contours behind their words or clipping.
+  Mouse SQLite core engine opens the static library area; Enter R-tree opens
+  the CLI part and its original reading; Space Utilities opens the dylib area.
+  Reload restores Utilities with the correct component/breadcrumb; Home returns
+  to the complete overview. Independent skeptic and supervisor reviews found
+  no remaining defect in this scope; supervisor separately inspected the PNG.
+  Screenshot: [SQLite overview](../../reviews/sqlite-overview-20261006.png).
+  Browser receipt: `/private/tmp/repomap-ui-overview-visual-final.log` (1 passed,
+  1.3 min). This accepts the desktop overview/navigation scope, not universal
+  UI performance or all repositories. The earlier AX-only correction below
+  remains the historical record of the missed defect.
+
+## 2026-10-06 — Provider-owned byte preparation; independent review
+
+- Acceptance correction after the reader's SQLite screenshot: previous browser
+  walkthrough verified accessibility text, commands/source links and navigation,
+  without screenshot inspection or the separate canvas visual suite. Go
+  `make test` does not run `make ui-visual-test`. The then-current ordinary renderer's
+  closed `ProgramNode` painted child geometry through `Ghosts` as unnamed,
+  `aria-hidden` rectangles; zoom-dependent CSS makes them visible behind the
+  component words. Thus an accessibility-only walkthrough could not establish
+  overview readability. Native/request/artifact/warm/cache results below remain
+  verified, but product visual acceptance is open; do not treat exit zero or
+  the previous review verdict as visual approval. The current screenshot is
+  reader evidence; direct file-URL browser inspection was blocked by the tool's
+  URL policy, so no fresh visual walkthrough is claimed.
+
+- Final combined canonical `make test`, `make vet`, `make build` exit 0;
+  the cumulative contract binary completes in 244.253 s. Real SQLite builds
+  of all three selected targets and `select 6 * 7` exit 0 (result 42).
+  Ordinary v11 `20261006-005426-sqlite-2eeb1f3e5625` exits 0 in 291.981 s;
+  warm v12 `20261006-010022-sqlite-c225f307d483` exits 0 in 161.027 s with
+  zero live calls. Both contain summary, three roles, nine source-backed run
+  steps and 67/21/21 groups. Included `main.mk` contributes 374 of 450 manifest
+  facts; each target receives all 448 applicable rows, with exact child anchors
+  and root Makefile/cwd ownership. Actual library recipes use native Make goals,
+  not incomplete compiler settings or invented consumers. Reconfiguration keeps
+  its source-declared condition rather than becoming a compulsory prerequisite.
+  Independent raw audit covers 19,417 choice answers / 426,517 required scores,
+  none missing/invalid/extra; the complete 237 native candidates and their fields
+  match across 118/119 selection windows and the independent final comparison.
+  Legitimate semantic near-ties remain explicit. All seven bound hashes, every
+  target's native/derived chain and anchored members, and the one common physical
+  report were checked. Loopback browser checks all three roles, recipes/source
+  links, shared-function search, part/function reading and return without console
+  warnings/errors. Actual `repomap cache clear` exits 0 and removes the persistent
+  cache; both artifact chains still pass, and historical malformed/partial raw
+  request/response payload checksums remain exact. Skeptic and supervisor find
+  no remaining blocker in this accepted scope. Earlier failed probes below are
+  historical evidence, not the final acceptance state.
+
+- The included-rule native source locator now reuses the same source closure:
+  C link/archive observations retain the exact child rule path/line, while a
+  paired root manifest binding controls target identity, invocation cwd and
+  derived manifest facts. ProgramIndex retains both original sources and
+  ordinary restoration recognizes each without making the child directory a
+  build root. Conditional-only or competing sites remain explicit line-zero
+  unknown; multiple default fragments still count as an existing native goal.
+  The cumulative C expectation checks child evidence and root target/facts
+  binding; focused contrasts check source ambiguity, exact include cwd and
+  root/child corpus identities.
+
+- Combined v11 canonical test exits 2 with one real cumulative C failure:
+  `TestCFixtureProgramsComeFromTheMakefile` still seeks link rules in the root
+  file after they moved to `build/main.mk`; the contract package took 223.570 s
+  and all other packages passed. Checking the binding exposes an additional
+  native owner gap: C's rule locator reads only the root makefile, producing
+  line zero for an included rule. Native source-site lookup must reuse the
+  complete include reader while keeping the invocation's root manifest separate
+  from the child rule anchor. Canonical vet/build exit 0; this binary has not
+  been accepted through an online run.
+
+- Ordinary SQLite v10 exposed a native build-evidence gap: `Makefile`'s
+  empty first `all:` reached orientation, but its `include $(TOP)/main.mk`
+  and actual target rules did not. The owning facts reader now follows exact
+  source includes through the ordinary corpus, preserving every directive,
+  fragment path/line, condition and root invocation/output owner. `.mk` and
+  GNUmakefile are build-source corpus inputs; unrelated `.mk` files are not
+  manifest-scanned. Known immediate bindings and prerequisites retain their
+  source-position values; unknown expressions, conditional default choices,
+  unavailable files and cycles stay explicit without evaluating Make/shell.
+  The cumulative C fixture now supplies real server/client links through an
+  included `build/main.mk`. Complete values in Go/Python/JSTS/Clojure readers
+  were checked; they have no exact GNU Make include/fragment equivalent.
+  Full makefile/facts/corpus tests, focused real C orientation/Main-flow tests
+  and owning vet pass (exit 0); the cumulative file inventory is exact.
+  Contrasts cover repeat uses, active cycles, conditional/default uncertainty,
+  immediate/recursive append timing, parse-time prerequisites, escaped words
+  and preservation of the first fragment's original recipe.
+  This change fixes missing native evidence; recipe quality requires another
+  ordinary online acceptance run.
+
+- Combined byte-based ordinary v10 `20261006-000832-sqlite-f9380398fccd`
+  exits 0 in 274.071 s; canonical `make test` and `make vet` exit 0.
+  The real 237-candidate Vdbe question is read in ordered 118/119 selections
+  and a new independent three-choice comparison; every original field matches,
+  no whole-input refusal remains and provisional uncertainty is not promoted
+  into a final fork. Real choice-score audit covers 19,178 answers and 425,426
+  required scores with none missing/invalid/extra. This is not yet acceptance:
+  supervisor finds an unusable static-library `cc ...` recipe derived from
+  settings and exports rather than a complete command. Both final prompts now
+  distinguish settings from usable invocations and preserve source-declared
+  applicable prerequisites/conditions. The deeper native diagnosis finds that
+  the top Makefile's `include $(TOP)/main.mk` and the actual library rules were
+  absent from manifest evidence; native include-closure work remains required.
+
+- Main-flow owning choice decomposition checks the exact complete v8
+  `sqlite3VdbeExec` fork: 237 original candidate refs/names/order match the
+  recorded refusal. Real local Jev preparation refuses the 54,436-byte
+  whole question at its 32k envelope; two complete selection requests and
+  one independent comparison preserve every original criterion/source field.
+  A separate full source-derived `sqlite3RegisterBuiltinFunctions` catalogue
+  contains 93 eligible candidates, fits at 21,511 bytes and retains the one-call
+  ordinary path. This is not evidence of a historical 94/180 request. Saved
+  request-bound tests preserve local ties for independent comparison, refuse
+  non-progress/incomplete/conflicting decisions, and retain accepted neighbours.
+  Actual transport input refusals also divide complete changed input; output,
+  response and semantic refusals do not trigger input partitioning. Focused
+  tests/vet pass; ordinary acceptance remains pending the combined binary.
+
+- Supervisor's decoder audit finds a root confidence error: a missing rival
+  probability was treated as zero. EXECUTION requires a probability per
+  closed option; 19,467 real v8 and 10,694 earlier ordinary choices all wrote
+  every listed score, including explicit zero. Sparse local presets were a
+  test simplification, not a supported provider response. Owning closed-cell
+  validation now requires present finite [0,1] scores and refuses invalid or
+  conflicting known values at their cell; unknown extras are discarded.
+  TypeSafe decoding preserves invalid/occurrence evidence instead of allowing
+  JSON null to become a valid zero. Request-bound test certainty presets spell
+  zeros only for their actual prepared choices. Missing/outside YesAt choices
+  likewise refuse their cell before applying the existing score cutoff; valid
+  chosen yes may still decode to no at the declared cutoff. Initial canonical
+  checks exposed three further sparse legacy fixtures in lines/API warm memo/
+  classifier recall, now corrected with their exact declared option scores
+  while retaining the original confidence/near-tie scenarios. Combined
+  verification is pending the final tree.
+
+- Integrated shared-view ordinary v9 `20261005-234645-sqlite-513469b3ed77`
+  exposes a separate model format refusal: the shell's first complete context
+  response has finish `stop`, 1,963 output tokens and an unescaped `cd "."`
+  inside its JSON reading. This is a real decode refusal, not an input/output
+  envelope; no guessed repair or resource split follows it. The dependent
+  complete shell interpretation/common summary are unavailable. Context prompt
+  now explicitly requires JSON escaping while preserving decoded source literal
+  characters. This failed probe does not establish three-target acceptance.
+
+- Byte-based ordinary v8 `20261005-232755-sqlite-da0481b0675c` exits 0
+  in 547.953 s: shell and both library roles, eight source-cited recipes and
+  summary accepted; groups 67/21/21. All seven bound hashes, each native index,
+  dependency catalogue, reduced documentation and projected GroupsIndex match;
+  common places/atlas/tables/manifest/report JSON and one physical HTML checked.
+  Independent review distinguishes four legitimate confidence forks from the
+  remaining `sqlite3VdbeExec` whole-catalogue Jev prepare refusal. The latter
+  still needs owning choice decomposition. One context completion consumed its
+  actual 128,000-token output allowance; typed refusal followed by complete
+  smaller contexts recovered it. This baseline does not accept subsequent
+  shared-view or Main-flow decomposition changes.
+- Skeptic's request-local orientation view sharing roundtrips every complete
+  original record, use, layer, call position and source on whole and actual
+  split leaves, including cross-target endpoints and calls whose declaration
+  row is elsewhere. No new graph or source sampling. The exact saved SQLite
+  whole-window Jev-independent DeepSeek preparation shrinks by roughly 36–40%;
+  full final citation choices retain exact native values and anchors and fit
+  the ordinary configured envelope. Measurements are encoded UTF-8 bytes,
+  not billed tokens or latency. Sharing identical views does not resolve
+  generation loops; ordinary acceptance of the integrated form is pending.
+
+- Online ordered-partition probe v7 `20261005-231113-sqlite-e92af422028b`
+  reveals another unnecessary constraint: two distinct useful Makefile claims
+  select the same evidence endpoint, so its disjoint-assignment grammar refuses
+  the context. Stopped exit 130; no final report or acceptance. Context v3 now
+  advertises one exact prepared full-input scope and requires one substantive
+  aggregate reading. It keeps the complete source inventory as whole-reading
+  provenance, without assigning every source as proof of every phrase. Native
+  facts/seed declarations retain full portable values and anchors in final
+  citation choices, so the model can distinguish same-kind manifest refs for
+  actual commands. Final refs remain explicit model selections. Independent
+  reviews prompted this evidence correction; refs plus kind alone were
+  insufficient. Closed-scope conflicts/missing decisions refuse; no previous
+  range answer is converted or completed.
+
+- Online interval probe v6 `20261005-225834-sqlite-6364f87cc6bb`
+  still exposes manual set-cover accounting: shell covers 279/280 records,
+  omitting Page cache → Pager, and static library covers 525/528, omitting
+  sqlite3_open/open_v2/open16 even though its text names them. Stopped exit 130
+  after these concrete failures; no reader acceptance or final publication.
+  Replaced the free-range protocol with context v2's explicit complete ordered
+  partition: exact full-input first/last, increasing closed through endpoints
+  and mandatory explicit final endpoint. Span starts are defined by that
+  model-selected encoding; no prior response is converted or filled. Each
+  observation retains only its chosen span's native sources. Missing/conflicting
+  intermediate choices cannot disappear and transfer their sources to the next
+  phrase. Architectural synthesis remains independent of evidence order.
+
+- Ordinary SQLite v4 `20261005-223819-sqlite-c9173630da4d` exits 0
+  after 550.386 s with all three native maps, but context coverage refuses
+  shell (seven omitted records) and static library (six omitted exports).
+  Their dependent roles and common summary are unavailable; only the dynamic
+  library role survives. This is not reader acceptance. The missing selections
+  occur in short complete responses, so raising the output limit cannot fix it.
+  Replaced manual hundreds-of-ref enumeration with model-selected inclusive
+  closed intervals in exact supplied order. Decoder tests reject gaps, reversed,
+  unknown/missing/conflicting known endpoints and preserve every original source;
+  entirely unknown members are discarded. The complete saved SQLite window
+  exercises the published interval shape through the real byte preparer with
+  request-bound local responses, preserving all records and citations.
+
+- Canonical `make test` with the real prepared TypeScript 5.9.3 compiler passes
+  on the combined tree: all native contract tests (249.136 s), JSTS (91.236 s),
+  run/publication tests (48.034 s) and remaining packages. Canonical `make vet`
+  and owner-facing `make build` pass with ambient Go caches, package parallelism
+  two and the ordinary five-minute test-binary timeout.
+
+- Repeated independent review found two further owner-level defects: Main-flow
+  choice criteria were serialized in both source instructions and the Jev
+  criteria map; manifest values were clipped to 120 runes before preparation.
+  The classifier now transmits each selected criterion once while retaining
+  source refs, extra fields, original windows and decoding. A complete saved
+  SQLite `yy_reduce` question retains all 49 choices and exact criteria:
+  21,531 → 12,827 bytes, both prepared by the real Jev client, zero HTTP.
+  A separate request-bound regression crosses from refusal to fitting without
+  dropping evidence. This does not claim that every indivisible question fits.
+- Manifest facts now retain full values and separate repeated assignments/rule
+  fragments at their original anchors. Makefile reading follows referenced
+  definitions for every advertised runnable recipe, including nondefault
+  configure/rebuild commands. C's cumulative `portable` rule preserves over
+  120 characters of actual compiler flags; native C orientation and focused
+  makefile/facts tests and vet pass. Complete values also have executable Go,
+  Python, JS and Clojure manifest checks; their formats have no exact GNU Make
+  recipe-variable closure equivalent. Orientation maps only known checkout
+  path operands to repository-relative references, preserving original facts;
+  quoted/unquoted paths, include/link flags and unrelated directory/URL suffixes
+  have contrasting tests. It adds no scan, redaction or permission gate.
+- Real TypeScript 5.9.3 Compiler API checks exposed merged Console overloads
+  being classified by the selected signature's installed types package instead
+  of the invoked default-library symbol. Helper 29 / result 21 retain the raw
+  signature package plus separate compiler proof and a distinct platform
+  identity; an exact imported same-name symbol stays a package symbol. Calls
+  and receiver provenance share local/conditional/reaching-store resolution.
+  The cumulative fixture verifies merged global Console vs imported adapter
+  Console, Date constructor/result provenance and an unknown changed factory;
+  the complete native JSTS package passes (70.270 s). Default-library declaration
+  merging has no exact Go, Python, C or Clojure equivalent; existing native
+  platform/package ownership checks are reused, not fabricated as equivalents.
+- Ordinary byte-based SQLite v3 `20261005-221533-sqlite-97e300f6367e`
+  completes in 586.988 s, exit 0, with three roles and one common report.
+  Two contextual responses looped to the actual 128,000-token output envelope;
+  typed refusal and complete smaller windows recovered them. Increasing this
+  allowance would not resolve generation loops. Main-flow questions still had
+  explicit prepare refusals and clipped manifest commands were subsequently
+  discovered, so this run does not accept the later classifier/manifest fixes.
+
+- Owner explicitly chose byte reservation and no tokenizer. Removed the added
+  DeepSeek tokenizer implementation, asset, reference cases, license bundle and
+  regexp2 dependency. Both clients reserve one input token per complete encoded
+  UTF-8 byte plus the output allowance. The previous tokenizer-backed SQLite run
+  remains historical evidence; it does not prove today's byte-based acceptance.
+- Jev envelope checks now live in `typesafe.Client.Prepare`, covering direct
+  Main-flow requests as well as tables. Full prepared bytes include model,
+  framing, state, instructions and criteria. `FitClassifierWindows` delegates to
+  that same local preparation; it has no duplicated Jev size constants or network
+  sizing request. Independent oversized rows are packed by their owner when
+  possible, otherwise explicitly refused unsent; fitting neighbours retain their
+  evidence and order. Exact prepared bytes and cache identity are unchanged.
+- Focused provider tests cover whole-body, question/shared-state and criteria
+  bounds with zero HTTP calls, plus the exact framing/output boundary. A separate
+  table test uses a categorizer's different preparation envelope to expose a
+  hardwired table-only guard. The Main-flow regression uses the real Jev client
+  through its request-bound preset and asserts zero transport plus retained native
+  alternatives at the explicit fork.
+- At the owner's request, independent skeptic and supervisor reviewed the work.
+  Both confirmed the Jev ownership change. Both rejected the provisional parts
+  consolidation: it could only merge whole local proposals and saw only their
+  names/paths/counts, so a locally mixed responsibility could not be split again.
+  It replaced one architectural boundary with another. That provisional code,
+  prompt and tests were removed rather than accepted behind green tests.
+- Replaced the rejected approach with complete discovery → global responsibility
+  synthesis → original-unit assignment inside the ordinary parts owner. Complete
+  native calls/imports are indexed before division, preserving all cross-window
+  directions and counts. Local hypotheses have substantive holds and can be
+  refined into several choices; every original row independently receives the
+  full global catalogue. Different catalogue provenance retains distinct identities.
+  Discovery requires a complete cover; failure leaves the dependent target map
+  explicitly refused. Final independent assignment failures keep their neighbours
+  and conflict/left-out reasons without a placement repair.
+- Repeated independent reviews found and corrected invalid-choice repair,
+  repeated-field last-wins, lost partial-response provenance and possible synthesis
+  cycles. Owner decoding preserves field occurrences and harmless forms; all
+  annotations point to their saved response. Only a decreasing byte-plus-output
+  representation recurses; changed larger results get a terminal attempt and
+  unchanged refused bytes are never resent, including unexpected transport limits.
+  Request-bound regressions redistribute mixed `{A1,B1}/{A2,B2}` into cross-window
+  `{A1,A2}/{B1,B2}`, check a different window boundary, native cross-window edges,
+  same-file box division, provider-prepared synthesis, partial row survival,
+  decoder forms, discovery failure, terminal non-reduction, warm reuse and retained
+  partial payloads after a test cache clear. Focused six-package tests pass.
+- Keys/core now decompose complete native declaration and model part catalogues
+  into checked complete observations; only final Jev calls choose roles/keys,
+  with one ranking over accepted whole-part candidates. Reviews exposed and
+  regressions corrected joint overflow, oversized-candidate isolation, larger
+  first interpretations, later refinement refusal, multi-catalogue preparation
+  order, repeated required fields and transport/persistence error masking.
+  Smallest complete fallback preserves fitting neighbours without promoting
+  refused candidates. The saved SQLite keys window checks all 3,719 native names.
+- Orientation now reads complete per-target source records before independent
+  roles/recipes and a complete repository summary/flow decision. Full native
+  seed-call positions/evidence and closed cross-target endpoints survive.
+  Citation kinds/ownership remain native; observations are model interpretations.
+  Global observation reading and strictly decreasing reduction avoid a new
+  atomic whole-target boundary. Actual live `length` and response-byte overflow
+  are typed executor resource refusals. Whole/divided decisions share decoding,
+  including known invalid-row poison, harmless forms and recipe deduplication.
+  Partial refusals retain exact live/warm response evidence after cache deletion.
+- The saved complete public SQLite overview has 730 facts, 484 groups and 5,544
+  connections. The real DeepSeek encoder and byte guard rejects the whole window;
+  request-bound completion presets read every original record, and actual final
+  request preparation fits with the complete citation dictionary (t1: 3,255
+  records / 27,105 final wire bytes; t2/t3: 2,310 / 32,704 and 32,708). These are
+  local packing probes, not ordinary online semantic acceptance. The full goal
+  remains active; new complete online SQLite acceptance is still required.
+- A second live skeptic/supervisor review exposed wrong-level output work:
+  the new complete context reader inherited the 16,384 allowance measured on
+  short final overviews and almost copied each call/connection into prose.
+  The first byte-based ordinary run was stopped (exit 130, no final report)
+  after this finding; its accepted intermediate data is not acceptance. The
+  context prompt now asks for contextual abstraction with complete closed record
+  coverage, preserves required literals/uncertainty and groups complementary
+  evidence. It uses the analytical allowance capped by the provider, reserved
+  during byte preparation. Final recipes select supported build/start/use steps,
+  not a manifest maintenance catalogue. The saved complete window passes with
+  the real 128,000-output configuration before a new ordinary run.
+- Skeptic also exposed bare executor completion-envelope refusals bypassing
+  adaptive eligibility. Exact completed requests annotated `response_envelope`
+  now split losslessly; each/batch tests cover `length` and response bytes, full
+  leaf coverage, accepted siblings and warm refusal memos. DeepSeek output-limit
+  diagnostics use immutable prepared `max_tokens`, with a contrasting smaller
+  request/larger client regression. Cross-language part presets now name the
+  actual file-boxes v2 task and fail explicitly on unknown tasks; split fixture
+  checks pass. The C nested-make flag expectation isolates ambient CPPFLAGS;
+  production still uses the host build view. Full tests use the existing real
+  TypeScript compiler on PATH, not an alternate fixture implementation.
+
+## 2026-10-05 — Preventive role decomposition and provider-sized requests
+
+- Reader outcome: the actual compiled amalgamation remains fully analyzed while
+  a newcomer can find Pager, WAL, B-tree and planning as distinct responsibilities.
+  No alternate SQLite source tree, native fact deletion or UI change. An oversized
+  role gate now requests responsibility discovery rather than treating its refusal
+  as one responsibility. Naming partitions complete declaration records, retaining
+  cross-window calls/callers; multiple leaves require bounded model reconciliation
+  covering every proposal ref. Missing/conflicting known refs refuse the complete
+  consolidation; no code merge by path or spelling. Gate result paths now come from
+  that request's local row instead of unrelated global file numbering.
+- The parts prompt also needed a semantic correction: one compiled dependency
+  does not prove one subsystem; complementary detail belongs to its broader
+  responsibility. The first accepted naming was subsequently merged into one core;
+  an interim preservation-only wording yielded 498 tiny parts. Neither interim run
+  establishes the final reader outcome. The final prompt yields 175 parts across
+  the three targets, with distinct storage responsibilities and broader areas.
+- Request preparation preflights actual encoded input and output reservation
+  before generic adaptive transport. Jev table preparation reserves one token per
+  encoded UTF-8 byte against its documented 64k request/32k question envelope;
+  shared evidence and options are included, not estimated from prior corpora.
+  DeepSeek's known official V4 models use the embedded published MIT tokenizer and
+  1M context; custom/unknown tokenizer contracts retain a conservative byte bound.
+  A byte-only V4 estimate falsely refused a fitting saved orientation window, so it
+  was replaced rather than accepted as a scale limit. No runtime download or Python
+  dependency; prepared request/cache identities remain unchanged.
+- Before the full run, complete saved-window probes preserved every declaration
+  and cross-window edge. Independent published-tokenizer reference cases pass.
+  On the saved 3,156,771 B orientation request, Go and the independent tokenizer
+  both count 876,324 content tokens; local framing reservation totals 876,535 versus
+  876,351 input tokens reported by the actual provider. The real request succeeds
+  once in 20.075 s with three roles and three recipes. Temporary Go probes removed;
+  receipt `token-preflight-receipt.json` under the task's SQLite temporary root.
+- `make build`, focused tests and vet for reading, tables, DeepSeek, shared executor
+  and orientation pass. Regressions check no oversized transport, complete records
+  and cross-window calls, independent accepted neighbours, bounded reconciliation
+  and closed proposal coverage. Provider fixtures are request-bound.
+- Final ordinary online run `20261005-190448-sqlite-65170f4a15fb`, default system
+  cache, explicit `c:sqlite3,c:libsqlite3.a,c:libsqlite3.dylib`: ready in 195.444 s,
+  exit 0, all three analyzed; zero local/provider envelope refusals. Native objects
+  8,362/5,520/5,520 and relations 62,417/42,779/42,779 retained. Parts 107/34/34;
+  largest member sets 983/837/837 instead of the prior 6,508-member core. Summary,
+  all three roles and recipes accepted. Ordinary semantic uncertainties remain
+  explicit, including the Main-flow fork; they are not repaired by orchestration.
+  Seven exact bound-file hashes, all target index bindings and one common
+  manifest/report JSON/physical HTML (27,281,513 B) checked. Receipt:
+  `/private/tmp/repomap-sqlite-20261005/tokenized-receipt.json`.
+- Warm ordinary run `20261005-190910-sqlite-152aeee3758d`: ready in 142.695 s,
+  exit 0, zero live provider calls. Ordinary `repomap cache clear` then exits 0,
+  removes the default `runs/.llm-cache` and preserves both saved reports;
+  absence of the cache and presence of the reports checked. Loopback browser journey: run recipes, Pager
+  search in every component, static-library Storage engine/Pager and its native
+  declaration coordinates/connections; no console warnings/errors. Generated
+  amalgamation source links remain unavailable upstream. No browser performance
+  claim; the owner's UI scope is unchanged.
+- Owner-level audit leaves four concrete gaps open: direct Main-flow Jev calls
+  bypass table-only token checks; parts cannot cross preparation windows and lack
+  global reconciliation; keys/core retain indivisible declaration catalogues;
+  orientation has one atomic overview request whose refusal removes all sections.
+  These are request-owner/provider-layer work, not evidence truncation or rendering
+  remedies. Current SQLite success does not establish universal decomposition.
+
+## 2026-10-05 — SQLite entered core is unusably dense (owner review)
+
+- Owner's screenshot and near-hang report extend the earlier browser journey:
+  entering the core displays a wall of tiny declarations. The earlier check
+  covered component readings and source/Main-flow return, not this deep view;
+  it does not establish UI acceptance or responsiveness here.
+- The real default build compiles the repository-generated amalgamation
+  `sqlite3.c`; the console also compiles `shell.c`, and both libraries use
+  `sqlite3.o`. The file header explicitly describes combining the separate
+  SQLite modules into one translation unit. This is the actual build view,
+  not a manual replacement of its original modules.
+- Role splitting was not a successful decision that SQLite has one
+  responsibility. Saved `atlas_role_gate-r1-w1.input.ref.json` names
+  `sqlite3.c`, all 3,719 declaration units and same-file calls. Its complete
+  state/question is 694,462 B, refused at preparation; the same file is
+  refused for both libraries. Whole-file fallback then reaches the console's
+  parts request, whose accepted answer is core (`f2`), public API (`f3`) and
+  shell (`f1`). Core contains 6,508 subject members including fields/children.
+  The gate's result artifact misleadingly says `shell.c` for its request-local
+  `f1`; inspect its bound input for the actual file. Diagnostic path attribution
+  is a separate remaining gap.
+- `levels.mjs` computes a complete tile grid for every part; `symbols.mjs`
+  repeatedly grows its packing scale until all tiles fit, and
+  `part-symbols.jsx` mounts the entered part's blocks and intra-part links
+  together. That implementation and the screenshot establish the dense
+  rendering problem; no browser CPU profile was collected, so the relative
+  costs of layout and mounting are not measured. No implementation fix is
+  claimed. Architecture partitioning and drawing only the visible detail
+  remain separate work, without dropping saved evidence or inventing parts.
+
+## 2026-10-05 — SQLite three-target report and shared-context envelope diagnosis
+
+- Owner explicitly narrowed the requested report to the three ordinary built
+  products. Existing comma-separated `--target` selects `c:sqlite3`,
+  `c:libsqlite3.a`, `c:libsqlite3.dylib`; discovery defaults are unchanged.
+  Ordinary online binary run `20261005-175250-sqlite-c5c3de3a7fde` is ready
+  in 143.588 s and exits 0 with `--no-open --no-serve`. All three outcomes
+  are analyzed. One common manifest/report JSON/physical HTML (18,758,298 B),
+  seven referenced file hashes and every target's sealed index-set/GroupsIndex
+  binding checked; dependency catalogues, reduced documentation and shared
+  places/atlas/reading input exist. Browser: all three component choices,
+  console main declaration and author comment, return to Main flow, both
+  library readings at 1280×720; no warning/error. Receipt:
+  `/private/tmp/repomap-sqlite-20261005/three-target-receipt.json`.
+- Full reading acceptance remains open: 694 `context_tokens` refusals
+  (690 keys, two core, two file-role gates). Complete saved key request
+  `de96b2df1cbe3875a0a4ad5e5afbc58c65ad4afa84e045ea85f5066c72556d58`
+  has 3,719 declaration names occupying 74,717 B in shared state, repeated
+  even when only one question remains. `FitClassifierWindows` partitions
+  rows, not shared evidence; intermediate byte sizes intentionally defer
+  to the provider's tokenizer, and these stages have no owner-defined
+  lossless shared-context partition/reduction after its actual refusal.
+- Temporary complete-window probes preserved all declaration names or file
+  records/calls. Prefix packing admitted the key window (57,748 request B,
+  28,084 input tokens); a file-record table admitted libcmpp.c (68,966 B,
+  29,070 tokens). Even call-name dictionary packing still refused jimsh0.c
+  (93,066 B) and shell.c (94,796 B). Compression alone therefore cannot close
+  the envelope contract. Provisional production hooks and temporary Go probe
+  were removed; no packing implementation or universal-fit claim is accepted.
+  The remaining work needs owning-stage task partitions with complete evidence
+  and meaningful answer combination, or an explicit indivisible preparation
+  outcome; merely halving questions cannot reduce this shared state.
+
+## 2026-10-05 — SQLite fact-walk stall fixed through the shared address reader
+
+- Reader outcome: preserve every observed registration address and its original
+  evidence while completing ordinary analysis of the locally built SQLite
+  console. Address admission already uses `routeValueReader.addresses`; emission
+  now uses that same walk instead of enumerating all diagnostic caller strings
+  again. No SQLite branch, new graph, depth limit or evidence truncation.
+- The shared regression includes 2^40 non-address caller paths, real address
+  alternatives, two equal addresses at different source sites, concatenation
+  and a direct non-address command name. Addresses, possible authority and all
+  contributing sites survive. On the prior complete saved SQLite console index,
+  `facts.Build` completes with 250 facts in 1.4155 s; the temporary probe was
+  removed. The complete ordinary run extracts 6,986 facts in 3.220 s.
+- Owner-facing `.bin/repomap` SHA-256
+  `c2404ccd260c6973a8a36e7e2fc64ab5a298d98d484eacb42a75801fb05b1800`.
+  Ordinary online run `20261005-161346-sqlite-e3e10cbc287f`, default cache and
+  official providers, ready in 303.695 s, exit 0 after normal server SIGINT.
+  All 92 selected outcomes persist: 34 analyzed, 58 native preparation
+  failures. No failed placeholder or arrows appear on the canvas.
+- Verified 38 bound-file hashes, every successful target's sealed index set,
+  dependency catalogue, reduced documentation and ProgramIndex/GroupsIndex
+  binding, shared places/atlas/tables, and exactly one common manifest, JSON
+  and physical HTML (23,548,394 B). Browser at 1280×720: repository and failure
+  catalogue → sqlite3 → Commands → main declaration and original author
+  comment → Main flow. No browser warning/error. Both owned servers and the
+  temporary tab closed. Receipt: `/private/tmp/repomap-sqlite-20261005/fixed-receipt.json`.
+- This closes the CPU stall, not full reading acceptance. The provider refuses
+  698 cells/requests for its context envelope (690 atlas-key rows); all such
+  gaps remain explicit. The ordinary host build still cannot prepare 58 test,
+  tool and alternate-source targets. SQLite tracked sources are unchanged.
+- Test maintenance: both tutorial-game acceptance indexes were regenerated
+  with the real Python and legacy TypeScript adapters, using prepared ReactDOM
+  and axios types from the fixture's declared versions; no old-format decoder
+  or handwritten seal remains. Exact C unreachable inventories include the
+  previously added `sbCheckedBranches` source example. Temporary regeneration
+  tests were removed. Sandbox-only Go SSA/Node hard-link failures were checked
+  again with the authorized ambient tools; fixture Makefile checks exclude
+  inherited user ICU compiler flags. Native TypeScript 7.0.2 was also probed:
+  its AST lacks `getChildren`, an existing compiler-compatibility gap outside
+  this shared-facts fix; legacy compiler checks use prepared 5.9.3.
+- Final focused checks pass: facts (1.193 s), places (2.277 s), run
+  (46.572 s), all-language contract tests (200.053 s), report (cached),
+  focused vet and `make build`. No temporary Go probe remains; `git diff
+  --check` passes. These checks do not waive the online provider-envelope gaps.
+
+## 2026-10-05 — SQLite ordinary probe: native build succeeds, fact walk stalls
+
+- Owner requested SQLite. Fresh public-domain official mirror in
+  `/private/tmp/repomap-sqlite-20261005/sqlite`, VERSION 3.54.0, canonical
+  Fossil check-in `ab621a3e11ee4accce14bf6c90a7cc273d9c25a7c3d9dd2466f2bdc2bbbf8084`.
+  Ordinary `./configure` and `make -j2` exit 0; no tracked source edits.
+  The built CLI creates a table, commits three rows, returns sum/count
+  `6|3` and `pragma integrity_check` returns `ok`.
+- Ordinary online `.bin/repomap` with default cache and official providers,
+  no explicit target narrowing: 92 selected targets, 34 native indexes
+  prepared, 58 explicit target-preparation failures. The main `c:sqlite3`
+  index has 8,362 objects and 62,417 relations. Native preparation completes
+  at 101.609 s. This is not completed page or map acceptance.
+- The shared facts stage then makes no logged progress for several minutes.
+  A one-second sample of the running process shows
+  `facts.Build -> addRegistrations -> addressLiterals -> argument -> value`,
+  with many nested `routeValueReader.value` frames. At 6m35s wall time it has
+  consumed 10m CPU and holds approximately 5.4 GB RSS. The reader cuts active
+  expression cycles but enumerates caller branches recursively; this probe
+  does not establish a completed result or justify truncating evidence.
+- The owner-facing probe was manually stopped after over seven minutes.
+  SIGINT did not stop the CPU walk; only this owned process was killed,
+  exit 137. No complete manifest/report JSON/HTML or browser acceptance.
+  Full logs, build receipt and native process sample remain under
+  `/private/tmp/repomap-sqlite-20261005/`; `receipt.json` explicitly records
+  interruption. No product implementation or SQLite source repair was made.
+
+## 2026-10-05 — Failed programs stay off the canvas
+
+- Owner decision: use the ordinary local build view; an unread program does
+  not belong on the map. The ordinary backend system-map assembly no longer
+  adds the collective `system-unread` placeholder or arrows to failed
+  outcomes. The complete selected inventory, failure detail, home reading and
+  Component details remain intact. This applies to every language and failure
+  stage; no native fallback or repository change was introduced.
+- Report tests pass (14.059 s), focused vet and `make build` pass. Regression
+  checks retain successful siblings and their connection while excluding both
+  directions of a failed component's connections and keeping its diagnostic.
+  Saved rendering of the prior `082401` Lua report exits 0 with no provider
+  requests and no failure placeholder.
+- Ordinary `.bin/repomap` SHA-256
+  `06803adc8cf09588cb62aa9b1ade905be9d9cb3e3809b74d666d9ecebf8693a0`;
+  Lua run `20261005-124423-lua-5-1-5-etc-c9883782472c`, default cache and
+  official providers, ready in 22.720 s, 0 live calls, exit 0 after SIGINT.
+  Five analyzed pages remain; `etc/all.c` has its explicit native clang
+  failure outside the drawing. Nine bound-file hashes, five exact
+  ProgramIndex/GroupsIndex joins, complete shared places/atlas/tables,
+  per-target dependency/documentation/index artifacts, one common manifest,
+  JSON and physical HTML verified. HTML is 7,484,887 B.
+- Browser: temporary loopback server, normal 1280×720 viewport. Five programs
+  and no failure note on the canvas; selecting Lua opens Main flow;
+  `handle_script` opens its declaration and Main flow returns to its known
+  `script` condition. Home and Component details retain the exact clang
+  diagnostic. No browser warnings/errors. Temporary tab and both owned
+  servers closed. Receipt: `/private/tmp/repomap-off-map-20261005/receipt.json`.
+
+## 2026-10-05 — Probe: native platform modules for the all.c macro collision
+
+- Unchanged Lua 5.1.5 `etc/all.c` parses successfully with clang's platform
+  modules, including when implicit module-map discovery is disabled and only
+  the SDK and clang builtin maps are admitted. Neither Lua nor the ordinary
+  C adapter was changed by this probe; the existing D3 build-view rule remains.
+- Compared complete dumps through the ordinary C decoder: both views retain
+  the same 1,124 explicit corpus declarations. All but four normalized ASTs
+  match; those four differ only in the platform `size_t` alias chain. This is
+  a structural probe, not ProgramIndex or online acceptance. Receipt:
+  `/private/tmp/repomap-c-module-evidence-20261005.json`.
+- Module JSON omits external declarations (3 versus 1,181 in the textual
+  control). The matching Apple libclang 17 native API resolves the original
+  `fopen`, `fprintf` and `strchr` uses to their exact SDK declarations; complete
+  imported evidence must be restored before accepting such a view. The
+  textual control used a temporary VFS overlay renaming Lua's internal macro;
+  it is not a repaired repository or product acceptance. Temporary Go probe
+  removed; `git diff --check` passes. The owner rejected an alternate build
+  view on 2026-10-05: use the ordinary local environment and keep failures
+  off the canvas. No module helper or fallback remains in the implementation.
+
+## 2026-10-05 — Native conditions reach the Main flow and its source links
+
+- **Reader outcome:** Lua's `handle_script` reads "only if `script`"
+  (`src/lua.c:361`); where its shared call path resumes in `luaD_call`,
+  `luaV_execute` reads "only if `luaD_precall(L, func, nResults) == PCRLUA`"
+  (`src/ldo.c:377`). The original expression is escaped code; the surrounding
+  words alone are localized. Error/noreturn roles remain alongside a known
+  condition. Missing text keeps the existing generic label.
+- **Native handoff:** completed the eight inherited guard files. ProgramIndex
+  28 keeps `Condition` and `When` (holds/fails/matches) for C, Go and Python.
+  Go's direct-edge folding, outside-call family folding, and shared flow-edge
+  folding keep a common expression only when every site's text and polarity
+  agree; no site is changed by the fold. JS/TS and Clojure still record no
+  guards, their existing missing equivalent. No prompt or decision changes.
+- **Examples/checks:** cumulative C `sbCheckedBranches`, Python
+  `checked_branches` and Go `CheckedBranches`/`CheckedEither` cover then/else,
+  native short-circuit/ternary/match forms, repeated equal conditions,
+  different conditions and opposite arms. C/Go/Python's existing
+  prepared-then-executed checks retain the condition through GroupsIndex to
+  orientation. Six focused contract tests pass (23.050 s); the eight consuming
+  packages' suites and focused vet pass. One C Makefile test first exposed the
+  machine's ambient ICU `CPPFLAGS` in its fixed expectation; the fixture now
+  clears that variable locally, with product flag handling unchanged.
+  `make ui-test`: 173 passed and generated assets match. `make build` passes.
+- **Ordinary receipt:** `.bin/repomap` SHA-256
+  `74bfd9d9c1faa9fb5fb8509637dd0d6aaa87856c9ee0fe497d9ff2d930ac1729`;
+  `/Users/dvordrova/git/lua-5.1.5 --no-open`, GOMAXPROCS=2, default system
+  cache and official providers. Owner run
+  `20261005-082401-lua-5-1-5-etc-bd87ccf7c9f4`, analysis/publication ready in
+  27.402 s, 0 live provider calls, direct exit 0 after stopping this run's own
+  server with SIGINT. Five of six targets are analyzed; `etc/all.c` retains
+  the known macOS header/`getline` failure. One manifest (304 B), report JSON
+  (18,383,224 B) and physical HTML (7,485,543 B). All nine named-file hashes,
+  all five ProgramIndex/GroupsIndex bindings and the complete artifact chain
+  were checked. Ordinary `render` exits 0, makes no provider requests and is
+  byte-identical (HTML SHA-256
+  `08003900d35d1d8a7b1ede8dc707ee94ee310220b44fdec19ff492f8289656a6`).
+- **Browser receipt:** normal Codex browser, 1280×720, this ordinary served
+  report. Components → lua shows handle_script's `script` condition. Clicking
+  `src/lua.c:361` reports "Opened src/lua.c:361:3 in your editor"; the server
+  records opened. Following handle_script's declaration and Main flow returns
+  to its step. Opening "the rest of this way" exposes luaV_execute's exact
+  condition; its `src/ldo.c:377` click likewise opens the editor. Following
+  luaV_execute and Main flow retains both open folds and the step fully in
+  view (top 289.7, bottom 540.7 inside column 262.5–663). Home restores
+  `#overview` and All components. Browser warnings/errors: none. The temporary
+  tab and this run's server were closed. Logs/render copies:
+  `/private/tmp/repomap-conditions-20261005/`.
 
 ## 2026-10-05 — MVP acceptance on 95c71b11: casdoor and Lua 5.1.5, ordinary runs and browser walks
 
@@ -13267,3 +15344,284 @@ runs instead of growing the entry pages again.
 Next: complete the combined build/check checkpoint, verify the corrected small
 ordinary reports, then complete Freqtrade acceptance before full Airflow. Do not
 mark those outcomes complete from probes or local tests.
+
+
+### 2026-10-07 — Metabase publication and component-flow lifetime
+
+- Owner requested a GitHub link immediately. Published the complete English
+  Meta32 ordinary report, frozen renderer 30ba, as `repomap/metabase.html` at
+  Pages commit `fbd9f01171f771400f2e1b91ff9857efca9d8c4a`. Pages reports built;
+  independent streaming public readback HTTP 200 equals all 54,303,647 local
+  bytes, SHA `b5fbb09ffea4ce5750df0905d1804d6c45f2a8795b0fc43fc1803e591a20e841`.
+  Original ordinary/report/current-native chain and all 32 outcomes remain
+  bound. Receipt: `/private/tmp/repomap-gallery-20261006/metabase-pages-public-readback.json`.
+  Publication is concrete; remaining browser journeys and later UI changes
+  are not newly accepted by this readback. Airflow has no final ordinary report.
+- Removed hidden component Main-flow/independent-work HTML from the ordinary
+  target template. Existing prepared Flow/Start/StartElsewhere/OwnWork enter
+  one shared `componentFlow` value; the selected reader formats full saved
+  values. Native calls, model choices and target scope do not change. Main-flow
+  return and scheduled/continuous input readings use that same owning value.
+  Existing native-flow display regressions now execute the actual JS formatter;
+  complete nested field/anchor/key/condition round-trip through page compaction
+  is exact on GitHub/GitLab/served sources. Full report tests exit 0 (31.412 s);
+  saved-render/browser verification of this UI revision remains pending.
+- The full450 saved-stage process progresses through all original groups,
+  complete file binding, group snapshots and `before-page` at 1,203.379 s.
+  This is progress, not an ordinary run or page completion. A current five-second
+  CPU sample shows finite original-file validation, no evidence of a loop.
+  Space dropped to 3.9 GiB as swap grew; narrow transparent compression of the
+  stopped run's sealed common artifacts retains original bytes/time/mode.
+  Completion, current resource receipts and original scope remain mandatory.
+- Independent migration regression now compares the previous component wrapper
+  and unchanged Go flow partials with the actual JS formatter: ordered DOM roles,
+  all source/key/attribution attributes, nested ways, handovers, guards,
+  registrations, native fallback and independent work, in English and Russian.
+  The focused oracle exits 0 in 2.588 s; report vet exits 0. Whitespace is
+  normalized; original field bytes have a separate complete JSON roundtrip.
+  Supervisor finds no scoped blocker. This is not saved-render/browser acceptance.
+- The next live Airflow sample at 43 minutes has advanced beyond TestFreeViews
+  into map construction and its shared ownership join; most sampled workers are
+  collecting memory while the active reader decodes/validates original files.
+  This establishes a changed computation, not page completion or a bounded-memory
+  claim. Exact common-file transparent compression releases 451,629,056 bytes;
+  the current filesystem has about 6.2 GiB free, with 14.2 GiB swap in use.
+
+### 2026-10-07 — useful area membership and complete saved-stage results
+
+- Redis union-style parents came directly from the owning model exchanges;
+  Atlas, GroupsIndex and rendering retain the same memberships. Direct,
+  recursive, catalogue and assignment prompts now ask for a useful common job,
+  permit direct parts/stop, and require the job to explain every member's
+  distinct purpose without importing a neighbour's effect. No banned word,
+  local semantic validator or renderer reparenting was added.
+- Catalogue decoding no longer forces every proposal into a selected choice.
+  Complete unselected interpretations survive capacity reductions to the global
+  question; original parts still receive independent closed assignments including
+  none. Malformed known decisions cannot be repaired by neighbouring rows;
+  accepted independent decisions and full unused evidence survive. Full reading
+  tests (42.198 s), vet and owner build pass before the final per-member prompt
+  refinement; the refined prompt's checks and fresh ordinary acceptance are pending.
+- Frozen `ce839e518421` ordinary Redis exits 0 (23.316 s, four analyzed targets).
+  Complete artifact/source bindings pass and the ordinary saved renderer exits
+  0 (8.112 s). Browser journeys check Client execution control → Transactions →
+  multiCommand → back, Blocking and unblocking, a direct Core data structures
+  part, and all original members of Data durability and replication. Supervisor
+  independently identifies RAM relief missing from that parent's stated job;
+  seven areas are not accepted as a proof of semantic usefulness. Receipts are
+  under `/private/tmp/gallery/redis-common-responsibility-area-probe`.
+- The full450 saved-stage probe completes its page and exits 0 (4,611.636 s,
+  maximum RSS 19,697,176,576 bytes, explicit GOMEMLIMIT=20GiB); all original
+  native/group bindings remain exact. This does not replace a fresh ordinary
+  online run. The latter now runs on frozen ce839e518421 over the complete scope.
+- Metabase data-only-flow ordinary saved rendering exits 0 (561.544 s, maximum
+  RSS 11,427,221,504 bytes); all 32 complete outcomes remain bound. Local HTML is
+  43,522,874 bytes, SHA 07e5c944dac773760a10536acc757a3b26a4fd9ebae12e6fc5d7cb9c61fa971b.
+  Actual browser DOM has 207,681 elements and no hidden component-flow/own-work
+  copies; Reporter source reading succeeds. Full browser journeys and replacing
+  the already-public older Metabase rendering remain pending.
+- Incremental transparent compression of only sealed current Airflow native
+  files releases 819,523,584 bytes, retaining full SHA/readback, mode/timestamp,
+  native index seal and completion markers. Disk remains about 14 GiB free;
+  no source, model response, group or common report is removed.
+- Further owning prompt checks pass full reading tests (33.782 s, then 38.537 s),
+  vet and owner builds. One complete original 19-part saved scope is asked
+  before each full run. Ordinary 906770eae35a exits 0 (19.021 s, all four
+  targets), independently bound saved rendering exits 0 (4.345 s). Virtual
+  memory stays directly in the server, but the Client blocking coordination
+  title omits the transaction purpose. Ordinary 2f4ad40420c4 exits 0 (19.141 s)
+  with the improved Client execution control title and incorrectly includes VM
+  under durability again. Semantic usefulness remains unaccepted; repeated
+  prompt refinements are not evidence of a universal fix. Skeptic confirms the
+  current direct name/membership decision has no contemporaneous saved common
+  responsibility, and later description cannot establish it retroactively.
+  No local rename, reparenting, banned word or repeated identical-byte request
+  is used. Receipts are in the adjacent Redis per-member/title probe directories.
+- Current Metabase data-only rendering additionally opens the CachedGraph
+  record (core.cljc:31–39), its children-of use, and bootstrap/-main (62–74).
+  Native startup calls, unresolved requiring-resolve/parse-opts/apply, full
+  component flow and independent scheduled work remain reachable. Searching
+  frontend createSession finds no corresponding code/operation result; no POST
+  execution claim or completed frontend call walkthrough is made from sessionApi.
+  Broader browser/publication acceptance remains pending.
+- After the owner's pause/resume, the same full450 ordinary Airflow process
+  completes every native target, Claims (32,940) and Facts (364,525); Facts
+  takes 8m30.01s and the run enters Atlas places. A short CPU sample shows
+  actual complete native decoding and file traversal, without evidence of a
+  loop. Five exact-readback sealed-native compression batches recover
+  7,549,333,504 physical bytes; all 450 completion/binding markers match.
+- Metabase b80 Home names all 32 programs. Actual disclosure opens app's
+  src/metabase/graph/core.cljc inventory once; Column grouping's export opens
+  its original declaration (column_group.cljc:195–231), and deep-hash reload
+  restores that reading. Browser errors/warnings are absent in the captured
+  journey. Main flow → bootstrap/-main → Main flow preserves all ten native
+  entries and exact camera, but resets the step's own open calls. The ordinary
+  reading-state helpers now restore these custom twists before their nested
+  evidence. Regression tests include repeated declarations and one mounting
+  on return; full report tests (23.881s), vet and build pass. The browser
+  regression also checks custom twists and reads the current saved flow data
+  rather than removed hidden HTML. Frozen 21bbe7b8261f renders the same
+  complete32 report with GOMEMLIMIT=6GiB/GOMAXPROCS=2; latest browser proof
+  and replacing the older public HTML remain pending.
+- Independent review finds nested native call descendants are lazily mounted
+  by toggle events: restoring details after the outer twist alone loses deeper
+  state. Flow trees now capture their existing original-path open Set (including
+  local helper expansion) and seed it before first draw. Actual production
+  rmFlowRow/List/Tree regression restores two levels before queued toggles,
+  without duplicates; a separate serialization contrast isolates repeated and
+  closed root states. Full report tests (44.244s), vet and build pass; independent
+  review finds no blocker in this scoped fix. The incomplete 21bb render is
+  stopped, and a0e3a35dcab1 saved rendering starts on the same complete32 report.
+- To recover disk while ordinary Airflow progresses, five named closed,
+  superseded Metabase `places.json` artifacts are reversibly gzip archived with
+  complete SHA/readback, original mode/mtime and no current gallery binding.
+  Current successful runs, native/groups/report artifacts and provider cache
+  remain untouched. Recovery of an old run requires extracting its original
+  file back to its recorded path; this adds no product reader or format.
+  Receipt `/private/tmp/gallery/closed-metabase-places-20261007/receipt.json`
+  records 2,733,428,736 recovered physical bytes in addition to the current
+  native compression. Current Airflow `atlas_areas` finishes 1,998 rows in
+  57.814s (651 windows, 25 refused windows); that is stage progress, not a
+  completed report or semantic acceptance.
+
+2026-10-07 resume: Metabase a0e3 ordinary saved render exit0/607.049s/maxRSS
+7,945,048,064B; complete32 stage chains and complete b80 embedded payload
+equality verified. Actual browser: bootstrap return, Liquibase two native
+levels and helper toggle/return, unchanged current declaration camera, last
+entry source/reload, scheduled registration/handler/path, Home32/closedFiles7,
+no browser error/warning. Scoped UI replacement published ee3e671; whole
+public HTML SHA c8628b62c421f83211a44c50c352a1e72163ab82a3b3129b9fc03938300f71d4;
+all17 English exact, removedRU404. Native POST/architectural naming/live DOM
+limits remain explicit. Superseded five-run knowledge/tables gzip readback
+archives save 1,477,160,960 physical bytes in addition to prior places archive.
+Airflow same full450 process temporarily sequenced after Meta render, then
+resumed; GroupsIndex450 ready, orientation still progressing after explicit
+JSON/output-token refusals. No Airflow/report/all18 metrics acceptance yet.
+
+2026-10-07 quality meeting: skeptic, supervisor and reader_quality inspect
+ordinary owners and actual Redis/Metabase/Airflow artifacts. Confirmed lower
+parts fitting/overflow asymmetry, dropped catalogue Holds, premature exclusive
+area discovery, Redis persistence/VM effect substitution, mixed Metabase
+original parts, and orientation provenance-union reduction/citation expansion.
+Parameter words presented as standalone Redis inputs are an additional owning
+interpretation suspicion, subsequently disproved by exact saved
+Launch.Nested/SubArguments and common scene inputs: SLAVEOF no/one and SORT
+flags are nested, with no standalone input nodes. No production change is
+needed; raw operation inventory was insufficient evidence. No local word ban,
+reparenting or native role heuristic
+is introduced. Complete scope/purpose/assignment fixes are in progress; their
+semantic acceptance remains pending. Supervisor's Airflow snapshot has 726
+distinct transported request SHA values and later t152 accepted work; five
+actual output-token refusals account for 640,000 output tokens. No identical-byte
+live loop is found; terminal full450 report/browser acceptance is still pending.
+
+Areas preparation-only output/response failures now remain fatal in discovery,
+catalogue and assignment (six contrasts); actual completed output envelopes
+refine complete catalogue proposals with strict progress and retain unselected
+work. Named/array wrappers retain contradictory known decisions and explicit
+stops. Focused contrasts pass; complete reading tests pass 34.966s and vet pass
+before subsequent whole-scope/lower-parts changes. Saved complete SQLite
+28-part/195-call preparation covers all three DeepSeek envelopes without HTTP
+(31,166/6,977/34,378 UTF-8 bytes); this is a representation probe, not ordinary
+or semantic acceptance. The subsequent combined revision requires fresh tests,
+vet/build, complete saved-window probes and actual reader journeys.
+
+The 17-row funded measurements are published in Pages b80216e and README
+5afc467, with whole public build-measurements.json SHA readback exact. Metabase
+usage uses the current c862 HTML binding and its original ordinary time; the
+saved UI render adds no provider usage. Airflow remains pending; its eventual
+wall time must disclose owner/scheduling pauses. Quality meeting evidence is
+temporarily recorded at /private/tmp/gallery/quality-meeting-20261007.md.
+
+
+### 2026-10-08 — independent quality meeting, root protocols and failed Airflow boundary
+
+- Parts now use discovery v3 / catalogue v4 / original assignment v2 for fitting
+  and oversized nontrivial inputs; accepted purposes survive to the report.
+  Removed obsolete placement repair and later rewriting of accepted purposes.
+  Areas use complete-scope readings with independent hypotheses and original
+  assignments. Final combined reading suite: exit 0, 38.330s; scoped vet: exit 0.
+  Reciprocal reviewers found no blocker in those frozen owners. Complete saved
+  Metabase/SQLite provider Prepare probes make zero HTTP calls; these do not
+  establish semantic reader acceptance.
+- Exact Metabase source review establishes Home, onboarding, Metabot, metadata
+  and setup as separate original rows previously assigned together. The observed
+  p100 is a lower-parts output, not an atomic discovery row. The inspected JS
+  bridge has a real common interface responsibility. No unrelated mixed atomic
+  whole-file/role-box case has been demonstrated for those jobs.
+- Orientation v4 review separates original provenance, typed reader signals and
+  actual native supporting values. Independent review additionally exposed
+  hidden nested known conflicts, empty-global fatal handling, unavailable related
+  native citation values and stale initial completion evidence used to soften a
+  later preparation failure. Final typed question gaps preserve known original
+  addresses/layers without proof promotion and survive global omission into the
+  final repository request. Full orientation suite exits 0 in 16.561s; scoped
+  vet exits 0; independent skeptic finds no blocker on the frozen fingerprint
+  77ffe9664b9b530c16323946513bc618a00d2c016f9e37581e095f49293cc749.
+  Complete saved t29/t70 probes retain actual native values with zero HTTP calls.
+  The first canonical test attempt was stopped at this boundary; consuming
+  provider-preset failures are being migrated, not waived.
+- Frozen old-protocol full450 Airflow actually terminates exit 1 at DeepSeek
+  HTTP 402 during orientation. Driver wall time 23,437.526s and maximum RSS
+  18,916,040,704 bytes; all 450 analyzed outcomes are saved, but no common final
+  report was published. Accepted work remains cached. Further online acceptance
+  awaits restored provider balance. Seventeen earlier published English pages
+  and their funded measurements remain the accepted publication set.
+- Complete failed-attempt accounting covers 450 roots and 12,445 journals:
+  DeepSeek 2,139 live calls, 184,133,908 input and 2,489,486 output reported tokens;
+  19 transported calls have zero numeric usage. Jev used local cache. This is
+  failed-attempt usage, with no invented final report, invoice or cold-run cost.
+
+- Provider recovery and small ordinary follow-up: frozen bc893 canonical
+  test/vet/build exit 0 in 61.236s/2.104s/9.122s. The first complete failure
+  remains recorded: a C Main-flow test searched retired eager HTML; its corrected
+  consumer executes the actual rendered formatter over saved componentFlow,
+  preserving registration/callable anchors (full run package 47.097s, vet 0).
+  Two-target python-tutorial-game exits 0 in 34.043s, maximum RSS 653,860,864 B.
+  Native scopes, exact common artifact bindings and saved render SHA pass
+  independent review. Actual browser POST registration/handler, frontend caller,
+  captured GitHub source and return/Home journeys pass with no errors/warnings;
+  this does not claim exact camera preservation on Show input. All13 accepted
+  catalogue purposes survive into GroupsIndex/HTML unchanged, but Utility helpers
+  still unions independent instructional content, import recovery and timing.
+  That semantic failure is explicit, not accepted as a convenience category.
+- Small live usage: DeepSeek15 calls 29,143 input/4,903 output; Jev4 calls
+  27,033 input/1,611 output; 48 cache reuses excluded. Current tariff estimate
+  $0.007413756–$0.013692126 is not an invoice or cold/large-run comparison.
+  Actual recovered transport supersedes the earlier funding block. Only the
+  discovery/catalogue static prompts now clarify the existing reader-purpose
+  criterion, without response-shape/native/decoder changes. Focused tests
+  exit0 2.935s and vet0; complete original frontend19rows prepare with actual
+  DeepSeek envelopes and HTTP0 (12,413/7,349 B). Fresh semantic output remains
+  required. Receipts: /private/tmp/gallery/quality-small-artifacts-and-usage.json
+  and parts-convenience-prompt-receipt.json; full frozen follow-up checks running.
+
+- Frozen8336 after two staticpromptclarifications: canonical test/vet/build
+  exit0 247.190s/2.531s/6.725s, sourcefingerprint39b46a0455 unchanged. Fullsmall
+  ordinary exits0 36.728s/RSS657981440B, both outcomes analyzed. Independent
+  completeartifact/native/GroupsIndex audit passes; ordinary saved render
+  exit0/HTTP0/exactHTMLSHA5e172a963388dadbb38d4354a3c1fa6898e2f8491042cb43a15a1f21a1c9b4ff.
+  Backend9/frontend19 originalrows exactlyunchanged and assignedonce; all13
+  acceptedpurposes and lexical native membership closures survive into the page.
+  Actual browser opens Standalone utility helpers and shows the exact purpose
+  admitting no shared game-domain work plus all4 original files. No general
+  semantic acceptance: instructions/retry/sleep/canvas sizes, validator/Award
+  and levels/envsettings remain three convenience unions. One stochastic sample
+  does not establish a causal prompt regression; no further paid prompt loop.
+  Liveusage DS15 in31527/out5630/hit14080; Jev4 in29311/out1709;48cache reuses
+  excluded. Current tariff estimate $0.007268352–$0.013305642, notinvoice.
+  Receipts: /private/tmp/gallery/quality-small-8336-artifacts-and-usage.json
+  and small-parts-8336-vs-bc893-quality-comparison.json.
+- Spending audit now separately includes the earlier SIGKILL Airflow176797:450
+  logged roots,11615 journals, DS1780calls in86983417/out1706556 plus Jev332calls
+  in1490463/out148190; cacheorigin excluded. Combined two failed Airflow attempts
+  report DS3919calls in271117325/out4196042, current tariff estimate
+  $42.247152564–$84.494305128, excluding Jev, published galleries, other attempts
+  and probes. This is not invoice/account debit completeness; kill/cancel and
+ 19zero-usage transported ce839 calls may hide billing. Complete old orientation
+  accounting supersedes the earlier partial five-cut snapshot:1946exchanges
+  =1504live+442cache,allrequestSHAsdistinct;8outputlimitrefusals each128k.
+  The provenance floor repeated in two lists and final citations, so shorter
+  prose did not resolve its size. V4 removes that cycle; actual large paid
+  savings remain unmeasured. /private/tmp/gallery/deepseek-airflow-failed-attempts-cost.json
+  and airflow-frozen-orientation-full-accounting.json retain scope/provenance.

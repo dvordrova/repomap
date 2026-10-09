@@ -130,8 +130,8 @@ func Scout(repository *corpus.Corpus, name string) ([]Target, error) {
 }
 
 // ScoutShadow finds the ClojureScript programs a shadow-cljs.edn builds:
-// each build naming what it starts from (a module's :init-fn or :entries, a
-// node script's :main) is a target of its own, whose view is the .cljs
+// each build naming what it starts from (a module's :init-fn or :entries,
+// a build's :entries, a node script's :main) is a target of its own, whose view is the .cljs
 // sources and the :cljs branch of the .cljc sources the shadow-cljs.edn's
 // directory owns, up to a nested build description.
 func ScoutShadow(repository *corpus.Corpus) ([]Target, error) {

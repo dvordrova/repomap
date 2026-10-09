@@ -78,3 +78,21 @@ export function chainedPlatformCalls(path: string, name: string): string[] {
   const head = path.split("/")[0].split("/")
   return [normalized, ...repeated, ...head]
 }
+
+export function clockMillis(): number {
+  const now = new Date()
+  return now.getTime()
+}
+
+import { Console as adapterConsole, createConsole } from "@fixture/console-adapter"
+
+export function adapterLog(): void {
+  adapterConsole.log("draw")
+}
+
+export function changingConsoleFactory(factory: typeof createConsole): void {
+  let chosenFactory = createConsole
+  chosenFactory = factory
+  const logger = chosenFactory()
+  logger.log("draw")
+}

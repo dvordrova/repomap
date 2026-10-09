@@ -19,11 +19,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 const (
-	Version          = 30
+	Version          = 31
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -434,9 +435,10 @@ type Index struct {
 	// OffMap names the target's files the map of parts does not draw, and
 	// MapFailure why the target has no map at all. Their subjects remain
 	// subjects, with their interpretations, outside every group.
-	OffMap     []OffMapFile `json:"off_map,omitempty"`
-	MapFailure string       `json:"map_failure,omitempty"`
-	SHA256     string       `json:"sha256"`
+	OffMap       []OffMapFile  `json:"off_map,omitempty"`
+	MapFailure   string        `json:"map_failure,omitempty"`
+	RefusedParts []RefusedPart `json:"refused_parts,omitempty"`
+	SHA256       string        `json:"sha256"`
 	// Reach is what each input's handler reaches, one per operation in
 	// Operations order, and Dispatch every relation calling one of several
 	// alternatives, in source order (reach.go). Derived by Derive, never
@@ -591,16 +593,19 @@ const OffMapTests = "tests"
 // of a part its program never runs (atlas Box.Unreached).
 const OffMapUnreachable = "unreachable"
 
-// OffMapFile is one file the map of parts does not draw, and why. Part names
-// the test-only part a file of reason tests belongs to, or the part a file's
-// declarations of reason unreachable belong to. SubjectIDs, when present,
-// are the declarations of a file a part still holds that are off the map,
-// in the atlas's order: for reason undecided, those no box of a file whose
-// code goes in several boxes took; for left_out and conflict, those of a
-// box the parts answer and its follow-up left out or listed twice, or the
-// methods of a type off the map; the file is on the map through the others.
-// For reason unreachable they are the part's declarations in that file, in
-// subject order. Without them the whole file is off the map.
+// OffMapFile retains declarations outside accepted groups under their original
+// reason. SubjectIDs preserve original source access even when no group holds
+// the file or the whole map was refused. Unitless files remain path-only.
+// Part names only test-only and unreachable parts.
+// RefusedPart is a refused model proposal, never an accepted group. Its
+// subjects remain native declarations accessible outside the map.
+type RefusedPart struct {
+	Name       string   `json:"name"`
+	Holds      string   `json:"holds"`
+	Reason     string   `json:"reason"`
+	SubjectIDs []string `json:"subject_ids"`
+}
+
 type OffMapFile struct {
 	Path       string   `json:"path"`
 	Reason     string   `json:"reason"`
@@ -671,10 +676,11 @@ type ContainerProposal struct {
 
 // Container is one part of a target: a name over several groups.
 type Container struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
-	Lane    Lane   `json:"lane"`
+	ParentID string `json:"parent_id,omitempty"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Summary  string `json:"summary"`
+	Lane     Lane   `json:"lane"`
 	// Core is true when one of the container's groups is core.
 	Core     bool     `json:"core,omitempty"`
 	GroupIDs []string `json:"group_ids"`
@@ -974,6 +980,11 @@ func (index Index) Snapshot() Index {
 	result := index
 	result.Data = cloneData(index.Data)
 	result.SharedCode = cloneStrings(index.SharedCode)
+	result.RefusedParts = cloneRefusedParts(index.RefusedParts)
+	result.OffMap = slices.Clone(index.OffMap)
+	for i := range result.OffMap {
+		result.OffMap[i].SubjectIDs = cloneStrings(index.OffMap[i].SubjectIDs)
+	}
 	result.Operations = append([]Operation(nil), index.Operations...)
 	result.Unsure = append([]UnsureCall(nil), index.Unsure...)
 	result.Unresolved = append([]UnresolvedCall(nil), index.Unresolved...)
@@ -1059,13 +1070,16 @@ func (index Index) Validate() error {
 		}
 		groupsByID[group.ID] = struct{}{}
 	}
+	if err := validateRefusedParts(index.RefusedParts, index.Groups, subjectsByID); err != nil {
+		return err
+	}
 	if err := validateOffMap(index.OffMap, index.MapFailure, subjectsByID); err != nil {
 		return err
 	}
 	seenContainerGroups := make(map[string]struct{})
 	for position, container := range index.Containers {
 		if container.ID != compactOrdinal("k", position) || !validContainerID(container.ID) ||
-			!validText(container.Title) || !validOptionalText(container.Summary) || !container.Lane.Valid() || len(container.GroupIDs) < 2 {
+			!validText(container.Title) || !validOptionalText(container.Summary) || !container.Lane.Valid() {
 			return fmt.Errorf("group index: invalid container")
 		}
 		for groupPosition, groupID := range container.GroupIDs {
@@ -1077,6 +1091,9 @@ func (index Index) Validate() error {
 			}
 			seenContainerGroups[groupID] = struct{}{}
 		}
+	}
+	if err := validateContainerTree(index.Containers); err != nil {
+		return err
 	}
 	for i, operation := range index.Operations {
 		if !validOperationKind(operation.Kind) {
@@ -2437,6 +2454,7 @@ type Overlay struct {
 	Connections        []Connection        `json:"connections"`
 	OffMap             []OffMapFile        `json:"off_map,omitempty"`
 	MapFailure         string              `json:"map_failure,omitempty"`
+	RefusedParts       []RefusedPart       `json:"refused_parts,omitempty"`
 	Unsure             []UnsureCall        `json:"unsure,omitempty"`
 	Idioms             []Idiom             `json:"idioms,omitempty"`
 	// Derived is what Derive computed from the index at analysis, and
@@ -2463,7 +2481,7 @@ func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subj
 		}
 		named := file.Reason == OffMapTests || file.Reason == OffMapUnreachable
 		listed := file.Reason == OffMapUndecided || file.Reason == OffMapBlocked || file.Reason == OffMapUnreachable
-		either := file.Reason == "left_out" || file.Reason == "conflict"
+		either := file.Reason == "left_out" || file.Reason == "conflict" || file.Reason == "map_failure"
 		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != named ||
 			(len(file.SubjectIDs) > 0) != listed && !either {
 			return fmt.Errorf("group index: invalid off-map file %q", file.Path)
@@ -2478,6 +2496,37 @@ func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subj
 		}
 		if position > 0 && offMapKey(files[position-1]) >= offMapKey(file) {
 			return fmt.Errorf("group index: off-map files are not canonical")
+		}
+	}
+	return nil
+}
+
+func cloneRefusedParts(values []RefusedPart) []RefusedPart {
+	result := slices.Clone(values)
+	for i := range result {
+		result[i].SubjectIDs = cloneStrings(values[i].SubjectIDs)
+	}
+	return result
+}
+
+func validateRefusedParts(values []RefusedPart, groups []Group, subjects map[string]Subject) error {
+	accepted := map[string]bool{}
+	for _, group := range groups {
+		for _, id := range group.MemberSubjectIDs {
+			accepted[id] = true
+		}
+	}
+	for _, value := range values {
+		if !validText(value.Name) || !validText(value.Holds) || !atlas.ValidPartsRefusalReason(value.Reason) || len(value.SubjectIDs) == 0 {
+			return fmt.Errorf("group index: invalid refused part")
+		}
+		seen := map[string]bool{}
+		for _, id := range value.SubjectIDs {
+			subject, ok := subjects[id]
+			if !ok || subject.Object == nil || subject.Object.Location == nil || seen[id] || accepted[id] {
+				return fmt.Errorf("group index: refused part %q has invalid subject %q", value.Name, id)
+			}
+			seen[id] = true
 		}
 	}
 	return nil
@@ -2508,7 +2557,7 @@ func OverlayFromIndex(index Index) Overlay {
 		Version: index.Version, TargetID: index.Target.ID, ProgramIndexSHA256: index.ProgramIndexSHA256,
 		Role: index.Role, SharedCode: index.SharedCode, Summary: index.Summary, Data: index.Data,
 		Subjects: subjects, Groups: index.Groups, Operations: index.Operations, Outbound: index.Outbound,
-		Containers: index.Containers, Connections: index.Connections, OffMap: index.OffMap, MapFailure: index.MapFailure,
+		Containers: index.Containers, Connections: index.Connections, OffMap: index.OffMap, MapFailure: index.MapFailure, RefusedParts: index.RefusedParts,
 		Unsure: index.Unsure, Idioms: index.Idioms, Derived: derived, TestFree: testFree, SHA256: index.SHA256,
 	}
 }
@@ -2517,6 +2566,9 @@ func (artifact Overlay) Validate() error {
 	if artifact.Version != Version || !validTargetID(artifact.TargetID) || !validSHA256(artifact.ProgramIndexSHA256) ||
 		artifact.Subjects == nil || artifact.Groups == nil || artifact.Containers == nil || artifact.Connections == nil {
 		return fmt.Errorf("group index: invalid semantic overlay")
+	}
+	if err := validateContainerTree(artifact.Containers); err != nil {
+		return err
 	}
 	if len(artifact.Derived.Reach) != len(artifact.Operations) || len(artifact.Derived.Connections) != len(artifact.Connections) {
 		return fmt.Errorf("group index: semantic overlay without its saved derivations")
@@ -2579,7 +2631,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: operations,
 		Outbound: artifact.Outbound, Containers: artifact.Containers,
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: slices.Clone(artifact.Connections),
-		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, Unsure: artifact.Unsure, Idioms: artifact.Idioms, SHA256: artifact.SHA256,
+		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, RefusedParts: cloneRefusedParts(artifact.RefusedParts), Unsure: artifact.Unsure, Idioms: artifact.Idioms, SHA256: artifact.SHA256,
 		Unresolved: compileUnresolvedCalls(program, retained),
 		Branches:   compileInputBranches(program, retained),
 		Handed:     compileHanded(program, retained),

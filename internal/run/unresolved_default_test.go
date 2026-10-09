@@ -166,7 +166,7 @@ func TestUnresolvedDefaultPublishesTheFirstPageInPlanOrder(t *testing.T) {
 	data := restored.Data()
 	if data.TargetOutcomePortfolio == nil || data.TargetOutcomePortfolio.DefaultSelectedTargetID != "" ||
 		data.ProgramPortfolio == nil || data.ProgramPortfolio.DefaultTargetID != "t1" ||
-		len(data.ProgramPortfolio.Entries) != 2 {
+		data.ProgramPortfolio.Len() != 2 {
 		t.Fatalf("saved report does not keep the unresolved default beside its owner page")
 	}
 	if _, err := report.RenderSavedHTML(ownerDir); err != nil {

@@ -1,7 +1,9 @@
 package groupindex
 
 import (
+	"iter"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -226,6 +228,13 @@ func OwnUses(program programindex.Index, ids []string) []OwnUse {
 }
 
 func ownUses(program programindex.Index, ids []string, byID map[string]programindex.Object, named func(programindex.Object) string, inline func(programindex.Object) bool) []OwnUse {
+	return ownUsesFrom(slices.Values(program.Relations), ids, func(id string) (programindex.Object, bool) {
+		object, found := byID[id]
+		return object, found
+	}, named, inline)
+}
+
+func ownUsesFrom(relations iter.Seq[programindex.Relation], ids []string, objectOf func(string) (programindex.Object, bool), named func(programindex.Object) string, inline func(programindex.Object) bool) []OwnUse {
 	type use struct {
 		to    string
 		reads bool
@@ -236,7 +245,7 @@ func ownUses(program programindex.Index, ids []string, byID map[string]programin
 		position[id] = i
 	}
 	uses := make([][]use, len(ids))
-	for _, relation := range program.Relations {
+	for relation := range relations {
 		at, ours := position[relation.FromID]
 		if !ours || relation.Location == nil {
 			continue
@@ -284,7 +293,7 @@ func ownUses(program programindex.Index, ids []string, byID map[string]programin
 		})
 		for _, outside := range []bool{false, true} {
 			for _, used := range list {
-				object, known := byID[used.to]
+				object, known := objectOf(used.to)
 				if !known || len(users[used.to]) != 1 || (object.External != nil) != outside || !outside && (object.Location == nil || inline(object)) {
 					continue
 				}

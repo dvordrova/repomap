@@ -762,6 +762,9 @@ func TestRealRepositoryProbe(t *testing.T) {
 // is a build error naming it, and its programs carry that failure. The root
 // has no makefile here.
 func TestDiscoverReadsADirectorysOwnMakefile(t *testing.T) {
+	// This fixture checks its own makefiles' flags, not the machine's
+	// preprocessor settings used by make's implicit compilation rule.
+	t.Setenv("CPPFLAGS", "")
 	files := map[string]string{
 		"include/api.h": "int api_version(void);\n",
 		"lib/api.c":     "#include \"api.h\"\nint api_version(void) { return 1; }\n",

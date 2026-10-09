@@ -56,6 +56,11 @@ type Criteria struct {
 type Verdict struct {
 	Choice        string
 	Probabilities map[string]float64
-	Yes           *float64
-	Conflict      bool
+	// InvalidProbabilities preserves unreadable or conflicting scores until
+	// the owner knows which labels belong to this question. Unknown labels
+	// cannot invalidate a known decision.
+	InvalidProbabilities []string
+	Yes                  *float64
+	InvalidYes           bool
+	Conflict             bool
 }

@@ -22,7 +22,7 @@ func TestAClojureSpecialFormIsNoCallAndAnotherArityIsNoRecursion(t *testing.T) {
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("Clojure discovery: %v %v", targets, err)
 	}
-	result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+	result, err := sharedClojureFixture(t, root, repository, targets[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestAClojureSpecialFormIsNoCallAndAnotherArityIsNoRecursion(t *testing.T) {
 		}
 		for _, witness := range relation.Witnesses {
 			if witness.Kind == "arity" {
-				arities = append(arities, names[relation.ToIDs[0]]+" "+witness.Detail)
+				arities = append(arities, names[relation.ToIDs[0]]+" "+witness.SourceExpression)
 			}
 		}
 	}
@@ -60,4 +60,52 @@ func TestAClojureSpecialFormIsNoCallAndAnotherArityIsNoRecursion(t *testing.T) {
 			t.Fatalf("a special form is an outside symbol: %s", object.Name)
 		}
 	}
+}
+
+// Metabase's update-with-change-log selects a parameter vector written across
+// several lines. The expression is source, not a one-line identity or caption.
+func TestCumulativeClojureMultilineArityWitnessIsOriginalSource(t *testing.T) {
+	root, repository := materializeFixtureRepository(t, "clojure")
+	targets, err := clojureproject.Scout(repository, "clojure")
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("discovery: %v / %v", targets, err)
+	}
+	result, err := sharedClojureFixture(t, root, repository, targets[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(result.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]programindex.Object{}
+	for _, object := range index.Objects {
+		names[object.ID] = object
+	}
+	const source = "[значение\n\tstatus]"
+	selected, recursive := 0, 0
+	for _, relation := range index.Relations {
+		from := names[relation.FromID]
+		if from.Name != "example.core/greet-multiline" || len(relation.ToIDs) != 1 || names[relation.ToIDs[0]].Name != from.Name {
+			continue
+		}
+		sawArity := false
+		for _, witness := range relation.Witnesses {
+			if witness.Kind != "arity" {
+				continue
+			}
+			sawArity = true
+			selected++
+			if witness.SourceExpression != source || witness.Detail != "selected arity" || witness.Location == nil || relation.Location == nil || *witness.Location != *relation.Location || witness.Location.Path != "src/example/core.clj" || witness.Location.Line != from.Location.Line+1 {
+				t.Fatalf("selected arity lost original source or call coordinates: %+v", witness)
+			}
+		}
+		if !sawArity {
+			recursive++
+		}
+	}
+	if selected != 1 || recursive != 1 {
+		t.Fatalf("cross-arity vs same-arity selfcalls: %d / %d", selected, recursive)
+	}
+	assertProgramIndexRoundTrip(t, index)
 }

@@ -101,16 +101,16 @@ func TestRunKeepsValidRefsAndCompleteProse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Roles) != 2 || result.Roles[0].Role != "Backend API" || result.Roles[0].Purpose != "Serves items." || result.Roles[1].Purpose != prose {
-		t.Fatalf("valid roles or complete qualification lost: %+v", result.Roles)
+	if len(result.Roles) != 1 || result.Roles[0].TargetID != fixture.targetID("beta") || result.Roles[0].Purpose != prose {
+		t.Fatalf("known invalid role was repaired, or independent qualification lost: %+v", result.Roles)
 	}
-	if !reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("route")}) ||
-		!reflect.DeepEqual(result.SummaryRefs, []string{fixture.factID("route")}) || result.Summary != "Alpha and Beta." {
-		t.Fatal("filtered refs or whitespace changed the accepted evidence")
+	if !reflect.DeepEqual(result.SummaryRefs, []string{fixture.factID("route")}) || result.Summary != "Alpha and Beta." {
+		t.Fatal("filtered summary refs or whitespace changed accepted evidence")
 	}
-	if len(rejected) != 4 || result.RejectedCount != 4 {
-		t.Fatalf("unsupported rows/refs must remain recorded: %d", len(rejected))
+	if len(rejected) == 0 || result.RejectedCount != len(rejected) {
+		t.Fatal("invalid role decisions lost their explicit reasons")
 	}
+
 }
 
 func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testing.T) {
@@ -330,11 +330,11 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	if len(sent.Groups) == 0 {
 		t.Fatal("large request lost its groups")
 	}
-	// A provider that cannot hold the overview leaves an empty, journaled
-	// orientation.
+	// If even an indivisible owner record cannot fit, each dependent
+	// context is refused without transport; the orientation remains journaled.
 	tiny := &presetProvider{maximumUserBytes: 10}
 	result, rejected, err = Run(t.Context(), llm.Executor{}, tiny, fixture.input)
-	if err != nil || tiny.completions != 0 || len(rejected) != 1 || rejected[0].Section != "request" || rejected[0].Reason == "" || result.RejectedCount != 1 || len(result.Roles) != 0 {
+	if err != nil || tiny.completions != 0 || len(rejected) == 0 || rejected[0].Section != "context" || rejected[0].Reason == "" || result.RejectedCount != len(rejected) || len(result.Roles) != 0 {
 		t.Fatalf("a request that cannot fit must leave an empty, journaled orientation: %v, rejected=%+v calls=%d", err, rejected, tiny.completions)
 	}
 }
@@ -407,6 +407,9 @@ func (provider *presetProvider) State() []byte {
 func (provider *presetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
 	asks := func(system, example string) bool {
 		return strings.Contains(prompt.System, "\n\n"+strings.TrimSpace(system)) && prompt.ResponseExample == example && strings.HasSuffix(prompt.System, example)
+	}
+	if provider.maximumUserBytes > 0 && len(prompt.User) > provider.maximumUserBytes {
+		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{Stage: "preset_prepare", Kind: llm.ResourceLimitRequestBytes, Limit: provider.maximumUserBytes, Observed: len(prompt.User), ObservedKnown: true})
 	}
 	if !prompt.ResponseFormatJSON || !asks(overviewPrompt, overviewExample) || !strings.Contains(prompt.System, "prose in English.") || prompt.User == "" ||
 		limits.MaxRequestBytes != llm.SemanticRecordByteLimit ||

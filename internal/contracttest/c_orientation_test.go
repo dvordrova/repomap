@@ -162,8 +162,8 @@ func TestKvdOrientationReadsTheMakefileAsTheBuildsManifest(t *testing.T) {
 			Ref, Name, Manifest string
 		}
 		Facts []struct {
-			Kind, Anchor, Key, Value string
-			Targets                  []string
+			Kind, Anchor, Key, Value, Path string
+			Targets                        []string
 		}
 	}
 	if err := json.Unmarshal(run.asked.bodies(t)[0], &overview); err != nil {
@@ -177,15 +177,35 @@ func TestKvdOrientationReadsTheMakefileAsTheBuildsManifest(t *testing.T) {
 	rows := map[string]string{}
 	for _, fact := range overview.Facts {
 		if fact.Kind == "manifest" {
-			rows[fact.Key] = fact.Anchor + " " + fact.Value
+			key := fact.Key
+			if key == "rule.all" {
+				key += "@" + fact.Anchor
+			}
+			rows[key] = fact.Anchor + " " + fact.Value
 		}
 	}
-	goal, _ := run.fixture.at(t, "Makefile", "all: kvd kvcli", "")
+	goal, _ := run.fixture.at(t, "Makefile", "all:", "")
+	fragment, _ := run.fixture.at(t, "build/main.mk", "all: kvd kvcli", "")
+	include, _ := run.fixture.at(t, "Makefile", "include $(BUILD_RULES)", "")
+	serverRule, _ := run.fixture.at(t, "build/main.mk", "kvd:", "")
+	clientRule, _ := run.fixture.at(t, "build/main.mk", "kvcli:", "")
+	linkFlags, _ := run.fixture.at(t, "build/main.mk", "LINK_THREADS = ", "")
 	test, _ := run.fixture.at(t, "Makefile", "test: kvd kvcli", "")
 	flags, _ := run.fixture.at(t, "Makefile", "CFLAGS = ", "")
+	portableFlags, _ := run.fixture.at(t, "Makefile", "PORTABLE_CFLAGS = ", "")
+	portableGoal, _ := run.fixture.at(t, "Makefile", "portable:", "")
+	portableValue := "-std=c99 -O2 -g -Wall -Wextra -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wpointer-arith -Wcast-qual -D_DEFAULT_SOURCE -DLOOP_POLL"
 	for key, want := range map[string]string{
-		"default_goal":    fmt.Sprintf("Makefile:%d all: kvd kvcli", goal),
-		"variable.CFLAGS": fmt.Sprintf("Makefile:%d -std=c99 -O2 -g -Wall -D_DEFAULT_SOURCE -DLOOP_POLL", flags),
+		"default_goal": fmt.Sprintf("Makefile:%d all: kvd kvcli — fragments: Makefile:%d; build/main.mk:%d", goal, goal, fragment),
+		fmt.Sprintf("rule.all@build/main.mk:%d", fragment): fmt.Sprintf("build/main.mk:%d kvd kvcli", fragment),
+		fmt.Sprintf("rule.all@Makefile:%d", goal):          fmt.Sprintf("Makefile:%d ", goal),
+		"include":                  fmt.Sprintf("Makefile:%d include $(BUILD_RULES) — reads build/main.mk", include),
+		"rule.kvd":                 fmt.Sprintf("build/main.mk:%d kvd.o loop.o net.o strbuf.o — runs: $(CC) -o kvd kvd.o loop.o net.o strbuf.o $(LINK_THREADS)", serverRule),
+		"rule.kvcli":               fmt.Sprintf("build/main.mk:%d kvcli.o repl.o net.o strbuf.o loop.o — runs: $(CC) -o kvcli kvcli.o repl.o net.o strbuf.o loop.o", clientRule),
+		"variable.LINK_THREADS":    fmt.Sprintf("build/main.mk:%d -pthread", linkFlags),
+		"variable.CFLAGS":          fmt.Sprintf("Makefile:%d -std=c99 -O2 -g -Wall -D_DEFAULT_SOURCE -DLOOP_POLL", flags),
+		"variable.PORTABLE_CFLAGS": fmt.Sprintf("Makefile:%d %s", portableFlags, portableValue),
+		"rule.portable":            fmt.Sprintf("Makefile:%d — runs: $(MAKE) CFLAGS=\"$(PORTABLE_CFLAGS)\" all", portableGoal),
 	} {
 		if rows[key] != want {
 			t.Fatalf("manifest row %s = %q, want %q (rows %v)", key, rows[key], want, rows)
@@ -209,11 +229,16 @@ func TestKvdOrientationReadsTheMakefileAsTheBuildsManifest(t *testing.T) {
 	for _, fact := range overview.Facts {
 		if fact.Kind == "manifest" {
 			holders[fact.Key] = strings.Join(fact.Targets, ",")
+			if strings.HasPrefix(fact.Anchor, "build/main.mk:") && fact.Path != "Makefile" {
+				t.Fatalf("included fragment lost invocation manifest: %+v", fact)
+			}
 		}
 	}
 	for key, want := range map[string]string{
 		"rule.kvd": refs["kvd"], "rule.kvcli": refs["kvcli"],
 		"default_goal": "", "rule.test": "", "variable.CFLAGS": "", "rule.clean": "",
+		"rule.portable": "", "variable.PORTABLE_CFLAGS": "",
+		"rule.all": "", "include": "", "variable.LINK_THREADS": "", "variable.BUILD_RULES": "",
 	} {
 		if got, listed := holders[key]; !listed || got != want {
 			t.Fatalf("manifest row %s is held by %q, want %q (targets %v)", key, got, want, refs)
@@ -235,7 +260,7 @@ type kvdOrientation struct {
 // run builds them, the overview choosing kvd's flow.
 func runKvdOrientation(t *testing.T) kvdOrientation {
 	t.Helper()
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
 	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: server, Root: "."}, {Index: client, Root: "."}}})
@@ -325,7 +350,7 @@ func (asked *capturedOrientation) bodies(t *testing.T) [][]byte {
 // at watchExecute, under its condition, then into netConnect (control
 // review, 2026-10-04: where does `lua script.lua` execute?).
 func TestCFixtureAPreparedExecutionIsReadBackInTheStepThatRunsIt(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:util/watch.c")
 	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
 	if err != nil {
@@ -347,5 +372,8 @@ func TestCFixtureAPreparedExecutionIsReadBackInTheStepThatRunsIt(t *testing.T) {
 	if back.Resumes != flow.Steps[0].SubjectID || back.Guard == nil || back.Guard.Kind != programindex.GuardBranch || back.Guard.Location == nil || back.Guard.Location.Line != 50 ||
 		len(flow.Steps[0].Passed) != 0 || flow.Steps[2].Stop != orientation.StopUnanswered {
 		t.Fatalf("watchExecute read back in %q under %+v after %q; watchRun passing %+v", back.Resumes, back.Guard, flow.Steps[2].Stop, flow.Steps[0].Passed)
+	}
+	if back.Guard.Condition != "watchPrepare() == 0" || back.Guard.When != programindex.GuardWhenHolds {
+		t.Fatalf("watchExecute lost its written condition on the way to the flow: %+v", back.Guard)
 	}
 }

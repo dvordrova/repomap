@@ -161,10 +161,18 @@ func caseCallsProgram(place atlas.Place, item atlas.ComparisonCase) bool {
 	if item.BranchLine < 1 || item.BranchEnd < item.BranchLine {
 		return false
 	}
+	observed := map[string]bool{}
 	for _, call := range place.Symbol.Calls {
 		if call.Kind == "calls" && len(call.CalleeIDs) > 0 && call.Line >= item.BranchLine && call.Line <= item.BranchEnd {
-			return true
+			for _, target := range callTargets(place, call) {
+				observed[target] = true
+			}
 		}
 	}
-	return false
+	for _, target := range runningTargets(place) {
+		if !observed[target] {
+			return false
+		}
+	}
+	return len(observed) > 0
 }

@@ -56,13 +56,17 @@ const (
 // members, so a call into one of them names its ref.
 type rowWriter struct {
 	places map[string]atlas.Place
+	order  *atlas.GraphPresentation
 	refs   map[string]string
 }
 
-func newRowWriter(graph atlas.Graph) *rowWriter {
+func newRowWriter(graph atlas.Graph, order ...*atlas.GraphPresentation) *rowWriter {
 	writer := &rowWriter{places: make(map[string]atlas.Place, len(graph.Places)), refs: make(map[string]string)}
 	for _, place := range graph.Places {
 		writer.places[place.ID] = place
+	}
+	if len(order) > 0 {
+		writer.order = order[0]
 	}
 	return writer
 }
@@ -83,7 +87,7 @@ func (writer *rowWriter) row(ref string, label memberWire, place *atlas.Place) m
 	// claim, never the model's evidence (owner rule).
 	row.Signature = decl.Signature
 	evidence := evidenceRefs{}
-	for _, call := range lines.WrittenOrder(place.Symbol.Calls) {
+	for _, call := range lines.WrittenOrder(writer.order.Calls(place.ID, place.Symbol.Calls)) {
 		row.Calls = append(row.Calls, writer.call(call, &evidence))
 	}
 	row.Evidence = evidence.byRef

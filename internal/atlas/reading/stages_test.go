@@ -241,16 +241,20 @@ func twoTargetOptions(t *testing.T, graph atlas.Graph, provider *tableProvider) 
 	return opts
 }
 
-func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
-	graph := twoTargetGraph(t)
-	provider := &tableProvider{
-		areaFor: func(part map[string]any) string {
-			if part["name"] == "svc/api" || part["name"] == "svc/core" {
-				return "Serving"
-			}
-			return ""
-		},
+// servingArea groups svc/api and svc/core in an area "Serving" and every
+// other file by its directory.
+func servingArea(box, file string) string {
+	if box != "Serving" && (strings.HasPrefix(file, "svc/api/") || strings.HasPrefix(file, "svc/core/")) {
+		return "Serving"
 	}
+	return filepath.Dir(file)
+}
+
+// A box the grouping divided is an area holding the parts it was divided
+// into; the parts of the target's own box sit in no area.
+func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
+	graph := withSymbols(t, twoTargetGraph(t))
+	provider := &tableProvider{groupFor: servingArea}
 	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
 	if err != nil {
 		t.Fatal(err)

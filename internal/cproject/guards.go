@@ -9,10 +9,14 @@ import (
 // arm is a construct of a function whose code runs only when its condition
 // decides so (an if or else arm, a ?: arm, the right operand of && or ||, a
 // switch's body), at the construct's own place; node is the arm's code, or
-// nil when no single statement holds it (a switch's cases).
+// nil when no single statement holds it (a switch's cases); condition is
+// the code deciding it and when the outcome it runs on (Guard.When), none
+// for an a ?: b's arms.
 type arm struct {
-	site Position
-	node *Node
+	site      Position
+	node      *Node
+	condition *Node
+	when      string
 }
 
 // findEnding finds the corpus functions that never return: every path of
@@ -170,13 +174,23 @@ func (b *builder) guard(w walker, call *Node) *p.Guard {
 	}
 	for i := len(w.arms) - 1; i >= 0; i-- {
 		if w.arms[i].node != nil && b.armEnds(w.scope, w.arms[i].node) {
-			return &p.Guard{Kind: p.GuardNoReturn, Location: location(w.arms[i].site)}
+			return b.armGuard(p.GuardNoReturn, w.arms[i])
 		}
 	}
 	if len(w.arms) > 0 {
-		return &p.Guard{Kind: p.GuardBranch, Location: location(w.arms[len(w.arms)-1].site)}
+		return b.armGuard(p.GuardBranch, w.arms[len(w.arms)-1])
 	}
 	return nil
+}
+
+// armGuard is a guard at an arm's construct, with its condition's code as
+// the reader wrote it.
+func (b *builder) armGuard(kind string, a arm) *p.Guard {
+	guard := &p.Guard{Kind: kind, Location: location(a.site)}
+	if a.condition != nil {
+		guard.Condition, guard.When = p.GuardCondition(b.text(a.condition), a.when)
+	}
+	return guard
 }
 
 // armEnds is ends for an arm once the corpus's ending functions are known,

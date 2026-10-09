@@ -493,41 +493,39 @@ func (target *targetContext) parameterValue(value *sourcevalue.Value, reached ma
 		return nil, true
 	}
 	reached[slot] = true
-	var owner string
-	for _, object := range target.input.Index.Objects {
-		if isCallable(object) && object.Location != nil && object.Location.Path == value.Owner.Path && object.Location.Line == value.Owner.Line {
-			owner = object.ID
-			break
-		}
-	}
-	if owner == "" {
+	// The complete value reader already indexes owners and their callers.
+	// Preserve this walk's original first-callable, line-addressed choice;
+	// ownerID has a different ambiguity rule and must not replace it here.
+	reader := target.values()
+	owners := reader.owners[sourcevalue.Anchor{Path: value.Owner.Path, Line: value.Owner.Line}]
+	if len(owners) == 0 {
 		return nil, false
 	}
-	for _, relation := range target.input.Index.Relations {
-		if relation.Kind != programindex.RelationCalls || len(relation.ToIDs) != 1 || relation.ToIDs[0] != owner {
+	owner := owners[0]
+	for _, call := range reader.callers[owner] {
+		relation := call.relation
+		if relation.Kind != programindex.RelationCalls || len(relation.ToIDs) != 1 {
 			continue
 		}
-		for _, pattern := range relation.Patterns {
-			for _, argument := range pattern.Arguments {
-				if argument.Position != value.Position {
-					continue
-				}
-				known = true
-				anchor := producedAt(argument.Origin)
-				if anchor == nil {
-					handed, handedKnown := target.parameterValue(argument.Origin, reached)
-					if !handedKnown {
-						return nil, false
-					}
-					if anchor = handed; anchor == nil {
-						continue
-					}
-				}
-				if passed != nil && *passed != *anchor {
+		for _, argument := range call.pattern.Arguments {
+			if argument.Position != value.Position {
+				continue
+			}
+			known = true
+			anchor := producedAt(argument.Origin)
+			if anchor == nil {
+				handed, handedKnown := target.parameterValue(argument.Origin, reached)
+				if !handedKnown {
 					return nil, false
 				}
-				passed = anchor
+				if anchor = handed; anchor == nil {
+					continue
+				}
 			}
+			if passed != nil && *passed != *anchor {
+				return nil, false
+			}
+			passed = anchor
 		}
 	}
 	return passed, known
@@ -686,10 +684,12 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 }
 
 // addressLiterals reads an address argument through the variables and
-// parameters it may come from, deduplicating equal texts.
+// parameters it may come from, deduplicating equal texts. Use the same
+// address reach as admission: unrelated diagnostic branches are not address
+// evidence. A directly written registration name still reads as written.
 func addressLiterals(values *routeValueReader, argument programindex.PatternArgument) []routeLiteral {
 	byText := make(map[string]routeLiteral)
-	for _, literal := range values.argument(argument) {
+	for _, literal := range values.addresses(argument) {
 		if previous, exists := byText[literal.text]; exists {
 			literal.evidence = mergeRouteEvidence(previous.evidence, literal.evidence)
 			literal.possible = literal.possible || previous.possible

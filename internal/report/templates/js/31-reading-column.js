@@ -902,6 +902,119 @@ function rmComponentFiles(ctx,data){
   box.open=named.length<=rmShortSection;
   return box;
 }
+// The component's complete saved reading is mounted only when selected.
+// These builders format prepared display values; they do not walk calls or
+// decide paths. Sources, native conditions and model display refs stay intact.
+var rmFlowDisplay=(function(){
+  function text(into,value){into.appendChild(document.createTextNode(value));}
+  function anchor(a){
+    var node=rmEl(a.Href||a.Open?'a':'span','anchor',a.Text);
+    if(a.Href){node.href=a.Href;node.target='_blank';}
+    else if(a.Open){node.href='#';node.dataset.open=a.Open;}
+    else if(a.NoSource){node.dataset.noSource='true';node.title=rmT('No source');}
+    return node;
+  }
+  function attrs(node,row){
+    if(row.Part)node.dataset.stepPart=row.Part;
+    if(row.Key)node.dataset.stepKey=row.Key;
+    var a=row.Anchor||row,code=a.Code||a.Href;
+    if(code)node.dataset.stepCode=code;
+    if(a.Open)node.dataset.stepOpen=a.Open;
+  }
+  function name(row){var node=rmEl('code','flow-chain-name',row.Name);attrs(node,row);return node;}
+  function around(into,key,draw){var words=rmT(key,'\0').split('\0');text(into,words[0]);draw();text(into,words[1]||'');}
+  function oneOf(into,from,otherwise){
+    if(from)around(into,'one of the calls {0} may make',function(){into.appendChild(name(from));});
+    else text(into,rmT(otherwise));
+  }
+  function through(into,rows){if(!(rows||[]).length)return;text(into,' '+rmT('through')+' ');rows.forEach(function(row,i){if(i)text(into,', ');into.appendChild(name(row));});}
+  function guardWords(into,g){
+    if(g.Key)text(into,rmT(g.Key));
+    if(g.Condition){if(g.Key)text(into,', ');text(into,rmT(g.ConditionKey)+' ');into.appendChild(rmEl('code','',g.Condition));}
+  }
+  function guard(into,row){
+    if(row.Guard){var g=rmEl('span','meta flow-guard');text(into,' ');text(g,'(');guardWords(g,row.Guard);if(row.Guard.At){text(g,', ');g.appendChild(anchor(row.Guard.At));}text(g,')');into.appendChild(g);}
+    if(row.Loop){var loop=rmEl('span','meta flow-loop');text(into,' ');text(loop,'('+rmT('in a loop')+', ');loop.appendChild(anchor(row.Loop));text(loop,')');into.appendChild(loop);}
+  }
+  function chain(into,rows){(rows||[]).forEach(function(row,i){if(i)text(into,row.Possible?' '+rmT('may call')+' ':row.Handed?' '+rmT('hands over')+' ':' → ');into.appendChild(name(row));});}
+  function registration(row){
+    var node=rmEl('span','flow-chain');chain(node,row.By);text(node,' ');
+    if(row.At&&(row.At.Href||row.At.Open)){var link=rmEl('a','flow-registers',rmT('registers it'));link.href=row.At.Href||'#';if(row.At.Href)link.target='_blank';else link.dataset.open=row.At.Open;node.appendChild(link);}
+    else text(node,rmT('registers it'));
+    return node;
+  }
+  function runner(rows){var node=rmEl('span','flow-chain');chain(node,rows);text(node,' '+rmT('runs it'));return node;}
+  function how(row,own){
+    if(!(row.Registers||[]).length&&!(row.RunBy||[]).length)return null;
+    var node=rmEl('span','flow-how'),said=false;
+    (row.Registers||[]).forEach(function(item){if(own&&said)text(node,'; ');said=true;node.appendChild(registration(item));});
+    (row.RunBy||[]).forEach(function(item){if(own&&said)text(node,'; ');said=true;node.appendChild(runner(item));});return node;
+  }
+  function candidates(into,rows,handed){
+    var names=rmEl('span','flow-fork-names');(rows||[]).forEach(function(row){var item=rmEl('span','flow-fork-name');item.appendChild(name(row));
+      if(handed&&row.HandedTo)text(item,' '+rmT('to {0}',row.HandedTo));through(item,row.Through);
+      if(!handed&&row.Implemented)item.appendChild(rmEl('span','meta',' ('+rmT('by method set')+')'));
+      guard(item,row);names.appendChild(item);});into.appendChild(names);
+  }
+  function fork(row,cls,label,handed){var node=rmEl('details',cls),head=rmEl('summary');text(head,rmT(label));node.appendChild(head);candidates(node,row.Names,handed);return node;}
+  function handles(row){
+    var node=rmEl(row.Folded?'details':'span',row.Folded?'flow-fork flow-handles':'flow-via flow-handles');
+    if(row.Folded){node.appendChild(rmEl('summary','',rmT(row.Words)));var names=rmEl('span','flow-fork-names');(row.Names||[]).forEach(function(input){var item=rmEl('span','flow-fork-name'),code=rmEl('code','flow-input',input.Name);code.dataset.input=input.Input;item.appendChild(code);names.appendChild(item);});node.appendChild(names);}
+    else {text(node,rmT(row.Words));(row.Names||[]).forEach(function(input){text(node,' ');var code=rmEl('code','flow-input',input.Name);code.dataset.input=input.Input;node.appendChild(code);});}
+    return node;
+  }
+  function step(row,into){
+    if(row.PartHead){var head=rmEl('li','flow-part-head');head.dataset.flowPart=row.PartHead;into.appendChild(head);}
+    var item=rmEl('li','flow-step');attrs(item,row);into.appendChild(item);
+    if(row.Back){var back=rmEl('span','flow-via flow-back');text(back,rmT('then, back in')+' ');back.appendChild(name(row.Back));if(row.BackIf){text(back,', ');guardWords(back,row.BackIf);text(back,' (');if(row.BackIf.At)back.appendChild(anchor(row.BackIf.At));text(back,')');}text(back,':');item.appendChild(back);text(item,' ');}
+    var what=rmEl('span','flow-what');if(row.Label)what.appendChild(rmEl('code','',row.Label));if(row.Target){text(what,' ');what.appendChild(rmEl('span','flow-where',row.Target));}item.appendChild(what);
+    if(row.Anchor){text(item,' ');item.appendChild(anchor(row.Anchor));}
+    var reached=how(row,false);if(reached)item.appendChild(reached);
+    if(row.OneOf||row.ViaKey||row.Via||(row.Through||[]).length){var via=rmEl('span','flow-via');
+      if(row.OneOf)oneOf(via,row.ViaFrom,'one of the calls the step before may make');
+      else {if(row.ViaKey)text(via,row.ViaArg?rmT(row.ViaKey,row.ViaArg):rmT(row.ViaKey));else if(row.Via)text(via,row.Via);
+        if((row.ViaKey||row.Via)&&row.ViaFrom){text(via,' '+rmT('from')+' ');via.appendChild(name(row.ViaFrom));}through(via,row.Through);}
+      item.appendChild(via);
+    }
+    if(row.Implemented)item.appendChild(rmEl('span','meta flow-implemented',' ('+rmT('an implementation in this repository, by method set, not a traced call')+')'));
+    guard(item,row);(row.Handles||[]).forEach(function(row){item.appendChild(handles(row));});
+    if(row.Explanation){var why=rmEl('span','model flow-why'),words=rmEl('span','',row.Explanation);words.dataset.displayRef=row.ExplanationRef||'';why.appendChild(words);item.appendChild(why);}
+    if(row.TypeLine){var type=rmEl('span','model flow-type');type.appendChild(rmEl('code','',row.TypeName));text(type,' — ');var words=rmEl('span','',row.TypeLine);words.dataset.displayRef=row.TypeLineRef||'';type.appendChild(words);item.appendChild(type);}
+    if((row.Ways||[]).length){item.appendChild(rmEl('span','meta flow-stop flow-undecided',rmT('Here the walk did not decide between these ways; each is read on its own:')));var ways=rmEl('div','flow-ways');row.Ways.forEach(function(row){var list=rmEl('ol','flow flow-way');step(row.Head,list);if((row.Rest||[]).length){if(row.Folded){var more=rmEl('li','flow-way-more'),fold=rmEl('details','flow-way-rest'),rest=rmEl('ol','flow');fold.dataset.folded='';fold.appendChild(rmEl('summary','',rmT('the rest of this way')));row.Rest.forEach(function(row){step(row,rest);});fold.appendChild(rest);more.appendChild(fold);list.appendChild(more);}else row.Rest.forEach(function(row){step(row,list);});}ways.appendChild(list);});item.appendChild(ways);}
+    if(row.Passed)item.appendChild(fork(row.Passed,'flow-fork flow-passed','also calls:',false));
+    if(row.Handed)item.appendChild(fork(row.Handed,'flow-fork flow-passed flow-handed','also hands over:',true));
+    if(row.Stop){var stop=rmEl('span','meta flow-stop');
+      if((row.Joins||[]).length)around(stop,row.Stop,function(){row.Joins.forEach(function(row,i){if(i)text(stop,' '+rmT('or')+' ');stop.appendChild(name(row));through(stop,row.Through);if(row.Implemented)stop.appendChild(rmEl('span','meta',' ('+rmT('by method set')+')'));guard(stop,row);});});
+      else text(stop,rmT(row.Stop));
+      if(row.OpenAt){text(stop,' ('+rmT('it calls through a value whose target is not established')+', ');stop.appendChild(anchor(row.OpenAt));text(stop,')');}item.appendChild(stop);
+    }
+    if(row.Fork){var fold=rmEl('details','flow-fork'),head=rmEl('summary');if(row.Fork.OneOf)oneOf(head,row.Fork.From,'one of the calls it may make');else {text(head,row.Fork.Label);if(row.Fork.From){text(head,' '+rmT('from')+' ');head.appendChild(name(row.Fork.From));}}fold.appendChild(head);candidates(fold,row.Fork.Names,false);item.appendChild(fold);}
+    return item;
+  }
+  function start(row,into){
+    var item=rmEl('li','flow-step');attrs(item,{Part:row.Part,Key:row.Key,Code:row.Code});into.appendChild(item);
+    var what=rmEl('span','flow-what');what.appendChild(rmEl('code','',row.Symbol));if(row.Group){text(what,' ');var where=rmEl('span','flow-where');text(where,rmT('in')+' ');var link=rmEl('a','',row.Group);link.href=row.Href;where.appendChild(link);what.appendChild(where);}item.appendChild(what);
+    if(row.Anchor){text(item,' ');item.appendChild(anchor(row.Anchor));}
+    if((row.Reaches||[]).length){var reach=rmEl('span','flow-why flow-reaches');row.Reaches.forEach(function(row){var line=rmEl('span','flow-reach');text(line,row.Label+' ');var link=rmEl('a','',row.Title);link.href=row.Href;line.appendChild(link);reach.appendChild(line);});item.appendChild(reach);}
+    else if(row.Silent)item.appendChild(rmEl('span','flow-why flow-calls-nothing',rmT('calls nothing')));
+    else if((row.Calls||[]).length){var calls=rmEl('span','flow-why flow-reaches flow-reaches-own');text(calls,rmT('it calls')+' ');row.Calls.forEach(function(row,i){if(i)text(calls,', ');if(row.More){text(calls,'…');return;}var code=rmEl('code');if(row.Anchor)code.appendChild(anchor(row.Anchor));calls.appendChild(code);if(row.Unresolved)calls.appendChild(rmEl('span','meta',' ('+rmT('implementation not established')+')'));if((row.Implementers||[]).length){var by=rmEl('span','meta');text(by,' ('+rmT('implemented in this repository by')+' ');row.Implementers.forEach(function(name,i){if(i)text(by,', ');by.appendChild(rmEl('code','',name));});text(by,'; '+rmT('by method set, not a traced call')+')');calls.appendChild(by);}});item.appendChild(calls);}
+  }
+  function elsewhere(row){
+    var item=rmEl('p','meta flow-elsewhere');text(item,rmT('Elsewhere in')+' ');var link=rmEl('a','',row.Group);link.href=row.Href;item.appendChild(link);text(item,', '+rmT('not from these entries:'));
+    (row.Rows||[]).forEach(function(row,i){if(i)text(item,';');text(item,' ');if(row.FromSource)item.appendChild(anchor(row.FromSource));else text(item,row.Label);text(item,' → ');var link=rmEl('a','',row.Title);link.href=row.Href;item.appendChild(link);});
+    if((row.Uses||[]).length){if((row.Rows||[]).length)text(item,';');text(item,' '+rmT('uses the headers or types of')+' ');row.Uses.forEach(function(row,i){if(i)text(item,', ');var link=rmEl('a','',row.Title);link.href=row.Href;item.appendChild(link);if(row.OtherTarget)text(item,' ('+row.OtherTarget+')');});}return item;
+  }
+  function flow(data,into){
+    if(data.Flow){
+      if((data.Flow.Parts||[]).length){var title=rmEl('p','model flow-title flow-parts');data.Flow.Parts.forEach(function(row,i){if(row.Or)text(title,' '+rmT('or')+' ');else if(i)text(title,' → ');if(row.Href){var link=rmEl('a','',row.Title);link.href=row.Href;link.dataset.displayRef=row.TitleRef||'';title.appendChild(link);}else text(title,row.Title);});into.appendChild(title);}
+      var list=rmEl('ol','flow');(data.Flow.Steps||[]).forEach(function(row){step(row,list);});into.appendChild(list);into.appendChild(rmEl('p','meta flow-end',rmT('The path stops here. At each step it follows one call the step before may make; open a step for all of its calls.')));
+    }else if((data.Start||[]).length){into.appendChild(rmEl('p','meta',rmT('Read forward from where it starts:')));var list=rmEl('ol','flow fact');data.Start.forEach(function(row){start(row,list);});into.appendChild(list);(data.Elsewhere||[]).forEach(function(row){into.appendChild(elsewhere(row));});}
+  }
+  function own(row){var item=rmEl('li','flow-own-step');item.dataset.input=row.Input;attrs(item,row);var what=rmEl('span','flow-what');what.appendChild(rmEl('code','',row.Label));item.appendChild(what);var reached=how(row,true);if(reached){text(item,' — ');item.appendChild(reached);}return item;}
+  return {flow:flow,own:own};
+})();
+function rmComponentFlowData(details){return rmPage.data(details,'componentFlow');}
+function rmHasMainFlow(details){var data=rmComponentFlowData(details);return !!(data&&(data.Flow||(data.Start||[]).length));}
 function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var ctx=map.readingContext(),intro=card.querySelector('.map-card-intro'),page=card.querySelector('.map-card-actions>.map-details-link');
   card.querySelector('.map-related-operations')?.remove();card.querySelector('.map-card-evidence')?.remove();card.querySelector('.map-all-members')?.remove();
@@ -943,23 +1056,14 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     });
     inputs.appendChild(kinds);place(inputs);
   }
-  function copy(element){
-    var clone=element.cloneNode(true);clone.removeAttribute('id');clone.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
-    clone.querySelectorAll('details').forEach(function(detail){detail.open=true;});
-    clone.querySelectorAll('.collapse-label').forEach(function(label){label.remove();});
-    return clone;
-  }
-  // Its Main flow near the top, open (owner, 2026-09-28), each step's name
-  // reading that declaration and showing it on the canvas; what the program
-  // runs on its own closes it (owner, 2026-09-29: serverCron was not
-  // findable from a flow of client commands; page_flow_steps.go ownWork).
-  var flow=details.querySelector(':scope>.component-flow'),own=details.querySelector(':scope>.component-own-work');
+  // Its complete saved Main flow and independent work, mounted here only.
+  var saved=rmComponentFlowData(details),flow=saved&&(saved.Flow||(saved.Start||[]).length),own=saved&&(saved.Own||[]);
   if(flow){
     var steps=rmEl('details','map-component-section'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('Main flow')));steps.appendChild(head);steps.dataset.mainFlow='';
-    Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')).forEach(function(part){steps.appendChild(copy(part));});
+    rmFlowDisplay.flow(saved,steps);
     steps.open=true;place(steps);
     // A named fork's candidates stay folded under its line: a flow never
-    // ends in a wall of names (copy opens every fold).
+    // ends in a wall of names.
     steps.querySelectorAll('details.flow-fork').forEach(function(fork){fork.open=false;});
     // A long way of a parted flow shows its first step, the rest folded.
     steps.querySelectorAll('details.flow-way-rest[data-folded]').forEach(function(rest){rest.open=false;});
@@ -1021,8 +1125,8 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     // A registered callable's step names where it is registered and what
     // runs it, each name reading its declaration.
     rmStepChainNames(ctx,steps);
-    if(own)steps.appendChild(rmOwnWork(ctx,own));
-  }else if(own)place(rmOwnWork(ctx,own));
+    if(own&&own.length)steps.appendChild(rmOwnWork(ctx,own));
+  }else if(own&&own.length)place(rmOwnWork(ctx,own));
   // The files its program reaches, after its flow (rmComponentFiles).
   var files=rmComponentFiles(ctx,rmPage.data(n,'files'));if(files)place(files);
   // Its whole page leads the reading's one line of links (30-map.js).
@@ -1054,12 +1158,12 @@ function rmStepChainNames(ctx,holder){
 function rmOwnWork(ctx,source){
   var box=rmEl('section','map-component-own');box.appendChild(rmEl('p','map-reading-label',rmT('Also runs on its own:')));
   var list=rmEl('ul','map-component-own-list');
-  source.querySelectorAll('li').forEach(function(from){list.appendChild(rmOwnWorkLine(ctx,from));});
+  source.forEach(function(from){list.appendChild(rmOwnWorkLine(ctx,from));});
   box.appendChild(list);
   return box;
 }
 function rmOwnWorkLine(ctx,from){
-  var item=from.cloneNode(true),code=item.querySelector('.flow-what>code');
+  var item=rmFlowDisplay.own(from),code=item.querySelector('.flow-what>code');
   if(code&&(item.dataset.stepKey||item.dataset.stepCode||item.dataset.stepOpen))code.replaceChildren(rmStepName(ctx,item,code.textContent));
   rmStepChainNames(ctx,item);
   if(item.dataset.input&&ctx.nodeById(item.dataset.input))rmLights(ctx,item,[item.dataset.input]);
@@ -1071,6 +1175,12 @@ function rmOwnWorkLine(ctx,from){
 // after them (owner via the coordinator, 2026-10-02: liblua.a's 156 lua_*,
 // luaL_* and luaopen_* had stood in one flat list, Lua 5.1.5's 159 in the
 // home's list of programs). `list(entries)` draws some entries.
+function rmWhenOpened(fold,draw){
+  fold.addEventListener('toggle',function(event){
+    if(event.target!==fold||!fold.open||!draw)return;
+    draw();draw=null;
+  });
+}
 function rmEntriesByPart(ctx,entries,into,list){
   var byPart=new Map(),loose=[];
   entries.forEach(function(entry){var part=entry.part&&ctx.nodeByHref(entry.part);if(!part){loose.push(entry);return;}if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(entry);});
@@ -1078,7 +1188,7 @@ function rmEntriesByPart(ctx,entries,into,list){
     byPart.forEach(function(held,part){
       var fold=rmEl('details','map-reading-peer system-program-entries'),head=rmEl('summary','map-reading-peer-head');
       head.append(rmPartBox(ctx,part.getAttribute('href')||'#'+part.id,part.dataset.title,true),' · '+held.length);
-      fold.append(head,list(held));into.appendChild(fold);
+      fold.append(head);rmWhenOpened(fold,function(){fold.appendChild(list(held));});into.appendChild(fold);
     });
   }else loose=entries;
   if(loose.length)into.appendChild(list(loose));
@@ -1152,7 +1262,7 @@ function rmProgramsTable(ctx,holder,components,connections){
     if(files.length){
       var built=rmEl('dd');
       if(files.length<=rmShortSection){var ul=rmEl('ul','system-program-files');files.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});built.appendChild(ul);}
-      else{var fold=rmEl('details','system-program-built');fold.appendChild(rmEl('summary','',rmT('Files')));rmFileTree(files).forEach(function(part){fold.appendChild(part);});built.appendChild(fold);}
+      else{var fold=rmEl('details','system-program-built');fold.appendChild(rmEl('summary','',rmT('Files')));rmWhenOpened(fold,function(){rmFileTree(files).forEach(function(part){fold.appendChild(part);});});built.appendChild(fold);}
       line('Built from',built);
     }
   });
@@ -1168,7 +1278,9 @@ function rmFileTree(files){
   if(top.length){var ul=rmEl('ul','system-program-files');top.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});out.push(ul);}
   folders.forEach(function(list,dir){
     var fold=rmEl('details','map-reading-group system-program-folder');fold.appendChild(rmEl('summary','',dir));
-    (list.length>rmShortSection&&list.some(function(file){return file.indexOf('/')>=0;})?rmFileTree(list):[(function(){var ul=rmEl('ul','system-program-files');list.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});return ul;})()]).forEach(function(part){fold.appendChild(part);});
+    rmWhenOpened(fold,function(){
+      (list.length>rmShortSection&&list.some(function(file){return file.indexOf('/')>=0;})?rmFileTree(list):[(function(){var ul=rmEl('ul','system-program-files');list.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});return ul;})()]).forEach(function(part){fold.appendChild(part);});
+    });
     out.push(fold);
   });
   return out;

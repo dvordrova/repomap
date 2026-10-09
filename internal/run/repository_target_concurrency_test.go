@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
@@ -218,9 +219,15 @@ func TestPythonAndJSTSPagesPublishOneReportInPlanOrder(t *testing.T) {
 		outcomes[1].State != targetoutcome.StateAnalyzed {
 		t.Fatalf("target outcomes = %+v", outcomes)
 	}
-	entries := data.ProgramPortfolio.Entries
+	var entries []programindex.Index
+	if err := data.ProgramPortfolio.ReadProgramIndexes(func(index programindex.Index) error {
+		entries = append(entries, index)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if len(entries) != 2 || entries[0].Target.ID != "t1" || entries[0].Target.Language != "python" ||
 		entries[1].Target.ID != "t2" || entries[1].Target.Language == "python" {
-		t.Fatalf("program portfolio targets = %+v, %+v", entries[0].Target, entries[len(entries)-1].Target)
+		t.Fatalf("program portfolio targets = %+v", entries)
 	}
 }

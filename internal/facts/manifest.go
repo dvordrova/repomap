@@ -12,9 +12,10 @@ import (
 )
 
 type manifestRow struct {
-	key   string
-	value string
-	line  int
+	sourcePath string
+	key        string
+	value      string
+	line       int
 }
 
 var pinnedVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
@@ -65,7 +66,26 @@ func (b *builder) addManifestRows(filePath string) {
 	if !ok || file.binary {
 		return
 	}
-	rows, err := parseManifest(path.Base(filePath), file.lines)
+	var rows []manifestRow
+	var err error
+	if isMakefileName(path.Base(filePath)) {
+		for _, row := range makefile.ReadSource(filePath, func(name string) ([]string, bool) {
+			included, known := b.source.file(name)
+			if !known || included.binary {
+				return nil, false
+			}
+			return included.lines, true
+		}, func(name string) (string, bool) {
+			if !path.IsAbs(name) {
+				name = path.Join(path.Dir(filePath), name)
+			}
+			return b.input.Repository.RepositoryPath(name)
+		}) {
+			rows = append(rows, manifestRow{sourcePath: row.Path, key: row.Key, value: row.Value, line: row.Line})
+		}
+	} else {
+		rows, err = parseManifest(path.Base(filePath), file.lines)
+	}
 	if err != nil {
 		b.diagnose("manifest_unreadable", filePath+": "+err.Error())
 		return
@@ -77,8 +97,12 @@ func (b *builder) addManifestRows(filePath string) {
 		if row.key == "" {
 			continue
 		}
-		anchor := Anchor{Path: filePath, Line: row.line}
-		if !b.once(strings.Join([]string{string(KindManifest), filePath, row.key}, "\x00")) {
+		sourcePath := row.sourcePath
+		if sourcePath == "" {
+			sourcePath = filePath
+		}
+		anchor := Anchor{Path: sourcePath, Line: row.line}
+		if !b.once(strings.Join([]string{string(KindManifest), filePath, sourcePath, row.key, itoa(row.line), row.value}, "\x00")) {
 			continue
 		}
 		owner := targetID
@@ -89,13 +113,21 @@ func (b *builder) addManifestRows(filePath string) {
 			// src/Makefile had filed lua's and luac's rules under liblua.a.
 			owner = outputs[makefileOutput(filePath, row)]
 		}
-		b.add(root, Fact{
+		fact := Fact{
 			Kind:     KindManifest,
 			TargetID: owner,
 			Anchor:   &anchor,
 			Key:      row.key,
-			Value:    clipText(row.value),
-		}, row.key, row.value)
+			Value:    row.value,
+		}
+		if sourcePath != filePath {
+			// The source anchor is the fragment's; invocation and output
+			// ownership remain bound to the root makefile, not its directory.
+			fact.Path = filePath
+			b.add(root, fact, filePath, row.key, row.value)
+		} else {
+			b.add(root, fact, row.key, row.value)
+		}
 	}
 }
 

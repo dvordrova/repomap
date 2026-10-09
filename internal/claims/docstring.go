@@ -1,12 +1,15 @@
 package claims
 
 import (
+	"fmt"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -176,59 +179,53 @@ func docstringQuote(index int, raw string) (quote, bool) {
 // Compiler directives (//go:...) are not prose and are left out.
 func goDocComments(lines []string) []quote {
 	var result []quote
-	for index, line := range lines {
-		if !strings.HasPrefix(line, "func ") && !strings.HasPrefix(line, "type ") {
-			continue
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", strings.Join(lines, "\n"), parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		return result
+	}
+	add := func(doc *ast.CommentGroup, name *ast.Ident) {
+		if doc == nil {
+			return
 		}
-		start := index
-		for start > 0 && strings.HasPrefix(lines[start-1], "//") {
-			start--
-		}
-		if start == index {
-			continue
-		}
-		var prose []string
-		for _, comment := range lines[start:index] {
-			if strings.HasPrefix(comment, "//go:") {
-				continue
+		if item, ok := docstringQuote(fset.PositionFor(doc.Pos(), false).Line-1, doc.Text()); ok {
+			if name != nil {
+				site := fset.PositionFor(name.Pos(), false)
+				item.DeclarationLine, item.DeclarationColumn = site.Line, site.Column
 			}
-			prose = append(prose, strings.TrimPrefix(comment, "//"))
-		}
-		if item, ok := docstringQuote(start, strings.Join(prose, "\n")); ok {
 			result = append(result, item)
 		}
 	}
-	// Interface contracts carry documentation on explicitly declared methods,
-	// even though those declarations have no func keyword or implementation.
-	// Syntax attachment distinguishes them from embedded types and comments
-	// inside unrelated blocks. This does not resolve or infer a call target.
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "", strings.Join(lines, "\n"), parser.ParseComments|parser.SkipObjectResolution)
-	if err == nil {
-		ast.Inspect(file, func(node ast.Node) bool {
-			switch node := node.(type) {
-			case *ast.FuncDecl:
-				return false
-			case *ast.GenDecl:
-				return node.Tok == token.TYPE
-			case *ast.TypeSpec:
-				_, ok := node.Type.(*ast.InterfaceType)
-				return ok
+	for _, decl := range file.Decls {
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			add(decl.Doc, decl.Name)
+		case *ast.GenDecl:
+			if decl.Tok != token.TYPE {
+				continue
 			}
-			iface, ok := node.(*ast.InterfaceType)
-			if !ok {
-				return true
+			if len(decl.Specs) == 1 {
+				spec := decl.Specs[0].(*ast.TypeSpec)
+				if spec.Doc == nil {
+					add(decl.Doc, spec.Name)
+				}
+			} else {
+				add(decl.Doc, nil)
 			}
-			for _, field := range iface.Methods.List {
-				if _, ok := field.Type.(*ast.FuncType); !ok || len(field.Names) == 0 || field.Doc == nil {
+			for _, raw := range decl.Specs {
+				spec := raw.(*ast.TypeSpec)
+				add(spec.Doc, spec.Name)
+				iface, ok := spec.Type.(*ast.InterfaceType)
+				if !ok {
 					continue
 				}
-				if item, ok := docstringQuote(fset.PositionFor(field.Doc.Pos(), false).Line-1, field.Doc.Text()); ok {
-					result = append(result, item)
+				for _, field := range iface.Methods.List {
+					if _, ok := field.Type.(*ast.FuncType); ok && len(field.Names) == 1 {
+						add(field.Doc, field.Names[0])
+					}
 				}
 			}
-			return false
-		})
+		}
 	}
 	sort.SliceStable(result, func(i, j int) bool { return result[i].Line < result[j].Line })
 	return result
@@ -238,7 +235,25 @@ func goDocComments(lines []string) []quote {
 // Tag lines (@param, @returns, ...) describe structure, not intent, and are
 // left out of the quote.
 func jsDocBlocks(lines []string) []quote {
+	result, _ := jsDocBlocksWithOwners(lines, nil)
+	return result
+}
+
+func jsDocBlocksWithOwners(lines []string, owners map[programindex.LineRange]declarationSite) ([]quote, error) {
 	var result []quote
+	for span, owner := range owners {
+		text, err := nativeCommentText(lines, span)
+		if err != nil {
+			return nil, err
+		}
+		if item, ok := docstringQuote(span.Line-1, jsDocText(strings.Split(text, "\n"))); ok {
+			item.Column = span.Column
+			item.DeclarationLine, item.DeclarationColumn = owner.Line, owner.Column
+			result = append(result, item)
+		}
+	}
+	// Conventional unbound comments remain author claims. Native-known ranges
+	// already supplied their complete quote and never pass through this fallback.
 	for index := 0; index < len(lines); index++ {
 		if !strings.HasPrefix(strings.TrimSpace(lines[index]), "/**") {
 			continue
@@ -250,15 +265,85 @@ func jsDocBlocks(lines []string) []quote {
 		if end >= len(lines) {
 			break
 		}
-		next := end + 1
-		if next < len(lines) && jsDeclaration.MatchString(lines[next]) {
-			if item, ok := docstringQuote(index, jsDocText(lines[index:end+1])); ok {
+		startByte := strings.Index(lines[index], "/**")
+		endByte := strings.Index(lines[end], "*/") + 2
+		native := false
+		for span := range owners {
+			if span.Line == index+1 && span.EndLine == end+1 {
+				first, err1 := utf16ByteOffset(lines[index], span.Column)
+				last, err2 := utf16ByteOffset(lines[end], span.EndColumn+1)
+				if err1 == nil && err2 == nil && first == startByte && last == endByte {
+					native = true
+					break
+				}
+			}
+		}
+		if !native && end+1 < len(lines) && jsDeclaration.MatchString(lines[end+1]) {
+			block := append([]string(nil), lines[index:end+1]...)
+			block[len(block)-1] = block[len(block)-1][:endByte]
+			if item, ok := docstringQuote(index, jsDocText(block)); ok {
 				result = append(result, item)
 			}
 		}
 		index = end
 	}
-	return result
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Line != result[j].Line {
+			return result[i].Line < result[j].Line
+		}
+		return result[i].Column < result[j].Column
+	})
+	return result, nil
+}
+
+// TypeScript coordinates are one-based UTF-16 units, with an inclusive end.
+// Original corpus strings use UTF-8; a surrogate-pair interior is no boundary.
+func utf16ByteOffset(line string, column int) (int, error) {
+	if column < 1 {
+		return 0, fmt.Errorf("invalid UTF-16 column %d", column)
+	}
+	units := 1
+	for offset, r := range line {
+		if units == column {
+			return offset, nil
+		}
+		width := 1
+		if r > 0xffff {
+			width = 2
+		}
+		units += width
+		if units > column {
+			return 0, fmt.Errorf("UTF-16 column splits a source character")
+		}
+	}
+	if units == column {
+		return len(line), nil
+	}
+	return 0, fmt.Errorf("UTF-16 column exceeds source line")
+}
+func nativeCommentText(lines []string, span programindex.LineRange) (string, error) {
+	if span.Line < 1 || span.EndLine < span.Line || span.EndLine > len(lines) {
+		return "", fmt.Errorf("native comment range outside source")
+	}
+	first, err := utf16ByteOffset(lines[span.Line-1], span.Column)
+	if err != nil {
+		return "", err
+	}
+	last, err := utf16ByteOffset(lines[span.EndLine-1], span.EndColumn+1)
+	if err != nil {
+		return "", err
+	}
+	if span.Line == span.EndLine && last < first {
+		return "", fmt.Errorf("reversed native comment range")
+	}
+	block := append([]string(nil), lines[span.Line-1:span.EndLine]...)
+	block[len(block)-1] = block[len(block)-1][:last]
+	block[0] = block[0][first:]
+	text := strings.Join(block, "\n")
+	if !utf8.ValidString(text) || !strings.HasPrefix(text, "/**") || !strings.HasSuffix(text, "*/") || strings.Index(text, "*/") != len(text)-2 {
+		return "", fmt.Errorf("native range does not name a complete JSDoc comment")
+	}
+	return text, nil
 }
 
 func jsDocText(block []string) string {

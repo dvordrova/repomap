@@ -13,9 +13,12 @@ const minProseLetters = 3
 
 // quote is one located quote produced by a scanner.
 type quote struct {
-	Line            int
-	DeclarationLine int
-	Text            string
+	Line                  int
+	Column                int
+	DeclarationLine       int
+	DeclarationColumn     int
+	DeclarationUnresolved bool
+	Text                  string
 }
 
 func splitLines(text string) []string {

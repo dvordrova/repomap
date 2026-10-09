@@ -572,3 +572,73 @@ level for multiple components or mutation tracing of value-shaped entities.
 Checks use the actual 934×992 browser viewport and supported controls; they do
 not claim every native pointer or pinch trajectory. Both reports are rendered
 from their same saved ordinary online runs, with zero new provider requests.
+
+
+## 2026-10-06 — SQLite closed-component overview correction
+
+The reader's screenshot exposed unnamed geometry behind enlarged component
+words. Previous accessibility-only inspection had missed the defect. The ordinary
+saved renderer now exposes the complete direct inventory as original-name child
+buttons and sizes the overview from wrapped rows before layout. Long inventories
+scroll without removing rows. Program outlines are removed; native parts and
+readings retain their existing hierarchy and evidence.
+
+Inspected the rendered SQLite report at 1280×720 and 1440×900: libsqlite3.a,
+libsqlite3.dylib and sqlite3 show 4/4/7 readable names, with no contours behind
+text. Mouse on SQLite core engine opens the static-library area; Enter on the
+last CLI R-tree row opens that part and its declarations; Space on Utilities opens
+the dylib area. Returning after a reload restores Utilities, its component and
+breadcrumb. Home returns to all three complete cards. The saved-run browser test
+also checks exact original child IDs/order for every component, last-child Enter,
+first-child mouse navigation and Home. Independent supervisor screenshot review
+agrees. This receipt accepts desktop overview navigation; performance and other
+repositories are not measured here.
+
+![Corrected SQLite overview](reviews/sqlite-overview-20261006.png)
+
+
+## 2026-10-06 — Magnifier and arrow-name interaction correction
+
+Actual pointer hit-test now gives a magnifier the zoom-in cursor on the pane,
+without activating a second DOM mouse handler. Real cursor inspection passes at
+program/area/part levels and on SQLite CLI entry; previous pan/pinch/arrow checks
+still pass. A brief arrow card retains the exact original declaration reference,
+so the five reported R-tree names open their native declaration readings even
+without generated-file upstream links. Mouse and Enter on all five were checked
+on the ordinary saved SQLite renderer; the screenshot shows rtreeBestIndex and
+its callers, callback provenance, author comment and calls in the reading panel.
+Independent review checks the exact-reference route and screenshots. The dense
+SQL compiler area (28 parts/1818 declarations, 263 directed structural part-pair
+relations) remains a separate open readability issue; no layout acceptance is
+inferred from these interaction checks.
+
+![Native declaration opened from the arrow card](reviews/sqlite-call-declaration-20261006.png)
+
+## 2026-10-06 — Recursive SQLite areas and original declaration journey
+
+The fresh ordinary online three-target run exits 0. Its CLI keeps 41 original
+parts under five root areas and 28 total areas, four levels deep; both libraries
+keep 29 parts, with 17/19 areas, three levels deep. Independent data review
+checks original membership, source identity, parent progress and all seven
+bound artifact hashes. Grouping remains saved model interpretation.
+
+Question: where does Unix shared-memory locking happen? From the CLI's named
+OS interface entry, mouse magnifiers enter Unix file system implementation,
+File locking and shared memory, then Unix locking and shared memory. The two
+original parts are Unix file locking and Unix shared memory. Its unixShmMap
+reading retains the exact signature, sqlite3.c coordinates, callback/caller
+provenance, author comment and calls. Generated amalgamation remote source is
+still unavailable; native declaration reading is intact. Function → part → area
+and a reload retain the full breadcrumb and camera level. Separate mouse
+journeys in libsqlite3.a and libsqlite3.dylib reach their third-level
+statement/trigger areas; Home restores all three inventories.
+
+Initial QA exposed a different defect: focusing an offscreen magnifier scrolled
+its overlay alone. The corrected ordinary renderer uses overflow:clip; hidden
+marks leave the Tab order. Explicit focus and Enter keep overlay/ReactFlow
+ancestor scroll offsets at zero, and visible native mouse hits enter the same
+saved area. Two saved-run browser regressions pass. Inspected 1280×720
+screenshots and no browser warnings/errors; performance is not measured.
+Large frames retain the existing camera reading floor and pan behaviour.
+
+![Four recursive areas above the original SQLite parts](reviews/sqlite-recursive-four-levels-20261006.jpg)

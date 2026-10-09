@@ -116,12 +116,13 @@ type Content struct {
 // Corpus is an immutable file namespace plus a confined live reader. Metadata
 // maps never change; the mutex coordinates concurrent reads with Close.
 type Corpus struct {
-	snapshot     Snapshot
-	visiblePaths []string
-	gitlinks     []Gitlink
-	byID         map[FileID]FileInfo
-	byPath       map[string]FileID
-	reader       *reporead.Reader
+	repositoryRoot string
+	snapshot       Snapshot
+	visiblePaths   []string
+	gitlinks       []Gitlink
+	byID           map[FileID]FileInfo
+	byPath         map[string]FileID
+	reader         *reporead.Reader
 
 	mu     sync.RWMutex
 	closed bool
@@ -256,13 +257,38 @@ func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpu
 		return nil, fmt.Errorf("repository corpus: open confined reader: %w", err)
 	}
 	return &Corpus{
-		snapshot:     snapshot,
-		visiblePaths: visiblePaths,
-		gitlinks:     append([]Gitlink(nil), gitlinks...),
-		byID:         byID,
-		byPath:       byPath,
-		reader:       reader,
+		repositoryRoot: absoluteRoot,
+		snapshot:       snapshot,
+		visiblePaths:   visiblePaths,
+		gitlinks:       append([]Gitlink(nil), gitlinks...),
+		byID:           byID,
+		byPath:         byPath,
+		reader:         reader,
 	}, nil
+}
+
+// RepositoryPath maps an authored filename into this corpus's local namespace.
+// An absolute filename must be inside the exact bound checkout; no root path is
+// exported or serialized. This does not admit content or expand the inventory.
+func (c *Corpus) RepositoryPath(filename string) (string, bool) {
+	if c == nil || filename == "" {
+		return "", false
+	}
+	if filepath.IsAbs(filename) {
+		root := strings.TrimRight(c.repositoryRoot, string(filepath.Separator))
+		if filename == root {
+			return ".", true
+		}
+		if !strings.HasPrefix(filename, root+string(filepath.Separator)) {
+			return "", false
+		}
+		filename = strings.TrimPrefix(filename, root+string(filepath.Separator))
+	}
+	filename = path.Clean(filepath.ToSlash(filename))
+	if err := validatePath(filename); err != nil {
+		return "", false
+	}
+	return filename, true
 }
 
 func allowedCorpusPaths(values []string) []string {

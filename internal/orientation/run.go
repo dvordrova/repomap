@@ -24,8 +24,8 @@ const (
 	StageName = "orientation"
 
 	executionContract     = "repomap.orientation.v2"
-	preparationVersion    = 6
-	promptVersion         = 14
+	preparationVersion    = 9
+	promptVersion         = 16
 	responseSchemaVersion = 2
 	// maxOutputTokens is measured: 117 accepted orientation exchanges
 	// answered in at most 1,260 output tokens (median 848). The shared
@@ -48,12 +48,17 @@ var (
 // matched GroupsIndex set, one index per analyzed target.
 type Input struct {
 	RepositoryName string
+	// RepositoryRoot is local source context for portable manifest references.
+	// It never enters a provider body or the response vocabulary.
+	RepositoryRoot string
 	Facts          facts.Result
 	Claims         claims.Result
 	Groups         []groupindex.Index
 	// Graph is the already-built source graph used by atlas reading. Only
 	// the seeds' rows enter the orientation request.
 	Graph atlas.Graph
+	// GraphPresentation preserves the producer order without retaining another graph.
+	GraphPresentation *atlas.GraphPresentation
 	// Categorizer chooses where the Main flow continues at a split
 	// (walkFlow); without one the flow ends at its first split, a named
 	// fork.
@@ -88,6 +93,13 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	}
 	outcome, err := ask(ctx, executor, provider, input, digests, wire, "overview", overviewPrompt, overviewExample,
 		func(raw []byte) (normalized, error) { return normalizeOverview(raw, cat) })
+	if orientationEnvelopeRefusal(err, outcome) {
+		value, partitionErr := askPartitionedOverview(ctx, executor, provider, input, digests, overview, cat)
+		// The fallback owns different requests. Never borrow an initial
+		// completion/envelope annotation as proof for a later Prepare failure.
+		outcome = llm.Outcome[normalized]{Value: value}
+		err = partitionErr
+	}
 	if err != nil {
 		rejected, refused := refusal(ctx, err, outcome, sectionRequest, len(wire))
 		if !refused {
@@ -172,7 +184,7 @@ func refusal(ctx context.Context, err error, outcome llm.Outcome[normalized], se
 		}
 	}
 	var resource *llm.ResourceLimitError
-	if errors.As(err, &resource) {
+	if orientationEnvelopeRefusal(err, outcome) && errors.As(err, &resource) {
 		raw, _ := json.Marshal(struct {
 			RequestBytes int    `json:"request_bytes,omitempty"`
 			Resource     string `json:"resource"`
@@ -263,4 +275,32 @@ func limits() llm.Limits {
 		MaxResponseBytes: llm.ProviderResponseByteLimit,
 		MaxOutputTokens:  maxOutputTokens,
 	}
+}
+
+// Input preparation may divide evidence. Other resource kinds require proof
+// of an actual completion; configuration/preparation failures remain fatal.
+func orientationEnvelopeRefusal(err error, outcome llm.Outcome[normalized]) bool {
+	var resource *llm.ResourceLimitError
+	if !errors.As(err, &resource) {
+		return false
+	}
+	switch resource.Kind {
+	case llm.ResourceLimitRequestBytes, llm.ResourceLimitContextTokens:
+		return true
+	case llm.ResourceLimitOutputTokens, llm.ResourceLimitResponseBytes, llm.ResourceLimitAttemptTime:
+	default:
+		return false
+	}
+	var remote *llm.ProviderError
+	if errors.As(err, &remote) && remote.Operation == "complete" {
+		return true
+	}
+	if len(outcome.Request) > 0 {
+		for _, annotation := range outcome.ResponseRejections {
+			if annotation.Kind == "response_envelope" {
+				return true
+			}
+		}
+	}
+	return false
 }

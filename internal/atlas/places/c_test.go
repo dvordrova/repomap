@@ -8,6 +8,8 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/claims"
+	"github.com/dvordrova/repomap/internal/cproject"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // A C file's author comments reach its declarations through the ordinary
@@ -61,11 +63,30 @@ struct kvPair
 };
 `
 	fixture := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fixture, "kv.c"), []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fixture, "kv.c"), []byte(source+"\nchar *kvScan(const char *key, int buckets) { return NULL; }\nint main(void) { return kvCount(); }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "kv.h"), []byte("char *kvScan(const char *key, int buckets);\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	root, repository := materializeFixtureRepository(t, fixture)
-	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: repository, RepoPath: root, Revision: "HEAD"})
+	project, err := cproject.Discover(t.Context(), root, repository)
+	if err != nil || len(project.Programs) != 1 {
+		t.Fatalf("real C fixture discovery: %v %v", project, err)
+	}
+	parsed, err := cproject.Parse(t.Context(), root, repository, project.Programs[0], cproject.NewStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := cproject.Index(repository, parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(result.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: repository, RepoPath: root, Revision: "HEAD", ReadIndexes: []func() (programindex.Index, error){func() (programindex.Index, error) { return index, nil }}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,11 +104,18 @@ struct kvPair
 	// kvScan is no declaration of this file.
 	decls := []atlas.Decl{{LineNo: line("static int kvBuckets")}, {LineNo: line("char *kvGet")}, {LineNo: line("int kvSize")},
 		{LineNo: line("struct kvEntry")}, {LineNo: line("kvCount(void)")}, {LineNo: line("struct kvPair")}}
+	for i := range decls {
+		for _, object := range index.Objects {
+			if object.Location != nil && object.Location.Path == "kv.c" && object.Location.Line == decls[i].LineNo {
+				decls[i].Column = object.Location.Column
+			}
+		}
+	}
 	for _, want := range []struct {
 		decl int
 		doc  string
 	}{{0, ""}, {1, "Return the value stored under key."}, {2, ""}, {3, ""}, {4, "Count the stored keys."}, {5, "One stored pair."}} {
-		if got := b.docstringFor("kv.c", decls[want.decl].LineNo, decls); got != want.doc {
+		if got := b.docstringFor("kv.c", decls[want.decl].LineNo, decls, decls[want.decl].Column); got != want.doc {
 			t.Errorf("declaration at line %d: %q, want %q", decls[want.decl].LineNo, got, want.doc)
 		}
 	}

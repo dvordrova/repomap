@@ -68,13 +68,18 @@ not add script entrypoints or sidecar tools.
   sealed target index without parsing code. Distinct package/import contexts
   remain separate facts even when they share ASTs. The owner approved this
   shared storage on 2026-09-09, independently of tools/examples' full analyses.
-  Completed child indexes stay in memory for the whole run (owner decision
-  2026-09-25; before, each was released after persistence and re-read one
-  target at a time). Facts, places, the group projection and the report share
-  each sealed index read-only: they allocate what they sort or change, and a
-  reader that must change an index takes its snapshot. The saved
-  `program-index.json` stays the artifact of record and the fallback for a run
-  without the index in memory. The projection's declaration-key lookup reads
+  A completed child releases its native index only after every target-local
+  sealed artifact succeeds. Its exact ProgramTarget remains in the page
+  portfolio. Facts, claims, places and the group projection read the complete
+  original `program-index.json` one target at a time through the existing
+  validated reader, keeping only their derived results between targets. A
+  reader that changes an index takes its snapshot. The report owns each
+  restored target before reading the next, then retains one complete native
+  portfolio for publication and glossary work; the child runs do not keep a
+  second full set. This changes no artifact encoding or selected target.
+  The final portfolio and derived graphs remain complete and grow with the
+  original evidence; this is a lifecycle change, not a bounded-memory claim.
+  The projection's declaration-key lookup reads
   the targets while the atlas tables wait on the models and keeps only the
   keys. Other handoffs reuse a value in memory when available. The report server consumes the generated result directly,
   or restores one common report and manifest in another process. Every target

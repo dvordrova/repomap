@@ -189,6 +189,14 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 			continue
 		}
 		program.AnchorFileRef = string(ref)
+		if program.Manifest != "" {
+			ref, ok := repository.ID(program.Manifest)
+			if !ok {
+				project.Observations = append(project.Observations, Observation{Kind: "c_unanchored_program", Path: program.Manifest, Fields: map[string]string{"selector": program.Selector}})
+				continue
+			}
+			program.ManifestFileRef = string(ref)
+		}
 		program.CorpusSHA256 = project.CorpusSHA256
 		program.Included = project.Included
 		if !description.fromBuild {

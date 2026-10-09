@@ -100,7 +100,7 @@ func TestPackingPreservesPreparationErrors(t *testing.T) {
 	for _, cause := range []error{
 		context.Canceled,
 		errors.New("provider configuration failed"),
-		llm.NewResourceLimitError(llm.ResourceLimitError{Kind: llm.ResourceLimitContextTokens, Limit: 10}),
+		llm.NewResourceLimitError(llm.ResourceLimitError{Kind: llm.ResourceLimitOutputTokens, Limit: 10}),
 	} {
 		for _, phase := range []string{"source", "merge"} {
 			t.Run(phase+"/"+cause.Error(), func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestPackingPreservesPreparationErrors(t *testing.T) {
 	}
 }
 
-func TestPackingRejectsIndivisibleMergeCandidateAtAnyPosition(t *testing.T) {
+func TestPackingCarriesAcceptedMergeCandidateOutsideEnvelopeAtAnyPosition(t *testing.T) {
 	for _, position := range []int{0, 1} {
 		t.Run(fmt.Sprint(position), func(t *testing.T) {
 			_, candidates, authority := packingEvidence(2)
@@ -130,11 +130,11 @@ func TestPackingRejectsIndivisibleMergeCandidateAtAnyPosition(t *testing.T) {
 			provider := &packingWorkProvider{documentationPresetProvider: &documentationPresetProvider{maximumPreparedBytes: measure.preparedBytes}}
 			candidates[position].overview = strings.Repeat(candidates[position].overview, 8)
 			plan, err := packMergeBatches(provider, candidates, 1, authority)
-			if err == nil || !strings.Contains(err.Error(), "indivisible merge candidate") || len(plan) != 0 {
-				t.Fatalf("oversized candidate entered a partial plan: plan=%d err=%v", len(plan), err)
+			if err != nil || len(plan) != 2 || !reflect.DeepEqual(plan[0].candidates[0], candidates[0]) || !reflect.DeepEqual(plan[1].candidates[0], candidates[1]) {
+				t.Fatalf("accepted original candidate lost: plan=%d err=%v", len(plan), err)
 			}
 			if provider.sourceCalls != 0 || provider.mergeCalls != 0 {
-				t.Fatal("rejected packing called Complete")
+				t.Fatal("accepted singleton packing called Complete")
 			}
 		})
 	}

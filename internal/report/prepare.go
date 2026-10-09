@@ -9,10 +9,10 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// NewData projects the producer's in-memory values. Saved artifacts are for
-// restoring another process, not for passing results between stages of a run.
-// The caller adds the repository graph, facts, claims, orientation and timing
-// before Generate. The index and documentation remain read-only.
+// NewData projects one producer-owned index and documentation. Repository
+// assembly then binds the complete original native portfolio, reading saved
+// completed targets one at a time. The caller adds the repository graph,
+// facts, claims, orientation and timing before Generate. Inputs stay read-only.
 func NewData(runDir, repoName string, index programindex.Index, documentation documentationreduce.Result) (*ReportData, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {

@@ -58,7 +58,12 @@ func TestARegisteredStepIsRegisteredWhereThePathReaches(t *testing.T) {
 	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		for _, choice := range []string{"aeMain", "aeProcessEvents", "readQueryFromClient"} {
 			if slices.ContainsFunc(question.Options, func(option llm.Option) bool { return option.Name == choice }) {
-				return llm.Verdict{Choice: choice, Probabilities: map[string]float64{choice: 0.9}}, true
+				probabilities := make(map[string]float64, len(question.Options))
+				for _, option := range question.Options {
+					probabilities[option.Name] = 0.1 / float64(len(question.Options)-1)
+				}
+				probabilities[choice] = 0.9
+				return llm.Verdict{Choice: choice, Probabilities: probabilities}, true
 			}
 		}
 		return llm.Verdict{}, false

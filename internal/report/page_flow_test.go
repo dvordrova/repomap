@@ -336,7 +336,7 @@ func TestARegistrationStepReadsItsSavedRegistration(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
 			t.Fatal(err)
 		}
 		chain := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(out.String()[strings.Index(out.String(), `<span class="flow-chain">`):], "")
@@ -451,7 +451,7 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -478,7 +478,7 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{guarded}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{guarded}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -503,7 +503,7 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{back}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{back}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -581,7 +581,7 @@ func TestAMainFlowSaysEachStepsPartTypeAndInputs(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: flow}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: flow}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -630,7 +630,7 @@ func TestAMainFlowSaysEachStepsPartTypeAndInputs(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: parted}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: parted}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -681,7 +681,7 @@ func TestAFlowsViaAndForkNameTheSitesFunctionNotItsLine(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step, unsited}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step, unsited}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -762,7 +762,7 @@ func TestAPartedFlowReadsAsItsTrunkThenEachWay(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{},
+	if err := executeComponentFlowDisplay(t, parsed, &out, English, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{},
 		Flow: &pageFlow{Steps: []pageFlowStep{{Label: "main"}, row}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -797,7 +797,7 @@ func TestAFlowsViaReadsInThePagesLanguage(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: steps}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: steps}}); err != nil {
 			t.Fatal(err)
 		}
 		var said []string
@@ -849,7 +849,7 @@ func TestAMainFlowStepSaysTheHelperItIsReachedThrough(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -918,7 +918,7 @@ func TestACallKnownByItsInterfacesImplementationsSaysSo(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "etcd", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "etcd", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
 			t.Fatal(err)
 		}
 		if html := out.String(); !strings.Contains(html, words[0]) || !strings.Contains(html, words[1]) {
@@ -995,7 +995,7 @@ func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -1006,6 +1006,47 @@ func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
 		}
 		if !strings.Contains(html, "lvm.c:223") || !strings.Contains(html, "lvm.c:1180") || !strings.Contains(html, "lvm.c:462") {
 			t.Fatalf("%v: a guard or loop lost its place: %s", language, html)
+		}
+	}
+}
+
+// The reader sees the native expression and branch polarity beside the
+// walked call, including a call read back in its caller. Expressions are
+// code, escaped and never translated; the failing-path role still reads.
+func TestAMainFlowConditionReadsItsCodeAndArm(t *testing.T) {
+	for _, language := range []DisplayLanguage{English, Russian} {
+		for _, row := range []struct {
+			name, kind, when, code, english, russian, resumes string
+		}{
+			{"script", programindex.GuardBranch, programindex.GuardWhenHolds, "script", "only if", "только если", ""},
+			{"else", programindex.GuardBranch, programindex.GuardWhenFails, "script", "only if not", "только если не", ""},
+			{"case", programindex.GuardBranch, programindex.GuardWhenMatches, "mode", "in a case of", "в ветке выбора по", ""},
+			{"error", programindex.GuardError, programindex.GuardWhenHolds, "err != nil", "on an error path, only if", "на пути ошибки, только если", ""},
+			{"escaped", programindex.GuardBranch, programindex.GuardWhenHolds, "ready && size < limit", "only if", "только если", ""},
+			{"back", programindex.GuardBranch, programindex.GuardWhenFails, "ready", "only if not", "только если не", "cron"},
+		} {
+			t.Run(string(language)+"/"+row.name, func(t *testing.T) {
+				builder, _ := flowFixture()
+				step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "resize", Via: "called", Resumes: row.resumes,
+					Guard: &programindex.Guard{Kind: row.kind, Condition: row.code, When: row.when,
+						Location: &programindex.Location{Path: "lua.c", Line: 361, Column: 3}}}, builder.byProgram["t1"], map[string]bool{})
+				var out bytes.Buffer
+				if err := executeFlowDisplayJS(t, &out, language, `rmFlowDisplay.flow({Flow:{Steps:[saved]}},into);`, mustFlowStepJSON(t, step)); err != nil {
+					t.Fatal(err)
+				}
+				html := out.String()
+				words := row.english
+				if language == Russian {
+					words = row.russian
+				}
+				want := words + " <code>" + template.HTMLEscapeString(row.code) + "</code>"
+				if !strings.Contains(html, want) || !strings.Contains(html, "lua.c:361") {
+					t.Fatalf("condition %q or its source missing: %s", want, html)
+				}
+				if row.resumes != "" && (strings.Count(html, "<code>ready</code>") != 1 || strings.Contains(html, "flow-guard")) {
+					t.Fatalf("resumed condition is not said once before its call: %s", html)
+				}
+			})
 		}
 	}
 }
@@ -1035,7 +1076,7 @@ func TestAStepsPassedHandOverReadsAsHanded(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -1073,7 +1114,7 @@ func TestAMainFlowIsTitledByItsPartsAlone(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: flow}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: flow}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -1107,7 +1148,7 @@ func TestAMainFlowWaySaysEveryWayItGoesOnAs(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{ended, torn}}}); err != nil {
+		if err := executeComponentFlowDisplay(t, parsed, &out, language, &pageSection{ID: "t1", ShortLabel: "lua", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{ended, torn}}}); err != nil {
 			t.Fatal(err)
 		}
 		html := out.String()
@@ -1164,4 +1205,13 @@ func TestAMainFlowNamesThePartsItPassesThrough(t *testing.T) {
 	if parts := builder.flowParts(section, []pageFlowStep{step("g1"), step("g1")}); parts != nil {
 		t.Fatalf("one part names no parts line: %+v", parts)
 	}
+}
+
+func mustFlowStepJSON(t *testing.T, step pageFlowStep) string {
+	t.Helper()
+	raw, err := json.Marshal(step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }

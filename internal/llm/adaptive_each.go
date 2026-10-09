@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -108,6 +109,33 @@ func executeAdaptiveJSONEach[Item any, Value any](
 		for i := 0; i < len(plan); i++ {
 			if plan[i].done {
 				continue
+			}
+			// Known input envelopes are preparation constraints. Divide the
+			// owner's complete item before a transport attempt or refusal memo.
+			if err := validateLimits(plan[i].call.Limits); err != nil {
+				return nil, err
+			}
+			prepared, prepareErr := Prepare(provider, plan[i].call.Prompt, plan[i].call.Limits)
+			if prepareErr == nil && prepared.Len() > plan[i].call.Limits.MaxRequestBytes {
+				prepareErr = NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitRequestBytes, Limit: plan[i].call.Limits.MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true})
+			}
+			var resource *ResourceLimitError
+			if errors.As(prepareErr, &resource) && (resource.Kind == ResourceLimitRequestBytes || resource.Kind == ResourceLimitContextTokens) {
+				parts, err := children(plan[i].item)
+				if err != nil {
+					return nil, err
+				}
+				if len(parts) > 0 {
+					remaining := append(parts, plan[i+1:]...)
+					plan = append(plan[:i], remaining...)
+					i--
+					continue
+				}
+				if keepTerminal {
+					plan[i].err, plan[i].done = prepareErr, true
+					continue
+				}
+				return nil, &BatchItemError{Index: i, Err: prepareErr}
 			}
 			found, err := loadAdaptiveSplit(executor, provider, plan[i].call)
 			if err != nil {

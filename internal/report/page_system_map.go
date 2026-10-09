@@ -526,28 +526,14 @@ func (view *pageView) SystemMap() *pageMap {
 		result.Nodes[positions["system-component-"+section.ID]].Children = strings.Join(append(areas, loose...), " ")
 	}
 	if view.RepoMap != nil {
-		// The targets the run could not read are one small note, "Not
-		// analysed", naming each of them: drawn one card apiece, litestream's
-		// two failed packages had stood as pale cards whose words read at
-		// four pixels. Their connections are the note's.
+		// Only complete program pages enter the canvas. Failed targets keep
+		// their outcomes and diagnostics in the reading and component details;
+		// neither a placeholder nor an arrow stands in for their missing page.
 		components := map[string]string{}
-		var unread []string
 		for _, node := range view.RepoMap.Nodes {
-			id := destinations[node.Href]
-			if !node.Analyzed {
-				id = "system-unread"
-				unread = append(unread, node.FullName)
+			if node.Analyzed {
+				components[node.ID] = destinations[node.Href]
 			}
-			components[node.ID] = id
-		}
-		if len(unread) > 0 {
-			title, err := uiText(view.Language, "Not analysed")
-			if err != nil {
-				title = "Not analysed"
-			}
-			// Read, it shows each target's card from Component details with
-			// why it was not read, in the failure's own words.
-			add(pageMapNode{ID: "system-unread", ItemKind: "Component", FullTitle: title, Summary: strings.Join(unread, ", "), Lane: "dependencies", DetailsID: "targets-not-read"})
 		}
 		// A dependency between two programs already drawn between their own
 		// parts or inputs is that arrow: freqtrade's scripts/ws_client.py,

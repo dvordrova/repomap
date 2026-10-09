@@ -18,9 +18,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   provider batches and convergent closed-ref reduction rounds as necessary.
   Every stage uses the shared actual 32 MiB request envelope and 16 MiB
   decoded-response ceiling and requests up to 128,000 output tokens unless its
-  owning contract states a smaller measured allowance (glossary 32,768; parts
-  and areas answers min(128,000, max(8,192, 16 × listed rows)); part and area
-  descriptions 200; orientation 16,384, where 117 accepted answers used at
+  owning contract states a smaller measured allowance (glossary 32,768; short
+  parts/discovery/assignment and areas answers min(128,000, max(8,192, 16 × listed rows)); part
+  automatic one-unit descriptions 200; final orientation decisions 16,384, where 117 accepted answers used at
   most 1,260 output tokens, median 848). An allowance bounds a runaway answer, never evidence; an
   answer that reaches it is the ordinary output-token refusal, never truncated
   or partly accepted. A lower configured provider token ceiling remains
@@ -111,6 +111,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   an observer that fails is an error. A split memo that cannot be saved is
   still an error. Existing run journals
   are not migrated into split memos.
+  Documentation merging carries an already accepted single candidate unchanged;
+  there is no merge decision to ask again. A resource-refused multi-candidate
+  merge can therefore split into accepted singletons without new completions.
+  The same carry applies when redundant singleton framing cannot fit the actual
+  input envelope; a genuine preparation error still retains its original cause.
+  If the tournament cannot reduce their count or complete representation, it
+  retains their source-bound statements and leaves the global overview empty.
+  It neither concatenates overviews nor retries an indivisible source refusal.
   Failed model exchanges show their committed request/response/journal paths
   beside the error, with an explicit unavailable-body marker when necessary.
   The last attempt's HTTP status and diagnostic response IDs/retry/rate-limit
@@ -264,8 +272,20 @@ The display-translation cube behind `--lang`
   are left out), `imports` as `"f3 -> f7"` for an import the adapter resolves
   to one listed whole file, and the same call counts between parts as
   `"p3 -> p7 (12)"`. These are counts over advertised refs, not raw edges. A
-  parts or areas request allows min(128,000, max(8,192, 16 × listed rows))
-  output tokens; a part or area description 200.
+  parts discovery or independent original-unit assignment request allows
+  min(128,000, max(8,192, 16 × listed rows)) output tokens; an automatic
+  one-unit part description allows 200. Complete `parts_catalogue.v4`
+  synthesis, actual-member `parts_describe.v3` captions, and
+  `areas_discover.v3` / `areas_catalogue.v3` whole-scope
+  readings reserve the shared provider-capped 128,000-token allowance;
+  `areas_assign.v2` uses the per-row assignment allowance. Complete
+  interpretation windows divide on actual input/context constraints or
+  completed output/response envelope refusals and require an independent
+  rejoin. Malformed semantic decisions never authorize subdivision. Fitting
+  and oversized nontrivial targets use the same discovery/synthesis/assignment
+  phases, then actual-member caption finalization and admission. The owning
+  [Reading contract](READING.md) defines complete readings, synthesis,
+  immutable purposes and final-assignment authorities.
 
 ## Independent validation
 
@@ -333,34 +353,45 @@ The display-translation cube behind `--lang`
   compared and when the choice is read against its labels). The executor caches, journals and gates it like any provider, so
   its exact-cache keys are its `State` and the prepared bytes; the decision
   rule below, the question texts (which name Jev's `task`, `context.<field>`
-  and `row`), request packing, concurrency and the one-token output limit
-  stay with the table code and are sized for Jev. Another implementation
-  would take over those Jev-specific limits when it exists.
-- Jev's envelope is 64k tokens a request and 32k for the state with any one
-  question; over either it refuses the request (HTTP 400
-  `max_tokens_exceeded`). Its tokenizer is not ours, so preparation measures
-  each row's question with the state in request bytes at the densities Jev
-  counted in the requests it answered: the densest 0.471 tokens a byte
-  (15,521 saved requests, median 0.270) and the sparsest of 20 KB or more
-  0.233 (a fit on character classes still erred by a quarter). A row over
-  67,940 bytes, the 32k at the densest, or whose questions alone exceed the
-  120,000-byte body, is asked in its table's lossless packed form
-  (`Definition.Pack`), in its place; every other row and window keeps its
-  bytes and cache key. Only key-declaration rows have one: bindings that
-  differ only in their line are one row listing every line, ascending,
-  repeated for each binding on it; the calls of one callee (kind, name and
-  `api`) are one table in place of its first call, with what they share
-  once and a row per call (null where a call has no such field). Each packed
-  field carries its own note, so no prompt changes. A row still over the
-  bound goes alone in its place, so a refusal by Jev cannot take its
-  neighbours' answers. Alone, a row that would exceed the envelope even at
-  the sparsest density (137,339 bytes of state and question, 274,678 of
-  request) is refused at preparation (`Window.Refused`): never cut, never
-  sent, journaled as `over_envelope` with its measured bytes, the density
-  and the envelope. Between the two bounds Jev decides, as it answered
-  single 110 KB questions at 0.263 tokens a byte, and its own refusal leaves
-  the row unanswered as before. Casdoor's InitAPI, 322 route registrations
-  in 150,741 bytes that Jev refused, packs to about 26,000.
+  and `row`), owner-defined lossless packing and concurrency stay with the
+  table code. Provider envelope checks live in the Jev client's `Prepare`,
+  covering direct Main-flow calls too. Table preparation asks that same local
+  function; it makes no network call and carries no duplicate Jev limits.
+- Jev's envelope is 64k tokens per request and 32k for shared state plus
+  any one question. Preparation measures the encoded request, including
+  complete context, questions and choice criteria, before transport. Without
+  the provider tokenizer it reserves one token per UTF-8 byte and the one
+  output token, rather than extrapolating average densities from old answers.
+  Oversized rows first use their owning definition's lossless `Pack`; complete
+  windows then divide until they fit. An indivisible oversized row is refused
+  unsent with its measured allowance (`Window.Refused`); independent neighbours
+  survive. No uncertain-size band is delegated to a remote refusal. The owning
+  task must define decomposition of shared evidence when splitting rows cannot
+  help; architectural gate/naming, parts, core/keys catalogues and orientation
+  preparation do so in READING.
+  Key-declaration packing retains every line and call: equal bindings list all
+  lines, and calls of one callee share a header plus one complete row per site.
+- Official DeepSeek V4 preparation uses its known context even without an
+  environment override. It reserves one input token per complete encoded UTF-8
+  request byte, including framing, plus the output allowance (owner decision,
+  2026-10-06). No local tokenizer is used. Custom endpoints/unknown models
+  require their own declared context and use the same byte reservation. No input sampling or average density
+  substitutes for that check; actual provider mismatches retain typed fallback.
+- A live completion ending with `length` is a typed output-token refusal, and
+  an overlong assistant body is a typed response-byte refusal. The executor
+  retains the exact response and lets the owning stage divide complete work;
+  a decoder never repairs provider-reported truncation into acceptance.
+  A transport-successful provider-neutral completion has the same adaptive
+  eligibility as a provider's typed refusal, proven by its exact request and
+  `response_envelope` annotation. Preparation/configuration failures have no
+  such proof. DeepSeek diagnostics report the prepared request's actual
+  `max_tokens`, not the current client's larger default.
+- Adaptive batch and each execution check provider `Prepare` and the declared
+  request-byte envelope before transport. The owner divides complete items,
+  preserving order and accepted siblings; an indivisible item retains its
+  explicit resource failure. Unexpected actual provider refusals retain the
+  existing adaptive fallback and split memo. Known limits do not require a
+  failed paid attempt or a refusal memo to make the next run fit.
 - A Jev request follows the owner's shape (2026-09-26: a flaky decision
   means it was explained poorly): `state.task` says what we want, each
   question holds its item under the name the question uses (`row` unless a
@@ -380,8 +411,13 @@ The display-translation cube behind `--lang`
   absolute 0.50 floor that refused `support` at 0.49 against 0.32 yet took
   0.51 against 0.49). A closer answer, or a choice that is not the top
   option, leaves its row explicitly uncertain, journaled with the runner-up;
-  no code picks the runner-up or any other option instead. Probabilities
-  are hundredths carried as floats, so a lead of exactly 0.10 counts. The
+  no code picks the runner-up or any other option instead. Every listed
+  choice must have an explicit finite probability in [0,1], including zero;
+  an omitted/null/invalid/conflicting required score refuses that cell, rather
+  than supplying zero or calling it a near tie. Unknown score labels are
+  discarded. Noul scores obey the same finite [0,1] domain. Independent
+  accepted cells/rows survive. Identical normalized repeats remain harmless.
+  Probabilities are hundredths carried as floats, so a lead of exactly 0.10 counts. The
   margin comes from saved answers: the 60 saved role distributions and
   that 0.49 lead their runners-up by 0.00, 0.02, then 0.17, 0.21 and up,
   and 0.10 sits in the middle of that gap; on 1,072 saved eleven-option
@@ -394,7 +430,9 @@ The display-translation cube behind `--lang`
   is one probability and keeps its band (yes at 0.6 or above, no at 0.4 or
   below); a yes/no choice with a cutoff (`YesAt`) decides every row at it;
   ranked nouls keep their probability; a yes/no choice without a cutoff
-  follows the margin. A column marked `Alone` is a decision independent of
+  follows the margin. A cutoff choice still explicitly names a listed yes/no
+  option; missing/outside choices refuse its cell. The cutoff result depends
+  on the complete scores, so a valid chosen yes may still produce no. A column marked `Alone` is a decision independent of
   its row's others: when it is not decided, only that cell is left
   unanswered and journaled, and the row keeps its other decisions unless
   none was decided. A window whose every row was answered, even
@@ -402,28 +440,66 @@ The display-translation cube behind `--lang`
 
 Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
 
-A parts answer is not a coupled assignment: it is validated as independent
-unit → part rows, a unit being a whole file (`f*`) or one box of a split
-file (`c*`). An unknown ref is discarded, a unit named twice in one part is
-kept once, a unit listed in two parts loses both memberships (no first
-wins) and, like a unit left out, goes to one closed-choice placement
-follow-up; a group without a name or without a listed unit is not drawn and
-its units are left out. A group's list is `units`, or `files` (the form the
-answers to the file-only request wrote): the two given alike are one list,
-given differently they answer one row twice differently and refuse that
-group alone. A group given twice with the same name, ignoring case, and the
-same set of listed units is one answer and is drawn once; two groups that
-differ in name or in units keep the rules above, so a unit both list is a
-conflict. The list may also be one string of refs separated by spaces or
-commas; each ref is still checked. Only an answer that draws no part is
-refused whole: not JSON, no groups, or no group holding a listed unit of its
-own. An areas answer follows the same rules at part level: a part in
-two areas or in none stands alone, and an area given twice with the same name
-and the same parts is drawn once. A refused answer, including one cut at the
-output-token cap, is the window's refusal: it is not asked again, not
-accepted in part and not cached. Only an input too large for the provider,
-before sending or by its refusal of the input or context size, splits a parts
-window.
+Parts always use complete original-code discovery (`parts_discover.v5`),
+whole-scope responsibility synthesis (`parts_catalogue.v4`) and independent
+original-unit assignment (`parts_assign.v4`). Discovery and assignment preserve
+fitting request bytes and existing adaptive whole-row splitting. Only an actual
+input/context refusal for an indivisible original row tries the same lossless
+native dictionaries already used by finalization, with packed-only
+embedded wire instructions and the unchanged closed decoder and output reserve.
+The executor prepares that entire alternative; remaining input refusals stay
+terminal row refusals, while technical preparation errors remain fatal.
+Catalogue synthesis returns one combined scope/reading/responsibilities
+answer over all original interpretations. Local hypotheses are not mandatory
+final identities; the task asks for supported program-wide responsibilities
+without count quotas or local merges. The fixed name and advertised provisional
+intent guide assignment; only subsequent actual-member finalization supplies
+the public caption. Neither stage instruction gives the earlier intent public
+authority or allows an incomplete first answer to be repaired by a second root.
+These stages are followed by existing `atlas_describe` (`parts_describe.v3`) on each complete
+actual assigned set, then Jev's closed `atlas_parts_admission`
+(`parts_admission.v5`) before drawing. Finalization sees the same complete
+structural evidence, retains catalogue name and intent separately, keeps refs and
+members fixed, and returns a public title and concise purpose with closed complete owned-work
+and optional related-use rows. Its output allowance covers the complete
+response rather than the automatic one-unit description's 200 tokens. Missing
+or conflicting required work and known sources in the wrong scope refuse only
+that candidate, without catalogue-prose fallback or same-bytes retry. Unknown
+members and harmless forms use the ordinary owning decoder.
+Admission uniformly receives all accepted attributed work/use statements and
+their exact original source-row identities, not a second complete native body.
+Related use is context, not owned work. It evaluates coherence of these model
+interpretations; neither ref coverage nor admission proves all native jobs were
+described or their effects were truthful. This changes the owning question and
+assurance, not transport equivalence. Full native evidence stays in finalization,
+ProgramIndex and the report; ordinary source acceptance remains required. The one
+`common_purpose` answer admits the unchanged finalized candidate or preserves
+its typed refusal and sources. An entire candidate is
+indivisible under actual provider preparation; member-shard votes cannot prove
+whole-set cohesion. This stage uses ordinary request/cache identity, strict
+probability decoding, annotated journals and actual stage accounting. It does
+not synthesize, rename, reassign or repair a rejected candidate. Areas similarly use
+`areas_discover.v3`, `areas_catalogue.v3` and `areas_assign.v2` over complete
+original parts. Discovery and synthesis choose a closed complete scope and
+supply its reading plus independent hypotheses; they do not assign source
+members exclusively. The original inventory is aggregate provenance, not
+proof of every phrase. Missing or conflicting required scope/reading refuses
+its dependent catalogue. Invalid hypotheses lose only their own row, while
+accepted neighbours, complete readings and unnamed work survive.
+
+Final assignments choose only advertised responsibility identities. Unknown
+source refs are discarded. Missing, outside-choice or conflicting known-unit
+assignments lose only those memberships, without a placement repair. Whole
+files and native role boxes remain the original units. Accepted catalogue
+purposes remain unchanged through membership and report construction. Areas'
+explicit complete catalogue stop differs from all rows choosing `none` and
+from all known rows being refused. Object and array wrappers preserve these
+decisions; metadata never overrides them. A nonempty all-invalid catalogue
+cannot become an empty-list stop. A capacity refusal may divide complete
+inputs and independently rejoin every accepted reading under strictly smaller
+prepared representations; malformed semantics never authorize retry or local
+architecture. Configuration, payment, transport and persistence failures stay
+fatal at their ordinary owner.
 
 Validation preserves unambiguous formatting variants before checking meaning.
 Table choices with an advertised free-text tag normalize whitespace around its

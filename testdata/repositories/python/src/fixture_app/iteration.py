@@ -133,3 +133,17 @@ def checked_long(name):
             return name
         raise ValueError(name)
     return count(name)
+
+
+def checked_branches(name, ready, retry):
+    """Each call keeps the written condition and the arm at its own place."""
+    if ready:
+        count(name)
+    else:
+        report_long(name)
+    ready and retry and count(name)
+    ready or retry or report_long(name)
+    report_failure(name) if ready else describe(name)
+    match ready:
+        case True:
+            count(name)

@@ -105,6 +105,22 @@ func (c *Categorizer) Complete(_ context.Context, prepared llm.Prepared) (llm.Co
 			answers[key] = map[string]any{"type": "noul", "noul": *verdict.Yes}
 			continue
 		}
+		// Choose's certainty shorthand is completed only here, against this
+		// exact prepared question. Sparse model responses are never completed
+		// by the production decoder or by a made-up option inventory.
+		if len(verdict.Probabilities) == 1 && verdict.Probabilities[verdict.Choice] == 1 && len(verdict.InvalidProbabilities) == 0 {
+			probabilities := make(map[string]float64, len(question.Options))
+			known := false
+			for _, option := range question.Options {
+				probabilities[option.Name] = 0
+				if strings.EqualFold(strings.TrimSpace(option.Name), strings.TrimSpace(verdict.Choice)) {
+					probabilities[option.Name], known = 1, true
+				}
+			}
+			if known {
+				verdict.Probabilities = probabilities
+			}
+		}
 		answers[key] = map[string]any{"type": "choice", "choice": verdict.Choice, "probabilities": verdict.Probabilities}
 	}
 	c.mu.Lock()
@@ -126,7 +142,8 @@ func ByColumn(verdicts map[string]llm.Verdict) func(string, llm.Question) (llm.V
 // Yes answers a yes/no question with this probability of yes.
 func Yes(p float64) llm.Verdict { return llm.Verdict{Yes: &p} }
 
-// Choose picks one option with certainty.
+// Choose picks one option with certainty. The local preset writes explicit
+// zeroes for its actual prepared question's other options.
 func Choose(option string) llm.Verdict {
 	return llm.Verdict{Choice: option, Probabilities: map[string]float64{option: 1}}
 }

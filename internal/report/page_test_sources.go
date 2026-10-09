@@ -2,20 +2,20 @@ package report
 
 import (
 	"github.com/dvordrova/repomap/internal/groupindex"
-	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // overviewBuilder removes known testing material only from the orientation
 // view. The saved graph, full ProgramIndex, question evidence and source checks
 // retain every original declaration and connection.
 func (builder *pageBuilder) overviewBuilder() *pageBuilder {
+	builder.nativeFailure()
+	catalogue := builder.nativeCatalogue()
 	view := *builder
 	view.sourceIndexes = builder.indexes
-	var programs []programindex.Index
-	if builder.data != nil && builder.data.ProgramPortfolio != nil {
-		programs = builder.data.ProgramPortfolio.Entries
+	view.testPaths = groupindex.TestPaths(builder.indexes, nil)
+	for path := range catalogue.tests {
+		view.testPaths[path] = true
 	}
-	view.testPaths = groupindex.TestPaths(builder.indexes, programs)
 	// The test-free views and what they derive were computed once at
 	// analysis (groupindex.WithTestFreeViews): the page applies them and
 	// never derives.

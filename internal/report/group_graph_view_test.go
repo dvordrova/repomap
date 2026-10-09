@@ -441,6 +441,49 @@ func TestNearestDocstringIsTheOneAboveTheSymbol(t *testing.T) {
 	}
 }
 
+func TestExplicitDocstringOwnerHasNoDistanceOrDirectionHeuristic(t *testing.T) {
+	docs := []claims.Claim{
+		{Line: 35, DeclarationLine: 91, Text: "Transform the declared type."},
+		{Line: 105, Text: "An unbound quote after the declaration."},
+		{Line: 105, DeclarationLine: 104, Text: "A Python body docstring."},
+	}
+	for line, want := range map[int]string{35: "", 90: "", 91: "Transform the declared type.", 92: "", 104: "A Python body docstring."} {
+		if got := nearestDocstring(docs, []int{91, 92, 104, 106}, line); got != want {
+			t.Errorf("declaration %d: quote %q, want %q", line, got, want)
+		}
+	}
+}
+
+func TestJSTSReportKeepsUnboundAuthorOwnershipUnknown(t *testing.T) {
+	const source = "src/claims.ts"
+	builder := pageBuilder{docstrings: map[string][]claims.Claim{source: {
+		{Line: 1, Text: "Counts levels with an unknown native owner."},
+		{Line: 5, DeclarationLine: 7, DeclarationColumn: 3, Text: "Reads the authored count."},
+	}}, declarations: map[string][]int{source: {3, 4, 7, 8}}}
+	for line, want := range map[int]string{3: "", 4: "", 7: "Reads the authored count.", 8: ""} {
+		if got := builder.docstringFor(source, line, 3); got != want {
+			t.Errorf("declaration %d: quote %q, want %q", line, got, want)
+		}
+	}
+}
+
+func TestJSTSReportMatchesExactNativeNameColumn(t *testing.T) {
+	const source = "src/claims.ts"
+	builder := pageBuilder{docstrings: map[string][]claims.Claim{source: {
+		{Line: 1, Column: 1, DeclarationLine: 2, DeclarationColumn: 14, Text: "Describes the first variable."},
+		{Line: 3, DeclarationLine: 4, Text: "An old name-line-only quote stays unbound."},
+	}}}
+	for _, row := range []struct {
+		line, column int
+		want         string
+	}{{2, 14, "Describes the first variable."}, {2, 25, ""}, {2, 0, ""}, {4, 14, ""}} {
+		anchor := (pageLinks{}).anchor(source, row.line, row.column)
+		if got := builder.docstringFor(anchor.Path, anchor.Line, anchor.Column); got != row.want {
+			t.Errorf("native %d:%d: %q, want %q", row.line, row.column, got, row.want)
+		}
+	}
+}
+
 // The root README gets the most room, a nested one a line or two, and the
 // page quotes at most eight README sentences in all.
 func TestReadmeClaimsQuoteEveryReadmeShallowestFirst(t *testing.T) {

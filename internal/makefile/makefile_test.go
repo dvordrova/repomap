@@ -67,3 +67,48 @@ func TestReadTakesTheDefaultGoalVariable(t *testing.T) {
 		t.Fatalf("rows %+v", rows)
 	}
 }
+
+// Every advertised recipe needs its definitions, including transitive values
+// and a non-runnable prerequisite's commands. The default build names none of
+// these variables; a cyclic definition still stays finite and as written.
+func TestReadNonDefaultRecipesKeepTheirVariableDefinitions(t *testing.T) {
+	flags := "-std=c99 -O2 -g -Wall -Wextra -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wpointer-arith -Wcast-qual -D_DEFAULT_SOURCE -DLOOP_POLL"
+	rows := Read([]string{
+		"PORTABLE_CFLAGS = $(BASE_FLAGS) " + flags,
+		"BASE_FLAGS = -Wundef",
+		"AS_AUTORECONFIG = $(AUTORECONF) -fi",
+		"AUTORECONF = autoreconf",
+		"VERIFY_CC = $(CC)",
+		"CYCLIC = $(CYCLIC) -Wextra",
+		"UNUSED = not-a-build-input",
+		"all: app",
+		"app: main.o",
+		"portable:",
+		"\t$(MAKE) CFLAGS=\"$(PORTABLE_CFLAGS)\" all",
+		"configure:",
+		"\t$(AS_AUTORECONFIG)",
+		"verify: verify.o",
+		"verify.o: verify.c",
+		"\t$(VERIFY_CC) $(CYCLIC) -c verify.c",
+	})
+	byKey := map[string]Row{}
+	for _, row := range rows {
+		byKey[row.Key] = row
+	}
+	for _, want := range []Row{
+		{Key: "variable.PORTABLE_CFLAGS", Value: "$(BASE_FLAGS) " + flags, Line: 1},
+		{Key: "variable.BASE_FLAGS", Value: "-Wundef", Line: 2},
+		{Key: "variable.AS_AUTORECONFIG", Value: "$(AUTORECONF) -fi", Line: 3},
+		{Key: "variable.AUTORECONF", Value: "autoreconf", Line: 4},
+		{Key: "variable.VERIFY_CC", Value: "$(CC)", Line: 5},
+		{Key: "variable.CYCLIC", Value: "$(CYCLIC) -Wextra", Line: 6},
+		{Key: "rule.portable", Value: "— runs: $(MAKE) CFLAGS=\"$(PORTABLE_CFLAGS)\" all", Line: 10},
+	} {
+		if got, ok := byKey[want.Key]; !ok || got != want {
+			t.Fatalf("%s = %+v, found %v; want %+v", want.Key, got, ok, want)
+		}
+	}
+	if _, included := byKey["variable.UNUSED"]; included {
+		t.Fatal("unreferenced variable became a run-relevant definition")
+	}
+}

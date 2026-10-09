@@ -313,7 +313,7 @@ func TestShadowBuildIsAClojureScriptProgram(t *testing.T) {
 	}
 	defer repository.Close()
 	builds, err := ScoutShadow(repository)
-	if err != nil || len(builds) != 1 {
+	if err != nil || len(builds) != 2 {
 		t.Fatalf("builds: %v %v", builds, err)
 	}
 	build := builds[0]
@@ -360,6 +360,83 @@ func TestShadowBuildIsAClojureScriptProgram(t *testing.T) {
 	for _, object := range index.Objects {
 		if object.External != nil && object.External.PackagePath == "java.lang.System" {
 			t.Fatal("the JVM branch leaked into the ClojureScript build")
+		}
+	}
+}
+
+func TestSharedProtocolDeclarationsKeepNativeKinds(t *testing.T) {
+	root, err := filepath.Abs("../../testdata/repositories/clojure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := corpus.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	jvm, err := Scout(repository, "clojure")
+	if err != nil || len(jvm) != 1 {
+		t.Fatalf("JVM targets: %v %v", jvm, err)
+	}
+	cljs, err := ScoutShadow(repository)
+	if err != nil || len(cljs) != 2 {
+		t.Fatalf("ClojureScript targets: %v %v", cljs, err)
+	}
+	want := map[string]p.ObjectKind{
+		"example.service/Reporter":             p.ObjectType,
+		"example.service/report!":              p.ObjectFunction,
+		"example.service/protocol-placeholder": p.ObjectVariable,
+		"example.service/Report":               p.ObjectType,
+		"example.service/->Report":             p.ObjectFunction,
+		"example.service/map->Report":          p.ObjectFunction,
+		"example.service/ReportBox":            p.ObjectType,
+		"example.service/->ReportBox":          p.ObjectFunction,
+	}
+	shared := make(map[string]p.Object)
+	for _, target := range []Target{jvm[0], cljs[0]} {
+		result, err := Build(t.Context(), root, repository, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index, err := p.New(result.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := make(map[string]bool)
+		objects := make(map[string]p.Object, len(index.Objects))
+		for _, object := range index.Objects {
+			objects[object.ID] = object
+			kind, needed := want[object.Name]
+			if !needed {
+				continue
+			}
+			if seen[object.Name] || object.Kind != kind || object.Location == nil || object.Location.Path != "src/example/service.cljc" {
+				t.Fatalf("%s lost original declaration identity/kind: %+v", target.Selector, object)
+			}
+			seen[object.Name] = true
+			if previous, exists := shared[object.Name]; exists {
+				if previous.Kind != object.Kind || *previous.Location != *object.Location {
+					t.Fatalf("shared declaration cannot bind across native views: %+v / %+v", previous, object)
+				}
+			} else {
+				shared[object.Name] = object
+			}
+		}
+		if len(seen) != len(want) {
+			t.Fatalf("%s missing protocol declarations: %v", target.Selector, seen)
+		}
+		methodCall := false
+		for _, relation := range index.Relations {
+			if relation.Kind != p.RelationCalls || objects[relation.FromID].Name != "example.service/report-message!" {
+				continue
+			}
+			if len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "example.service/report!" || objects[relation.ToIDs[0]].Kind != p.ObjectFunction {
+				t.Fatalf("native protocol call acquired an implementation: %+v", relation)
+			}
+			methodCall = true
+		}
+		if !methodCall {
+			t.Fatalf("%s lost the call of the original protocol method declaration", target.Selector)
 		}
 	}
 }

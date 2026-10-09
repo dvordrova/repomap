@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
@@ -384,10 +385,14 @@ func countLines(lines map[int]bool, first, last int) int {
 	return count
 }
 
-// Documentation is a literal author quote attached to its declaration line.
+// Documentation retains the literal quote site and owning reader form start.
+// Namespace prose remains a file claim with no symbol declaration binding.
 type Documentation struct {
-	Line int
-	Text string
+	Line              int
+	Column            int
+	DeclarationLine   int
+	DeclarationColumn int
+	Text              string
 }
 
 func Docstrings(data []byte) []Documentation {
@@ -410,9 +415,24 @@ func Docstrings(data []byte) []Documentation {
 		if err != nil {
 			continue
 		}
-		docs = append(docs, Documentation{Line: source.location("source.clj", quote.start).Line, Text: text})
+		quoteSite := documentationLocation(source, quote.start)
+		owner := documentationLocation(source, node.start)
+		if name == "ns" {
+			owner = &programindex.Location{} // Namespace prose remains the file description.
+		}
+		docs = append(docs, Documentation{Line: quoteSite.Line, Column: quoteSite.Column, DeclarationLine: owner.Line, DeclarationColumn: owner.Column, Text: text})
 	}
 	return docs
+}
+
+// clj-kondo reports JVM UTF16 columns; source splitting retains rune offsets.
+func documentationLocation(s source, offset int) *programindex.Location {
+	site := s.location("source.clj", offset)
+	site.Column = 1
+	for _, r := range s.text[s.lines[site.Line-1]:offset] {
+		site.Column += utf16.RuneLen(r)
+	}
+	return site
 }
 
 // caseComparison is a `(case value "a" … "b" … default)` form at site as a

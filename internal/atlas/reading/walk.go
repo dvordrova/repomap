@@ -193,7 +193,9 @@ func (r *reader) join(view *reader, chain []string) {
 			r.wordCalls, r.sites = view.wordCalls, view.sites
 		case lines.StageZones:
 			r.boxes, r.designBoxOf, r.offMap, r.mapFailure = view.boxes, view.designBoxOf, view.offMap, view.mapFailure
+			r.refusedParts = view.refusedParts
 			r.helperOf = view.helperOf
+			r.treeZones = view.treeZones
 			r.designSubjects = view.designSubjects
 			r.nextPart = view.nextPart
 		case lines.StageAreas:

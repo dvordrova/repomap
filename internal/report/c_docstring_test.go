@@ -42,3 +42,12 @@ func TestCDocstringsDescribeOnlyTheirOwnDeclaration(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeCommentCardsUseExactSourceTuple(t *testing.T) {
+	for _, source := range []string{"native.c", "native.clj"} {
+		builder := pageBuilder{docstrings: map[string][]claims.Claim{source: {{Source: claims.SourceDocstring, Path: source, Line: 1, DeclarationLine: 2, DeclarationColumn: 5, Text: "The first declaration owns this description."}}}, declarations: map[string][]int{source: {2, 2}}}
+		if builder.docstringFor(source, 2, 5) == "" || builder.docstringFor(source, 2, 35) != "" {
+			t.Fatalf("same-line cards leaked owner for %s", source)
+		}
+	}
+}

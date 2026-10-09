@@ -184,10 +184,9 @@ func TestFreeViews(indexes []Index, testPaths map[string]bool) []Index {
 			container.GroupIDs = slices.DeleteFunc(slices.Clone(container.GroupIDs), func(id string) bool {
 				return !visibleGroups[Endpoint{TargetID: index.Target.ID, GroupID: id}]
 			})
-			if len(container.GroupIDs) > 0 {
-				projected.Containers = append(projected.Containers, container)
-			}
+			projected.Containers = append(projected.Containers, container)
 		}
+		projected.Containers = pruneEmptyContainers(projected.Containers)
 		views[i] = projected
 	}
 	for i, view := range views {

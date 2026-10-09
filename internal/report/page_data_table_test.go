@@ -148,3 +148,51 @@ func TestThePageScriptReadsTheCompactDataBackExactly(t *testing.T) {
 `+strings.Replace(script, "var rmPage", "var page_", 1)+checks)
 	}
 }
+
+// A component's complete reading survives the ordinary shared table, including
+// nested alternatives and the independent work formerly printed in hidden HTML.
+func TestThePageScriptReadsTheCompleteComponentFlowBackExactly(t *testing.T) {
+	for _, host := range []struct{ base, sep string }{{"https://github.com/o/r/blob/abc/", "-L"}, {"https://gitlab.com/o/r/-/blob/abc/", "-"}, {"", "-L"}} {
+		at := &pageAnchor{Path: "flow.c", Line: 7, Text: "flow.c:7", key: "flow.c:7:12:function:run", NoSource: host.base == ""}
+		if host.base != "" {
+			at.Href = host.base + "flow.c#L7"
+			at.Code = at.Href + host.sep + "19"
+		} else {
+			at.Open = "source-7:7"
+		}
+		guard := &pageGuard{Key: "on an error path", ConditionKey: "only if", Condition: "ready && size < limit", At: at}
+		name := pageStepName{Name: "run", Part: "#t1-g1", Key: at.Key(), Code: at.Code, Open: at.Open, Guard: guard, Loop: at, Possible: true, Handed: true, Implemented: true, HandedTo: "scheduler"}
+		name.Through = []pageStepName{{Name: "helper", Key: "flow.c:2:4:function:helper", Code: host.base + "flow.c#L2"}}
+		leaf := pageFlowStep{Label: "run", Target: "worker", Part: name.Part, Key: name.Key, Anchor: at, Explanation: "Works.", ExplanationRef: "explain-1", TypeName: "Worker", TypeLine: "An independent worker.", TypeLineRef: "type-1", Via: "called", ViaKey: "handed to {0}", ViaArg: "scheduler", ViaFrom: &name, Through: []pageStepName{name}, Implemented: true, Guard: guard, Loop: at, Back: &name, BackIf: guard, Stop: "The path stops here.", Joins: []pageStepName{name}, OpenAt: at, OneOf: true, PartHead: "#t1-g1", Registers: []pageStepRegistration{{By: []pageStepName{name}, At: at}}, RunBy: [][]pageStepName{{name}}, Handles: []pageFlowHandles{{Words: "handles the requests:", Names: []pageFlowInput{{Name: "GET /", Input: "t1-o1"}}, Folded: true}}}
+		root := leaf
+		root.Ways = []pageFlowWay{{Head: leaf, Rest: []pageFlowStep{leaf}, Folded: true}, {Head: leaf}}
+		root.Passed = &pageFlowFork{Label: "passed", From: &name, Names: []pageStepName{name}, OneOf: true}
+		root.Handed = root.Passed
+		root.Fork = root.Passed
+		section := &pageSection{Flow: &pageFlow{Parts: []pageFlowPart{{Title: "Workers", TitleRef: "part-1", Href: "#t1-g1"}, {Title: "Alternative", Href: "#t1-g2", Or: true}}, Steps: []pageFlowStep{root}},
+			Start:          []pageStart{{Symbol: "run", Anchor: at, Group: "Workers", Href: "#t1-g1", Part: "#t1-g1", Key: name.Key, Code: at.Code, Reaches: []pageConnection{{Label: "calls", Href: "#t1-g2", Title: "Other", FromSource: at}}, Calls: []pageOwnCall{{Anchor: at, Unresolved: true, Implementers: []string{"Worker.run"}}, {More: true}}, Silent: true}},
+			StartElsewhere: []pageElsewhere{{Group: "Workers", Href: "#t1-g1", Rows: []pageConnection{{FromSource: at, Label: "Calls", Href: "#t1-g2", Title: "Other"}}, Uses: []pageConnection{{Href: "#t2-g1", Title: "Types", OtherTarget: "Library"}}}},
+			OwnWork:        []pageOwnWork{{pageFlowStep: leaf, Input: "t1-o1"}}}
+		original, err := section.FlowJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := newPageDataRange(host.base, host.sep)
+		ref, err := data.ref("componentFlow", original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := data.JSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := systemJSPiece(t, "10-ui.js", "var rmPage = (function () {", "})();") + "})();\n"
+		encoded, _ := json.Marshal(string(raw))
+		runSystemJS(t, `const document={getElementById(){return {textContent:`+string(encoded)+`};}};
+`+strings.Replace(script, "var rmPage", "var completeFlow", 1)+`
+const owner={dataset:{componentFlow:'`+ref+`'}};
+assert.deepEqual(completeFlow.data(owner,'componentFlow'),`+original+`,'every saved flow field survives');
+assert.equal(completeFlow.data(owner,'componentFlow'),completeFlow.data(owner,'componentFlow'),'one shared decoded reading');
+`)
+	}
+}

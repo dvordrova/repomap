@@ -5,7 +5,7 @@
 // dumb renderer; one store holds the level, the pointer and the choice; one
 // hitTest answers hover and click; the overlay keeps markers and ports at
 // one screen size (overlay.mjs).
-import React,{createContext,useContext,useEffect,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
+import React,{useEffect,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow,Handle,Position,useStore} from '@xyflow/react';
@@ -32,7 +32,7 @@ const sameSet=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
 
 // The words a box shows at its level's text size, each of its title, role
 // and description whole or not at all (levels.mjs cardWords, programWords).
-const wordsOf=(node,item)=>node.display==='program'?programWords({...node,item},node.rect.width/node.text,measure)
+const wordsOf=(node,item)=>['program','area'].includes(node.display)?programWords({...node,item},node.rect.width/node.text,measure)
   :cardWords(node,item?.summary||'',measure,{room:node.enter?24:0});
 function Mark({icon,className='',label='',kind=''}){
   if(!icon)return <span className={`scene-dot ${className}`} aria-hidden={label?undefined:'true'}/>;
@@ -48,122 +48,34 @@ function Scaled({node,className='',children,style,data}){
 }
 const handles=<><Handle type="target" position={Position.Top} isConnectable={false}/><Handle type="source" position={Position.Bottom} isConnectable={false}/></>;
 
-// Where the boxes inside a closed box stand, as faint outlines: never a
-// blank box (PLAN B).
-function Ghosts({node,className=''}){
-  if(!node.ghosts?.length)return null;
-  // Inside the card's border: the outline overflows nothing.
-  const w=node.rect.width/node.text,h=node.rect.height/node.text;
-  return <svg className={`scene-ghosts ${className}`} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
-    {node.ghosts.map((r,i)=><rect key={i} x={(r.x-node.rect.x)/node.text} y={(r.y-node.rect.y)/node.text} width={r.width/node.text} height={r.height/node.text} rx={Math.min(9,r.width/node.text/12)}/>)}</svg>;
-}
 function CardNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title]);
-  const held=useRef(null),inSight=useWordsInSight(node,held);
   // A closed part holding the declaration chosen shows it alone as its
   // tile under its title (owner, 2026-09-29), in place of its description.
   if(data.tile&&words.title.length)return <>{handles}<Scaled node={node} className={`flow-part ${laneClass(node.lane)}`}>
-    <div className="scene-words" ref={held} style={inSight}><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
+    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
       <span className="scene-chosen-tile" title={data.tile.full||data.tile.name}>{data.tile.name}</span></div></Scaled></>;
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
-    <Ghosts node={node} className={node.display==='card'?'scene-part-ghosts':''}/>
-    {node.display==='area'&&['core','triggers'].includes(node.lane)&&<span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/>}
-    <div className="scene-words" ref={held} style={inSight}>{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
+    <div className="scene-words">{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
     {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>
   </Scaled></>;
 }
 function ProgramNode({data}){
   const {node}=data,item=data.item;
-  const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.title]);
-  const held=useRef(null),inSight=useWordsInSight(node,held);
-  return <>{handles}<Scaled node={node} className="scene-program-card" data={{'data-component-overview':node.id}}>
-    <Ghosts node={node} className="scene-program-ghosts"/>
-    <div className="scene-words" ref={held} style={inSight}><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
+  const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title,node.contents,item]);
+  return <>{handles}<Scaled node={node} className={`scene-program-card ${node.display==='area'?`flow-part scene-area-card ${laneClass(node.lane)}`:''}`} data={node.display==='area'?{'data-summary-area':node.id}:{'data-component-overview':node.id}}>
+    <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
     {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}{' '}
-    {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}</div>
-  </Scaled></>;
-}
-// The camera and the canvas, for what a box keeps in sight (useStuck).
-const SceneCamera=createContext(null);
-const noSubscribe=()=>()=>{};
-// A frame's title stays in sight while its body is (owner via the
-// coordinator, 2026-10-02: an entered input's Inputs frame had read
-// "puts", othello's program "hello"): where the frame's left edge is out of
-// the canvas, its title moves in along its own band, never out of the
-// frame (an offset in world units); where its top is, the overlay names it
-// at the canvas's top (StuckTitles).
-function useStuck(node,titleWidth){
-  const scene=useContext(SceneCamera);
-  const key=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>{
-    if(!scene)return 0;
-    const v=scene.camera.get(),{width}=scene.size(),z=v.zoom,r=node.rect,pad=6;
-    const left=r.x*z+v.x,right=left+r.width*z;
-    if(right<titleWidth*z||left>width)return 0;
-    return Math.round(Math.max(0,Math.min(pad-left,(r.width-titleWidth)*z))/z);
-  });
-  return key;
-}
-// A closed box's words stay in sight while the part of it in sight can
-// hold them (owner via the coordinator, 2026-10-02: etcd's "gRPC proxy"
-// and casdoor's "Email providers" had lost their names past the canvas's
-// edge): where its left or top edge is out of the canvas, its words move
-// in, never out of the box (an offset in the box's own pixels); where its
-// right or bottom edge is, they move left or up into its padding, never
-// past its border (synthetic-no-inputs' Report queue: its neighbour
-// "Invoice audit", cut at the canvas's foot, had its words cut 10 pixels
-// though the card's top in sight held them; harness table, 60e7ea98).
-// The words are measured once, at their own size; drawn larger than 1.6
-// times it they are drawn at that (scene.css), a block centred in its box
-// (`centred`, a part-group's) staying centred.
-function useWordsInSight(node,ref,centred=false){
-  const scene=useContext(SceneCamera);
-  const [at,setAt]=useState(null);
-  // A card's border keeps its screen width (scene.css): its border and
-  // padding stand 14 of its pixels deep while the border is the thinner,
-  // and the words are measured again when that begins (measured on a far
-  // camera, they had stood at the card's very edge).
-  const thin=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>!!scene&&scene.camera.get().zoom*node.text>=.1);
-  useLayoutEffect(()=>{
-    const el=ref.current;if(!el)return;
-    // At their own size, whatever the camera (scene.css .scene-words-natural).
-    el.classList.add('scene-words-natural');
-    let x=0,y=0;for(let a=el;a&&!a.classList.contains('scene-scaled');a=a.offsetParent){x+=a.offsetLeft;y+=a.offsetTop;}
-    const width=el.offsetWidth,height=el.offsetHeight;
-    // The gaps between the words' lines keep their size when the words are
-    // drawn smaller (scene.css .scene-words).
-    const gaps=Math.max(0,height-[...el.children].reduce((sum,child)=>sum+child.offsetHeight,0));
-    el.classList.remove('scene-words-natural');
-    // From the box's outer edge, its border counted.
-    const scaled=el.closest('.scene-scaled'),edges=scaled?getComputedStyle(scaled):null;
-    const bl=edges?parseFloat(edges.borderLeftWidth)||0:0,bt=edges?parseFloat(edges.borderTopWidth)||0:0;
-    x+=bl;y+=bt;
-    // How far they may go: the inside of the box that holds them (a card's
-    // padding, a part-group's front card).
-    const holder=el.offsetParent||el.parentElement,style=getComputedStyle(holder);
-    const from=holder.classList.contains('scene-scaled')?{x:bl,y:bt}:{x:holder.offsetLeft+bl,y:holder.offsetTop+bt};
-    const right=from.x+holder.clientWidth-parseFloat(style.paddingRight||'0'),bottom=from.y+holder.clientHeight-parseFloat(style.paddingBottom||'0');
-    setAt({x,y:centred?y+height/2:y,width,height,gaps,right,bottom});
-  },[node.rect.width,node.rect.height,node.text,node.title,thin]);
-  const key=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>{
-    if(!scene||!at)return '';
-    const v=scene.camera.get(),{width:W,height:H}=scene.size(),z=v.zoom*node.text,r=node.rect,pad=6,border=4,capped=Math.min(1,1.6/z);
-    const width=at.width*capped,height=(at.height-at.gaps)*capped+at.gaps,y=centred?at.y-height/2:at.y;
-    const left=r.x*v.zoom+v.x+at.x*z,top=r.y*v.zoom+v.y+y*z;
-    let dx=Math.max(0,Math.min((pad-left)/z,at.right-at.x-width));
-    // Under the frames' names at the canvas's top, never behind them.
-    const shifted=left+dx*z,below=scene.under?.(shifted,shifted+width*z)||0;
-    let dy=Math.max(0,Math.min((Math.max(pad,below+pad)-top)/z,at.bottom-y-height));
-    // Left or up only where the box's part in sight holds them, from its
-    // own edge or the canvas's: a box all but out of sight keeps them where
-    // they stand (casdoor's Outside buckets at the canvas's foot had had
-    // their centred words pulled to their tops).
-    const roomX=(W-pad)-Math.max(r.x*v.zoom+v.x,pad),roomY=(H-pad)-Math.max(r.y*v.zoom+v.y,pad);
-    if(!dx&&roomX>=width*z)dx=-Math.max(0,Math.min((left+width*z-(W-pad))/z,at.x-border));
-    if(!dy&&roomY>=height*z)dy=-Math.max(0,Math.min((top+height*z-(H-pad))/z,y-border));
-    return Math.abs(dx)>=.5||Math.abs(dy)>=.5?`${Math.round(dx)}px,${Math.round(dy)}px`:'';
-  });
-  return key?{transform:`translate(${key})`}:undefined;
+    {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}
+    {words.contents.length>0&&<ul className="scene-program-inside nodrag" onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()} style={{height:node.inventoryHeight}} aria-label={t('Parts')}>
+      {words.contents.map(child=><li key={child.id}><button type="button" data-program-child={child.id}
+        onClick={event=>{event.stopPropagation();data.open(child.id,event);}}>{child.lines.join('\n')}</button></li>)}
+    </ul>}</div>
+  </Scaled>
+    {node.display==='area'&&['core','triggers'].includes(node.lane)&&<Scaled node={node} className="scene-role-layer" style={{width:0,height:0}}>
+      <span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/></Scaled>}
+  </>;
 }
 function FrameNode({data}){
   const {node}=data,kind=node.kind;
@@ -171,13 +83,10 @@ function FrameNode({data}){
     :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   const titleText=node.titleText||node.text,band=units.band(1)*titleText;
-  const dx=useStuck(node,Math.min(node.rect.width,(measure(title,'700 17px system-ui')+40)*titleText));
-  const scene=useContext(SceneCamera);
-  const named=useSyncExternalStore(scene?scene.camera.subscribe:noSubscribe,()=>!!scene?.stuck(node.id));
   return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}>
-    <div className="scene-frame-title-place" style={dx?{transform:`translate(${dx}px,0)`}:undefined}>
+    <div className="scene-frame-title-place">
     <Scaled node={{...node,text:titleText,rect:{...node.rect,height:band}}} className="scene-frame-title" style={{'--scene-text':titleText}}>
-      <strong data-box-title={node.id} data-frame-title={node.id} data-title-stuck={dx?'':undefined} style={named?{visibility:'hidden'}:undefined}>{title}</strong></Scaled></div>
+      <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled></div>
   </div></>;
 }
 // An Inputs frame closed: its title over its kinds' marks, each named on
@@ -186,9 +95,11 @@ function InputsNode({data}){
   const {node,groups}=data;
   return <>{handles}<Scaled node={node} className="flow-area flow-input-collection scene-inputs-card" data={{'data-component-overview':node.id}}>
     <strong data-box-title={node.id}>{t('Inputs')}</strong>
-    {node.kinds.map((entry,i)=><span key={entry.kind} className={`scene-kind-mark ${groups[i]?.lit?'flow-lit':''}`} title={t(inputKindTitles[entry.kind])}
+    {node.kinds.map((entry,i)=><button type="button" key={entry.kind} className={`scene-kind-mark nodrag ${groups[i]?.lit?'flow-lit':''}`} title={t(inputKindTitles[entry.kind])} aria-label={t(inputKindTitles[entry.kind])}
+      onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()}
+      onClick={event=>{event.stopPropagation();data.kind(entry,event);}}
       data-input-group-kind={entry.kind} style={{left:(entry.rect.x-node.rect.x)/node.text,top:(entry.rect.y-node.rect.y)/node.text,width:entry.rect.width/node.text,height:entry.rect.height/node.text}}>
-      <Mark icon={kindIcon(entry.kind)} kind={entry.kind}/></span>)}
+      <Mark icon={kindIcon(entry.kind)} kind={entry.kind}/></button>)}
   </Scaled></>;
 }
 function GroupNode({data}){
@@ -216,9 +127,8 @@ function ChipNode({data}){
 // skeptic's verdict: a group had read as one more outside system).
 function BucketNode({data}){
   const {node}=data;
-  const held=useRef(null),inSight=useWordsInSight(node,held,true);
   return <>{handles}<Scaled node={node} className="flow-chip scene-bucket scene-bucket-stack" data={focusable(data)}>
-    <span className="scene-bucket-face"><span className="scene-bucket-words" ref={held} style={inSight}><span className="flow-chip-name" title={node.title}>{node.title}</span>
+    <span className="scene-bucket-face"><span className="scene-bucket-words"><span className="flow-chip-name" title={node.title}>{node.title}</span>
     <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></span></span></Scaled></>;
 }
 function NoteNode({data}){
@@ -237,7 +147,7 @@ function DeepNode({data}){
     <PartSymbols symbols={item.symbols} calls={item.symbolCalls} width={box.width} height={box.height} grid={grid} member={member}/>
   </div></>;
 }
-const nodeTypes={card:CardNode,area:CardNode,deep:DeepNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,kindgroup:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
+const nodeTypes={card:CardNode,area:ProgramNode,deep:DeepNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,kindgroup:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
 
 const arrowHead=7;
 function SceneEdge({id,data}){
@@ -290,13 +200,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   };
   const store=createStore(sceneReducer({model,geometry:()=>geometry,scene:()=>sceneOf(store.getState())}),initialState);
   const camera=createCamera(geometry.home);
-  // The frames named at the canvas's top (stuckNames), for a frame to hide
-  // what is left of its own title under its name there.
-  let stuckMemo={list:[]};
-  const sceneCamera={camera,size,stuck:id=>stuckNames(sceneOf(store.getState()),camera.get()).some(name=>name.id===id),
-    // How far down the frames' names at the canvas's top reach across a
-    // stretch of it.
-    under:(left,right)=>Math.max(0,...stuckNames(sceneOf(store.getState()),camera.get()).filter(name=>name.x<right&&name.right>left).map(name=>name.bottom))};
+  const clearPointerCursor=()=>host.classList.remove('scene-pointing-arrow','scene-pointing-zoom','scene-pointing-mark');
+  camera.subscribe(clearPointerCursor);
   let instance=null,initializing=true,overviewFit='rest';
   const look=createLook();
   let lookTimer,handleRect=null;
@@ -322,11 +227,21 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   }
   // The camera: a level's frame whole at its reading size, or its first
   // corner when it is larger than the canvas.
-  function frameCamera(rect,minZoom=0,pad=28,maxZoom=Infinity){
+  // A level larger than the canvas is framed by what it draws (`content`,
+  // its boxes' bounds), centred where that fits and from its first corner
+  // where it does not: the frame's own corner had been empty margin
+  // (nats-server's and Metabase's components opened on blank canvas).
+  function frameCamera(rect,minZoom=0,pad=28,maxZoom=Infinity,content=null){
     const {width,height}=size(),fit=Math.min((width-2*pad)/rect.width,(height-2*pad)/rect.height);
     const zoom=Math.max(Math.min(fit,maxZoom),minZoom);
-    const x=rect.width*zoom<=width-2*pad?(width-rect.width*zoom)/2-rect.x*zoom:pad-rect.x*zoom;
-    const y=rect.height*zoom<=height-2*pad?(height-rect.height*zoom)/2-rect.y*zoom:pad-rect.y*zoom;
+    const along=(start,length,room)=>{
+      if(length*zoom<=room-2*pad)return null;
+      const inner=content?{start:content[start==='x'?'x':'y'],length:content[start==='x'?'width':'height']}:null;
+      if(inner&&inner.length*zoom<=room-2*pad)return (room-inner.length*zoom)/2-inner.start*zoom;
+      return pad-(inner?inner.start:rect[start])*zoom;
+    };
+    const x=along('x',rect.width,width)??(width-rect.width*zoom)/2-rect.x*zoom;
+    const y=along('y',rect.height,height)??(height-rect.height*zoom)/2-rect.y*zoom;
     return {x,y,zoom};
   }
   function moveCamera(view,smooth=true){
@@ -351,7 +266,12 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function enter(level,{rect=null,smooth=true}={}){
     store.dispatch({type:'enter',level});
     const scene=sceneOf(store.getState());
-    return moveCamera(frameCamera(rect||scene.focus,levelZoom(level),28,readCap(level)),smooth);
+    return moveCamera(frameCamera(rect||scene.focus,levelZoom(level),28,readCap(level),rect?null:contentOf(scene,level)),smooth);
+  }
+  // What a level draws inside its frame: the bounds of its own boxes.
+  function contentOf(scene,level){
+    const inner=level.at(-1),inside=scene.nodes.filter(node=>node.id!==inner&&node.rect&&model.parent(node.id)===inner);
+    return inside.length?bounds(inside.map(node=>node.rect)):null;
   }
   // The whole map's two cameras (levels.mjs homeView): at rest, as close as
   // its names read; "Show whole map", all of it. They are one where the
@@ -382,14 +302,21 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       }
       return showInput(id,smooth);
     }
-    const level=node.kind==='part'?chainOf(model,id).filter(at=>at!==id):enterLevelOf(id);
-    const rect=geometry.boxes.get(id)||geometry.scales.get(id)?.frame;
+    // A thing deeper than the canvas draws open is shown at its nearest
+    // drawn level, on its nearest drawn box (levels.mjs units.openDepth).
+    const drawn=at=>model.nodes.get(at)?.kind!=='area'||geometry.local.has(at);
+    const full=node.kind==='part'?chainOf(model,id).filter(at=>at!==id):enterLevelOf(id);
+    const cut=full.findIndex(at=>!drawn(at));
+    const level=cut<0?full:full.slice(0,cut);
+    let rect=geometry.boxes.get(id)||geometry.scales.get(id)?.frame;
+    for(let at=model.parent(id);!rect&&at;at=model.parent(at))rect=geometry.boxes.get(at);
     // A thing in sight, or the level itself, is only marked: the camera
     // moves only to what is out of sight (owner, 2026-09-28).
     const current=store.getState().level;
     if(!center&&(current.includes(id)||sceneOf(store.getState()).nodes.some(node=>node.id===id)&&rect&&inSight(rect)))return;
     store.dispatch({type:'enter',level});
-    if(rect)moveCamera(frameCamera(rect,levelZoom(level),28,readCap(level)),smooth);
+    const entered=level.at(-1)===id?contentOf(sceneOf(store.getState()),level):null;
+    if(rect)moveCamera(frameCamera(rect,levelZoom(level),28,readCap(level),entered),smooth);
   }
   // A frame is shown entered; a chip or a closed collection at its level.
   function enterLevelOf(id){
@@ -482,7 +409,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       return;
     }
     const node=target.node;
-    if(target.kind){
+    if(target.group){
       const kinds=[...new Set(model.nodes.get(target.group).children.map(id=>model.nodes.get(id)?.item?.activation).filter(Boolean))];
       if(callbacks.readKind)callbacks.readKind(node.id,kinds);else read(node.id,event);
       return;
@@ -506,18 +433,23 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const box=host.getBoundingClientRect(),v=camera.get();
     return {x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
   };
-  const onCard=event=>!!event.target.closest?.('.flow-floating-card');
+  const onCard=event=>!!event.target.closest?.('.flow-floating-card,.scene-program-inside,[data-input-group-kind]');
   // A press that moves the pointer or the camera is a drag: the click
   // ending it acts on nothing.
   // A press ends a look not yet opened: an arrow's card does not open under
   // the pointer while it drags the map, at the place it was pressed.
-  host.addEventListener('pointerdown',event=>{const v=camera.get();down={x:event.clientX,y:event.clientY,camera:{x:v.x,y:v.y,zoom:v.zoom},moved:false};if(look.pending&&!onCard(event))look.abandon(look.pending);},true);
+  host.addEventListener('pointerdown',event=>{clearPointerCursor();const v=camera.get();down={x:event.clientX,y:event.clientY,camera:{x:v.x,y:v.y,zoom:v.zoom},moved:false};if(look.pending&&!onCard(event))look.abandon(look.pending);},true);
   host.addEventListener('pointermove',event=>{if(down&&event.buttons&&Math.hypot(event.clientX-down.x,event.clientY-down.y)>4)down.moved=true;},true);
   host.addEventListener('pointermove',event=>{
     if(initializing||event.buttons)return;
-    if(onCard(event))return;
+    if(onCard(event)){clearPointerCursor();return;}
     const scene=sceneOf(store.getState()),target=hitTest(scene,worldAt(event),camera.get().zoom,shownEdge);
     host.classList.toggle('scene-pointing-arrow',target?.type==='edge');
+    host.classList.toggle('scene-pointing-zoom',target?.type==='zoom');
+    host.classList.toggle('scene-pointing-mark',target?.type==='marker'||target?.type==='port');
+    // Keyboard focus owns its marker card until blur, selection or Escape.
+    const focused=document.activeElement,focusCard=focused.closest?.('.scene-mark-tip'),focusHandle=focused.closest?.('.scene-mark');
+    if(host.contains(focused)&&look.key&&(focusCard?.dataset.card===look.key||focusHandle&&`mark:${focusHandle.dataset.marker||focusHandle.dataset.port}`===look.key))return;
     // While a card is open or kept, what is being read stays: the way to
     // the card crosses boxes and empty canvas without changing the emphasis.
     const reading=!!look.key||store.getState().pinned.length>0;
@@ -526,6 +458,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       const key=`edge:${target.id}:${nearStart(target.edge,target.at)?'back':'on'}`;
       handleRect={left:event.clientX-12,top:event.clientY-12,right:event.clientX+12,bottom:event.clientY+12,width:24,height:24};
       if(look.aim(key,performance.now()))pump();
+    }else if(target?.type==='marker'||target?.type==='port'){
+      if(look.aim(`mark:${target.id}`,performance.now()))pump();
     }else if(look.key&&!store.getState().pinned.includes(look.key)){
       const card=host.querySelector(`[data-card="${CSS.escape(look.key)}"]`)?.getBoundingClientRect();
       look.leave(look.key,performance.now(),{x:event.clientX,y:event.clientY},card||null);pump();
@@ -542,7 +476,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointerdown',()=>{pressed=true;},true);
   window.addEventListener('pointerup',()=>{pressed=false;},true);
   window.addEventListener('pointercancel',()=>{pressed=false;},true);
-  host.addEventListener('pointerleave',event=>{if(pressed||event.buttons)return;host.classList.remove('scene-pointing-arrow');store.dispatch({type:'point',target:null});});
+  host.addEventListener('pointerleave',event=>{clearPointerCursor();if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
     const v=camera.get(),press=down;down=null;
@@ -564,7 +498,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   let gesture=null;
   host.addEventListener('wheel',event=>{
     gestureAim={x:event.clientX,y:event.clientY};
-    if(!event.ctrlKey||!instance||initializing||event.target.closest?.('.flow-floating-card'))return;
+    if(event.target.closest?.('.flow-floating-card'))return;
+    const inventory=event.target.closest?.('.scene-program-inside');
+    // Only a genuinely overflowing inventory owns vertical scrolling.
+    // Horizontal movement and every pinch still belong to the map.
+    if(!event.ctrlKey&&inventory&&inventory.scrollHeight>inventory.clientHeight+1&&Math.abs(event.deltaY)>Math.abs(event.deltaX)){
+      event.stopPropagation();return;
+    }
+    if(!event.ctrlKey||!instance||initializing)return;
     const now=performance.now(),v=camera.get(),box=host.getBoundingClientRect();
     const aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
     if(!gesture||now-gesture.at>300){
@@ -629,9 +570,13 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function Overlay({scene,emphasis}){
     const v=useSyncExternalStore(camera.subscribe,camera.get);
     const items=project(scene,v);
+    const {width,height}=size();
+    // The keyboard reaches marks that are actually in the canvas. A pan
+    // brings the rest into this same order; their world hit test is intact.
+    const tabIndex=item=>item.left-item.px/2>=0&&item.top-item.px/2>=0&&item.left+item.px/2<=width&&item.top+item.px/2<=height?0:-1;
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const pointer=state.pointer;
-    const tip=pointer&&(pointer.type==='marker'||pointer.type==='port')?items.find(item=>item.id===pointer.id):null;
+    const tip=state.look.startsWith('mark:')?items.find(item=>item.id===state.look.slice(5)):null;
     // A chip or a bucket pointed at says who calls it, or what it holds, a
     // chip whose name does not read naming it alone; any other box whose
     // words do not read yet is named.
@@ -641,60 +586,24 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // The pointer reaches these through the one hit test; the keyboard
     // reaches them as buttons, Enter doing what a click does.
     const press=target=>event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();clickAt(target,event);};
-    // Frames named at the canvas's top stand under the marks and the tips,
-    // in a layer of their own that holds them whole (StuckTitles).
-    return <><div className="scene-stuck-titles"><StuckTitles scene={scene} v={v}/></div><div className="scene-overlay">
+    return <div className="scene-overlay">
       {items.filter(item=>item.type==='zoom').map(item=><button type="button" key={item.id} className="scene-zoom" data-zoom-into={item.box}
+        tabIndex={tabIndex(item)}
         aria-label={t('Zoom into {0}',nameOf(item.box))} onKeyDown={press({type:'zoom',id:item.box})}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}><span className="flow-zoom-picture"/></button>)}
-      {items.filter(item=>item.type!=='zoom').map(item=><button type="button" key={item.id} className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
+      {items.filter(item=>item.type!=='zoom').map(item=><React.Fragment key={item.id}><button type="button" className={`scene-mark scene-mark-${item.type==='port'?'port':item.side} ${emphasis.lit.has(item.id)||pointer?.id===item.id?'scene-mark-lit':''}`}
+        tabIndex={tabIndex(item)}
         aria-label={item.type==='port'?`${item.way==='out'?'→':'←'} ${nameOf(item.id)}`:item.side==='in'?t(inputKindTitles[item.kind]||'Inputs'):t('Outside')}
         onKeyDown={press({type:item.type,id:item.id,box:item.box||'',item})}
+        onFocus={()=>{look.enter(`mark:${item.id}`);store.dispatch({type:'look',key:look.key});store.dispatch({type:'point',target:{type:item.type,id:item.id,item}});}}
+        onBlur={event=>{if(event.relatedTarget?.closest?.(`[data-card="${CSS.escape(`mark:${item.id}`)}"]`))return;look.leave(`mark:${item.id}`,performance.now());pump();}}
         data-marker={item.type==='marker'?item.id:undefined} data-marker-box={item.type==='marker'?item.box:undefined} data-marker-side={item.type==='marker'?item.side:undefined}
         data-marker-end={item.type==='marker'?(item.side==='out'?item.systems:item.members).join(' '):undefined} data-port={item.type==='port'?item.id:undefined} data-port-end={item.type==='port'?item.id:undefined}
         style={{left:item.left-item.px/2,top:item.top-item.px/2,width:item.px,height:item.px}}>
-        <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></button>)}
-      {tip&&<MarkTip key={tip.id} item={tip}/>}
+        <Mark icon={item.type==='port'?systemIcons.program:item.side==='in'?kindIcon(item.kind):systemIcons[item.kind]}/></button>
+        {tip?.id===item.id&&<MarkTip item={tip}/>}</React.Fragment>)}
       {box&&<BoxTip node={box} camera={v}/>}
-    </div></>;
-  }
-  // A frame whose top is out of the canvas while its body fills it is named
-  // at the canvas's top, at its title's size, along its own left edge. The
-  // frames it sits inside are named first, a row above it where their
-  // names would overlap (etcd's "server (executable)" over "Client APIs"),
-  // and a frame whose own title such a name would cover is named below it.
-  function stuckNames(scene,v){
-    const {width,height}=size(),pad=6,z=v.zoom,placed=[],list=[];
-    if(stuckMemo.scene===scene&&stuckMemo.v===v&&stuckMemo.width===width&&stuckMemo.height===height)return stuckMemo.list;
-    const frames=scene.nodes.filter(node=>node.display==='frame').sort((a,b)=>b.rect.width*b.rect.height-a.rect.width*a.rect.height);
-    const across=(p,left,right)=>Math.min(p.right,right)-Math.max(p.left,left)>0;
-    // The first place from the canvas's top (hanging from it, over what is
-    // left of the frame's own title) where a name of height h stands clear
-    // of the names already placed across it.
-    const clear=(left,right,h)=>{let y=0;for(let moved=true;moved;){moved=false;for(const p of placed)if(across(p,left,right)&&p.top<y+h&&p.bottom>y){y=p.bottom+2;moved=true;}}return y;};
-    for(const node of frames){
-      const r=node.rect,titleText=node.titleText||node.text,px=17*titleText*z;
-      const left=r.x*z+v.x,top=r.y*z+v.y,right=left+r.width*z,bottom=top+r.height*z,band=units.band(1)*titleText*z;
-      if(right<80||left>width-80||top>height||px<9)continue;
-      const kind=node.kind,title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
-      const font=Math.min(px,22),x=Math.max(left,0)+pad,room=Math.max(80,Math.min(right,width)-Math.max(left,0)-2*pad);
-      const w=Math.min(room,measure(title,`700 ${font}px system-ui`)+22),h=font*1.3+4;
-      // Its own title stands 10 of its pixels under its top (scene.css
-      // .scene-frame-title): named here once any of it is above the canvas.
-      const covered=placed.some(p=>across(p,x,x+w)&&p.top<top+band&&p.bottom>top);
-      if(!covered&&top+10*titleText*z>=-.5)continue;
-      const y=clear(x,x+w,h);
-      if(bottom<y+h+2*band)continue;
-      placed.push({left:x,right:x+w,top:y,bottom:y+h});
-      const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection':'';
-      list.push({id:node.id,title,tone,x,y,font,room,right:x+w,bottom:y+h});
-    }
-    stuckMemo={scene,v,width,height,list};
-    return list;
-  }
-  function StuckTitles({scene,v}){
-    return stuckNames(scene,v).map(name=><div key={name.id} className={`scene-stuck-title ${name.tone}`} data-stuck-title={name.id} title={name.title}
-      style={{left:name.x,top:name.y,fontSize:name.font,maxWidth:name.room}}>{name.title}</div>);
+    </div>;
   }
   // What a box pointed at is: a chip's callers, a bucket's systems, else,
   // while its words are too small to read, its name and what it does. A
@@ -723,18 +632,18 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // side (an input's left, else right), or on the side with more room
   // where that one has too little, and within the canvas.
   function MarkTip({item}){
-    const most=30,ref=useRef(null),[shift,setShift]=useState(0);
+    const key=`mark:${item.id}`,ref=useRef(null),[shift,setShift]=useState(0);
     let head='',names=[];
-    if(item.type==='port'){head=item.way==='out'?'→':'←';names=item.programs.map(nameOf);}
+    if(item.type==='port'){head=item.way==='out'?'→':'←';names=item.programs.map(id=>({id,name:nameOf(id)}));}
     else if(item.side==='in'){
       head=t(inputKindTitles[item.kind]||'Inputs');
-      names=item.members.map(id=>`${model.nodes.get(id)?.name||''}${item.handled.includes(id)?'':` · ${t('declared here')}`}`);
+      names=item.members.map(id=>({id,name:`${model.nodes.get(id)?.name||''}${item.handled.includes(id)?'':` · ${t('declared here')}`}`}));
     }else{
       head=item.kind==='database'?t('Database'):item.kind==='request'?t('Request'):item.kind==='sdk'?t('SDK'):item.kind==='queue'?t('Queue'):item.kind==='started'?t('Runs a program'):t('Outside');
-      names=item.systems.map(id=>model.nodes.get(id)?.name||'');
+      names=item.systems.map(id=>({id,name:model.nodes.get(id)?.name||''}));
     }
-    const shown=names.slice(0,most),{width,height}=size(),gap=6,edge=4,pad=20,between=14;
-    const widest=Math.max(measure(head,'650 13px system-ui'),...shown.map(name=>measure(name,'13px system-ui')));
+    const shown=names,{width,height}=size(),gap=6,edge=4,pad=20,between=14;
+    const widest=shown.reduce((width,row)=>Math.max(width,measure(row.name,'13px system-ui')),measure(head,'650 13px system-ui'));
     const room={left:item.left-item.px/2-gap-edge,right:width-(item.left+item.px/2+gap)-edge};
     const needs=columns=>columns*Math.ceil(widest+1)+(columns-1)*between+pad;
     const own=item.side==='in'?'left':'right',other=own==='left'?'right':'left';
@@ -748,9 +657,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       const h=ref.current?.offsetHeight||0,want=Math.max(edge,Math.min(top,height-h-edge))-top;
       if(Math.abs(want-shift)>.5)setShift(want);
     });
-    return <div ref={ref} className={`scene-tip scene-mark-tip ${columns>1?'scene-tip-columns':''}`}
-      style={{width:tipWidth,top:top+shift,...(side==='right'?{left:item.left+item.px/2+gap}:{right:`calc(100% - ${item.left-item.px/2-gap}px)`})}}>
-      <b>{head}</b>{shown.map((name,i)=><span key={i}>{name}</span>)}{names.length>most&&<span>…</span>}</div>;
+    const keep=()=>{look.enter(key);store.dispatch({type:'look',key});};
+    return <div ref={ref} data-card={key} className={`scene-tip scene-mark-tip flow-floating-card nodrag nopan nowheel ${columns>1?'scene-tip-columns':''}`}
+      onMouseEnter={keep} onFocusCapture={keep}
+      onMouseLeave={event=>{if(event.currentTarget.contains(document.activeElement))return;look.leave(key,performance.now(),{x:event.clientX,y:event.clientY},ref.current?.getBoundingClientRect());pump();}}
+      onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){look.leave(key,performance.now());pump();}}}
+      onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()}
+      style={{width:tipWidth,maxHeight:Math.max(60,height-2*edge),top:top+shift,left:side==='right'?item.left+item.px/2+gap:item.left-item.px/2-gap-tipWidth}}>
+      <b>{head}</b>{shown.map(row=><button type="button" className="flow-card-name" data-marker-member={row.id} key={row.id}
+        onClick={event=>{event.stopPropagation();look.end();store.dispatch({type:'look',key:''});read(row.id,event);}}>{row.name}</button>)}</div>;
   }
   function ArrowCard({edgeKey,scene}){
     const [,id,way]=/^edge:(.*):(on|back)$/.exec(edgeKey)||[];
@@ -763,6 +678,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const ids=edge?(backward?edge.backward:edge.forward):[];
     const from=edge?(backward?edge.to:edge.from):'',into=edge?(backward?edge.from:edge.to):'';
     const card=useMemo(()=>callCard(ids.flatMap(id=>edgeByID(model).get(id)?.relations||[]),{nameOf,groupable:other=>model.nodes.get(other)?.kind!=='input'}),[edgeKey]);
+    const choose={
+      can:(part,key)=>(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbolKey(symbol)===key),
+      go:(part,key)=>chooseMember(part,(model.nodes.get(part)?.item?.symbols||[]).findIndex(symbol=>symbolKey(symbol)===key)),
+      input:id=>read(id),
+    };
     useLayoutEffect(()=>{
       const el=ref.current;if(!el||!handleRect)return;
       const box=host.getBoundingClientRect(),size=el.getBoundingClientRect();
@@ -779,7 +699,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         {pinned&&<button type="button" className="flow-card-close" aria-label={t('Close')} title={t('Close')} onClick={event=>{event.stopPropagation();store.dispatch({type:'unpin',key:edgeKey});look.end();store.dispatch({type:'look',key:''});}}>✕</button>}
         <header className="flow-card-head"><div className="flow-card-title"><span>{nameOf(from)}</span><i>→</i><span>{nameOf(into)}</span></div>
           {other&&<p className="flow-card-count"><button type="button" onClick={swap}>{t('Calls the other way')}</button></p>}</header>
-        <div className="flow-card-body"><BriefRows card={card} into={nameOf(into)}/></div>
+        <div className="flow-card-body"><BriefRows card={card} into={nameOf(into)} choose={choose}/></div>
       </div></div>;
   }
 
@@ -807,7 +727,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         style:{width:node.rect.width,height:node.rect.height,'--scene-text':node.text},zIndex:node.band===bands.frame?-1:2,
         selectable:false,draggable:false,connectable:false,focusable:false,
         className:`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
-        data:{node,item,groups,lit:lit.has(node.id),tile:node.display==='card'&&state.member.chosen?.part===node.id?item?.symbols?.[state.member.chosen.index]||null:null,keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
+        data:{node,item,groups,kind:(entry,event)=>clickAt({type:'box',id:node.id,node,kind:entry.kind,group:entry.group},event),open:(id,event)=>{if(event.detail>0&&down?.moved)return;clickAt({type:'zoom',id},event);},lit:lit.has(node.id),tile:node.display==='card'&&state.member.chosen?.part===node.id?item?.symbols?.[state.member.chosen.index]||null:null,keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
           member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
     }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen,state.member.chosen]);
@@ -819,7 +739,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       return {id,source:ends[0],target:ends[1],type:'scene',zIndex:flags.on?1:0,selectable:false,focusable:false,data:{...edge,...flags}};
     });},[scene,emphasis]);
     const cards=[...new Set([state.look,...state.pinned].filter(key=>key.startsWith('edge:')))];
-    return <SceneCamera.Provider value={sceneCamera}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
+    return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
       nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} nodesFocusable={false} edgesFocusable={false} disableKeyboardA11y
       deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null} panActivationKeyCode={null} zoomActivationKeyCode={null}
       zoomOnDoubleClick={false} minZoom={minZoom()} maxZoom={maxZoom()} panOnScroll preventScrolling
@@ -839,7 +759,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       <ZoomVar/>
       <Overlay scene={scene} emphasis={emphasis}/>
       {cards.map(key=><ArrowCard key={key} edgeKey={key} scene={scene}/>)}
-    </ReactFlow></SceneCamera.Provider>;
+    </ReactFlow>;
   }
   // Far enough into a part to read its declarations, and a little more.
   const minZoom=()=>Math.min(.05/(geometry.unit||1),geometry.home.zoom*.5);

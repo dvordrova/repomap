@@ -1,9 +1,13 @@
 package reading
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -364,11 +368,35 @@ func testAliasesAskedByName(t *testing.T, captions bool) {
 	assertReport := func(result Result) {
 		t.Helper()
 		page := aliasReport(t, program.index, result.Atlas)
+		// Read the actual embedded payload: the ordinary renderer may gzip
+		// its physical representation without changing any saved reading.
+		block := regexp.MustCompile(`<script type="application/json" id="rm-page-data"( data-rm-encoding="gzip-base64")?>([^<]*)</script>`).FindStringSubmatch(page)
+		if len(block) != 3 {
+			t.Fatal("missing report reading payload")
+		}
+		data := []byte(block[2])
+		if block[1] != "" {
+			packed, err := base64.StdEncoding.DecodeString(block[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := gzip.NewReader(bytes.NewReader(packed))
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err = io.ReadAll(reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := reader.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !json.Valid(data) || !bytes.Contains(data, []byte(`"alias":"program start"`)) {
+			t.Fatal("the complete report reading lost the function's accepted alias")
+		}
 		for _, shown := range []string{
 			`data-term-name="stock quote" data-term-original="주가정보"`, `data-term-name="Quote" data-term-original="Quote"`,
-			// The function's alias reaches the reading column with it, in
-			// the page's data (the part's card is no longer printed).
-			`"alias":"program start"`,
 		} {
 			if !strings.Contains(page, shown) {
 				t.Fatalf("the report does not show %s", shown)

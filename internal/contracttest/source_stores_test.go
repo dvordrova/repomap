@@ -13,7 +13,7 @@ func TestGoDestinationsSeparateReadAndReturnStoreContexts(t *testing.T) {
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
 	writePublishedGoFixtureModule(t, root)
-	authorities := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "destination-store-review")
+	authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "destination-store-review")
 	index, err := goadapter.Build(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 	if err != nil {
 		t.Fatal(err)

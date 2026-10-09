@@ -27,14 +27,15 @@ type namespace struct {
 }
 type definition struct {
 	site
-	NS        string   `json:"ns"`
-	Name      string   `json:"name"`
-	DefinedBy string   `json:"defined-by"`
-	LintAs    string   `json:"defined-by->lint-as"`
-	Arglists  []string `json:"arglist-strs"`
-	Doc       string   `json:"doc"`
-	Private   bool     `json:"private"`
-	Macro     bool     `json:"macro"`
+	NS           string   `json:"ns"`
+	Name         string   `json:"name"`
+	DefinedBy    string   `json:"defined-by"`
+	LintAs       string   `json:"defined-by->lint-as"`
+	Arglists     []string `json:"arglist-strs"`
+	Doc          string   `json:"doc"`
+	Private      bool     `json:"private"`
+	Macro        bool     `json:"macro"`
+	ProtocolName string   `json:"protocol-name"`
 }
 type usage struct {
 	site

@@ -141,13 +141,15 @@ func bindProgramTargetIdentity(result *Result) error {
 	return nil
 }
 
-func externalProgramObjectRef(packagePath, receiver, name, repositoryPath string) string {
+func externalProgramObjectRef(packagePath, receiver, name, repositoryPath string, defaultLibrarySymbol ...bool) string {
 	if name == "" {
 		name = packagePath
 	}
 	prefix := "external"
 	if repositoryPath != "" {
 		prefix = "workspace:" + hex.EncodeToString([]byte(repositoryPath))
+	} else if len(defaultLibrarySymbol) > 0 && defaultLibrarySymbol[0] && packagePath != javascriptPlatform {
+		prefix = "platform"
 	}
 	return prefix + ":" + packagePath + ":" + receiver + ":" + name
 }
@@ -188,7 +190,8 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: declaration.Ref, Kind: kind, Name: declarationDisplayName(declaration, declarationByRef), Visibility: visibility,
 			Signature: declaration.Signature, OwnerRef: declaration.OwnerRef, ContainerRef: container, Location: programLocation(declaration.Location),
-			EndLine: declaration.EndLine, CodeLines: declaration.CodeLines,
+			DocstringRanges: append([]programindex.LineRange(nil), declaration.DocstringRanges...),
+			EndLine:         declaration.EndLine, CodeLines: declaration.CodeLines,
 			Parameters: typedInputs(declaration.Parameters, declarationByRef), Results: typedInputs(declaration.Results, declarationByRef),
 			Overloads: overloadInputs(declaration.Overloads, declarationByRef),
 		})
@@ -230,11 +233,15 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		})
 	}
 	externalObjects := map[string]programindex.ObjectInput{}
-	externalRef := func(packagePath, exportName, receiver, name, repositoryPath string) string {
+	externalRef := func(packagePath, exportName, receiver, name, repositoryPath string, defaultLibrarySymbol bool) string {
 		if name == "" {
 			name = packagePath
 		}
-		ref := externalProgramObjectRef(packagePath, receiver, name, repositoryPath)
+		ref := externalProgramObjectRef(packagePath, receiver, name, repositoryPath, defaultLibrarySymbol)
+		authority := externalAuthorityKind(packagePath, repositoryPath)
+		if defaultLibrarySymbol {
+			authority = programindex.ExternalAuthorityPlatform
+		}
 		if _, exists := externalObjects[ref]; !exists {
 			displayName := packagePath + "."
 			if receiver != "" {
@@ -245,7 +252,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 				SourceRef: ref, Kind: programindex.ObjectExternalSymbol, Name: displayName,
 				Visibility: programindex.VisibilityPublic,
 				External: &programindex.ExternalSymbol{
-					AuthorityKind:  externalAuthorityKind(packagePath, repositoryPath),
+					AuthorityKind:  authority,
 					RepositoryPath: repositoryPath,
 					PackagePath:    packagePath,
 					Receiver:       receiver,
@@ -271,7 +278,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		if value.ResolvedFileRef != "" {
 			to = []string{moduleRefForFile(value.ResolvedFileRef)}
 		} else if value.ExternalPackage != "" && resolution == programindex.ResolutionExact {
-			to = []string{externalRef(value.ExternalPackage, "", "", value.ExternalPackage, value.RepositoryPath)}
+			to = []string{externalRef(value.ExternalPackage, "", "", value.ExternalPackage, value.RepositoryPath, false)}
 		}
 		if len(to) == 0 {
 			resolution = programindex.ResolutionUnresolved
@@ -296,7 +303,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		kind := programindex.RelationCalls
 		resolution := programResolution(value.Resolution)
 		if value.ExternalPackage != "" && resolution != programindex.ResolutionUnresolved {
-			to = []string{externalRef(value.ExternalPackage, value.ExternalExport, value.ExternalReceiver, value.ExternalName, value.RepositoryPath)}
+			to = []string{externalRef(value.ExternalPackage, value.ExternalExport, value.ExternalReceiver, value.ExternalName, value.RepositoryPath, value.DefaultLibrarySymbol)}
 			kind = programindex.RelationInvokesExternal
 		}
 		if len(to) == 0 {

@@ -364,3 +364,60 @@ func TestACallLeavingItsProgramReadsFromItsOwnCode(t *testing.T) {
 		t.Fatalf("a side's steps do not name the part each is read in: %+v", side.Path)
 	}
 }
+
+// A refused provisional grouping must reach the ordinary reader with its
+// distinct model reason and every original declaration's source. Neither a
+// wholly off-map file nor an all-refused map may reduce these to file-only links.
+func TestRefusedGroupingsKeepModelReasonsAndExactSources(t *testing.T) {
+	for _, reason := range []string{"independent_jobs", "not_established", "decision_refused", "over_envelope"} {
+		for _, failure := range []string{"", "refused"} {
+			t.Run(reason+"/"+failure, func(t *testing.T) {
+				const target = "app"
+				index := groupindex.Index{Target: programindex.Target{ID: target}, MapFailure: failure,
+					Subjects: []groupindex.Subject{
+						{ID: "n1", Object: &groupindex.ObjectFacts{Name: "instructions", Kind: programindex.ObjectVariable, Location: &programindex.Location{Path: "instructions.ts", Line: 4, Column: 7}}},
+						{ID: "n2", Object: &groupindex.ObjectFacts{Name: "getCanvasWidth", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "sizes.ts", Line: 11, Column: 10}}},
+					},
+					RefusedParts: []groupindex.RefusedPart{{Name: "Utility helpers", Holds: "Instructions and canvas sizes.", Reason: reason, SubjectIDs: []string{"n1", "n2"}}},
+				}
+				offReason := "left_out"
+				if failure != "" {
+					offReason = "map_failure"
+				}
+				index.OffMap = []groupindex.OffMapFile{{Path: "instructions.ts", Reason: offReason, SubjectIDs: []string{"n1"}}, {Path: "sizes.ts", Reason: offReason, SubjectIDs: []string{"n2"}}}
+				section := &pageSection{ID: "app", programTargetID: target, ShortLabel: "App", FactsAvailable: true}
+				builder := &pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, byProgram: map[string]*pageSection{target: section}, subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}}
+				for _, subject := range index.Subjects {
+					builder.subjects[subjectKey(target, subject.ID)] = subjectRef{subject: subject, programTargetID: target}
+				}
+				builder.fillSectionOffMap(section)
+				if len(section.RefusedParts) != 1 || section.RefusedParts[0].Reason != refusedPartReasons[reason] || len(section.RefusedParts[0].Members) != 2 {
+					t.Fatalf("missing provisional decision/sources: %+v", section.RefusedParts)
+				}
+				if len(section.OffMap) != 2 || len(section.OffMap[0].Members) != 1 || len(section.OffMap[1].Members) != 1 {
+					t.Fatalf("lost ordinary off-map declarations: %+v", section.OffMap)
+				}
+				if len(section.Core) != 0 || len(section.Triggers) != 0 {
+					t.Fatal("refused proposal promoted to an accepted part")
+				}
+				parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var out bytes.Buffer
+				if err := parsed.ExecuteTemplate(&out, "target.html", section); err != nil {
+					t.Fatal(err)
+				}
+				html := out.String()
+				for _, want := range []string{"Groupings not established", "These are model proposals, not parts of the map.", "Proposed purpose", refusedPartReasons[reason], "instructions", "getCanvasWidth", "https://github.com/o/r/blob/abc/instructions.ts#L4", "https://github.com/o/r/blob/abc/sizes.ts#L11"} {
+					if !strings.Contains(html, template.HTMLEscapeString(want)) {
+						t.Fatalf("reader loses %q:\n%s", want, html)
+					}
+				}
+				if (failure != "") != strings.Contains(html, "The map of parts is unavailable") {
+					t.Fatalf("all-refused status not explicit: %s", html)
+				}
+			})
+		}
+	}
+}

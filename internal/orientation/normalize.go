@@ -94,6 +94,16 @@ func (result normalized) AcceptedRowKeys() []string {
 	return keys
 }
 
+// Partial refusals must keep the exact exchange in the run, including on a
+// warm cache hit. Clearing accepted caches cannot erase the rejected evidence.
+func (result normalized) ResponseRejections() []llm.ResponseRejection {
+	var rows []llm.ResponseRejection
+	for _, row := range result.rejected {
+		rows = append(rows, llm.ResponseRejection{Kind: "orientation_row_refused", Count: 1, Samples: []string{row.Section}, Reason: row.Reason})
+	}
+	return rows
+}
+
 type resolvedRef struct {
 	ref     string
 	class   byte
@@ -106,29 +116,30 @@ type resolvedRef struct {
 // ids out. A broken row is refused with its raw JSON and a reason; the
 // response as a whole fails only when it is not the requested JSON shape.
 func normalizeOverview(raw []byte, cat catalog) (normalized, error) {
-	fields, err := decodeResponse(raw)
-	if err != nil {
-		return normalized{}, err
-	}
+	// Both whole and partitioned overviews use the same occurrence-aware
+	// decoder. Aggregate sections may be omitted; an addressed known row
+	// with an invalid required decision cannot be repaired by another row.
 	result := newNormalized()
-	var response modelResponse
-	summaryOK := result.decodeField(sectionSummary, "summary", fields, &response.Summary)
-	refsOK := result.decodeField(sectionSummary, "summary_refs", fields, &response.SummaryRefs)
-	if summaryOK && refsOK {
-		result.acceptSummary(response, cat)
-	}
-	if result.decodeField(sectionRoles, "roles", fields, &response.Roles) {
-		for i, row := range response.Roles {
-			result.acceptRole(row, cat, fmt.Sprintf("roles[%d]", i))
+	for _, section := range []string{"repository", "roles", "run_recipe"} {
+		part, err := normalizeSectionWithCover(raw, cat, section, false)
+		if err != nil {
+			var empty *noOutputError
+			if !errors.As(err, &empty) {
+				return normalized{}, err
+			}
 		}
-	}
-	if result.decodeField(sectionRunRecipe, "run_recipe", fields, &response.RunRecipe) {
-		for i, row := range response.RunRecipe {
-			result.acceptRecipe(row, cat, fmt.Sprintf("run_recipe[%d]", i))
+		if section == "repository" {
+			result.summary, result.summaryRefs, result.flowTarget = part.summary, part.summaryRefs, part.flowTarget
 		}
-	}
-	if result.decodeField(sectionMainFlow, "main_flow_target", fields, &response.MainFlowTarget) {
-		result.acceptFlowTarget(fields["main_flow_target"], response.MainFlowTarget, cat)
+		result.roles = append(result.roles, part.roles...)
+		result.recipe = append(result.recipe, part.recipe...)
+		result.rejected = append(result.rejected, part.rejected...)
+		for key := range part.accepted {
+			result.accepted[key] = true
+		}
+		for key, slots := range part.roleRows {
+			result.roleRows[key] = slots
+		}
 	}
 	return result.done()
 }
@@ -318,7 +329,7 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		if accepted.TargetID != targetID {
 			continue
 		}
-		if accepted.Role == role.Role && samePurpose(accepted.Purpose, role.Purpose) {
+		if strings.EqualFold(accepted.Role, role.Role) && samePurpose(accepted.Purpose, role.Purpose) {
 			result.roles[i].FactIDs = unionRefs(accepted.FactIDs, role.FactIDs)
 			result.roles[i].SubjectIDs = unionRefs(accepted.SubjectIDs, role.SubjectIDs)
 			result.accepted[slot] = true
@@ -484,6 +495,9 @@ func (cat catalog) ownFact(entry factEntry, targetRef string) bool {
 // holdsEvidence reports whether the request lists a fact or seed of the
 // target: a role must then cite one.
 func (cat catalog) holdsEvidence(targetRef string) bool {
+	if cat.requiredEvidence[targetRef] {
+		return true
+	}
 	for _, entry := range cat.facts {
 		if cat.ownFact(entry, targetRef) {
 			return true

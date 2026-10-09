@@ -1,0 +1,5 @@
+{
+  "name": "template-tool",
+  "private": true,
+  "scripts": { "build": "vite build", "check": "tsc --noEmit" }
+}

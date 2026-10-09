@@ -52,7 +52,9 @@ type analyzer struct {
 	invokedMethods map[string]bool
 	callControls   map[Location][]ControlContext
 	// callGuards are the call sites' guards (call_guard.go), built once.
-	callGuards      map[Location]CallGuard
+	callGuards map[Location]CallGuard
+	// sourceFiles are repository files read for code as written (codeText).
+	sourceFiles     map[string][]byte
 	methodArguments map[Location][]*sourcevalue.Value
 	// sameValues is, by call site, the earlier call each call reads the
 	// same value as (same_value_calls.go).

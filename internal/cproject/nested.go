@@ -151,7 +151,7 @@ func readNested(ctx context.Context, env parseEnv, description *buildDescription
 		// what `all` builds, as the default goal's lines are taken: Lua
 		// 5.1.5's src/Makefile chooses a platform by default and builds
 		// liblua.a, lua and luac on `all`. No other named goal is run.
-		if ruleLine(env, makefileOf[dir], "all") > 0 {
+		if hasRule(env, makefileOf[dir], "all") {
 			all := []string{"make", "-n", "-B", "-w", "-o", makefile, "all"}
 			output, err := dryRun(ctx, absDir, all)
 			if ctx.Err() != nil {

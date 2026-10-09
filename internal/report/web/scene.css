@@ -7,16 +7,12 @@
 .scene-root .flow-part{padding:14px;gap:6px;overflow:hidden}
 .scene-root .flow-part>strong{white-space:pre-line;line-height:21.25px}
 .scene-root .flow-description-lines{white-space:pre-line;display:block}
-.scene-program-card{background:#f8fafc;border:1.25px solid #718096;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px;color:#243044;overflow:hidden}
+.scene-program-card{background:#f8fafc;border:1.25px solid #718096;border-radius:calc(10px / (var(--flow-zoom,1) * var(--scene-text,1)));padding:14px;display:flex;flex-direction:column;gap:6px;color:#243044;overflow:hidden}
 .scene-program-card>strong{font-size:18px;line-height:23px;white-space:pre-line}
 .scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line;margin:0}
 .scene-frame-title{padding:10px 16px;pointer-events:none}
 .scene-frame-title-place{pointer-events:none}
 /* A frame named at the canvas's top while its own top is out of sight. */
-.scene-stuck-titles{position:absolute;inset:0;pointer-events:none;z-index:4}
-.scene-stuck-title{position:absolute;z-index:5;pointer-events:none;padding:2px 10px;border-radius:0 0 8px 8px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:rgba(255,255,255,.92);color:#243044;box-shadow:0 1px 3px rgba(15,23,42,.12)}
-.scene-stuck-title.flow-communication{background:#fffaf0;color:#77531c}
-.scene-stuck-title.flow-input-collection{background:#eef5ff;color:#204a7b}
 .scene-frame-title>strong{font-size:17px;line-height:22px;white-space:nowrap}
 .flow-communication .scene-frame-title>strong{color:#77531c}
 .flow-input-collection .scene-frame-title>strong,.scene-inputs-card>strong{color:#204a7b}
@@ -36,15 +32,18 @@
 /* Markers and ports keep one screen size (overlay.mjs): an input kind on a
    box's left edge in the inputs' blue, an outside kind on its right in the
    Outside frame's amber, a program's port in the frames' slate. */
-.scene-overlay{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden}
+/* This layer is in screen coordinates. It must never acquire its own
+   scroll offset when a keyboard focus reaches a mark outside the canvas:
+   the pointer hit test and world drawing move only with the camera. */
+.scene-overlay{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:clip}
 .scene-mark{position:absolute;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1.25px solid;background:#fff}
-.scene-mark .flow-kind-mark{width:14px;height:14px}
+.scene-mark .flow-kind-mark{width:14px;height:14px;margin:0;display:block}
 .scene-mark-in{border-color:#356faa;color:#204a7b;background:#deedff}
 .scene-mark-out{border-color:#906014;color:#77531c;background:#ffefcf}
 .scene-mark-port{border-color:#718096;color:#52647d;background:#f8fafc;border-radius:50%}
 .scene-mark-lit{border-color:#243044;box-shadow:0 0 0 1.5px #243044}
 .scene-zoom{position:absolute;display:flex;align-items:center;justify-content:center;border-radius:6px;background:#fff;border:1px solid #d4dce6}
-.scene-zoom .flow-zoom-picture{width:14px;height:14px}
+.scene-zoom .flow-zoom-picture{width:calc(100% - 6px);height:calc(100% - 6px)}
 .scene-tip{position:absolute;display:flex;flex-direction:column;gap:2px;max-width:260px;padding:6px 9px;border-radius:7px;background:#fff;border:1px solid #d4dce6;box-shadow:0 4px 14px #24304422;font:13px/17px system-ui;color:#243044;white-space:nowrap}
 .scene-tip>b{font-weight:650;color:#52647d}
 .scene-tip>span{overflow:hidden;text-overflow:ellipsis}
@@ -53,10 +52,11 @@
 .scene-tip>.scene-tip-note{color:#52647d;white-space:normal;overflow:visible}
 .scene-card{position:absolute;z-index:6}
 .scene-root .scene-scaled>*{margin:0}
-.scene-program-inside{list-style:none;padding:0;display:flex;flex-direction:column;font:500 13px/18px system-ui;color:#52647d}
-.scene-program-inside li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.scene-ghosts{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.scene-ghosts rect{fill:#fff;fill-opacity:.55;stroke:currentColor;stroke-opacity:.25;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.scene-program-inside{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;font:400 13px/18px system-ui;color:#52647d;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain;pointer-events:auto}
+.scene-program-inside li{flex:none}
+.scene-program-inside button{display:block;box-sizing:border-box;width:100%;border:0;border-radius:3px;padding:4px 6px;background:transparent;text-align:left;font:inherit;color:#204a7b;white-space:pre-line;pointer-events:auto;cursor:pointer}
+.scene-program-inside button:hover{background:#e8eef6;text-decoration:underline}
+.scene-program-inside button:focus-visible{outline:2px solid #204a7b;outline-offset:-2px}
 .scene-area-card>strong,.scene-area-card>.flow-description{position:relative;z-index:1}
 .scene-words{position:relative;z-index:1;display:flex;flex-direction:column;gap:6px;background:inherit;border-radius:6px;align-self:flex-start;max-width:100%}
 .scene-words>strong{font-size:17px;line-height:21.25px;white-space:pre-line}
@@ -64,7 +64,9 @@
 .scene-kind-marks{display:flex;gap:6px;align-items:center;color:#204a7b}
 .scene-kind-marks .flow-lit{outline:2px solid #243044;border-radius:4px}
 .scene-program-card>strong{font-size:17px;line-height:21.25px}
-.scene-kind-mark{position:absolute;display:flex;align-items:center;justify-content:center;color:#204a7b;border-radius:4px}
+.scene-kind-mark{position:absolute;display:flex;align-items:center;justify-content:center;color:#204a7b;border-radius:4px;border:0;padding:0;background:transparent;pointer-events:auto;cursor:pointer}
+.scene-kind-mark>.flow-kind-mark{margin:0;display:block}
+.scene-kind-mark:focus-visible{outline:2px solid #204a7b;outline-offset:2px}
 .scene-kind-mark.flow-lit{outline:2px solid #243044}
 /* An arrow takes no pointer event: the canvas hit-tests the pointer itself
    (scene.mjs hitTest), so a drag from an arrow pans the map as one from
@@ -74,6 +76,12 @@
    stroke; this rule outweighs it. The cursor says an arrow is pointed at. */
 .scene-root .flow-edge path.flow-edge-hit{pointer-events:none!important}
 .scene-root.scene-pointing-arrow .react-flow__pane{cursor:pointer}
+/* Magnifiers are pointer-transparent like the other scene marks: the one
+   canvas hit test owns their mouse action and the cursor on the actual pane. */
+.scene-root.scene-pointing-zoom .react-flow__pane{cursor:zoom-in}
+.scene-root.scene-pointing-mark .react-flow__pane{cursor:pointer}
+.flow-floating-card .flow-card-name{font:inherit;color:var(--link);border:0;background:transparent;padding:0;margin:0;text-align:left;cursor:pointer}
+.flow-floating-card .flow-card-name:hover{text-decoration:underline}
 /* Names on zoom: each word stands once it reads and fades out below, by
    its own drawn size: its font size (--word, in pixels, which its rule
    also draws it at) times the camera's zoom (--flow-zoom) times its
@@ -99,8 +107,6 @@
    framing a box stops under it (scene-canvas.jsx readCap). */
 .scene-root .react-flow__node :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role,.scene-tile>span,.scene-group-title>strong){
   font-size:min(calc(var(--word) * 1px),calc(var(--word) * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))));opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
-.scene-root .react-flow__node .scene-words-natural :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role){font-size:calc(var(--word) * 1px)!important}
-.scene-root .react-flow__node .scene-words-natural .flow-kind-mark{width:14px!important;height:14px!important}
 .scene-root .react-flow__node [data-box-title]{line-height:1.25em}
 .scene-root .react-flow__node .flow-chip-name{line-height:calc(17em / 12)}
 .scene-root .react-flow__node :is(.flow-description,.flow-component-role){line-height:calc(18em / 13)}
@@ -117,6 +123,8 @@
    longer than its side's room wraps, never cut (scene-canvas.jsx MarkTip
    gives the tip its width). */
 .scene-tip.scene-mark-tip{box-sizing:border-box;max-width:none;white-space:normal}
+.scene-overlay .scene-mark-tip button{pointer-events:auto;white-space:normal;overflow-wrap:anywhere}
+.scene-tip.scene-mark-tip{overflow-y:auto;overscroll-behavior:contain}
 .scene-tip.scene-mark-tip>span{overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 .scene-tip.scene-mark-tip.scene-tip-columns{grid-template-columns:1fr 1fr;max-width:none}
 /* Overlay buttons take the keyboard's focus; the pointer reaches them
@@ -136,19 +144,10 @@
 /* The border takes its room from a card's padding, never from its words
    (levels.mjs sizes a card by its words and a 14px padding). */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}
-/* A program's card shows its drawing's outline once drawn large, its
-   words over it, and while its role and description are too small to
-   read, in their place (owner via the coordinator, 2026-10-02: etcd's
-   contrib/lock/storage and tools/etcd-dump-db had stood on the whole map
-   as a name over a blank card, its words filling 31% of it). Each word's
-   line keeps its own ground, and takes it along when it fades. */
-/* So does a closed part's card its declarations' tiles (scene.mjs tilesOf):
-   casdoor's Shared UI components and etcd's Snapshot engine, neighbours
-   drawn larger than their words may grow, had stood as words over a blank
-   card (reading lints, 2026-10-03). */
-.scene-program-ghosts,.scene-part-ghosts{opacity:max(clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) - 1.4) * 1.5),1),calc(1 - clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 13 - 9) * 2),1)))}
-.scene-program-card>.scene-words{background:transparent}
-.scene-program-card>.scene-words>*{background:#f8fafc}
+/* Closed programs and areas list every saved direct child by name. */
+.scene-program-card>.scene-words{background:transparent;width:100%}
+/* Role badges straddle the border outside the clipped words/inventory. */
+.scene-role-layer{z-index:1;pointer-events:none;overflow:visible}
 /* A closed part's chosen declaration, alone as its tile under its title. */
 .scene-chosen-tile{display:block;box-sizing:border-box;min-height:20px;padding:0 8px;border:2px solid #243044;border-radius:6px;background:#fff;color:#243044;font:600 12.5px/16px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 /* A closed part-group: our part's card (the parts' grey line, dark words)
@@ -163,3 +162,9 @@
 .scene-bucket-face .scene-bucket-marks{display:flex;gap:4px;color:#896019}
 .scene-root .scene-scaled.scene-bucket-stack .scene-bucket-face,.scene-root .scene-scaled.scene-bucket-stack::before,.scene-root .scene-scaled.scene-bucket-stack::after{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
 .scene-bucket-open .scene-frame-title>strong{color:#243044}
+
+.scene-root .scene-program-inside{font-size:min(13px,calc(20.8px / (var(--flow-zoom,1) * var(--scene-text,1))));line-height:calc(18em / 13)}
+
+.scene-program-inside::-webkit-scrollbar{width:10px}
+.scene-program-inside::-webkit-scrollbar-thumb{background:#9aabbe;border:2px solid #f8fafc;border-radius:5px}
+.scene-program-inside::-webkit-scrollbar-track{background:#eef2f7}

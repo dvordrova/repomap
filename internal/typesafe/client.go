@@ -13,10 +13,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -164,6 +166,12 @@ func (c *Client) Verdicts(response []byte) (map[string]llm.Verdict, error) {
 		verdict, readable := readVerdict(written[0])
 		for _, raw := range written[1:] {
 			again, againReadable := readVerdict(raw)
+			if readable && againReadable && !verdict.Conflict && !again.Conflict &&
+				verdict.Yes == nil && again.Yes == nil && !verdict.InvalidYes && !again.InvalidYes &&
+				strings.EqualFold(strings.TrimSpace(verdict.Choice), strings.TrimSpace(again.Choice)) {
+				verdict = mergeChoiceProbabilities(verdict, again)
+				continue
+			}
 			if againReadable != readable || !sameDecision(again, verdict) {
 				verdict, readable = llm.Verdict{Conflict: true}, true
 				break
@@ -186,6 +194,11 @@ func sameDecision(a, b llm.Verdict) bool {
 func decisionForm(verdict llm.Verdict) llm.Verdict {
 	fold := func(text string) string { return strings.ToLower(strings.TrimSpace(text)) }
 	verdict.Choice = fold(verdict.Choice)
+	verdict.InvalidProbabilities = append([]string(nil), verdict.InvalidProbabilities...)
+	for i := range verdict.InvalidProbabilities {
+		verdict.InvalidProbabilities[i] = fold(verdict.InvalidProbabilities[i])
+	}
+	sort.Strings(verdict.InvalidProbabilities)
 	if verdict.Probabilities != nil {
 		probabilities := make(map[string]float64, len(verdict.Probabilities))
 		for key, at := range verdict.Probabilities {
@@ -199,22 +212,155 @@ func decisionForm(verdict llm.Verdict) llm.Verdict {
 // readVerdict reads one written answer; false for one that cannot be read
 // or is of a type no question asks.
 func readVerdict(raw json.RawMessage) (llm.Verdict, bool) {
-	var answer struct {
-		Type          string             `json:"type"`
-		Choice        string             `json:"choice"`
-		Probabilities map[string]float64 `json:"probabilities"`
-		Noul          *float64           `json:"noul"`
-	}
-	if json.Unmarshal(raw, &answer) != nil {
+	members, err := objectMembers(raw)
+	if err != nil {
 		return llm.Verdict{}, false
 	}
-	switch answer.Type {
+	fields := map[string][]json.RawMessage{}
+	for _, member := range members {
+		key := strings.ToLower(strings.TrimSpace(member.key))
+		fields[key] = append(fields[key], member.value)
+	}
+	kind, valid := verdictText(fields["type"])
+	if !valid {
+		return llm.Verdict{Conflict: true}, true
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "choice":
-		return llm.Verdict{Choice: answer.Choice, Probabilities: answer.Probabilities}, true
+		choice, valid := verdictText(fields["choice"])
+		if !valid {
+			return llm.Verdict{Conflict: true}, true
+		}
+		result := llm.Verdict{Choice: choice}
+		for i, value := range fields["probabilities"] {
+			next := readProbabilitySet(value)
+			if i == 0 {
+				result.Probabilities, result.InvalidProbabilities = next.Probabilities, next.InvalidProbabilities
+			} else {
+				result = mergeChoiceProbabilities(result, next)
+			}
+		}
+		return result, true
 	case "noul":
-		return llm.Verdict{Yes: answer.Noul}, true
+		result := llm.Verdict{}
+		for _, value := range fields["noul"] {
+			var probability float64
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &probability) != nil ||
+				math.IsNaN(probability) || math.IsInf(probability, 0) || probability < 0 || probability > 1 {
+				result.InvalidYes = true
+				continue
+			}
+			if result.Yes != nil && *result.Yes != probability {
+				result.InvalidYes = true
+			}
+			if result.Yes == nil {
+				result.Yes = &probability
+			}
+		}
+		return result, true
 	}
 	return llm.Verdict{}, false
+}
+
+// Required string occurrences are compared before any one can overwrite an
+// invalid or contradictory decision. Missing text remains missing for its owner.
+func verdictText(values []json.RawMessage) (string, bool) {
+	first := ""
+	for i, raw := range values {
+		var next string
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &next) != nil {
+			return "", false
+		}
+		if i > 0 && !strings.EqualFold(strings.TrimSpace(first), strings.TrimSpace(next)) {
+			return "", false
+		}
+		if i == 0 {
+			first = next
+		}
+	}
+	return first, true
+}
+
+func readProbabilitySet(raw []byte) llm.Verdict {
+	result := llm.Verdict{Probabilities: map[string]float64{}}
+	members, err := objectMembers(raw)
+	if err != nil {
+		return result // the owner refuses its missing required scores
+	}
+	byLabel := map[string]string{}
+	invalid := map[string]bool{}
+	for _, member := range members {
+		folded := strings.ToLower(strings.TrimSpace(member.key))
+		label, seen := byLabel[folded]
+		if !seen {
+			label, byLabel[folded] = member.key, member.key
+		}
+		var value float64
+		bad := bytes.Equal(bytes.TrimSpace(member.value), []byte("null")) || json.Unmarshal(member.value, &value) != nil ||
+			math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1
+		if previous, present := result.Probabilities[label]; seen && present && previous != value {
+			bad = true
+		}
+		invalid[label] = invalid[label] || bad
+		if _, present := result.Probabilities[label]; !present && !bad {
+			result.Probabilities[label] = value
+		}
+	}
+	for label, bad := range invalid {
+		if bad {
+			result.InvalidProbabilities = append(result.InvalidProbabilities, label)
+		}
+	}
+	sort.Strings(result.InvalidProbabilities)
+	return result
+}
+
+// Keep per-label conflicts until the owner supplies its closed labels. An
+// unknown malformed extra score must not poison an otherwise complete answer.
+func mergeChoiceProbabilities(first, next llm.Verdict) llm.Verdict {
+	type score struct {
+		label   string
+		value   float64
+		present bool
+		invalid bool
+	}
+	form := func(verdict llm.Verdict) map[string]score {
+		out := map[string]score{}
+		for label, value := range verdict.Probabilities {
+			out[strings.ToLower(strings.TrimSpace(label))] = score{label: label, value: value, present: true}
+		}
+		for _, label := range verdict.InvalidProbabilities {
+			key := strings.ToLower(strings.TrimSpace(label))
+			value := out[key]
+			if value.label == "" {
+				value.label = label
+			}
+			value.invalid = true
+			out[key] = value
+		}
+		return out
+	}
+	a, b := form(first), form(next)
+	for key := range b {
+		if _, present := a[key]; !present {
+			a[key] = score{label: b[key].label}
+		}
+	}
+	first.Probabilities = map[string]float64{}
+	first.InvalidProbabilities = nil
+	for key, left := range a {
+		right := b[key]
+		if left.present {
+			first.Probabilities[left.label] = left.value
+		} else if right.present {
+			first.Probabilities[left.label] = right.value
+		}
+		if left.invalid || right.invalid || !left.present || !right.present || left.value != right.value {
+			first.InvalidProbabilities = append(first.InvalidProbabilities, left.label)
+		}
+	}
+	sort.Strings(first.InvalidProbabilities)
+	return first
 }
 
 // answerOccurrences lists, per question key, every answer the response's
@@ -299,6 +445,9 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{
 			Kind: llm.ResourceLimitRequestBytes, Limit: limits.MaxRequestBytes, Observed: len(exact), ObservedKnown: true,
 		})
+	}
+	if err := checkEnvelope(body, exact); err != nil {
+		return llm.Prepared{}, err
 	}
 	return llm.NewPrepared(exact)
 }

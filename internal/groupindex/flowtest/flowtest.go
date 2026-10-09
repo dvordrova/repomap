@@ -171,7 +171,7 @@ func Check(t testing.TB, program programindex.Index, index groupindex.Index) {
 		}
 	}
 	for _, container := range index.Containers {
-		if (container.Lane == groupindex.LaneTriggers) != slices.ContainsFunc(container.GroupIDs, func(id string) bool { return lanes[id] == groupindex.LaneTriggers }) {
+		if (container.Lane == groupindex.LaneTriggers) != slices.ContainsFunc(groupindex.ContainerGroups(index.Containers, container.ID), func(id string) bool { return lanes[id] == groupindex.LaneTriggers }) {
 			t.Fatalf("area %q is %s, and holding the entry's part is its only entry", container.Title, container.Lane)
 		}
 	}

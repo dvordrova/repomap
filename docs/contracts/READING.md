@@ -71,7 +71,11 @@ report.
   parameter once: a caller handing on a parameter already reached (a function
   passing its own parameter to itself, functions passing it round, two paths
   meeting) adds no value, while a second value handed round leaves no holder;
-  following never recurses without end. Clojure records no parameter values
+  following never recurses without end. The holder walk reuses the target's
+  complete native owner/caller indexes, preserving original declaration and
+  call-pattern order; it does not rescan the whole graph for each parameter
+  or cache a recursive answer outside that walk's visited state.
+  Clojure records no parameter values
   and C calls have no receiver, so neither has a registration to follow.
 - Native boundary places share only exact source observations: path, line,
   column, kind, method, literal values, compiler-located subject, call word
@@ -90,10 +94,14 @@ report.
   original SubjectID before a target-scoped ObjectID.
 - `reading` walks the places in rounds, one keyed table per round: directories
   by depth, independent files with direct caller facts, symbols, boundaries,
-  each target's parts with placement and descriptions, the drawn arrows, the
+  each target's grouping tree, the drawn arrows, the
   core, the areas, the keys, the portfolio, the joints (Stage concurrency). A
-  target's role split, parts, placement, part description and areas requests
+  target's helper question, grouping requests and automatic part description
   use its position p+1 as their round, as the core does.
+  The reader builds its complete symbol source lookup before stages fork;
+  those stages share that immutable lookup. An absent declaration tuple stays
+  unknown without rescanning all places. Duplicate tuples keep the original
+  constructor's last symbol choice without removing either source place.
 - A row carries the place's own facts and its directory's line. File callers
   contribute deterministic facts, never another file's model line. A row
   carries its complete evidence: every child of a directory, every calling
@@ -221,240 +229,103 @@ outgoing boundary's owner context) against its doc comments and README
 line. README claims stay claims; orientation sends neither them nor
 docstrings (below).
 
-**The grouping unit is a whole file or a box.** Each target's role split
-(below) runs first; then one `atlas_zones` request per target
-(`repomap.atlas.parts.v2`) lists one row per unit of its code: a whole file
-holding a unit (`ref`, the graph's `f*`); each box of a split file (a
-request-local `c*` ref numbered across the target in `f*` and naming order,
-its name in `box`; an empty box is no row, a split file never a whole row);
-then that file's seeds and the units no box took, each a `c*` row named in
-`box` by its declaration. Each row has `path`, `units`, `types`, `functions`
-and `variables`, including units code placed there from other files (below),
-so its counts and names may exceed what its `path` holds.
+**The grouping (owner, 2026-10-08).** One loop over boxes, starting with
+the whole target, replaces the earlier role split, parts request and areas
+phases (the Codex-era source readings, catalogues, admission and catalogue
+contexts were removed on the same day; their copies are outside the tree).
+`reading/grouping.go` owns it:
 
-A unit is a function, a variable, a type with its methods, or a source-located
-module body. An exported name (the adapter's visibility fact: Go
-capitalization, JS/TS `export`, Python `__all__` when declared, else no
-leading underscore, Clojure neither `defn-` nor `^:private`) is followed by
-its signature, a type's by its form; method names are not sent. A declaration
-takes its unit's part; a method goes with its type through the native owner,
-even across files. A lexical child (inside the source range of a function or
-method of its file, by the adapter's positions and end lines: Go `f$1`
-closures, nested JS or Python functions) takes its parent's part and is no
-row, name or unit. A declaration repeating the name of an earlier unit of its
-file follows that unit: a second Go `init` is one unit and name, with the
-first signature (C has no such repeat, and a Clojure `declare` is no
-declaration). Python `@overload` stubs and TypeScript overload signatures
-are no declarations: they fold into their implementation (ProgramIndex
-`overloads`), whose unit shows the first overload's signature and weighs
-the overloads' code lines with its own; the module body counts neither.
+1. *Elements.* A membership unit is a function, a variable, a type with its
+   methods, or a source-located module body. A method goes with its type
+   through the native owner, even across files; a lexical child (inside the
+   source range of a function or method of its file: Go `f$1` closures,
+   nested JS or Python functions) and a declaration repeating an earlier
+   unit's name in its file (a second Go `init`) follow their unit. Python
+   `@overload` stubs and TypeScript overload signatures fold into their
+   implementation. The elements of the target's box are its units of non-test
+   files that the helper question did not decide are helpers.
+2. *The grouping question* (`atlas_group_enough`, Jev, `role_map.md` plus
+   `prompts/group_enough.md`, options `group_enough_options.md`): a box of at
+   most four elements (the owner's constant) is read as it is and not asked.
+   Every larger box is one question, "Does a newcomer read `box` as it is, or
+   does it need smaller boxes inside?", its item the box's `name`, `holds`,
+   `inside` (the boxes it sits in, outermost first) and `declarations`
+   ("path: name"). Only a decided `needs smaller boxes` divides it; `grouped
+   enough`, a near-tie or a refused window reads it as it is. A box whose
+   question does not fit one classifier question is divided without asking.
+3. *The proposal* (`atlas_zones`, DeepSeek, `role_map.md` plus
+   `prompts/group_propose.md`, task `repomap.atlas.group_propose.v1`) names
+   the next level of a box that needs dividing: `{"boxes":[{"name","holds"}]}`
+   over the box, its `inside`, and `files` (each file with its elements'
+   names). The prompt asks for the largest parts only, since every one is
+   divided again when it holds several responsibilities. A box whose names do
+   not fit one request sends `directories` (each file with its count of
+   declarations) instead; one that does not fit even then, a refused answer or
+   fewer than two boxes leaves it read as it is (`over_envelope`,
+   `window_rejected`). The decoder is the naming decoder: a wrapper, case,
+   whitespace and an identical repeat are forms; two boxes sharing a name are
+   both kept (`group_repeated_name`).
+4. *The assignment* (`atlas_group_assign`, Jev, `prompts/group_assign.md`):
+   every element of the box, one question each, "Which smaller box of our map
+   does `declaration` go in?", with `inside` and the proposed boxes in
+   `state.context` (each box an option whose criteria are its `holds`). The
+   item is the helper question's item: name, kind, file, signature, lines,
+   methods, `calls`, `called_by`, `read_by`, `handed_over_by` and
+   `registered`; a generated file's unit has its name, kind, file and
+   signature. Every answered element takes Jev's leading box even under the
+   classifier margin (`TopChoice`; owner, 2026-10-08: no cautious unknown —
+   near-ties had made 6,183 one-declaration parts of Metabase's 9,033). An
+   unanswered element or one of a refused window goes, by code, with the most
+   of its decided call, read and hand-over neighbours; one with none is a box
+   of its own, named by its declaration (`group_undecided`).
+5. Every smaller box holding an element goes back to step 2. A box whose
+   elements all went in one smaller box gains nothing from it and is read as
+   it is, so every division has at least two children and the loop ends.
 
-`calls` counts, per exact call site, each distinct other listed row the site
-reaches (`"f3 -> c7 (12)"`), from the unit whose code holds the site (a
-method's from its type's unit); calls resolved only to alternatives are left
-out. `imports` lists the adapter's resolved imports between two files, each
-file standing for one row: a whole file for its own (`"f3 -> f7"`), a file
-that is no row for the one row holding all its units (a whole file that joined
-a box). A file whose units sit in several rows or none stands for no row, and
-an import within one row is none. The parts and placement prompts keep their
-wording (imports of whole files): a box's lines are those of the files that
-joined it. Go package imports resolve to a directory and add nothing. Files
-without a unit are not listed; a file declaring only followers of other files'
-units (a Go method outside its type's file) is no row yet is on the map
-through them. The prompt sets no count of parts.
+The boxes read as they are are the parts of the map; the divided boxes but
+the target's own are its areas (`Zone.ParentID` is the enclosing area). A
+part's `Line` is its proposal's `holds`; a part without one (a target read
+as one box, a one-element undecided box) is described by `atlas_describe`
+(below). Every model refusal is recorded in `rejected.jsonl` and `tables.md`
+and never fails the target. Without a model a target with units has no map:
+an explicit map failure. A target without a unit has a legitimate empty map.
 
-**Small targets.** A target without a unit sends no request and has a
-legitimate empty map. A target of one unit (one unit-bearing file kept whole)
-sends no parts request: its one part takes the target's name. A one-file
-target whose file splits sends one, over its boxes. Without a model a target
-of several files has no map: an explicit map failure, never an invented
-grouping.
+*The helper question* (`atlas_role_helper`, Jev; owner, 2026-09-28) runs
+first, once per unit of every non-test, non-generated file of the target, one
+request per file (`state.context` empty, prompt `role_helper.md`, options
+`role_helper_options.md`, `none of these` among them): "What is
+`declaration` on our map: a helper, the code of a responsibility, or none of
+these?". The item is the unit's name, kind, `file`, signature, `lines`,
+methods, `calls` and `called_by` (decorations included), `read_by` and
+`handed_over_by` (exact reads and hand-overs), each "path:name" without test
+and generated code, and `registered`; no documentation or visibility. A unit
+nothing uses (no call, decoration, hand-over or read, exact or alternative,
+no registration; test and generated code aside) is no helper by code and is
+not asked, but only when its adapter records such uses of its kind: C
+functions (calls, hand-overs) and variables (reads); Go functions and
+methods (calls, hand-overs); Python, TypeScript and JavaScript functions,
+methods, lambdas (calls, decorations, hand-overs, reads) and variables
+(reads); Clojure functions (calls, hand-overs, reads) and variables (reads).
+Any other unit is asked: a type, a module body, a Go variable (GO) and a
+Clojure macro (CLOJURE). A seed is not asked. Only a decided `helper` is a
+helper; any other answer, a near-tie, an unanswered row or a refused window
+leaves the unit an element. A helper carries the atlas symbol's `helper`
+mark.
 
-**Too large.** A parts request splits into windows only when its prepared
-request does not fit the provider or the provider refuses its input or context
-size, through the shared adaptive split memo. A window is a whole directory
-subtree, halved by unit count until it fits; a flat directory halves into
-contiguous runs in path order; a split file's boxes stay in one window. Parts
-never cross windows; nothing is sampled or truncated.
+*Helpers go with their users*, by code, once the tree is drawn: where a
+declaration's users are is a code fact, never asked again (owner,
+2026-09-28). A helper takes the part holding most of its users: the units that
+call it (never through a function value a hand-over stored), decorate it,
+read it when it does not run or take it as a parameter; a hand-over is no
+use. A tie takes the earlier part. A helper only other
+helpers use follows them once they are placed; one whose users are never
+placed takes the part holding most of its file's units, and with none it is
+off the map as `blocked`.
 
-**Validation, placement and refusal.** A parts answer
-(`{"groups":[{"name","units"}]}`) is validated as independent unit → part
-rows. An unknown ref is discarded and recorded; a unit named twice in one part
-is kept once; a unit two different groups list is a conflict and loses both
-memberships (no first-wins); a unit left out stays unplaced. A group without a
-name or listed unit is not drawn, its units left out. Two parts sharing a name
-over different units are both kept; a group repeated with the same name
-(ignoring case) and units is drawn once, recorded as `part_repeated_group`.
-`files` is the same list as `units`: alike they are one list, different they
-refuse that group alone. A string of refs separated by spaces or commas is
-that list, each ref still checked. One part holding everything, or one per
-unit, is accepted and recorded. Every annotation goes to `rejected.jsonl`
-without refusing the answer.
-
-Only an answer that draws no part is refused whole: not JSON, no groups, no
-group holding a listed unit of its own (every ref unknown, such as paths
-instead of refs, every group nameless, or every unit in two groups), or ending
-at the output allowance. It is not asked again, split or accepted in part. A
-refused window is recorded as `window_rejected`; its units are left out for
-the follow-up when another window of the target drew parts. A target whose
-every window is refused gets an explicit `map_failure` with every file off the
-map (atlas word `refused`, `no_model` when no model was asked), the refusal
-texts in `rejected.jsonl`; its other analysis survives.
-
-When a part was drawn, one closed-choice `atlas_placement` table
-(`repomap.atlas.placement.v2`) places the unplaced units, one row per unit
-keyed by its ref: a left-out unit chooses among every drawn part, a
-conflicting one only among the parts that listed it. A row carries its path,
-box name, counts and names, and its calls (per site) and imports to and from
-the placed rows as part refs. An unknown, missing or refused choice leaves the
-unit's declarations off the map with its reason; a box left out leaves its
-file on the map through its other boxes.
-
-**A file in several boxes (the role split).** One file can hold several roles
-and one role can span files: we build our own map (owner, option "в",
-2026-09-26). Four questions decide it before the target's parts request (a
-one-file target included; never without a model), and code places what they
-leave open. Each Jev question's `state.task` is `lines/prompts/role_map.md`
-plus its own prompt; the helper and gate options carry their criteria from
-`role_helper_options.md` and `role_gate_options.md`, and the assignment's
-options are the named boxes, each with its `holds` as criteria. Requests use request-local refs (the gate's row `f1`, `dN` by
-the unit's place in its file, boxes `b1…bn`), so an edit asks again only the
-requests whose items it changes.
-
-- *The helper question* (`atlas_role_helper`, Jev; owner, 2026-09-28) asks
-  once per unit of every non-test, non-generated file of the target, one
-  request per file (`state.context` empty, prompt `role_helper.md`, options
-  `role_helper_options.md`, `none of these` among them): "What is
-  `declaration` on our map: a helper, the code of a responsibility, or none of
-  these?". The item is the unit's name, kind, `file`, signature, `lines`,
-  methods, `calls` and `called_by` (decorations included), `read_by` and
-  `handed_over_by` (exact reads and hand-overs), each "path:name" without test
-  and generated code, and `registered`; no documentation or visibility. A unit
-  nothing uses (no call, decoration, hand-over or read, exact or alternative,
-  no registration; test and generated code aside) is no helper by code and is
-  not asked, but only when its adapter records such uses of its kind: C
-  functions (calls, hand-overs) and variables (reads); Go functions and
-  methods (calls, hand-overs); Python, TypeScript and JavaScript functions,
-  methods, lambdas (calls, decorations, hand-overs, reads) and variables
-  (reads); Clojure functions (calls, hand-overs, reads) and variables (reads).
-  Any other unit is asked: a type, a module body, a Go variable (GO) and a
-  Clojure macro (CLOJURE). A gap in a recorded kind stays that adapter's
-  recorded gap: Go function values kept in a slice, map or package variable
-  (GO), Python's unresolved module-attribute calls (PYTHON). Only a decided
-  `helper` is a helper; any other answer, a near-tie, an unanswered row or a
-  refused window leaves the unit named and assigned like any unit. The
-  question is never asked twice, and a refusal never fails the target. A
-  helper carries the atlas symbol's `helper` mark. The question and the gate
-  run at once.
-- *Candidates* of the gate are the target's non-test, non-generated files
-  holding at least two units; no size, count or threshold decides. A file the
-  gate splits with fewer than two units that are no helpers stays whole
-  (`role_not_split`).
-- *The gate* (`atlas_role_gate`, Jev, prompt `role_gate.md`, options
-  `role_gate_options.md`) asks per file "Does the code of `file` go in one box
-  of our map, or in several boxes?", the item being the path and every unit's
-  name, kind, signature, methods and same-file calls. Only "several boxes"
-  leading by the margin goes on; a file nearer the cut stays whole. Known
-  limit: a Go file's methods on a type declared elsewhere follow that type and
-  are not in the item.
-- *The naming* (`atlas_role_boxes`, DeepSeek, `prompts/design_boxes.md` after
-  `role_map.md`) answers `{"boxes":[{"name","holds"}]}` over every unit that
-  is no helper, whole (helpers are also left out of the others' `calls` and
-  `called_by`), with name, kind, signature, `lines` (its code lines with its
-  outside followers'; a module body counts its file's code lines less its
-  other top-level declarations; zero is unknown and not sent), methods,
-  same-file `calls` and `called_by` (decorations included) and
-  `callers_elsewhere` (distinct units of the target's other non-test files
-  calling it). No count is set. A wrapper object, keys in another case,
-  whitespace and an identical repeat are forms; `null` is no boxes. Two boxes
-  sharing a name are both kept (`role_repeated_name`), each offered by its ref
-  with its own `holds`. A box without a name or `holds` keeps the file whole
-  (`role_boxes_incomplete`: the list is one partition decision, whose smallest
-  scope is the file), as do fewer than two boxes (`role_one_box`), an answer
-  not JSON or without a list, and a provider refusal.
-- *The assignment* (`atlas_role_assign`, Jev, prompt `role_assign.md`) asks
-  each unit that is no helper, the module body included, "Which box of our map
-  does `declaration` go in?". `state.context` holds only the file's path; the
-  item is its name, kind, signature, methods, same-file calls and callers,
-  `calls_elsewhere` ("path:name") and `registered`: once each, the words of
-  every registration handing over the unit or a follower. Each box is an
-  option whose criteria are its `holds`. `role_assign.md` has no wording that
-  keeps a command whose work is the connection with the box that runs
-  commands: that is the naming's to give. A choice not leading by the margin,
-  unanswered or in a refused window leaves the unit open; a decided unit is
-  not asked again. The map's rule that a helper goes in the box it serves most
-  is inert here: a helper-only box's `holds` names its helper and Jev puts it
-  there; no code rule empties such a box.
-- *Code places what the questions leave open*: where a declaration's users are
-  is a code fact, never asked again (owner, 2026-09-28). A *user* is a unit
-  that calls a unit, is decorated by it, reads it when it does not run or, for
-  a type, takes it as a parameter (the graph's exact `uses`), between
-  non-test, non-generated files. A hand-over is no use: a command table row or
-  route registrar hands its handler over without using it, and a read of a
-  callable is a function value taken to be called later, so no unit follows
-  its table or registrar. Nor is a call through the function value a hand-over
-  stored (ProgramIndex `function_value` dispatch, exact when one store reaches
-  it) a use, so a callback never follows the code that runs it; that call
-  still counts in the helper question's `called_by`. A *row* is a box of a
-  split file or a whole file's row. Three rules run together to a fixed point,
-  each recorded in `rejected.jsonl` and `tables.md`:
-  - A: a helper of a split file whose users, in any file, all stand in one row
-    joins it: a box of its own or another split file, or a whole file's row
-    (`role_attached`, by name).
-  - B: a whole file of helpers joins its users' box (owner's map model,
-    2026-09-28). A non-test, non-generated whole file every unit of which,
-    types included, is a decided helper, and whose users in other files (at
-    least one) all stand in one box of a split file, joins that box
-    (`role_attached`, by path). Any unit that is no helper keeps the file out:
-    a type answered `responsibility`, a function nothing uses, `none of
-    these`, a near-tie or an unanswered row. A whole file never joins a whole
-    file.
-  - C: an open unit that is no helper takes the row that every unit of its
-    file using it stands in (box k or a seed's own row); one no unit of its
-    file uses takes the row that everything of its file it uses that is no
-    helper stands in, or, once the second pass has nothing more to ask, the
-    row of the helpers of its file it uses when it uses nothing else
-    (`role_placed_by_users`, `role_placed_by_uses`). Anything else stays open.
-- *The second pass* asks the assignment again, after code has settled, about
-  split files' open helpers whose users stand in two or more rows or that
-  nothing uses, with every named box of their file as options and the same
-  item; a helper with a user still open waits. It decodes like the first (a
-  near-tie leaves the helper undecided), and code settles again. Once a
-  waiting helper's users have rows, rule A places it when they share one;
-  otherwise a further round asks it. Rounds repeat until none qualifies; each
-  unit is asked the assignment at most once (`role_second_pass`; `tables.md`
-  counts each round's asked and placed). The k-th round is its own round of
-  windows (`len(targets)·k + round`, after every target's first pass and each
-  earlier round), so no window overwrites another. When a round has nothing to
-  ask, a unit that can never get a row (a near-tie, an undecided helper) is no
-  longer waited on as a user: the rules settle once more and the rounds go on
-  asking helpers whose users with rows stand in two or more rows or none,
-  until again none qualifies (owner, 2026-09-28). A helper is *blocked*
-  (`role_blocked`) only when never asked, which these rounds prevent; the
-  reason stays for saved runs.
-
-A file is split only when the assignment puts units that are no helpers in at
-least two boxes (code only places a unit in a box already holding one);
-otherwise it stays whole (`role_not_split`), one parts row, helpers included.
-Each box holding a unit is one parts row with its units, their followers
-(methods, lexical children, repeated names) and what code placed there, and
-takes the part the answer gives it; two boxes of a file may share a part. An
-empty box is no row (`role_box_empty`); `tables.md` counts helper-only boxes.
-A unit no box took stays undecided (`role_undecided`; its helper mark is
-whatever the helper question decided) and is a parts row of its own with its
-followers, named by its declaration like a seed's row; the placement follow-up
-places it if the parts answer leaves it out, or leaves it off the map as
-`left_out` (owner's fix B, 2026-09-29). A blocked helper goes to the off-map
-record under `blocked`, its file staying on the map through its boxes. Parts
-take their IDs in answer order; nothing is split under a map failure or
-without a model. A file shared by two targets is split per target
-(`callers_elsewhere` is per target), possibly differently, with a naming in
-each. Every outcome is recorded in `rejected.jsonl` and `tables.md`, with no
-label on the page; a split failure never fails the target. Each language's
-map-of-parts fixture test builds its graph with the fact layer, as an ordinary
-run does. Recorded missing in every language: no fixture has a whole file
-joining a box (rule B), so none shows a box's imports (a reading test holds
-it), and Clojure's fixture has no route or command registered in a split file.
+*Test code.* The units of the target's test files (the adapter's
+`TestSources` fact) are one part, `Tests`, kept in the atlas with its
+membership, file lines, captions and keys and off the canvas; they are not
+grouped.
 
 **One rule for every file.** A declaration takes its unit's part, a place its
 declaration's. A file's own part is the one part holding every placed unit
@@ -471,10 +342,7 @@ branch for a split file:
   file all of whose placed code is there.
 - The entry: the parts holding a seed file's seed declarations (places
   `seed_decls`), else the seed file's part, so the "in" column and "starts the
-  program" (core) survive a split seed file. A seed of a split file is never
-  asked the helper question or a box: it is a `c*` grouping row named by its
-  declaration, with the helpers and open units only it uses (places
-  `SymbolFacts.Seeds`, per holding target). The atlas keeps no main path;
+  program" (core) survive a split seed file. The atlas keeps no main path;
   orientation's main flow and the report's start list read the entry forward.
   GroupsIndex marks as entry only the part holding a seed declaration or a
   library's export (PROGRAM_INDEX `target.exports`: liblua.a's Core API and
@@ -486,8 +354,7 @@ branch for a split file:
   GroupsIndex keeps it with its off-map reason (`Entries`), and code never
   picks a part for it.
 - A boundary takes its subject's part. An input handing a declaration over (a
-  command table row, a route) stands only in that declaration's part (an
-  undecided declaration's own row included), and names no part when the
+  command table row, a route) stands only in that declaration's part , and names no part when the
   declaration is blocked, left out or in a file off the map, never the part
   holding the table or registering call. Without a subject, a boundary takes
   the part of the innermost declaration whose source range holds its line
@@ -533,17 +400,14 @@ types alone proves nothing and stays. Only the C adapter proves `unreachable`
 (GO, PYTHON, JSTS, CLOJURE). Accepted parts and areas are born as short `p*`
 and `z*` IDs.
 
-**Descriptions.** Each drawn non-test part gets one `atlas_describe` request
-(`prompts/design_describe.md`): the part's name and every unit it holds,
-grouped dir → file with name and signature, never documentation. A part whose
-only units are module bodies sends none. The answer is `{"description":"…"}`.
-A long description is kept; an empty or undecodable one leaves the explicit
-no-description state, recorded, and nothing fills it in. A target's requests
-run at once after its parts and placement. Core, keys, arrows and orientation
-read the part lines. Descriptions, like part names, are asked in every model
-run, with or without `--captions`. Each `atlas_core` row and `atlas_keys`
-context carries `declarations`: every declaration the part holds, in ID order,
-never cut to a count.
+**Purposes and descriptions.** A part keeps its proposal's `holds` as
+Part.Line and an area its own as Zone.Line; no later request reinterprets
+them. A non-test part without one may receive one `atlas_describe` request
+(`prompts/design_describe.md`): its name and every member, grouped by
+directory/file with native names and signatures, never documentation. A
+part containing only module bodies supplies no invented description request.
+The answer is `{"description":"…"}`; an empty or undecodable answer leaves an
+explicit gap. Core, keys, arrows and orientation consume the accepted lines.
 
 **Core.** Every drawn non-test part but the one its program starts in is one
 `atlas_core` row (Jev, `prompts/core.md`): `domain`, `interface`, `wiring`,
@@ -551,29 +415,25 @@ never cut to a count.
 or start from and does not run itself (criteria in `core_options.md`; the
 task defines the other four). A `domain` part is core; an example part is
 not (freqtrade's sample strategies had carried the core mark as domain).
+Each row's shared `parts` context is its siblings: the parts of the same
+area of the grouping tree, or the target's parts outside every area; all of
+a large target's parts (thousands for Metabase's frontend) do not fit one
+question's context.
 
-**Areas.** A target with at least three drawn non-test parts sends one
-`atlas_areas` request (`prompts/design_areas.md`) listing them with `ref`,
-`name`, `description`, `dirs` (of its source files, split files included) and
-`units`, and the exact call sites between them (`"p3 -> p7 (12)"`), answered
-as a closed split `{"areas":[{"name","parts"}]}`. It sets no count. A part two
-areas list, or none, stands alone; an area of fewer than two parts is not
-drawn. An area repeated with the same name (ignoring case) and parts is drawn
-once and noted. A `parts` string of refs separated by spaces or commas is that
-list. An empty list leaves every part alone; an answer not JSON, without a
-list, or whose areas hold no listed part (names instead of refs, every area
-nameless) is refused whole, draws no areas and is recorded. Each area's line
-comes from the description prompt with its parts' names and lines as members.
-Jev assigns nothing here.
+**Areas.** `readAreas` draws them from each target's grouping tree with no
+model: each divided box but the target's own is an area holding the parts
+that sit in it directly; a part off the canvas sits in no area.
 
-Accepted areas keep the answer's order and take their `z*` IDs in it; the
-request asks for no order and nothing validates or repairs one. GroupsIndex
-numbers its containers `k*` in that order, and the page lists areas and hands
-them to the canvas layout in it, parts in no area after them. A container's
-marks are data: its lane is `triggers` only when one of its groups holds a
-target seed, otherwise the majority of its groups' lanes, a part that takes
-requests counting as core; it is core when any of its groups is (owner,
-2026-09-27).
+Areas receive `z*` in target order, each target's in depth-first tree
+order. Atlas 23 persists `Zone.ParentID` and direct `BoxIDs`. GroupsIndex 31
+preserves this tree as `Container.ParentID` and direct `GroupIDs`, with `k*` in
+saved order. Original parts have exclusive direct ownership; ancestors never
+repeat membership. Original-tree validation rejects unknown/cyclic parents,
+duplicate direct ownership and children with the same descendant scope as their
+parent. Container lane/core marks aggregate descendant leaves: triggers for a
+seed/export holder, otherwise majority lane; core when any leaf is core. Derived
+folded/test-free views preserve an accepted ancestor whenever a descendant
+survives, even when filtering leaves no direct groups or only one child.
 
 The browser does not choose, validate or repair architectural membership.
 
@@ -2063,13 +1923,23 @@ In the reading, after the files, the symbols, the outside symbols with the
 boundaries their roles make, and the parts run at once and join before the
 arrows, which read them all; after the core, the areas, the keys of each part
 and the targets with their joints likewise run at once. Targets read their
-parts (after their role split) side by side, each on its own record joined in
+parts (helper question, then the grouping loop) side by side, each on its own record joined in
 target order; parts take compact IDs in target order, the only point where a target waits
-for the ones before it, and areas theirs once
-every target's areas answer is in. The first failure stops the stages beside
+for the ones before it, and areas theirs from the saved trees, in target order. The first failure stops the stages beside
 it and is the error reported; `--through` stops inside them at its own stage.
 A failure is never reported as the cancellation it caused in a sibling;
 outside the reading's concurrent stages it is reported in step order.
+
+Parts preparation first validates every complete target view serially and
+constructs the complete immutable subject lookup before starting any model
+worker. It releases each preflight view, then acquires a slot from the existing
+executor concurrency before rebuilding a worker's full view. The worker copies
+one frozen reader base and owns its mutable preparation lookup; it never copies
+a concurrently mutating owner. This bounds live prepared views without changing
+request bytes, original target order, joined diagnostics or compact ID order.
+A later invalid source view still causes zero provider calls, as in the earlier
+eager preparation. The extra preflight pass is local work; no elapsed-time or RSS
+acceptance follows from the scheduling change alone.
 
 Facts and claims are built side by side. The report is assembled from the
 targets, groups, facts and claims while the orientation is asked; only the
@@ -2083,8 +1953,10 @@ matched GroupsIndex set: code structure only (owner rule). No README line,
 docstring, comment or commit subject reaches it; the report quotes those as
 the authors' claims ("What the people who wrote it said"), never as the
 model's evidence. Lua 5.1.5's etc library, one file (etc/noparser.c), had
-been described from etc/README as the whole directory's extras. The overview is asked once, with its embedded prompt
-and response shape, and returns one repository summary, one role per target,
+been described from etc/README as the whole directory's extras. A fitting
+overview is asked once with its embedded prompt and response shape. An actual
+input or output envelope refusal activates the same owner's complete
+partitioning, below. The result contains one repository summary, target roles,
 a run recipe and a closed-ref `main_flow_target`; that target's Main flow is
 then walked by code (below). No target, or an unknown one (refused), walks no
 flow. The model selects
@@ -2209,7 +2081,13 @@ failing paths (`failure_only`), only units already on the path
 (`revisits`), or only into where other ways start, which it goes on as
 (`joins`); the page says it under the
 step, and each guard and loop with its place
-(`TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops`). A way may go on
+(`TestAFailingPathIsNoWayOnAndThePathSaysWhyItStops`). A guard's native
+`condition` and `when` survive the same GroupsIndex and orientation handoffs
+for display; they change neither candidate text nor model requests. Duplicate
+edges retain a written condition only when every site's text and polarity
+agree (PROGRAM_INDEX). C, Go and Python's prepared-then-executed examples
+check the text all the way to the resumed flow step; JS/TS and Clojure still
+have no guards, the existing missing equivalent. A way may go on
 into where another way of the splits around it starts: that start is one
 of its candidates, asked as any other, never walked twice. Every such
 start chosen is kept on the step with how it is reached, its via, site,
@@ -2297,7 +2175,26 @@ positional argument, and the walk took the `-l` option 5 of 5;
 handle_script wins 5 of 5 without it; othello, freqtrade, casdoor and
 redis keep their winners, redis's call, with 94 of 96 options handling a
 request, nearing feedAppendOnlyFile in 2 of 4 draws;
-`TestAHandledInputIsSaidOfEveryOptionOrNone`). An
+`TestAHandledInputIsSaidOfEveryOptionOrNone`).
+
+Only an actual input/context envelope refusal activates the oversized choice
+owner. It partitions complete original candidate records beside the unchanged
+step and core context, preparing all leaves before selection. Each leaf makes
+an explicit provisional model selection; a close decision retains its local
+within-margin alternatives. A new independent closed question compares the
+surviving original records with their complete unchanged criteria and source
+fields. Local probabilities are never combined or treated as global confidence;
+final probabilities and branches describe only the model-selected shortlist.
+This is model elimination over the full supplied catalogue, not an equivalent
+single-question global ranking. An unanswered/conflicting/malformed known leaf
+refuses the dependent final choice and yields no fabricated branches, while
+other accepted steps/windows keep their evidence. Repeated selection requires
+strict decrease of the actual prepared bytes; an indivisible or non-reducing
+request keeps its explicit resource refusal. Fitting ordinary choices retain
+the single-question path. Embedded selection/comparison prompts belong to this
+owner; orchestration and the report neither rank nor complete its results.
+
+An
 option is what the path enters: a type
 entered through some of its members is said by them after its title, each
 with how the step reaches it ("enters Etcd.Close (handed to
@@ -2394,14 +2291,105 @@ Main.Run → ReplicateCommand.Run → Replica.Sync → ReplicaClient, 4 of 5 (on
 fork at ReplicateCommand.Run's eleven); othello -main → start! → setup →
 play-ai → ai/move → search/choose, 5 of 5, its tail (a fork or
 timed-deepen) near the margin; the click handler is not chosen at start!.
-Nothing is sampled, windowed or
-reduced. Fact rows identical but for ref and target are one row with a
+No original evidence is sampled or truncated. A fitting whole overview retains
+its original source scope. Fact rows identical but for ref and target are one row with a
 `targets` list and the first target's fact id as ref; a role or recipe step
 naming one of those targets keeps that target's own fact id. Connections are
 one row per from, to and kind with every distinct label and every sentence
 differing from its label. The answer allowance is 16,384 tokens (EXECUTION).
 The stage caches on its stage identity, prompt version and input digests
 through the shared executor.
+
+The oversized overview owner in `orientation/partition.go` reads each target's
+complete facts, groups, incident connections and ordered seed calls using the
+embedded context prompt. Calls retain their declaration, original position and
+referenced native evidence. Connections retain both group/target endpoints;
+linked facts retain related source rows without transferring ownership.
+Each actual prepared leaf shares byte-identical complete endpoint and declaration
+views through request-local `group_views`, `target_views` and `seed_headers`.
+Every connection/call retains its distinct use, source inventory and original
+position. The leaf carries every definition its refs use, even across target or
+window boundaries. Different identities are never merged; conflicting values of
+one identity are a canonical input error. Group views retain their interpretation
+layer; target/declaration views retain their native layer. The ordinary decoder
+uses the complete original logical item for provenance, never model aliases.
+Repository-wide counts remain labelled as such. Complete input coverage is
+provenance, not a requirement to narrate each record. An unavailable reader
+question refuses its dependent final decision; independent decisions and
+successful targets survive.
+
+The context reader asks for a contextual abstraction supporting the newcomer's
+roles, usable invocation, repository purpose and first flow. Related records
+may support one observation; complete record coverage does not require a verbal
+copy of every call label. Context v4 advertises one closed `w1` scope meaning
+all supplied records of that exact prepared request. The model explicitly
+chooses it and supplies four required question arrays: `responsibilities`,
+`interfaces`, `launch_requirements` and `uncertainty`. Each may be empty; an empty
+window answer never establishes repository-wide absence or complete understanding.
+Each signal chooses request-local `basis` records, substantive `text`, a status
+(`supported`, `interpretation` or `uncertain`) and explicit `supports`. Supported
+signals require particular native records with actual original values; model
+interpretations and provenance unions cannot supply native proof. Interpretation
+and uncertain signals may use an explicitly empty support list. Evidence may
+overlap between signals; there is no exclusive assignment or narrative count.
+Preparation owns complete input coverage. Missing/conflicting known scope refuses
+the window; a missing question refuses dependent decisions, while an addressed
+invalid signal refuses that row. Unknown members are discarded and identical
+repeats, wrappers and harmless form differences are retained. Known addresses
+inside malformed lists remain diagnostic addresses, never valid decisions.
+The owner retains the complete original logical input once as provenance,
+separately from model-selected support. Earlier context response shapes are never
+converted, repaired or given v4 semantics.
+Final requests carry accepted signals alongside selected complete native records,
+including full related fact values, endpoint views, seed headers, ordered call
+positions and original native evidence. Their closed citation choices retain
+original kind, ownership and anchors. Links or names without an included native
+value do not become supporting choices. The final model selects sources for its
+particular claim/command; kind plus an opaque ref alone cannot identify the
+correct manifest command. The complete selected support catalogue is part of
+actual provider preparation and byte-progress checks, never clipped.
+Final citation construction checks membership without scanning all prior refs;
+choices still follow first original use, including the same handling of unknown
+refs, and retain full values and ownership. Qualified compact-ref ordering reads
+segments without allocating split arrays or canonical-number strings. Numeric
+order and lexical fallback for invalid segments remain unchanged; request bytes
+and the provider contract are identical.
+Required usage/configuration literals and material
+uncertainty remain explicit. This full reader uses the shared analytical output
+allowance (128,000, capped by the configured provider), reserved during byte
+preflight; the 16,384 allowance measured on short final overviews does not apply
+to it. Actual completion-envelope refusals still permit lossless division.
+
+Both actual role and recipe envelopes are checked. The complete selected native
+support is a fixed evidence floor: final overflow refuses explicitly, rather than
+repeatedly summarizing prose until it fits. Actual transported completion-envelope
+refusals permit lossless division of original context records. Preparation-only
+output/response errors and configuration/transport failures remain fatal; an
+earlier completion cannot justify a later preparation refusal.
+Role and run recipe calls are independent and consume their relevant question
+signals. Known refused rows carry typed `reader_gaps`: original target, scope,
+basis/support addresses and layers, question and refusal reason. Gaps contain
+neither a repaired claim nor native evidence. They reach dependent final requests
+and the global reader; original target gaps also reach the final repository
+request unchanged even when the global model omits them. Repository summary and
+main-flow selection require the relevant complete target/global questions. The
+global reader sees all accepted model signals beside separately retained native
+support and diagnostic gaps; model provenance unions never become native proof.
+An entirely empty global input (no selected signals, retained support or gaps)
+leaves repository interpretation explicitly unavailable. Diagnostic gaps alone
+may still reach the global reader; empty signal arrays never prove absence.
+Global reading partitions individual records, never reintroducing
+an atomic whole-target catalogue. The existing native Main-flow walk is unchanged.
+
+Whole and divided overview decisions share an occurrence-aware decoder. An
+addressed known role with an invalid required decision cannot be repaired by a
+later valid repeat. Identical fields, wrappers, case and whitespace forms are
+harmless; identical recipe steps combine evidence once. Omitted aggregate
+sections retain the existing legitimate empty state; a dedicated single-target
+role call records its missing decision explicitly. Optional metadata refuses
+at its cell. Partial refusals reach the ordinary observer, retain original raw
+conflicts and keep the exact response in the run with a response reference on
+live and warm reuse, so clearing the shared cache cannot erase that evidence.
 
 Original declaration kinds, calls, source arguments and owned fields can
 qualify member behavior. A launcher/router, implementation mechanism, callback
@@ -2410,6 +2398,29 @@ relation. A launch fact supports an entry point, not a complete invocation:
 run recipes follow `internal/orientation/overview-prompt.md` for required
 arguments, prerequisites and explicit placeholders, and an unsupported
 invocation stays absent rather than losing those requirements.
+Manifest facts keep complete source commands, values and original anchors;
+display clipping cannot precede request preparation. For generated manifests,
+the known local checkout root is context, not a provider-visible host path:
+orientation represents that exact path operand relative to the repository at
+word/path boundaries, preserving the original fact. An equal-looking suffix
+inside another directory or URL is unchanged; no unrelated path is inferred.
+The recipe is a supported sequence to build/start/use the target, not the
+manifest's whole maintenance/cleanup/diagnostic task catalogue. Final citations
+support each actual claim; context coverage does not require repeating every
+source in every decision.
+Whole and divided final recipe prompts require the same usable invocation:
+all source-declared operands and applicable configuration/build-input generation
+prerequisites, with their stated conditions. Compiler variables, flags, output
+suffixes and API exports do not establish a compile/link/consumer invocation.
+Settings may qualify an actual build task's note; missing operands cannot be
+replaced by an abbreviation or an invented consumer. A library recipe stops
+after supported preparation/build/install unless source evidence supplies a
+usable consumer/example invocation. Context reading preserves these distinctions
+for the final model decision; no command-syntax heuristic or report projection
+repairs a model result.
+Included build-manifest choices distinguish the defining source anchor from
+the invocation's root makefile in `path`; all three orientation prompts explain
+that the included source directory does not become the command's cwd.
 
 ## Optimization acceptance
 

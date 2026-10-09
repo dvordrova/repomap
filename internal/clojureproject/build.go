@@ -132,10 +132,25 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		ref := objectRef(d)
 		kind := p.ObjectVariable
 		switch by {
-		case "clojure.core/defn", "clojure.core/defn-", "clojure.core/defmacro", "clojure.core/defmulti":
+		case "clojure.core/defn", "clojure.core/defn-", "clojure.core/defmacro", "clojure.core/defmulti",
+			"cljs.core/defn", "cljs.core/defn-", "cljs.core/defmacro", "cljs.core/defmulti":
 			kind = p.ObjectFunction
-		case "clojure.core/defprotocol", "clojure.core/defrecord", "clojure.core/deftype", "clojure.core/definterface":
+		case "clojure.core/defprotocol", "cljs.core/defprotocol":
+			// clj-kondo names the protocol on its methods, not on the
+			// protocol declaration. A method is callable in both dialects;
+			// its native definition does not identify an implementation.
 			kind = p.ObjectType
+			if d.ProtocolName != "" {
+				kind = p.ObjectFunction
+			}
+		case "clojure.core/defrecord", "clojure.core/deftype", "clojure.core/definterface",
+			"cljs.core/defrecord", "cljs.core/deftype", "cljs.core/definterface":
+			kind = p.ObjectType
+			// The native rows also include callable constructors/members;
+			// their argument lists distinguish them from the type header.
+			if len(d.Arglists) > 0 {
+				kind = p.ObjectFunction
+			}
 		}
 		if len(d.Arglists) > 0 && kind == p.ObjectVariable {
 			kind = p.ObjectFunction
@@ -172,7 +187,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 	}
 	// A shadow-cljs build starts from what it names: a module's :init-fn or
-	// a node script's :main is a function it calls, a module's :entries a
+	// a node script's :main is a function it calls, build/module :entries a
 	// namespace it loads. A name the view declares nowhere starts nothing.
 	for _, entry := range target.Entries {
 		refs, seed := vars[entry.Symbol], p.SeedCallable
@@ -392,7 +407,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if d, ok := definitionOf[owner]; ok && len(targets) == 1 && targets[0] == owner {
 			if params := sources[u.Filename].arityCalled(d.site, u.site, *u.Arity); params != "" {
 				relation := &input.Relations[len(input.Relations)-1]
-				relation.Witnesses = append(relation.Witnesses, p.Witness{Kind: "arity", Detail: params, Location: location(u.site)})
+				relation.Witnesses = append(relation.Witnesses, p.Witness{Kind: "arity", Detail: "selected arity", SourceExpression: params, Location: location(u.site)})
 				relation.WitnessesObserved++
 			}
 		}

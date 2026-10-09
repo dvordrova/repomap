@@ -37,7 +37,10 @@ func TestComponentPageLeadsWithPurpose(t *testing.T) {
 	if !(header < purpose && purpose < entry && entry < at(`class="component-parts"`)) {
 		t.Fatal("purpose and entrypoints do not lead the page")
 	}
-	at(`class="component-flow"`)
+	at(`data-component-flow="`)
+	if strings.Contains(html, `class="component-flow"`) || strings.Contains(html, "Parses flags and starts Echo.") {
+		t.Fatal("flow reading is printed beside its data")
+	}
 	if !strings.Contains(html, "Go web server") || !strings.Contains(html, "Serves the meetup pages") || !strings.Contains(html, "main.go:157") {
 		t.Fatal("role, purpose or entrypoint text missing")
 	}

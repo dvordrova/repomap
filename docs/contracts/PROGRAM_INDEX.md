@@ -79,6 +79,10 @@ ProgramIndex retains:
   `function_value_store`). It is identity only: the call stays unresolved,
   the witness is never its target, and validation refuses an `object_id` that
   names no object of the index or a control-context witness that names one.
+  `source_expression` is exact UTF-8 source material, so original line breaks,
+  tabs and Unicode survive sealing and decoding. It is not validated as a
+  one-line name. Witness kind/detail and source paths/coordinates keep their
+  existing canonical validation; an invalid identity does not become source.
   Two witness kinds are shared by every adapter, on a `reads` relation of a
   variable, and say how the site uses the variable's elements (a table's
   rows): `membership`, the site tests whether a value is one of them
@@ -115,6 +119,14 @@ ProgramIndex retains:
   or an arm ending in one), each with the construct's `location`; nested
   constructs give the strongest, a failing one over a branch. One unguarded
   site leaves the relation unguarded; folded sites keep the weakest guard.
+  ProgramIndex 28 also keeps a deciding arm's `condition`, its source text
+  with only surrounding whitespace trimmed, and `when`: `holds`, `fails`
+  or `matches` (the subject of a switch/match). Both are absent when no
+  single condition is established. A folded relation keeps this text only
+  when every site's condition and outcome agree; distinct conditions or
+  opposite arms retain the guard kind without borrowing the first site's
+  text. The condition is saved native evidence for display, never provider
+  input. Its location remains the construct that supplies the guard.
   Loops stay the patterns' `control_context` witnesses (a select is none).
   C, Go and Python record guards (C, GO, PYTHON); JS/TS and Clojure record
   none yet, a missing equivalent: their native views have the statements
@@ -343,7 +355,24 @@ past validation is memoized for these publicly mutable structs. A caller
 that already holds a validated value does not validate it again: the report's
 ProgramPortfolio validates its indexes where it is built and at the
 publication and render boundaries, and its default-entry lookups inside those
-only look up.
+only look up. Ordinary report portfolios may bind all original complete native
+artifacts instead of retaining their decoded bodies. The binding validates every
+complete file before installation and owns its target metadata and exact native
+and byte seals. Later graph reads decode the complete original and check those
+bindings again; canonical complete iteration does not accumulate native bodies.
+The original complete path inventory is gathered during that validated decode,
+both for ordinary binding and saved restoration: target sources and seeds,
+object locations, relation locations (including unresolved relations) and
+witness locations. Path-only consumers reuse this inventory only after checking
+every original file's complete raw-byte SHA with a streaming read. Mutable inline
+entries still supply their current paths directly. A missing or changed file
+refuses the inventory; no partial result replaces the prior one.
+At a publication boundary, each fresh file decode performs the complete native
+validation once; the portfolio does not immediately hash that same decoded graph
+again. Public inline entries still undergo validation at that boundary.
+This uses the same saved native graph schema and preserves public in-memory
+snapshot isolation. [Report](REPORT.md#one-publication) owns its consumers and
+fatal missing/tampered-file propagation.
 
 Places collects each target's declarations, relations, seeds and compact
 external-call observations together. Each saved target decodes once. Shared
@@ -426,10 +455,13 @@ object the same for its declared type (`Object.Types`, locations: `DBs
 []*DBConfig` names `DBConfig`); a type declared outside the corpus is
 none. Python, JSTS, Clojure and C record neither (missing equivalents: a
 Python annotation, a TypeScript type, a Clojure record and a C field's
-struct type are not resolved to their declarations here). Neither reaches
-a provider body: the compact projection keeps a value's kind and text
-only, and the atlas declaration keeps its types beside the ObjectID, never
-sent. The existing atlas
+struct type are not resolved to their declarations here). The existing compact caption/question projections omit these native retrieval
+identities. Parts discovery/assignment/admission reads complete declaration and
+call structure, including native literal values and argument words. Recursive
+source-value and field-write retrieval stays with destination, configuration
+and data reading over this unchanged complete graph; parts does not perform
+that retrieval or replace it with a depth-limited origin. Atlas declarations
+still keep canonical ObjectID locally, never sent. The existing atlas
 calls carry them locally. Compact caption/selection rows retain native API identity through their owning projection; question and boundary evidence retain safe source arguments, receivers, results and native API identity without internal IDs. Destination reading follows those native sites within retained owners,
 preserves separate uses and correlated arguments, and stops explicitly at
 unknown values or cycles. Flag/environment expressions are not deployed values;
@@ -457,6 +489,21 @@ Boundary uses survive the atlas, GroupsIndex and report. A selected address neve
 A call of a method declared on an external interface is one `invokes_external` relation whose target is that declared method and whose dispatch is `interface_method`. The implementation that runs there is unresolved unless an adapter observes one; a native view of the same site that found no implementation is not projected as a second, empty `calls` relation. The graph reads such a call as the declared API with `unresolved` resolution. This does not invent an implementation or turn that dispatch into an exact call. An observed repository implementation at the same site stays its own `calls` relation with alternatives.
 
 ## Compact artifact encoding
+
+`Object.docstring_ranges` optionally preserves native parser-owned comment
+attachment: sorted distinct positive source spans in the object's existing
+`Location.Path`. It carries no author text or inferred role. A located
+declaration is required, and the array participates in its native seal and
+deep snapshots. JSTS supplies it to the ordinary claims owner, which joins
+each exact original comment range to the native declaration's name line and
+column. Ranges use the existing inclusive `LineRange` endpoints; JSTS columns
+count UTF-16 units, and claims slices the original UTF-8 corpus accordingly.
+Distinct comments and declarations on the same line remain distinct.
+Absence means unknown, and an empty array is omitted. This additive optional
+metadata keeps ProgramIndex 28: objects without it retain their exact
+canonical bytes and existing seal. No reader reconstructs attachment from
+older saved text; a newly extracted JSTS result uses its bumped native
+helper/result contract. This adds no graph or interpretation authority.
 
 `program-index.json` stores each fact once. Observed counts are not written: every `*_observed` value is the number of retained rows plus the stored `*_omitted` value, and a zero omission, an empty collection or an absent optional value is left out. Coverage stores only non-zero object/relation omissions; everything else is compiled from the rows when the artifact is read. A witness or pattern at its relation's own location writes `"location":{}` (never a real location, which has a path, line and column), so the location is written once, on the relation; one without a location still writes none, and an artifact spelling every location out reads the same. Decoding restores the same in-memory index, including empty collections and those locations, before validating the seal, which is over the index and not over the artifact bytes.
 
@@ -577,12 +624,20 @@ concatenation; a leading English verb alone is insufficient. Explicit SQL/sqlc
 sources retain their authority. Unsupported or ambiguous strings stay original
 source text, never a claim that SQL or database access is absent.
 
-The deterministic facts pass runs after native extraction over the shared corpus, sealed ProgramIndex set, dependency catalogues and manifests. It knows no framework: a `registration` is a call that hands something over (a callable, a value named by a literal, an address) to a receiver that keeps or runs it, with its call word, literals, stated verb, the callable handed over, the external symbol behind the call, and the mount prefixes observed for its receiver. The receiver is code the repository does not own, or the repository's own where the native evidence shows it keeps what it is handed: a function storing the callable parameter in a field or a module-level variable (the index's `parameter_stores`; its `Registrar`), a row of a module-level table, or a statement starting the callable to run on its own, each below. A repository function that runs a callable in place and keeps nothing is delegation, never a registration (owner decision 2026-09-27 "a"): every higher-order helper would otherwise be an input asked per call. Lua 5.1.5's `lua_cpcall(L, &pmain, &s)` (`src/lua.c:387`) registers `pmain` because `lua_cpcall` keeps it in `CCallS.func` (`src/lapi.c:854`) before it runs it; its `luaL_Reg` tables are table rows. Only the C adapter records parameter stores; Go, Python, JS/TS and Clojure record none yet, so their functions that keep a handed callable (`self.handlers.append(fn)`, `l.handlers = append(l.handlers, h)`) register nothing: a recorded gap of each language contract. A call states an HTTP verb as its word, inside a `VERB host/path` pattern whose method is a capitalised HTTP verb (`GET /health`), or as a literal of its own beside an address it qualifies, given as an argument or a record's field (`NewRequest("GET", url)`, `{Method: "GET", Path: "/users"}`, a C row `{"GET", "/health", health}`); a verb-shaped literal with no address beside it is the name of what is handed over, so a `{"get", getCommand}` row states no method. An address is a path, a URL or such a pattern; prose with a word, a space and a slash (`open /dev/null: %s`) is none, whether it is written at the call or reaches it through a parameter. Any other call the repository itself declares, on a value the repository itself produced, or on a class that declares the member, is delegation and never a registration. The first of the repository's own receivers, the keeping registrar, is C's alone (C "Callables the program's own functions keep"). The second is a row of a table the repository owns (owner decision D1, 2026-09-26): a record a module-level variable's initializer constructs, storing a callable beside a string literal (C's `{"get", getCommand, 2}`), registers that callable under the literal, with the record type's field as its registrar (`kvd.h.kvCommand.proc`, the file declaring the type, the type and the field the callable is stored in; exact, since the record type is known); the same row built inside a function body stays delegation. One row is one registration: the literals it writes once, at their own source positions, are its identity, so a row that stores two callables (`{"zunion", zunionCommand, ..., zunionInterBlockClientOnSwappedKeys}`) registers the one it writes first, and the other stays a callback the row stores, never a second input under the same name. This is identity the code carries, not a decision about what a field means. The third is a call written with the shared invocation word `goroutine` (Go's `go f()`) or `async_task` (a coroutine handed to another call, `asyncio.create_task(f())`) with one exact repository callee (facts 6, `internal/facts/started.go`): it starts the callee to run on its own, so it is a registration handing that callee over, with `invocation` set, the statement as its word (`go`, or the call the coroutine is handed to, as written), the started call's literals and no outside symbol (`text` empty); a coroutine handed to no call is only created. A function written in the statement itself (a closure, `go func() { defer wg.Done(); s.monitorCompactionLevel(ctx, s.SnapshotLevel()) }()`) is named and handled by the one repository function it calls itself, a call whose result another call is given being part of that call and a deferred call not counted; a closure calling several, or a call the code could not follow, keeps its own name (`Open$1`, which DB and Store both have). A call written as a form of a Clojure `future`'s body carries `goroutine` too (CLOJURE): a started call's word is the call it is handed to as an argument whenever one is (`create_task`, `clojure.core/future`), else `go`. A further shape is a call the repository does not own handed several repository callables, each under a keyword of its own (Clojure keyword arguments or a trailing map, `(q/sketch :draw draw-state :key-pressed on-key)`; a Python call's callable keyword arguments; a Go struct of an outside type with two function fields): the call names no one handler, so each keyword entry is one registration handing its callable over, placed where the entry is written, its registrar the call's symbol with the keyword (`quil.core.sketch.key-pressed`, as a table row's is its record type with the field), its words the keyword before the call's literals, so the reading can name the entry by it; a callable handed by position beside them stays with none, and a call handing one callable keeps its one registration (`keywordHandoffs`). Which registration is a request, a consumer, a timer, continuous work, a plugin hook or a client request is decided in the reading stage from the same closed boundary kinds, so a run without a model has candidates and no routes. The stated verb and the address stay native evidence for portals, joints and client addresses; an entry's name never comes from them (Reading). `sql_query` retains a literal handed to a call the repository does not own and the tables it names as a fixed database boundary, only when the literal passes the same SQL statement admission as unbound source literals (`internal/sqltext`): an error message, flag help text or keyword argument that merely starts with an SQL verb (`create %s dir: %w`, `with`) is ordinary text and never a database boundary, while a statement whose table a printf verb fills in (`fmt.Sprintf("DROP TABLE IF EXISTS %s", t)`) stays one and lists no table. A statement is one fact at its call as the fact reads it (its tables and its text with spacing folded): `(str "SELECT 0 AS a" " UNION ALL" " SELECT 0 AS a")` hands one statement twice and records it once. Original template holes remain parameters with possible authority; a mount prefix composed with a router's own prefix is possible, not exact. Only an argument the call states as an address composes into a route's path (`statedPrefix`, the 2026-10-03 review's A2): a mount's or a group's one positional address literal (`app.use("/api", router)`, `path("django/", include(...))`, `Group("/articles")`), or a literal starting with `/` under a keyword whose last word is `prefix` (`APIRouter(prefix="/v1")`, `register_blueprint(bp, url_prefix="/flask")`), the outside API's own name for the argument; a router's constructor gives its result a prefix only that way. Any other keyword literal is a value whatever its shape, so `APIRouter(description="/docs")` and `FastAPI(docs_url="/docs")` leave `/ping` and `/health` as their routes wrote them, and two candidates name none. What this loses is recorded, not guessed: a positional parameter passed by keyword (`Mount(path="/api", ...)`), a JavaScript options object (`new Router({prefix: "/api"})`), which reaches no keyword argument, and a router a repository call returns (`r.Mount("/admin", adminRouter())`, which `mountedValue` does not follow). `config_read` and `dynamic_execution` are calls of particular outside functions, which the callee's owner as the graph resolves the call establishes, never the call's word (A1): a config read is a call of Python's `os.getenv` or `os.environ.get`, pydantic's `Field(env=...)` written in the body of a class deriving from `pydantic.BaseSettings` (on another model `env` is metadata), Go's `os` and `syscall` `Getenv` and `LookupEnv`, C's `getenv`, or the JVM's `System/getenv` (Clojure), with its literal key, or, when the
+The deterministic facts pass runs after native extraction over the shared corpus, sealed ProgramIndex set, dependency catalogues and manifests. It knows no framework: a `registration` is a call that hands something over (a callable, a value named by a literal, an address) to a receiver that keeps or runs it, with its call word, literals, stated verb, the callable handed over, the external symbol behind the call, and the mount prefixes observed for its receiver. The receiver is code the repository does not own, or the repository's own where the native evidence shows it keeps what it is handed: a function storing the callable parameter in a field or a module-level variable (the index's `parameter_stores`; its `Registrar`), a row of a module-level table, or a statement starting the callable to run on its own, each below. A repository function that runs a callable in place and keeps nothing is delegation, never a registration (owner decision 2026-09-27 "a"): every higher-order helper would otherwise be an input asked per call. Lua 5.1.5's `lua_cpcall(L, &pmain, &s)` (`src/lua.c:387`) registers `pmain` because `lua_cpcall` keeps it in `CCallS.func` (`src/lapi.c:854`) before it runs it; its `luaL_Reg` tables are table rows. Only the C adapter records parameter stores; Go, Python, JS/TS and Clojure record none yet, so their functions that keep a handed callable (`self.handlers.append(fn)`, `l.handlers = append(l.handlers, h)`) register nothing: a recorded gap of each language contract. A call states an HTTP verb as its word, inside a `VERB host/path` pattern whose method is a capitalised HTTP verb (`GET /health`), or as a literal of its own beside an address it qualifies, given as an argument or a record's field (`NewRequest("GET", url)`, `{Method: "GET", Path: "/users"}`, a C row `{"GET", "/health", health}`); a verb-shaped literal with no address beside it is the name of what is handed over, so a `{"get", getCommand}` row states no method. An address is a path, a URL or such a pattern; prose with a word, a space and a slash (`open /dev/null: %s`) is none, whether it is written at the call or reaches it through a parameter. Reading an argument through a parameter no call binds reads what every caller of its function supplies, each caller once per argument read (`facts/route_values.go`, 2026-10-09): walking them again on every path through the callers' own callers multiplied with the call depth and never ended on nats-server's `server` package; a second path adds no text, only its own evidence. Any other call the repository itself declares, on a value the repository itself produced, or on a class that declares the member, is delegation and never a registration. The first of the repository's own receivers, the keeping registrar, is C's alone (C "Callables the program's own functions keep"). The second is a row of a table the repository owns (owner decision D1, 2026-09-26): a record a module-level variable's initializer constructs, storing a callable beside a string literal (C's `{"get", getCommand, 2}`), registers that callable under the literal, with the record type's field as its registrar (`kvd.h.kvCommand.proc`, the file declaring the type, the type and the field the callable is stored in; exact, since the record type is known); the same row built inside a function body stays delegation. One row is one registration: the literals it writes once, at their own source positions, are its identity, so a row that stores two callables (`{"zunion", zunionCommand, ..., zunionInterBlockClientOnSwappedKeys}`) registers the one it writes first, and the other stays a callback the row stores, never a second input under the same name. This is identity the code carries, not a decision about what a field means. The third is a call written with the shared invocation word `goroutine` (Go's `go f()`) or `async_task` (a coroutine handed to another call, `asyncio.create_task(f())`) with one exact repository callee (facts 6, `internal/facts/started.go`): it starts the callee to run on its own, so it is a registration handing that callee over, with `invocation` set, the statement as its word (`go`, or the call the coroutine is handed to, as written), the started call's literals and no outside symbol (`text` empty); a coroutine handed to no call is only created. A function written in the statement itself (a closure, `go func() { defer wg.Done(); s.monitorCompactionLevel(ctx, s.SnapshotLevel()) }()`) is named and handled by the one repository function it calls itself, a call whose result another call is given being part of that call and a deferred call not counted; a closure calling several, or a call the code could not follow, keeps its own name (`Open$1`, which DB and Store both have). A call written as a form of a Clojure `future`'s body carries `goroutine` too (CLOJURE): a started call's word is the call it is handed to as an argument whenever one is (`create_task`, `clojure.core/future`), else `go`. A further shape is a call the repository does not own handed several repository callables, each under a keyword of its own (Clojure keyword arguments or a trailing map, `(q/sketch :draw draw-state :key-pressed on-key)`; a Python call's callable keyword arguments; a Go struct of an outside type with two function fields): the call names no one handler, so each keyword entry is one registration handing its callable over, placed where the entry is written, its registrar the call's symbol with the keyword (`quil.core.sketch.key-pressed`, as a table row's is its record type with the field), its words the keyword before the call's literals, so the reading can name the entry by it; a callable handed by position beside them stays with none, and a call handing one callable keeps its one registration (`keywordHandoffs`). Which registration is a request, a consumer, a timer, continuous work, a plugin hook or a client request is decided in the reading stage from the same closed boundary kinds, so a run without a model has candidates and no routes. The stated verb and the address stay native evidence for portals, joints and client addresses; an entry's name never comes from them (Reading). `sql_query` retains a literal handed to a call the repository does not own and the tables it names as a fixed database boundary, only when the literal passes the same SQL statement admission as unbound source literals (`internal/sqltext`): an error message, flag help text or keyword argument that merely starts with an SQL verb (`create %s dir: %w`, `with`) is ordinary text and never a database boundary, while a statement whose table a printf verb fills in (`fmt.Sprintf("DROP TABLE IF EXISTS %s", t)`) stays one and lists no table. A statement is one fact at its call as the fact reads it (its tables and its text with spacing folded): `(str "SELECT 0 AS a" " UNION ALL" " SELECT 0 AS a")` hands one statement twice and records it once. Original template holes remain parameters with possible authority; a mount prefix composed with a router's own prefix is possible, not exact. Only an argument the call states as an address composes into a route's path (`statedPrefix`, the 2026-10-03 review's A2): a mount's or a group's one positional address literal (`app.use("/api", router)`, `path("django/", include(...))`, `Group("/articles")`), or a literal starting with `/` under a keyword whose last word is `prefix` (`APIRouter(prefix="/v1")`, `register_blueprint(bp, url_prefix="/flask")`), the outside API's own name for the argument; a router's constructor gives its result a prefix only that way. Any other keyword literal is a value whatever its shape, so `APIRouter(description="/docs")` and `FastAPI(docs_url="/docs")` leave `/ping` and `/health` as their routes wrote them, and two candidates name none. What this loses is recorded, not guessed: a positional parameter passed by keyword (`Mount(path="/api", ...)`), a JavaScript options object (`new Router({prefix: "/api"})`), which reaches no keyword argument, and a router a repository call returns (`r.Mount("/admin", adminRouter())`, which `mountedValue` does not follow). `config_read` and `dynamic_execution` are calls of particular outside functions, which the callee's owner as the graph resolves the call establishes, never the call's word (A1): a config read is a call of Python's `os.getenv` or `os.environ.get`, pydantic's `Field(env=...)` written in the body of a class deriving from `pydantic.BaseSettings` (on another model `env` is metadata), Go's `os` and `syscall` `Getenv` and `LookupEnv`, C's `getenv`, or the JVM's `System/getenv` (Clojure), with its literal key, or, when the
 call is handed its key (2026-10-04), each key the value walk of that
 argument reaches through the callers (casdoor's `GetConfigString(key)`
 reading `os.LookupEnv(key)` for `"dataSourceName"`, `"staticBaseUrl"`, …:
 one fact per key at the read, the walk's literals its evidence, possible
 when the walk passed alternatives; a key no walk reaches is no fact); a dynamic execution is a call of Python's builtin `eval` or `exec` (`builtins.eval`, or a bare call the Python adapter witnessed falling back to the builtins module, PYTHON "Builtins"), `pickle` or `marshal` `load`/`loads`, `yaml.unsafe_load` or `yaml.load` with no loader or one of yaml's unsafe ones (`Loader=yaml.SafeLoader` reads data), JavaScript's platform `eval` or `Function` (`new Function` when constructed), or `clojure.core/eval`. A function the repository declares under such a name is its own code (a local `getenv`, casdoor's `slavedb.exec`, etcd's `txn.eval`); a call the graph leaves unresolved names no owner and stays unknown, neither an exact nor a possible fact; a call that may reach the function among other callees is possible. Go and C declare no evaluating function, and a JavaScript program reads `process.env.KEY` as a property: they have no such fact. Recorded gaps: `os.environ["K"]` and `"K" in os.environ` (subscripts, not calls), `os.environ.copy()`, `click`/`typer` `envvar=`, and code loaders outside the list (cloudpickle, joblib, `torch.load`). Dead modules are judged repository-wide against every selected target's seeds and only for files that declare something to run, never for a test source, which its runner runs (othello's `spec/` files, once its `:spec` alias names them tests, are no longer "not reachable from the entrypoints"). Dynamic execution remains its own source fact and does not automatically become an incoming operation or remote participant.
+
+Registration address admission and emission use the same address-focused value
+walk. Emission does not enumerate unrelated diagnostic strings through every
+caller after admission has already ruled those branches out. Directly written
+registration names remain literal evidence; address alternatives, concatenations,
+caller bindings and all original source sites keep their existing authority.
+This changes neither the saved expressions nor the general value walk used for
+configuration keys, and imposes no depth, size or evidence limit.
 
 Claims retain the original human-written quote, path and available date/age. Only the shallowest README supplies the repository overview claim; nested document evidence retains its heading and file-role context. No credential scanner or withheld-quote classifier is added. Configured extraction and SQL admission remain owned by [EXTRACTORS](../EXTRACTORS.md).
 
@@ -621,3 +676,43 @@ cross-part connections retain their original relation ID,
 declaration endpoints, source locations and resolution.
 
 Public snapshots keep their existing isolation. Shared materialization never reassigns a target, aliases package contexts, invents a callee or turns an alternative into an exact observation. Source bodies do not enter provider requests. [EXTRACTORS](../EXTRACTORS.md) owns configured extractor and SQL admission details.
+
+GroupsIndex 31 persists recursive architectural areas as `Container.ParentID`
+and direct `GroupIDs`. Native ProgramIndex identities/relations are unchanged.
+Marks/counts aggregate descendants without duplicating ownership. Sealing,
+overlay decode and hydration validate the original tree; folded/test-free views
+retain accepted nonempty ancestors after filtering. Matched graph extensions
+must preserve local containers as well as groups, facts and local connections.
+
+Shared file ownership does not establish declaration availability. Places graph
+28 records a symbol's TargetIDs from the native views that actually indexed
+that declaration, accumulated before shared declarations merge and intersected
+with the file's surviving owners. The representative target-qualified ObjectID
+is a source identity, never a test of native availability. Reading's original
+part units and target-local saved symbols use those exact declaration observers;
+a shared file remains complete, while another build's conditional declarations
+do not become owned part rows of this target. No adapter or ProgramIndex fact
+is changed.
+
+SymbolCall also retains the exact native observers in TargetIDs. Identical
+source observations merge those sets without changing the original indexes;
+caller/callee availability does not prove that a view observed their call.
+An absent narrower call scope means the holder's views; ordinary native
+collection supplies explicit observers. Target-local units, roles, area counts,
+arrows, runtime boundaries and destination walks intersect with the call's
+observers. Reverse calls retain the actual scoped caller ObjectID. A matching
+alternative observation subsumes unresolved evidence only in their intersecting
+views; disjoint unresolved evidence remains. Source ownership of the callee
+never changes the native caller's observation or its original callee reference.
+Shared file edges cannot reintroduce an absent declaration-level call count.
+
+The cumulative C fixture uses two real compiler configurations of strbuf.c:
+common declarations exist in both, a call in sbNativeCommon exists only in
+REPOMAP_NATIVE_VARIANT, and each configuration has its own conditional
+declaration. This is shared places projection, not a new adapter behavior.
+Go's existing cumulative build-tag example checks excluded declaration
+availability and shared-wiring checks retain per-program native relations.
+Python and JS/TS runtime branches do not exclude native declarations/call
+sites by build configuration; Clojure's supported JVM path does not supply a
+second reader-feature configuration. These are missing equivalents of C's
+same-source preprocessor case, not fabricated native compile-time exclusions.

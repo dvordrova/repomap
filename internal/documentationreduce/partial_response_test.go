@@ -210,15 +210,15 @@ func TestDocumentationRefusedMergeKeepsOriginalConcepts(t *testing.T) {
 	}
 }
 
-func TestDocumentationRefusedMergeSingletonDoesNotBecomeWholeOverview(t *testing.T) {
+func TestDocumentationPackedMergeSingletonsKeepBothOriginalsWithoutCallingModel(t *testing.T) {
 	_, candidates, authority := packingEvidence(2)
 	provider := &partialDocumentationProvider{raw: []byte(`{}`), separateMerge: true}
 	result, err := mergeTournament(t.Context(), llm.Executor{BatchConcurrency: 2}, provider, "guidance", authority, candidates)
-	if err != nil || len(result) != 1 || provider.calls != 2 {
+	if err != nil || len(result) != 2 || provider.calls != 0 {
 		t.Fatalf("failed merge erased original or retried: %+v / %v", result, err)
 	}
 	combined := joinReductions(result)
-	if combined.overview != "" || len(combined.sources) != 1 || combined.sources[0].Ref != "d0001" {
+	if combined.overview != "" || len(combined.sources) != 2 || !reflect.DeepEqual(canonicalCandidates(candidates), result) {
 		t.Fatalf("partial retained source became whole overview: %+v", combined)
 	}
 }

@@ -33,6 +33,9 @@ cite a ref of the wrong kind.
   - `dynamic_execution`: code run from data (exec, eval, a subprocess, an
     object-building deserializer), where reading stops.
   - `manifest`: a value quoted from a manifest.
+    For an included build file, `path` identifies the invocation's root
+    makefile while `anchor` identifies the defining included source; the
+    included source's directory is not the build's working directory.
   - `dependency`: an outside package a target imports.
   - `dead_module`: a file no entrypoint reaches.
   - `negative`: something the repository lacks.
@@ -81,7 +84,10 @@ Rules for each part:
   (`tN.nN`).
 - `roles`: exactly one row per target. `role` is a short label such as
   "Backend API service" or "Browser front end"; `purpose` is one sentence. A
-  role describes only its own target: what its own groups, facts and seeds
+  role describes the program's runtime work or the library's offered
+  capabilities. A manifest builds the target; that does not mean the built
+  program runs a compiler or Makefile. Build preparation belongs in the recipe.
+  A role describes only its own target: what its own groups, facts and seeds
   show it doing. A fact is a target's own when its `targets` lists that
   target; a seed is its own when its ref starts with that target's ref and a
   dot (`t2.` for `t2`). Never describe a target by another target's
@@ -90,6 +96,12 @@ Rules for each part:
   target's own facts and seeds, at least one when it has any; leave `refs`
   empty only when the request lists none of either.
 - `run_recipe`: the commands a newcomer runs to start each target, in order.
+  Include supported prerequisite build steps. A manifest's task catalogue is
+  not a recipe: unrelated maintenance, cleanup and diagnostic commands are not
+  preparation or launch steps.
+  Preserve source-declared configuration or generation of required build inputs
+  before the applicable build, including shared prerequisites and their stated
+  conditions; do not turn an optional reconfiguration task into a mandatory step.
   `refs` cite facts only, and every row must cite at least one `manifest` or
   `entrypoint` fact that supports the command; an `export` never does. Use
   `cwd` for the directory the command runs in. Leave the list empty rather
@@ -111,6 +123,14 @@ Rules for each part:
   cite their facts when the facts show them. If
   the supplied evidence cannot support a usable invocation, omit it rather
   than presenting the bare entry point as sufficient.
+  Build variables, compiler flags and output suffixes describe settings, not a
+  complete invocation. Never combine them into a compiler or linker command
+  with missing input/output operands or an invented consumer. Prefer the
+  source-supported build task; its settings can appear in its note. An ellipsis
+  that abbreviates missing command operands is not an explicit user placeholder.
+  For a library, stop after supported preparation/build/install unless the
+  supplied source shows a usable consumer or example invocation; API exports
+  alone do not establish one.
 - `main_flow_target`: the one target (`t*`) whose main flow a newcomer should
   read first: the program the repository exists for, not a helper script,
   test, build tool or library, which runs nothing on its own. Its flow is

@@ -10,7 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/clojureproject"
 	"github.com/dvordrova/repomap/internal/groupindex"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 )
@@ -68,7 +67,7 @@ func TestEveryLanguageKeepsTheSpellingsOfOneValue(t *testing.T) {
 		t.Setenv("GOTOOLCHAIN", "local")
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
-		authorities := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "spellings")
+		authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "spellings")
 		index, err := goadapter.Build(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -91,7 +90,7 @@ func TestEveryLanguageKeepsTheSpellingsOfOneValue(t *testing.T) {
 	// password joined by &&.
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +113,7 @@ func TestEveryLanguageKeepsTheSpellingsOfOneValue(t *testing.T) {
 		if err != nil || len(targets) != 1 {
 			t.Fatalf("Clojure discovery: %v %v", targets, err)
 		}
-		result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+		result, err := sharedClojureFixture(t, root, repository, targets[0])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +132,7 @@ func TestEveryLanguageKeepsTheSpellingsOfOneValue(t *testing.T) {
 	// spelling too, one || of two strcasecmp calls compared the same way;
 	// its else-if arms compare other directives and write other fields.
 	t.Run("c", func(t *testing.T) {
-		index := buildCIndex(t, loadCFixture(t), "c:kvd")
+		index := buildCIndex(t, sharedCFixture(t), "c:kvd")
 		got := spellingPairs(t, index, "kvd.c", "loadConfig")
 		want := map[string]string{
 			"r": "", "port": "", "dbfilename": "", "dbfile": "dbfilename", "max-entry-value": "", "persist": "", "never": "", "always": "",
@@ -154,7 +153,7 @@ func TestGoSpellingsOfOneSettingAreOneInput(t *testing.T) {
 	t.Setenv("GOTOOLCHAIN", "local")
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
-	app := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "spelling-inputs")
+	app := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "spelling-inputs")
 	index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
 	if err != nil {
 		t.Fatal(err)

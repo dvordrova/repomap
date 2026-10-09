@@ -1,24 +1,17 @@
 package reading
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
 // withSharedFile adds lib/z.go to both targets of twoTargetGraph, as Redis
-// builds zmalloc.c into the server and into each tool. Each target draws it
-// as its own part "lib", whose description request is then the same bytes.
+// builds zmalloc.c into the server and into each tool.
 func withSharedFile(t *testing.T, graph atlas.Graph) atlas.Graph {
 	t.Helper()
 	both := []string{"svc", "web"}
@@ -54,68 +47,15 @@ func withSharedFile(t *testing.T, graph atlas.Graph) atlas.Graph {
 	return decoded
 }
 
-// drawingProvider answers like a model: every description it writes is a new
-// draw, and a description request waits briefly for an identical one so both
-// are in the air together and finish in the reverse order.
-type drawingProvider struct {
-	*tableProvider
-	mu      sync.Mutex
-	waiting map[string]chan struct{}
-}
-
-func (provider *drawingProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
-	if strings.Contains(string(prepared.Bytes()), designDescribeTask) {
-		key := string(prepared.Bytes())
-		provider.mu.Lock()
-		if twin, found := provider.waiting[key]; found {
-			delete(provider.waiting, key)
-			provider.mu.Unlock()
-			close(twin)
-		} else {
-			twin := make(chan struct{})
-			provider.waiting[key] = twin
-			provider.mu.Unlock()
-			select {
-			case <-twin:
-				time.Sleep(5 * time.Millisecond) // the twin lands first
-			case <-time.After(150 * time.Millisecond):
-			case <-ctx.Done():
-				return llm.Completion{}, ctx.Err()
-			}
-		}
-	}
-	return provider.tableProvider.Complete(ctx, prepared)
-}
-
-// A part two targets share has one description request, byte for byte. It
-// is asked once, both targets show that one answer, and the cache keeps the
-// answer this reading used: a second reading over the same cache asks
-// nothing and sends and draws exactly what the first did, whatever order the
-// answers came back in.
+// Each target keeps its complete owned part. A warm run reuses exact
+// requests without replacing the targets with a shared group.
 func TestIdenticalRequestsOfTwoTargetsGetOneAnswer(t *testing.T) {
-	var draws atomic.Int64
-	asked := map[string]int{}
-	var askedMu sync.Mutex
-	provider := &drawingProvider{waiting: map[string]chan struct{}{}, tableProvider: &tableProvider{
-		describe: func(name string) string {
-			askedMu.Lock()
-			asked[name]++
-			askedMu.Unlock()
-			return fmt.Sprintf("About %s, draw %d.", name, draws.Add(1))
-		},
-		// Areas and core read the descriptions, so a changed one changes them.
-		areaFor: func(part map[string]any) string {
-			if part["name"] == "svc/api" || part["name"] == "svc/core" || part["name"] == "lib" {
-				return "Serving"
-			}
-			return ""
-		},
-	}}
+	provider := &tableProvider{}
 	graph := withSharedFile(t, twoTargetGraph(t))
 	cache := t.TempDir()
 	read := func() (Options, Result) {
 		t.Helper()
-		opts := twoTargetOptions(t, graph, provider.tableProvider)
+		opts := twoTargetOptions(t, graph, provider)
 		opts.Provider = provider
 		opts.Executor = llm.Executor{RootDir: cache, Enabled: true, BatchConcurrency: 4, BatchController: &llm.BatchController{}}
 		result, err := Read(t.Context(), opts)
@@ -126,20 +66,21 @@ func TestIdenticalRequestsOfTwoTargetsGetOneAnswer(t *testing.T) {
 	}
 	coldOpts, cold := read()
 	calls := provider.calls
-	lib := map[string]string{}
+	// Both targets hold the shared declaration in a part of their own.
+	holders := map[string]bool{}
 	for _, target := range cold.Atlas.Targets {
 		for _, box := range target.Boxes {
-			if box.Title == "lib" {
-				lib[target.ID] = box.Line
+			for _, file := range box.Files {
+				if file.Path == "lib/z.go" {
+					holders[target.ID] = true
+				}
 			}
 		}
 	}
-	if len(lib) != 2 || lib["svc"] == "" || lib["svc"] != lib["web"] {
-		t.Fatalf("the shared part's descriptions per target: %v; want one answer for both", lib)
+	if !holders["svc"] || !holders["web"] {
+		t.Fatalf("the shared file's holders: %v; want both targets", holders)
 	}
-	if asked["lib"] != 1 {
-		t.Fatalf("the identical description request reached the provider %d times", asked["lib"])
-	}
+
 	warmOpts, warm := read()
 	if provider.calls != calls {
 		t.Fatalf("the second reading asked the provider %d more times; want none", provider.calls-calls)

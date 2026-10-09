@@ -10,10 +10,8 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/extractors"
 	"github.com/dvordrova/repomap/internal/facts"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
@@ -36,7 +34,7 @@ func TestCumulativeTestCodeReachesNoOutboundOrData(t *testing.T) {
 		t.Setenv("GOTOOLCHAIN", "local")
 		t.Setenv("GOWORK", "off")
 		root, repository := materializeFixtureRepository(t, "go")
-		library := analyzeGoFixture(t, root, repository, goFixtureRootPackage, "cumulative-go-test-catalogs")
+		library := sharedGoFixtureAuthorities(t, root, repository, goFixtureRootPackage, "cumulative-go-test-catalogs")
 		index, err := goadapter.Build(repository, library.target, library.origins, library.direct, library.external, library.core, library.dynamic, library.tests)
 		if err != nil {
 			t.Fatal(err)
@@ -57,7 +55,7 @@ func TestCumulativeTestCodeReachesNoOutboundOrData(t *testing.T) {
 				target = candidate
 			}
 		}
-		input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+		input, err := sharedPythonFixtureInput(t, repository, target)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +67,7 @@ func TestCumulativeTestCodeReachesNoOutboundOrData(t *testing.T) {
 	})
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,7 +79,7 @@ func TestCumulativeTestCodeReachesNoOutboundOrData(t *testing.T) {
 		if err != nil || len(targets) != 1 {
 			t.Fatalf("Clojure discovery: %v %v", targets, err)
 		}
-		result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+		result, err := sharedClojureFixture(t, root, repository, targets[0])
 		if err != nil {
 			t.Fatal(err)
 		}

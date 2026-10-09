@@ -28,3 +28,18 @@ func TestADeclarationCallingItselfIsNoInternalConnection(t *testing.T) {
 		t.Fatalf("internal connections = %+v, want move's call to choose alone", rows)
 	}
 }
+
+func TestArityCallUsesOriginalSourceExpressionAndExistingDetail(t *testing.T) {
+	const expression = "[значение\n\tstatus]"
+	builder := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{
+		{Target: programindex.Target{ID: "t1"}, Relations: []programindex.Relation{
+			{ID: "multiline", Witnesses: []programindex.Witness{{Kind: "arity", Detail: "selected arity", SourceExpression: expression}}},
+			{ID: "existing", Witnesses: []programindex.Witness{{Kind: "arity", Detail: "[name times]"}}},
+		}},
+		{Target: programindex.Target{ID: "t2"}, Relations: []programindex.Relation{{ID: "other", Witnesses: []programindex.Witness{{Kind: "arity", SourceExpression: "[other]"}}}}},
+	}}}}
+	calls := builder.arityCalls("t1")
+	if len(calls) != 2 || calls["multiline"] != expression || calls["existing"] != "[name times]" {
+		t.Fatalf("selected parameters lost or substituted by caption: %+v", calls)
+	}
+}

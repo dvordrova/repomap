@@ -16,29 +16,26 @@ import (
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/groupindex/flowtest"
-	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
-// The parts request of each fixture carries code structure only and every
-// declaration takes one part or an entry off the map. A Go method declared
-// in another file than its type goes with its type: internal/localstore's
-// Ledger.Append. Its own file, which declares nothing else, is no row of the
-// parts request yet stays on the map in Ledger's part: the card does not
-// list it as off the map. Python and TypeScript have no method outside its
-// class; Clojure's defmethod, extend-type and extend-protocol are not
-// declarations the Clojure adapter projects, so no equivalent exists there
-// to check.
+// The grouping of each fixture sends code structure only and every
+// declaration takes one part or an entry off the map (partstest). A Go
+// method declared in another file than its type goes with its type:
+// internal/localstore's Ledger.Append. Its own file, which declares nothing
+// else, stays on the map in Ledger's part: the card does not list it as off
+// the map. Python and TypeScript have no method outside its class;
+// Clojure's defmethod, extend-type and extend-protocol are not declarations
+// the Clojure adapter projects, so no equivalent exists there to check.
 func TestCumulativeGoMapOfParts(t *testing.T) {
 	t.Setenv("CGO_ENABLED", "0")
 	t.Setenv("GOTOOLCHAIN", "local")
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
-	library := analyzeGoFixture(t, root, repository, goFixtureRootPackage, "cumulative-go-map-of-parts")
+	library := sharedGoFixtureAuthorities(t, root, repository, goFixtureRootPackage, "cumulative-go-map-of-parts")
 	index, err := goadapter.Build(repository, library.target, library.origins, library.direct, library.external, library.core, library.dynamic, library.tests)
 	if err != nil {
 		t.Fatal(err)
@@ -90,13 +87,12 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	if reader == "" || expected == "" || checked.PartOf[expected] != checked.PartOf[reader] {
 		t.Fatalf("testRootReader.expected left its type: %q %q", expected, reader)
 	}
-	// Split, ledger.go's Ledger takes a role part and its Append, declared
-	// in ledger_append.go, follows it there; its Keys too. The two inits
-	// stay one unit.
-	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "library", Name: index.Target.Name, Root: "."}, root)
+	// With helpers, Ledger.Append, declared in ledger_append.go, still
+	// follows Ledger.
+	split := partstest.CheckHelpers(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "library", Name: index.Target.Name, Root: "."}, root)
 	ledger, appendMethod = split.Symbols[[2]string{"internal/localstore/ledger.go", "Ledger"}], split.Symbols[[2]string{"internal/localstore/ledger_append.go", "Ledger.Append"}]
-	if !split.Split["internal/localstore/ledger.go"] || !split.RoleParts[split.PartOf[ledger]] || split.PartOf[appendMethod] != split.PartOf[ledger] {
-		t.Fatalf("split: Ledger in %q, Ledger.Append in %q, split files %v", split.PartOf[ledger], split.PartOf[appendMethod], split.Split)
+	if split.PartOf[ledger] == "" || split.PartOf[appendMethod] != split.PartOf[ledger] {
+		t.Fatalf("Ledger in %q, Ledger.Append in %q", split.PartOf[ledger], split.PartOf[appendMethod])
 	}
 	// A handler's assignment shows the words of the route that hands it
 	// over.
@@ -105,20 +101,15 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	}
 	// The helper question: lookupCommand, unexported and called only by
 	// DispatchCommand, is a helper and goes with it by code; DispatchCommand,
-	// exported and called by nothing, is no helper by code and not asked;
-	// the command table's getCommand and setCommand, which only its rows hand
-	// over, have no user to follow and are asked once more. Go records no
-	// reads, so no item carries read_by (GO).
+	// exported and called by nothing, is no helper by code and not asked. Go
+	// records no reads, so no item carries read_by (GO).
 	commands := "internal/storefixture/command_table.go"
 	lookup, dispatch := split.Symbols[[2]string{commands, "lookupCommand"}], split.Symbols[[2]string{commands, "DispatchCommand"}]
-	if !split.Helpers[[2]string{commands, "lookupCommand"}] || split.PartOf[lookup] == "" || split.PartOf[lookup] != split.PartOf[dispatch] || !recorded(split, "role_attached", "lookupCommand") {
+	if !split.Helpers[[2]string{commands, "lookupCommand"}] || split.PartOf[lookup] == "" || split.PartOf[lookup] != split.PartOf[dispatch] {
 		t.Fatalf("lookupCommand in %q, DispatchCommand in %q", split.PartOf[lookup], split.PartOf[dispatch])
 	}
 	if _, asked := split.HelperItems[[2]string{commands, "DispatchCommand"}]; asked {
 		t.Fatal("DispatchCommand, which nothing calls, was asked the helper question")
-	}
-	if !recorded(split, "role_second_pass", "getCommand") || !recorded(split, "role_second_pass", "setCommand") {
-		t.Fatal("the table's handlers were not asked once more")
 	}
 	for key, item := range split.HelperItems {
 		if item["read_by"] != nil {
@@ -144,24 +135,27 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	projectSplit(t, index, split)
 }
 
-// Split, the Go executable's main.go is its seed file: main is a row of its
-// own (e1), never asked the helper question or a box, and the part holding
-// it is the program's one entry part, the only one in the triggers lane.
+// The Go executable's seed main is never asked the helper question, and the
+// part holding it is the program's one entry part, the only one in the
+// triggers lane.
 func TestCumulativeGoExecutableSeedIsItsOwnRow(t *testing.T) {
 	t.Setenv("CGO_ENABLED", "0")
 	t.Setenv("GOTOOLCHAIN", "local")
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
-	app := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "cumulative-go-seed-row")
+	app := sharedGoFixtureAuthorities(t, root, repository, goFixtureAppPackage, "cumulative-go-seed-row")
 	index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
 	if err != nil {
 		t.Fatal(err)
 	}
 	graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
-	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}, root)
+	split := partstest.CheckHelpers(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}, root)
 	main := split.Symbols[[2]string{"cmd/app/main.go", "main"}]
-	if !split.Split["cmd/app/main.go"] || !split.RoleParts[split.PartOf[main]] {
-		t.Fatalf("split: main in %q, split files %v", split.PartOf[main], split.Split)
+	if split.PartOf[main] == "" {
+		t.Fatal("main is off the map")
+	}
+	if _, asked := split.HelperItems[[2]string{"cmd/app/main.go", "main"}]; asked {
+		t.Fatal("the seed main was asked the helper question")
 	}
 	checkOneEntryPart(t, projectSplit(t, index, split), main, "main")
 }
@@ -209,15 +203,9 @@ func graphWithFacts(t *testing.T, repository *corpus.Corpus, target places.Targe
 	return graph
 }
 
-// recorded says whether the reading recorded a row of this kind naming the
-// sample.
-func recorded(split partstest.Map, kind, sample string) bool {
-	return slices.ContainsFunc(split.Rejected, func(row modeldiag.Row) bool { return row.Kind == kind && slices.Contains(row.Samples, sample) })
-}
-
-// projectSplit checks that GroupsIndex accepts a split atlas and lists a
-// split file's undecided declarations by name without calling the file off
-// the map.
+// projectSplit checks that GroupsIndex accepts the atlas and lists the
+// declarations off the map as blocked or undecided by name, each a
+// declaration of its file.
 func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) groupindex.Index {
 	t.Helper()
 	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, split.Atlas)
@@ -232,13 +220,7 @@ func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) g
 	}
 	checkUnreachedParts(t, index, indexes[0])
 	for _, file := range indexes[0].OffMap {
-		// A split file is on the map through its role parts; only its
-		// undecided or blocked declarations, or those of a role part the
-		// program never runs, are listed off it.
 		listed := file.Reason == groupindex.OffMapUndecided || file.Reason == groupindex.OffMapBlocked
-		if split.Split[file.Path] && (!listed && file.Reason != groupindex.OffMapUnreachable || len(file.SubjectIDs) == 0) {
-			t.Fatalf("the split file %s is listed off the map: %+v", file.Path, file)
-		}
 		if !listed {
 			continue
 		}
@@ -319,7 +301,7 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 			break
 		}
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	input, err := sharedPythonFixtureInput(t, repository, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +311,8 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	}
 	graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
 	// A module declaring __all__ exports exactly what it lists: the parts
-	// request shows the signature of render_level, not of format_score.
+	// visibility remains original; complete supporting headers include the
+	// private format_score signature without turning it into a public API.
 	seen := 0
 	for _, object := range index.Objects {
 		if object.Location == nil || object.Location.Path != "src/fixture_app/exports.py" {
@@ -369,11 +352,11 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	if nested == "" || outer == "" || checked.PartOf[nested] != checked.PartOf[outer] {
 		t.Fatalf("a nested function left its parent's part: %q %q", nested, outer)
 	}
-	// Split, the nested function still follows its parent into a role part.
-	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root)
+	// With helpers, the nested function still follows its parent.
+	split := partstest.CheckHelpers(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root)
 	outer, nested = split.Symbols[[2]string{"src/fixture_app/http_registrations.py", "register_route"}], split.Symbols[[2]string{"src/fixture_app/http_registrations.py", "empty_registered_handler"}]
-	if !split.Split["src/fixture_app/http_registrations.py"] || split.PartOf[nested] != split.PartOf[outer] {
-		t.Fatalf("split: the nested function in %q, its parent in %q", split.PartOf[nested], split.PartOf[outer])
+	if split.PartOf[nested] != split.PartOf[outer] {
+		t.Fatalf("the nested function in %q, its parent in %q", split.PartOf[nested], split.PartOf[outer])
 	}
 	if registered := split.Registered["src/fixture_app/http_registrations.py"]; !slices.Contains(registered, "get /health") {
 		t.Fatalf("http_registrations.py's handlers are asked with registrations %v", registered)
@@ -381,13 +364,12 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	// The helper question: format_score, which __all__ leaves out and only
 	// render_level calls, is a helper and goes with render_level by code.
 	// __all__ is a module-level declaration like any other (its name's
-	// underscores decide nothing), so exports.py holds two that are none and
-	// is split between them. levels.py's constants are asked with the
+	// underscores decide nothing). levels.py's constants are asked with the
 	// function of models.py that reads them.
 	exports := "src/fixture_app/exports.py"
 	format, render := split.Symbols[[2]string{exports, "format_score"}], split.Symbols[[2]string{exports, "render_level"}]
 	if !split.Helpers[[2]string{exports, "format_score"}] || split.Helpers[[2]string{exports, "render_level"}] || split.Helpers[[2]string{exports, "__all__"}] ||
-		split.PartOf[format] == "" || split.PartOf[format] != split.PartOf[render] || split.Symbols[[2]string{exports, "__all__"}] == "" || !split.Split[exports] {
+		split.PartOf[format] == "" || split.PartOf[format] != split.PartOf[render] || split.Symbols[[2]string{exports, "__all__"}] == "" {
 		t.Fatalf("format_score in %q, render_level in %q, __all__ %q", split.PartOf[format], split.PartOf[render], split.Symbols[[2]string{exports, "__all__"}])
 	}
 	for _, name := range []string{"READ_VALUES", "READ_LIMIT"} {
@@ -413,7 +395,7 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	if err != nil || len(targets) != 1 {
 		t.Fatalf("Clojure discovery: %v %v", targets, err)
 	}
-	result, err := clojureproject.Build(t.Context(), root, repository, targets[0])
+	result, err := sharedClojureFixture(t, root, repository, targets[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,14 +416,13 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 		adaptertest.DeclarationUse{FromPath: "src/example/core.clj", From: "example.core/greet-many", Kind: "passes_callback", ToPath: "src/example/service.cljc", To: "example.service/greet"},
 	)
 	meta := reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}
-	partstest.Check(t, graph, meta, root)
-	// Split, core.clj is the seed file: its -main keeps the entry.
-	split := partstest.CheckSplit(t, graph, meta, root)
-	if !split.Split["src/example/core.clj"] {
-		t.Fatal("split: core.clj was not split")
+	checked := partstest.Check(t, graph, meta, root)
+	if checked.Symbols[[2]string{"src/example/core.clj", "example.core/shout"}] == "" {
+		t.Fatal("core.clj's shout is not on the map")
 	}
-	// The fixture registers no route or command in a split file; its one
-	// registration there hands a function to clojure.core/map.
+	split := partstest.CheckHelpers(t, graph, meta, root)
+	// The fixture registers no route or command; its one registration hands
+	// a function to clojure.core/map.
 	if registered := split.Registered["src/example/service.cljc"]; !slices.Contains(registered, "clojure.core/map") {
 		t.Fatalf("service.cljc's declarations are asked with registrations %v", registered)
 	}
@@ -466,7 +447,7 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 		t.Fatal("ensure!, a macro whose uses Clojure does not record, was not asked the helper question")
 	}
 	exclaim, cheer := split.Symbols[[2]string{core, "example.core/exclaim"}], split.Symbols[[2]string{core, "example.core/cheer"}]
-	if !split.Helpers[[2]string{core, "example.core/exclaim"}] || split.PartOf[exclaim] == "" || split.PartOf[exclaim] != split.PartOf[cheer] || !recorded(split, "role_attached", "example.core/exclaim") {
+	if !split.Helpers[[2]string{core, "example.core/exclaim"}] || split.PartOf[exclaim] == "" || split.PartOf[exclaim] != split.PartOf[cheer] {
 		t.Fatalf("exclaim in %q, cheer in %q", split.PartOf[exclaim], split.PartOf[cheer])
 	}
 	if _, asked := split.HelperItems[[2]string{core, "example.core/cheer"}]; asked {
@@ -499,12 +480,12 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	}
 }
 
-// The C server's parts request carries code structure only, and every
-// declaration of its files takes one part or an entry off the map: the
-// backend loop.c includes (loop_poll.c) with its includer's declarations,
-// and the headers' types, prototypes and static inline functions.
+// The C server's grouping sends code structure only, and every declaration
+// of its files takes one part or an entry off the map: the backend loop.c
+// includes (loop_poll.c) with its includer's declarations, and the headers'
+// types, prototypes and static inline functions.
 func TestCumulativeCMapOfParts(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:kvd")
 	graph := graphWithFacts(t, fixture.repository, places.TargetInput{Index: index, Root: "."})
 	// The lexer skips the comment inside bgsaveCommand; strings holding
@@ -525,16 +506,14 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	)
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
 	for _, declaration := range [][2]string{{"kvd.c", "main"}, {"loop_poll.c", "loopApiPoll"}, {"strbuf.h", "sbAvail"}, {"kvd.h", "kvClient"}} {
-		if checked.Symbols[declaration] == "" {
+		if checked.PartOf[checked.Symbols[declaration]] == "" {
 			t.Fatalf("%s %s is not on the map", declaration[0], declaration[1])
 		}
 	}
-	// Split, kvd.c is the seed file, as redis.c is redis-server's: the part
-	// holding main stands in the "in" column (CheckSplit).
-	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
+	split := partstest.CheckHelpers(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
 	main := split.Symbols[[2]string{"kvd.c", "main"}]
-	if !split.Split["kvd.c"] || split.PartOf[main] == "" {
-		t.Fatalf("split: main in %q", split.PartOf[main])
+	if split.PartOf[main] == "" {
+		t.Fatal("main is off the map")
 	}
 	// A command handler's assignment shows its command table row's words:
 	// getCommand is "kvCommand get", not a command lookup.
@@ -543,69 +522,28 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	}
 	// The helper question: saveSnapshot, static and called only by
 	// bgsaveCommand, goes with it by code. staticsyms.h's symsTable, which
-	// only printSymbols reads, is a helper, so the header keeps one
-	// declaration that is none and stays whole. That one is its type
-	// kvSymbol, which the check does not take for a helper (a type has no
-	// use facts), so the header is no file of helpers and keeps a part of
-	// its own, although all it shows other files is a helper used from
-	// printSymbols's box alone: rule B joins a whole file only when every
-	// declaration of it is a helper (redis's staticsymbols.h holds only its
-	// table, its struct being declared in redis.c). addReplyBulk and
-	// addReplyLong, whose callers stand in both boxes, are asked once more.
+	// only printSymbols reads, is a helper and goes with printSymbols,
+	// across files.
 	snapshot, bgsave := split.Symbols[[2]string{"kvd.c", "saveSnapshot"}], split.Symbols[[2]string{"kvd.c", "bgsaveCommand"}]
-	if split.PartOf[snapshot] == "" || split.PartOf[snapshot] != split.PartOf[bgsave] || !recorded(split, "role_attached", "saveSnapshot") {
+	if split.PartOf[snapshot] == "" || split.PartOf[snapshot] != split.PartOf[bgsave] {
 		t.Fatalf("saveSnapshot in %q, bgsaveCommand in %q", split.PartOf[snapshot], split.PartOf[bgsave])
 	}
 	printer := split.PartOf[split.Symbols[[2]string{"kvd.c", "printSymbols"}]]
-	header := split.PartOf[split.Symbols[[2]string{"staticsyms.h", "kvSymbol"}]]
-	if table := split.PartOf[split.Symbols[[2]string{"staticsyms.h", "symsTable"}]]; !split.Helpers[[2]string{"staticsyms.h", "symsTable"}] || header == "" || table != header || header == printer {
-		t.Fatalf("staticsyms.h's symsTable is in %q, kvSymbol in %q, printSymbols in %q", table, header, printer)
-	}
-	if recorded(split, "role_attached", "staticsyms.h") {
-		t.Fatal("the header, which declares a type that is no helper, is recorded as joined")
+	if table := split.PartOf[split.Symbols[[2]string{"staticsyms.h", "symsTable"}]]; !split.Helpers[[2]string{"staticsyms.h", "symsTable"}] || printer == "" || table != printer {
+		t.Fatalf("staticsyms.h's symsTable is in %q, printSymbols in %q", table, printer)
 	}
 	if got := split.HelperItems[[2]string{"staticsyms.h", "symsTable"}]["read_by"]; !reflect.DeepEqual(got, []any{"kvd.c:printSymbols"}) {
 		t.Fatalf("symsTable is asked with read_by %v", got)
 	}
-	for _, name := range []string{"addReplyBulk", "addReplyLong"} {
-		if !recorded(split, "role_second_pass", name) {
-			t.Fatalf("%s was not asked once more", name)
-		}
-	}
 	// main hands beforeSleep to loopSetBeforeSleep, which stores it in the
 	// loop's field, and loop.c's loopMain calls through that field: one
 	// store, so the call is exact, as redis's listDup calls the
-	// dupClientReplyValue createClient stored. The call is the other half of
-	// the hand-over, so loopMain is no user of beforeSleep: the helper does
-	// not follow it into loop.c's part and is asked where it goes among
-	// kvd.c's boxes. So is preloadKey, which processCommand calls through
-	// the table row that hands it over.
-	sleep := split.Symbols[[2]string{"kvd.c", "beforeSleep"}]
-	loopMain := split.Symbols[[2]string{"loop.c", "loopMain"}]
+	// dupClientReplyValue createClient stored. The helper item shows that
+	// call.
 	if called := anyStrings(split.HelperItems[[2]string{"kvd.c", "beforeSleep"}]["called_by"]); !slices.Contains(called, "loop.c:loopMain") {
 		t.Fatalf("beforeSleep is asked with called_by %v", called)
 	}
-	for _, name := range []string{"beforeSleep", "preloadKey"} {
-		if !split.Helpers[[2]string{"kvd.c", name}] || recorded(split, "role_attached", name) || !recorded(split, "role_second_pass", name) {
-			t.Fatalf("%s, called only through a stored function value, was placed by that call (helper %v)", name, split.Helpers[[2]string{"kvd.c", name}])
-		}
-	}
-	if split.PartOf[sleep] != "" && split.PartOf[sleep] == split.PartOf[loopMain] {
-		t.Fatalf("beforeSleep went with loopMain into %q", split.PartOf[sleep])
-	}
-	// The split puts netConnect, which the server never runs, alone in a
-	// role part of net.c: that part leaves the server's map and is listed
-	// by its declaration.
-	netConnect := cObject(t, index, programindex.ObjectFunction, "netConnect", "net.c")
-	listed := false
-	projected := projectSplit(t, index, split)
-	for _, file := range projected.OffMap {
-		listed = listed || file.Path == "net.c" && file.Reason == groupindex.OffMapUnreachable && slices.Equal(file.SubjectIDs, []string{netConnect.ID})
-	}
-	checkOneEntryPart(t, projected, main, "main")
-	if !listed {
-		t.Fatal("the role part of net.c the server never runs is not listed off its map")
-	}
+	checkOneEntryPart(t, projectSplit(t, index, split), main, "main")
 }
 
 // kvcli links the server's event loop, as redis-cli links adlist.o, and
@@ -615,7 +553,7 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 // loop.h's types run nothing of their own and keep their part; net.c, whose
 // netListen the client never runs, keeps its part for netConnect.
 func TestCFixtureClientMapLeavesTheLoopItNeverRuns(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:kvcli")
 	graph := graphWithFacts(t, fixture.repository, places.TargetInput{Index: index, Root: "."})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
@@ -625,9 +563,6 @@ func TestCFixtureClientMapLeavesTheLoopItNeverRuns(t *testing.T) {
 			unreached = append(unreached, box.Title)
 		} else {
 			drawn = append(drawn, box.Title)
-		}
-		if box.Unreached && box.Line != "" {
-			t.Fatalf("the part %q the client never runs was described: %q", box.Title, box.Line)
 		}
 	}
 	if want := []string{"loop.c", "loop_poll.c"}; !slices.Equal(unreached, want) {

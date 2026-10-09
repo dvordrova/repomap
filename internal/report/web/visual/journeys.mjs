@@ -158,14 +158,10 @@ export function lintLevel(level){
       if(!box.frame){
         // Its words fill less than the top 45% of a card two lines tall or
         // more: litestream's "Not analysed" had stood as its title over an
-        // empty box. Marks and outlines drawn in it count with its words
-        // (an Inputs card's kind marks, a closed area's parts outlined).
-        const words=[...box.el.querySelectorAll('*')].filter(el=>(own(el)||el.matches('svg,img,[data-kind-mark],.scene-ghosts>*,.scene-program-ghosts>*,.scene-bucket-marks>*'))&&shown(el)).flatMap(el=>[...el.getClientRects()]);
+        // empty box. Visible marks and named child rows count with its words.
+        const words=[...box.el.querySelectorAll('*')].filter(el=>(own(el)||el.matches('svg,img,[data-kind-mark],.scene-bucket-marks>*'))&&shown(el)).flatMap(el=>[...el.getClientRects()]);
         const bottom=Math.max(box.rect.top,...words.map(rect=>rect.bottom));
-        // Judged wholly in sight: a box the canvas's edge cuts has its words
-        // moved into its part in sight, and is name-sight's (invariants.mjs),
-        // never its fill's (coordinator, 2026-10-03: casdoor's Outside
-        // buckets at the canvas's foot had read 31%).
+        // Judge fill only for whole visible cards; panned text stays anchored.
         const whole=box.rect.left>=canvas.left-1&&box.rect.right<=canvas.right+1&&box.rect.top>=canvas.top-1&&box.rect.bottom<=canvas.bottom+1;
         if(!text(box.el))add('empty box',box.id);
         else if(whole&&height>=40&&bottom-box.rect.top<height*.45)add('empty box',`${box.id} "${text(box.el).slice(0,40)}": its words fill ${Math.round(100*(bottom-box.rect.top)/height)}% of it`);

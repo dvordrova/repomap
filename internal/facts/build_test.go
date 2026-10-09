@@ -583,6 +583,151 @@ func TestBuildManifests(t *testing.T) {
 	}
 }
 
+// Manifest facts retain complete run-relevant values and source positions in
+// every language's existing reader. Make's recipe-variable closure is C's
+// native equivalent; the other manifest formats have no such make expansion.
+func TestBuildManifestsRetainsFullValuesAcrossLanguages(t *testing.T) {
+	longName := "fixture." + strings.Repeat("portable_component.", 12) + "main"
+	script := "node scripts/check.mjs --include=" + strings.Repeat("src/portable/", 12) + "main.ts --report=complete"
+	flags := "-std=c99 -O2 -g -Wall -Wextra -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wpointer-arith -Wcast-qual -D_DEFAULT_SOURCE -DLOOP_POLL"
+	for _, test := range []struct {
+		name, key, value, text string
+		line                   int
+	}{
+		{"package.json", "scripts.portable", script, fmt.Sprintf("{\n  \"scripts\": {\n    \"portable\": %q\n  }\n}\n", script), 3},
+		{"go.mod", "module", "example.com/" + strings.ReplaceAll(longName, ".", "/"), "module example.com/" + strings.ReplaceAll(longName, ".", "/") + "\n", 1},
+		{"pyproject.toml", "project.name", strings.ReplaceAll(longName, ".", "-"), "[project]\nname = \"" + strings.ReplaceAll(longName, ".", "-") + "\"\n", 2},
+		{"deps.edn", "aliases.portable.main-opts", "-m " + longName, "{:aliases\n {:portable {:main-opts [\"-m\" \"" + longName + "\"]}}}\n", 2},
+		{"Makefile", "variable.PORTABLE_CFLAGS", flags, "all: app\nPORTABLE_CFLAGS = " + flags + "\nportable:\n\t$(MAKE) CFLAGS=\"$(PORTABLE_CFLAGS)\" all\n", 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := Input{Repository: newCorpus(t, map[string]string{test.name: test.text})}
+			if test.name == "Makefile" {
+				native := newSynthetic(t, "c", "app", "main.c")
+				index := native.index()
+				input.Targets = []TargetInput{{Index: index, Root: ".", Manifest: "Makefile"}}
+			}
+			for _, fact := range mustBuild(t, input).OfKind(KindManifest) {
+				if fact.Anchor.Path == test.name && fact.Key == test.key {
+					if fact.Value != test.value || fact.Anchor.Line != test.line {
+						t.Fatalf("full manifest %s = %+v, want value %q at line %d", test.key, fact, test.value, test.line)
+					}
+					return
+				}
+			}
+			t.Fatalf("missing manifest value %s", test.key)
+		})
+	}
+}
+
+func TestBuildMakefileRetainsEachReferencedAssignmentAndRule(t *testing.T) {
+	native := newSynthetic(t, "c", "app", "main.c")
+	result := mustBuild(t, Input{
+		Repository: newCorpus(t, map[string]string{"Makefile": strings.Join([]string{
+			"EXTRA_FLAGS = -Wall",
+			"EXTRA_FLAGS += -Wextra",
+			"all: app",
+			"portable:",
+			"\t$(MAKE) CFLAGS=\"$(EXTRA_FLAGS)\" all",
+			"portable:",
+			"\t$(MAKE) CFLAGS=\"$(EXTRA_FLAGS)\" test",
+			"portable:",
+			"\t$(MAKE) CFLAGS=\"$(EXTRA_FLAGS)\" check",
+		}, "\n")}),
+		Targets: []TargetInput{{Index: native.index(), Root: ".", Manifest: "Makefile"}},
+	})
+	got := map[int]string{}
+	for _, fact := range result.OfKind(KindManifest) {
+		if fact.Anchor.Path == "Makefile" && (fact.Key == "variable.EXTRA_FLAGS" || fact.Key == "rule.portable") {
+			got[fact.Anchor.Line] = fact.Key + "=" + fact.Value
+		}
+	}
+	want := map[int]string{
+		1: "variable.EXTRA_FLAGS=-Wall",
+		2: "variable.EXTRA_FLAGS=-Wextra",
+		4: "rule.portable=— runs: $(MAKE) CFLAGS=\"$(EXTRA_FLAGS)\" all",
+		6: "rule.portable=— runs: $(MAKE) CFLAGS=\"$(EXTRA_FLAGS)\" test",
+		8: "rule.portable=— runs: $(MAKE) CFLAGS=\"$(EXTRA_FLAGS)\" check",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("manifest source rows = %v, want %v", got, want)
+	}
+	for line, row := range want {
+		if got[line] != row {
+			t.Fatalf("manifest source line %d = %q, want %q", line, got[line], row)
+		}
+	}
+}
+
+func TestBuildIncludedMakefileFactsKeepSharedOutputOwnersAndSourceConditions(t *testing.T) {
+	daemon := newSynthetic(t, "c", "app/daemon", "app/daemon.c").index()
+	client := newSynthetic(t, "c", "app/client", "app/client.c").index()
+	client, err := programindex.RebindTargetID(client, "t2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := mustBuild(t, Input{
+		Repository: newCorpus(t, map[string]string{
+			"app/Makefile":        "TOP = .\nall:\ninclude $(TOP)/build/main.mk\n",
+			"app/build/main.mk":   "LINK_FLAGS = -pthread\nall: daemon client\ndaemon: daemon.o\n\t$(CC) -o daemon daemon.o $(LINK_FLAGS)\nclient: client.o\n\t$(CC) -o client client.o\nifeq ($(EXTRA),1)\nall: tool\nendif\n",
+			"app/unreferenced.mk": "invented: nowhere\n",
+		}),
+		Targets: []TargetInput{{Index: daemon, Root: "app", Manifest: "app/Makefile"}, {Index: client, Root: "app", Manifest: "app/Makefile"}},
+	})
+	rows := map[string]Fact{}
+	for _, fact := range result.OfKind(KindManifest) {
+		if fact.Anchor.Path == "app/unreferenced.mk" {
+			t.Fatal("an unrelated .mk was scanned as a manifest")
+		}
+		if fact.Key != "rule.all" || fact.Anchor.Path == "app/build/main.mk" {
+			rows[fact.Key] = fact
+		}
+	}
+	for key, wantOwner := range map[string]string{"rule.daemon": daemon.Target.ID, "rule.client": client.Target.ID, "rule.all": "", "variable.LINK_FLAGS": "", "include": "", "default_goal": ""} {
+		fact, found := rows[key]
+		if !found || fact.TargetID != wantOwner {
+			t.Fatalf("shared native manifest owner %s = %+v, want %q", key, fact, wantOwner)
+		}
+	}
+	for key, line := range map[string]int{"rule.all": 2, "rule.daemon": 3, "rule.client": 5, "variable.LINK_FLAGS": 1, "rule.all when ifeq ($(EXTRA),1)": 8} {
+		fact, found := rows[key]
+		if !found || fact.Anchor.Path != "app/build/main.mk" || fact.Anchor.Line != line || fact.Path != "app/Makefile" {
+			t.Fatalf("included native source/invocation binding %s = %+v", key, fact)
+		}
+	}
+	if got := rows["default_goal"].Value; got != "all: daemon client — fragments: app/Makefile:2; app/build/main.mk:2; app/build/main.mk:8 when ifeq ($(EXTRA),1)" {
+		t.Fatalf("default fragment catalogue fabricated a conditional prerequisite: %q", got)
+	}
+}
+
+func TestBuildTheSameIncludedSourceRetainsBothInvocationOwners(t *testing.T) {
+	one := newSynthetic(t, "c", "one/app", "one/app.c").index()
+	two := newSynthetic(t, "c", "two/app", "two/app.c").index()
+	two, err := programindex.RebindTargetID(two, "t2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := mustBuild(t, Input{
+		Repository: newCorpus(t, map[string]string{
+			"one/Makefile": "all:\ninclude ../shared.mk\n",
+			"two/Makefile": "all:\ninclude ../shared.mk\n",
+			"shared.mk":    "all: app\napp: app.o\n\t$(CC) -o app app.o\n",
+		}),
+		Targets: []TargetInput{{Index: one, Root: "one", Manifest: "one/Makefile"}, {Index: two, Root: "two", Manifest: "two/Makefile"}},
+	})
+	owners := map[string]string{}
+	ids := map[string]bool{}
+	for _, fact := range result.OfKind(KindManifest) {
+		if fact.Key == "rule.app" && fact.Anchor.Path == "shared.mk" {
+			owners[fact.Path] = fact.TargetID
+			ids[fact.ID] = true
+		}
+	}
+	if len(ids) != 2 || owners["one/Makefile"] != one.Target.ID || owners["two/Makefile"] != two.Target.ID {
+		t.Fatalf("shared source erased a separate owning invocation: %v/%v", owners, ids)
+	}
+}
+
 func TestBuildDependencies(t *testing.T) {
 	importer, err := dependencies.SealImporter(dependencies.Importer{Language: "typescript", Name: "front", ModulePath: "front", PackagePath: "front", RepositoryPath: "front"})
 	if err != nil {

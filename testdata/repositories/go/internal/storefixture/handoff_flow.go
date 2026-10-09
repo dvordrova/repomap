@@ -187,3 +187,34 @@ func CheckedLongKey(key string) {
 		panic(key)
 	}
 }
+
+// A call made at several sites has a common condition only when every site
+// writes the same condition and takes the same arm. The two describeStore
+// calls depend on different flags, and CheckedEither takes either arm.
+func CheckedBranches(key string, ready, retry bool) {
+	if ready {
+		countStore(key)
+	} else {
+		reportLongKey(key)
+	}
+	if ready {
+		describeStore(key)
+	}
+	if retry {
+		describeStore(key)
+	}
+	if ready {
+		reportStoreFailure(key)
+	}
+	if ready {
+		reportStoreFailure(key)
+	}
+}
+
+func CheckedEither(key string, ready bool) {
+	if ready {
+		reportLongKey(key)
+	} else {
+		reportLongKey(key)
+	}
+}

@@ -122,6 +122,25 @@ the status endpoint's `url` is its default or the flag's unknown write. Python a
 "reassigned field" (PYTHON, JSTS), a recorded divergence; C records its
 writes' values for files only; Clojure has no fields.
 
+## Attached author comments
+
+Attached top-level Go doc comments and named interface-method doc comments
+use AST `.Doc` attachment and retain their exact name line and column in the
+ordinary claims layer. Places
+and the report use that owner rather than the distance from the comment's
+first line. `internal/storefixture/author_doc.go` in the cumulative fixture
+keeps a long example with `DocumentedEntry`; the adjacent
+`UndocumentedEntry` inherits no quote. The ordinary compiler/index test
+checks both through claims extraction and places, including two type names
+on one line and a multiline receiver. A type-bound comment beginning with
+`Package` never becomes the file's caption. Grouped-type documentation without
+a unique name owner remains an unbound quote under the existing bounded
+fallback; this is no compiler-exact per-type association. Go variable and
+constant documentation is attached to its whole `GenDecl`; the current claims
+extractor has no equivalent per-name extraction for it. Python retains its
+exact body/header ownership. C's header-end and Clojure's body-docstring
+conventions are separate contracts, not evidence of Go-style name ownership.
+
 ## Packages imported for their effect
 
 An import spec named `_` imports a package to run its `init`, which
@@ -142,6 +161,21 @@ through a blank import (caddy's `modules/standard`) reaches a system only if
 the program graph follows its `init`: a recorded gap.
 
 ## Dynamic receivers and callable transfers
+
+Native SSA uses `golang.org/x/tools` v0.47.0 (and its required `x/mod`
+v0.37.0, `x/sync` v0.21.0). Go 1.27 adds generic methods to the standard
+library, including `math/rand/v2.Rand.N`. The older v0.45.0 runtime-type
+walk panics on that uninstantiated method's type parameter. The official
+`RuntimeTypes`/`AllFunctions` correction skips uninstantiated generic methods
+in reflection enumeration; it keeps ordinary source methods and their bodies,
+including methods outside the launch tree. There is no recovery or partial
+native index. The cumulative `cmd/app/random_runtime_types.go` stores a local
+sampler with a `*rand.Rand` field behind `any`, and asserts the exact source
+methods, its uncalled helper relation and platform `Rand.IntN` invocation.
+This fixture still uses Go 1.22 source syntax; a newer compiler supplies the
+new standard-library method set. Python, JS/TS, C and Clojure do not use this
+Go SSA/runtime-reflection walker and have no exact compatibility equivalent;
+their existing generic declaration examples do not substitute for this test.
 
 The normal Go call-index pass now visits every loaded repository function,
 including callbacks outside the launch call tree, and canonicalizes generic
@@ -248,6 +282,15 @@ kept out of the edge's identity; an interface invoke or an external call
 takes its sites' guards. storefixture/handoff_flow.go's CheckedStore checks
 each kind (`assertGoCallGuards`). `os.Exit` and `log.Fatal` are names, not
 structure: not read.
+
+The guard's deciding expression is saved as written (`Condition`, `When`,
+PROGRAM_INDEX): an if's condition with `holds` or `fails`, the left operand
+of `&&`/`||`, a switch's tag with `matches` (one tagless case expression
+with `holds`), or a type switch's assignment. Select clauses have no single
+condition. Both direct edges and outside-call families retain a common
+condition only when all sites agree, including its polarity. The cumulative
+CheckedBranches/CheckedEither examples contrast distinct flags, matching
+conditions and opposite arms; no first site's condition stands for them all.
 
 ### A value no observed flow gives
 

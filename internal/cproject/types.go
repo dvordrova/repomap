@@ -150,6 +150,10 @@ type Program struct {
 	// closure program, or a library's first unit. AnchorFileRef is its file.
 	Anchor        Site   `json:"anchor"`
 	AnchorFileRef string `json:"anchor_file_ref"`
+	// Manifest is the root makefile selected in the build's invocation
+	// directory. A rule's source anchor may be in an included fragment.
+	Manifest        string `json:"manifest,omitempty"`
+	ManifestFileRef string `json:"manifest_file_ref,omitempty"`
 	// Evidence are the native observations behind the program: c_link,
 	// c_main or c_library.
 	Evidence []Observation `json:"evidence,omitempty"`
@@ -190,6 +194,9 @@ func (program Program) Validate() error {
 	if program.Closure && len(program.Units) != 1 {
 		return fmt.Errorf("C: closure program %s must name its main unit alone", program.Selector)
 	}
+	if (program.Manifest == "") != (program.ManifestFileRef == "") {
+		return fmt.Errorf("C: program %s has an incomplete manifest binding", program.Selector)
+	}
 	for _, unit := range append(append(slices.Clone(program.Units), program.Pool...), program.Consumers...) {
 		if unit.Path == "" || unit.FileRef == "" || unit.Source == "" || unit.Dir == "" {
 			return fmt.Errorf("C: program %s has an incomplete unit %q", program.Selector, unit.Path)
@@ -213,12 +220,33 @@ func (program Program) ValidateAgainst(repository *corpus.Corpus) error {
 	if ref, ok := repository.ID(program.Anchor.Path); !ok || string(ref) != program.AnchorFileRef {
 		return fmt.Errorf("C: anchor binding mismatch for %s", program.Selector)
 	}
+	if program.Manifest != "" {
+		if ref, ok := repository.ID(program.Manifest); !ok || string(ref) != program.ManifestFileRef {
+			return fmt.Errorf("C: manifest binding mismatch for %s", program.Selector)
+		}
+	}
+	for _, observation := range program.Evidence {
+		if observation.Kind == "c_link" || observation.Kind == "c_archive" || observation.Kind == "c_main" {
+			if _, ok := repository.ID(observation.Path); !ok {
+				return fmt.Errorf("C: native source binding mismatch for %s: %s", program.Selector, observation.Path)
+			}
+		}
+	}
 	for _, unit := range append(append(slices.Clone(program.Units), program.Pool...), program.Consumers...) {
 		if ref, ok := repository.ID(unit.Path); !ok || string(ref) != unit.FileRef {
 			return fmt.Errorf("C: source binding mismatch: %s", unit.Path)
 		}
 	}
 	return nil
+}
+
+// TargetAnchorFileRef is the owning build description when present. Native
+// rule evidence keeps its independent exact AnchorFileRef.
+func (program Program) TargetAnchorFileRef() string {
+	if program.ManifestFileRef != "" {
+		return program.ManifestFileRef
+	}
+	return program.AnchorFileRef
 }
 
 // Site is a repository-relative file and line.

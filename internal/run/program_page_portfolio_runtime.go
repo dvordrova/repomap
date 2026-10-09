@@ -114,12 +114,11 @@ func persistProgramPagePortfolioForRuns(
 	return nil
 }
 
-// orientAndPublishRepositoryReport asks the orientation over the projected
-// groups while the report is assembled from the targets, groups, facts and
-// claims; only the glossary, the translation and the publication wait for
-// the orientation. An orientation failure is reported before any assembly
-// failure, and nothing of the report is written before the orientation is
-// accepted.
+// orientAndPublishRepositoryReport finishes orientation before binding the
+// native report portfolio. Orientation owns its group snapshots and source
+// graph until it returns; assembling beside it would retain both complete
+// native sets while waiting on the provider. An orientation error therefore
+// never loads the report's native portfolio or writes publication artifacts.
 func orientAndPublishRepositoryReport(
 	ctx context.Context,
 	options repositoryTargetDispatchOptions,
@@ -127,21 +126,20 @@ func orientAndPublishRepositoryReport(
 	outcome *atlasOutcome,
 	targetOutcomes targetoutcome.Portfolio,
 ) (report.RunReceipt, error) {
-	// The assembly owns a copy: the orientation later records its result and
-	// drops the graph in outcome itself.
-	unoriented := *outcome
-	assembly := startBackground(func() (repositoryReportAssembly, error) {
-		return assembleRepositoryReport(ctx, targetOutcomes, runs, unoriented)
-	})
 	if !options.NoModel {
 		if err := orientAtlasRuns(ctx, options, runs, outcome); err != nil {
-			assembly.wait()
 			return report.RunReceipt{}, err
 		}
 	}
-	assembled, err := assembly.wait()
+	assembled, err := assembleRepositoryReport(ctx, targetOutcomes, runs, *outcome)
 	if err != nil {
 		return report.RunReceipt{}, err
+	}
+	// Assembly has installed isolated complete group snapshots. Publication
+	// needs only the runs' source, target and timing metadata; release the
+	// producer set now rather than retaining both throughout glossary/HTML.
+	for position := range runs {
+		runs[position].GroupIndex = groupindex.Index{}
 	}
 	options.Output.Stage("Report publication", "assembling one repository report from memory")
 	started := time.Now()
@@ -154,16 +152,15 @@ func orientAndPublishRepositoryReport(
 	return receipt, nil
 }
 
-// repositoryReportAssembly is the repository report before its orientation:
+// repositoryReportAssembly is the repository report before orientation binding:
 // every target's ProgramIndex and projected groups bound into one ReportData
-// with the facts, claims and learning plan. Nothing in it reads the
-// orientation, so it is assembled while the orientation is asked.
+// with the facts, claims and learning plan. It is constructed after orientation
+// releases its own native graph and input snapshots.
 type repositoryReportAssembly struct {
 	portfolio      programpage.Portfolio
 	targetOutcomes targetoutcome.Portfolio
 	runs           []targetPublishedRun
 	data           *report.ReportData
-	programIndexes []programindex.Index
 }
 
 // assembleRepositoryReport projects shared results once, in memory, without
@@ -200,19 +197,23 @@ func assembleRepositoryReport(
 		return repositoryReportAssembly{}, err
 	}
 	groupIndexes := make([]groupindex.Index, len(runs))
-	programIndexes := make([]programindex.Index, len(runs))
+	programReaders := make([]func() (programindex.Index, error), len(runs))
+	programFiles := make([]report.ProgramIndexFile, len(runs))
+	allSaved := true
 	for position, run := range runs {
 		if run.GroupIndex.Target.ID != run.ProgramPage.ProgramTarget.ID {
 			return repositoryReportAssembly{}, fmt.Errorf("repository report: run %s graph target mismatch", run.RunID)
 		}
 		groupIndexes[position] = run.GroupIndex
-		programIndex, programErr := run.programIndex()
-		if programErr != nil {
-			return repositoryReportAssembly{}, programErr
-		}
-		programIndexes[position] = programIndex
+		programReaders[position] = runs[position].programIndex
+		programFiles[position] = report.ProgramIndexFile{Filename: filepath.Join(run.RunDir, programindex.ArtifactFilename),
+			Target: run.ProgramPage.ProgramTarget, SHA256: run.GroupIndex.ProgramIndexSHA256}
+		allSaved = allSaved && run.ProgramIndex == nil
 	}
-	index := programIndexes[0]
+	index, err := owner.programIndex()
+	if err != nil {
+		return repositoryReportAssembly{}, err
+	}
 	if owner.Documentation == nil {
 		return repositoryReportAssembly{}, fmt.Errorf("repository report: documentation is missing from memory")
 	}
@@ -220,8 +221,14 @@ func assembleRepositoryReport(
 	if err != nil {
 		return repositoryReportAssembly{}, err
 	}
-	if err := report.BindProgramPortfolio(data, portfolio.DefaultTargetID, programIndexes); err != nil {
-		return repositoryReportAssembly{}, err
+	if allSaved {
+		if err := report.BindProgramPortfolioFiles(data, portfolio.DefaultTargetID, programFiles); err != nil {
+			return repositoryReportAssembly{}, err
+		}
+	} else {
+		if err := report.BindProgramPortfolioReaders(data, portfolio.DefaultTargetID, programReaders); err != nil {
+			return repositoryReportAssembly{}, err
+		}
 	}
 	if err := report.BindGroupGraphView(data, groupIndexes); err != nil {
 		return repositoryReportAssembly{}, err
@@ -233,7 +240,7 @@ func assembleRepositoryReport(
 	data.CapturedRevision = owner.Source.Repository.Head
 	return repositoryReportAssembly{
 		portfolio: portfolio, targetOutcomes: targetOutcomes, runs: runs,
-		data: data, programIndexes: programIndexes,
+		data: data,
 	}, nil
 }
 
@@ -251,7 +258,7 @@ func publishRepositoryReport(
 	if err := ctx.Err(); err != nil {
 		return report.RunReceipt{}, err
 	}
-	runs, data, programIndexes := assembled.runs, assembled.data, assembled.programIndexes
+	runs, data := assembled.runs, assembled.data
 	owner := &runs[0]
 	if err := persistProgramPagePortfolioForRuns(assembled.portfolio, runs[:1]); err != nil {
 		return report.RunReceipt{}, err
@@ -260,7 +267,7 @@ func publishRepositoryReport(
 		return report.RunReceipt{}, err
 	}
 	data.Orientation = oriented
-	if err := reduceReportGlossary(ctx, options, owner.RunDir, data, programIndexes); err != nil {
+	if err := reduceReportGlossaryPortfolio(ctx, options, owner.RunDir, data); err != nil {
 		return report.RunReceipt{}, err
 	}
 	renderOptions, err := translateReportDisplay(ctx, options, owner.RunDir, data)

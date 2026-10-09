@@ -55,8 +55,10 @@ type flowAsk struct {
 // had given othello 23 to 107 steps on one request and freqtrade's bot loop
 // in 1 of 7 answers). A step with no candidate is the flow's result, one is
 // followed with no request, and of several the categorizer chooses the one
-// the path to the program's work passes through: one closed question per
-// split. A lead under table.ClassifierMargin, or no answer, ends the path
+// the path to the program's work passes through: one complete closed question
+// when it fits, otherwise provisional model selection of complete candidate
+// windows followed by an independent comparison of the original survivors.
+// A lead under table.ClassifierMargin, or no answer, ends the path
 // there as a named fork, its candidates kept and the split journaled. No
 // step is written by a model: each is its declaration, with the atlas line
 // already accepted for it and how the step before reaches it.
@@ -456,13 +458,12 @@ func (graph *flowGraph) toldApart(candidates []groupindex.SpineStep) []string {
 	return groupindex.TellApart(names, spellings)
 }
 
-// chooseNext asks the categorizer which candidate the path continues
-// through, one closed question (table.ClassifierCall): the task names the
+// flowChoiceRequest builds the full original closed question: the task names the
 // program and its core parts, the item is the step, and each option is a
 // candidate with its name, signature, part, atlas line and how it is
 // reached. No docstring enters.
-func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, graph *flowGraph, index *groupindex.Index,
-	step groupindex.SpineStep, candidates []groupindex.SpineStep, met []flowCandidate) ([]int, flowAsk, []RejectedRow, error) {
+func flowChoiceRequest(graph *flowGraph, index *groupindex.Index,
+	step groupindex.SpineStep, candidates []groupindex.SpineStep, met []flowCandidate) (table.Definition, table.Window, []string) {
 	var core []string
 	for _, group := range index.Groups {
 		if group.Core {
@@ -541,19 +542,16 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 		Columns: []table.Column{{Name: "next", Kind: table.Choice, OptionsFrom: "candidates", CriteriaFrom: "criteria", Item: "step",
 			Ask: "Which of `candidates` does the path from `step` continue through to do the program's core work once: one run of a command, one request or message a server handles, or one user action carried to its visible result?"}}}
 	window := table.Window{Stage: flowStage, Rows: []table.Row{{ID: index.Target.ID + "." + subject, Fields: item}}}
-	call, err := table.ClassifierCall(categorizer, def, window)
-	if err != nil {
-		return nil, flowAsk{}, nil, err
-	}
-	var verdicts map[string]llm.Verdict
-	decode := call.DecodeValidate
-	call.DecodeValidate = func(raw []byte) (table.Result, error) {
-		verdicts, _ = categorizer.Verdicts(raw)
-		return decode(raw)
-	}
+	return def, window, names
+}
+
+func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, graph *flowGraph, index *groupindex.Index,
+	step groupindex.SpineStep, candidates []groupindex.SpineStep, met []flowCandidate) ([]int, flowAsk, []RejectedRow, error) {
+	def, window, names := flowChoiceRequest(graph, index, step, candidates, met)
+	subject := stepSubject(step)
 	ask := flowAsk{step: graph.name(subject), candidates: len(candidates)}
 	key := index.Target.ID + "." + subject + "|next"
-	outcome, err := llm.ExecuteJSON(ctx, executor, categorizer, call)
+	outcome, verdicts, selected, err := executeFlowChoice(ctx, executor, categorizer, def, window)
 	if err == nil && len(outcome.Value.Answers) == 1 && outcome.Value.Answers[0] != nil {
 		chosen := outcome.Value.Answers[0]["next"]
 		for position := range candidates {
@@ -588,6 +586,13 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 		Lead       float64  `json:"lead"`
 		Followed   []string `json:"followed,omitempty"`
 	}{graph.name(subject), names, ask.lead, ask.followed})
+	if len(selected) > 0 {
+		var diagnostic map[string]any
+		_ = json.Unmarshal(raw, &diagnostic)
+		diagnostic["model_shortlist"] = selected
+		diagnostic["probability_scope"] = "model_shortlist_only"
+		raw, _ = json.Marshal(diagnostic)
+	}
 	return followed, ask, []RejectedRow{{Stage: StageName, Section: sectionFlowFork, Raw: raw, Reason: reason}}, nil
 }
 

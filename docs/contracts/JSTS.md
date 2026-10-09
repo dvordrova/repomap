@@ -34,8 +34,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Exact owned manifest script inputs and supported tool-config files remain
   additional compiler roots. If a config selects no owned roots, those explicit
   sources use the compiler's existing inferred defaults; JavaScript inputs are
-  enabled for that additional program. This does not admit other excluded files
+  enabled for that additional program. TypeScript's no-input diagnostic (18003)
+  for an empty parsed file list does not abort those explicit roots; all other
+  configuration diagnostics remain failures. Written output directories remain
+  excluded from additional roots even when that config selects no inputs.
+  This does not admit other excluded files
   or the sibling sources selected by a documentation config.
+  Configured path-alias targets are canonical repository-relative metadata,
+  including aliases into installed `node_modules`. They do not admit dependency
+  files to the corpus or prove a resolved external call when that dependency is
+  unavailable; the compiler's actual resolution remains authoritative.
   Repomap never installs npm, yarn, pnpm, or other packages. Browser and Node
   server surfaces plus
   canonical safe, package-owned, tracked `package.json#bin` command/path pairs
@@ -55,8 +63,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   package-origin universe (including `DepOnly`) and its `Standard` bit; Python
   derives it from the exact `sys.stdlib_module_names` set; JS/TS maps
   TypeScript default-library and Node standard-library origins to `platform`
-  and npm origins to `package`. Compiler-resolved sibling JS/TS packages
-  also keep their repository directory on each import, call and external
+  and npm origins to `package`.
+  A merged invoked default-library symbol remains `platform` even when the
+  selected overload is declared in an installed types package: retain that raw
+  package origin and separate compiler proof, with a distinct platform symbol
+  identity. An independent exact imported symbol with the same package,
+  receiver and name keeps its package identity. Calls and receiver-result
+  origins use the same native resolver, including conditional choices and
+  reaching stores; a local value merely typed as an external callable or
+  constructor gains no external authority.
+  Compiler-resolved sibling JS/TS packages also keep their repository directory
+  on each import, call and external
   symbol, and in a `workspace` dependency row. Exact directory-scoped export
   identities join their own declarations across targets; a same-name npm
   package or another directory never supplies that identity. Workspace calls
@@ -79,6 +96,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   one stable legacy API candidate is preferred over a native-preview candidate
   when both are deliberately declared. Compiler availability does not supply
   missing project dependencies or call-target authority.
+  The native Node helper preserves an explicitly supplied `NODE_OPTIONS`,
+  including the owner's V8 heap setting, alongside `PATH`. It does not impose
+  another heap cap or forward the provider credentials or the whole process
+  environment. Invalid Node options remain native execution failures.
+  Native result transport writes one complete JSON value incrementally in the
+  same schema and field/row order, awaiting stdout writes. It does not construct
+  an aggregate V8 string or bound the graph by an output byte count. An
+  indivisible unencodable value remains an explicit native failure. Native
+  snapshot/API cleanup runs after extraction or transport success and failure.
   Shared contracts are supporting code, build/migration scripts remain tools,
   and a runtime script, library, or tool-only root must never promote itself
   into an application.
@@ -119,6 +145,31 @@ parameters and heritage, in the existing signature. Their compiler-owned body
 boundary excludes member bodies while keeping braces inside generic types.
 This native kind reaches the same ProgramIndex and question evidence; Python
 already preserves its class header.
+
+The compiler records each declaration's attached JSDoc source ranges
+as native `docstring_ranges` alongside its existing name location. The JSTS
+result/helper contracts are 22/31. ProgramIndex carries those optional source
+positions; the ordinary claims stage reads the sealed native indexes and
+quotes exactly those corpus ranges, binding each to the native name line and
+column, not the keyword line of a multiline declaration. The comment's own
+line and column still locate the author's words. Multiple views of the same
+owner agree; distinct name positions leave the quote unbound. Missing metadata
+stays unknown. UTF-16 columns use the existing inclusive range endpoints;
+the claims slicer preserves Unicode and CRLF source positions.
+Places and the report use exact ownership for JSTS, with no proximity guess
+for an unbound quote or file caption. A long example neither hides the quote
+nor assigns it to the following declaration. `src/type-members.ts` checks
+`SerializedPair`, multiline `export const` and `export function`, a blank line,
+an interface field, a class method, inline comments and their undocumented
+neighbours through
+the actual compiler, ProgramIndex, claims and places path in
+`TestCumulativeJSTSAttachedAuthorCommentKeepsItsExactDeclaration`. In a variable
+list the compiler attaches the comment to its first variable; the second
+inherits no quote even when the names share one line. Two compiler-attached
+comments on one line keep their distinct ranges and owners; a comment within
+`export const` remains attributable without a line-prefix guess.
+Quoted text ends at the comment's closing delimiter; a declaration following
+`*/` on the same line remains source code and never becomes author prose.
 
 A call belongs to the scope in which it runs. A TypeScript decorator runs once,
 when its class is defined, as a Python decorator's arguments and defaults run

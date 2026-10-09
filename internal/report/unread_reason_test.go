@@ -11,8 +11,7 @@ import (
 
 // A target the run could not read says why in the failure's own words:
 // under the programs on the home reading, on its card in Component details,
-// and in the reading of the map's "Not analysed" note, which shows those
-// cards. litestream's src had read only "analysis failed".
+// while staying off the canvas. litestream's src had read only "analysis failed".
 func TestATargetNotReadSaysWhyWhereItAppears(t *testing.T) {
 	data := reportProgramShellDataFixture(t, "litestream")
 	const why = "no build line compiles src/litestream-vfs.c; parsed with clang's defaults (exit status 1): src/litestream-vfs.c:1:10: fatal error: 'litestream-vfs.h' file not found"
@@ -39,9 +38,8 @@ func TestATargetNotReadSaysWhyWhereItAppears(t *testing.T) {
 	if card == nil || card[1] != why {
 		t.Fatal("src's card in Component details does not say why it was not read")
 	}
-	note := regexp.MustCompile(`id="system-unread"[^>]*data-details-id="([^"]*)"`).FindStringSubmatch(text)
-	if note == nil || note[1] != "targets-not-read" {
-		t.Fatal("the map's Not analysed note does not read the cards that say why")
+	if strings.Contains(text, `id="system-unread"`) || strings.Contains(text, `data-details-id="targets-not-read"`) {
+		t.Fatal("the failed target acquired a canvas placeholder")
 	}
 	if strings.Contains(text, "/Users/") {
 		t.Fatal("a host path reached the page")

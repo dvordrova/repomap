@@ -107,9 +107,33 @@ func newSavedReport(data *ReportData, runDir string) (savedReport, error) {
 	portfolio := data.ProgramPortfolio
 	saved.ProgramPortfolio = &savedPortfolio{
 		Version: portfolio.Version, DefaultTargetID: portfolio.DefaultTargetID,
-		Entries: make([]json.RawMessage, 0, len(portfolio.Entries)),
+		Entries: make([]json.RawMessage, 0, portfolio.Len()),
 	}
-	for _, entry := range portfolio.Entries {
+	for _, binding := range portfolio.programs() {
+		kept := false
+		for _, original := range portfolio.files {
+			path, named := indexFiles[binding.Target.ID+"\x00"+binding.SHA256]
+			if original.Target.ID != binding.Target.ID || !named || !original.canonical ||
+				filepath.Clean(original.Filename) != filepath.Clean(filepath.Join(runDir, filepath.FromSlash(path))) {
+				continue
+			}
+			if _, err := original.readBytes(); err != nil {
+				return savedReport{}, err
+			}
+			saved.Files = append(saved.Files, savedFile{Section: savedSectionProgramIndex, Path: path, SHA256: original.byteSHA256})
+			kept = true
+			break
+		}
+		if kept {
+			continue
+		}
+		entry, found, err := portfolio.readTarget(binding.Target.ID)
+		if err != nil || !found {
+			if err == nil {
+				err = fmt.Errorf("report: complete native index is missing")
+			}
+			return savedReport{}, err
+		}
 		encoded, err := programindex.EncodeValidated(entry)
 		if err != nil {
 			return savedReport{}, fmt.Errorf("report: program index %q: %w", entry.Target.ID, err)
@@ -259,7 +283,7 @@ func decodeStrictReportJSON(reportJSON []byte, runDir string) (ReportData, error
 	if err := readSavedFiles(&data, saved.Files, runDir); err != nil {
 		return ReportData{}, err
 	}
-	if err := data.GroupGraph.Hydrate(data.ProgramPortfolio.Entries); err != nil {
+	if err := data.GroupGraph.hydratePortfolio(data.ProgramPortfolio); err != nil {
 		return ReportData{}, fmt.Errorf("report: restore group graph: %w", err)
 	}
 	return data, nil
@@ -286,11 +310,23 @@ func readSavedFiles(data *ReportData, files []savedFile, runDir string) error {
 		}
 		switch file.Section {
 		case savedSectionProgramIndex:
-			var index programindex.Index
-			if err := json.Unmarshal(raw, &index); err != nil {
+			index, err := programindex.Decode(raw)
+			if err != nil {
 				return fmt.Errorf("report: decode %s: %w", file.Path, err)
 			}
-			data.ProgramPortfolio.Entries = append(data.ProgramPortfolio.Entries, index)
+			encoded, err := programindex.EncodeValidated(index)
+			if err != nil {
+				return err
+			}
+			sourcePaths, err := nativeSourcePaths(index)
+			if err != nil {
+				return err
+			}
+			data.ProgramPortfolio.files = append(data.ProgramPortfolio.files, programFile{
+				ProgramIndexFile: ProgramIndexFile{Filename: filepath.Join(runDir, filepath.FromSlash(file.Path)),
+					Target: index.Target.Snapshot(), SHA256: index.SHA256},
+				byteSHA256: file.SHA256, canonical: bytes.Equal(raw, encoded), sourcePaths: sourcePaths,
+			})
 		case savedSectionFacts:
 			err = restoreSection(raw, file.Path, &data.Facts)
 		case savedSectionClaims:
@@ -315,7 +351,7 @@ func readSavedFiles(data *ReportData, files []savedFile, runDir string) error {
 	sort.SliceStable(entries, func(left, right int) bool {
 		return programindex.TargetIDLess(entries[left].Target.ID, entries[right].Target.ID)
 	})
-	return nil
+	return data.ProgramPortfolio.validateBindings()
 }
 
 // readSavedFile reads a file report.json names: one of the run directory,

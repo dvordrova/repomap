@@ -30,11 +30,13 @@
 </main>
 <footer class="report-footer"><a href="#notes">{{t "About this run"}}</a>{{if .Glossary}} · <a href="#concepts">{{t "Terms"}}</a>{{end}}</footer>
 {{if .Served}}<div class="status" id="rm-status" role="status" hidden></div>
-<script type="application/json" id="rm-source-ids">{{.SourceIDsJSON}}</script>{{end}}
-<script type="application/json" id="rm-ui-vocabulary">{{.UIVocabularyJSON}}</script>
-<script type="application/json" id="rm-term-mentions">{{.TermMentionsJSON}}</script>
-{{with .SceneJSON}}<script type="application/json" id="rm-scene">{{.}}</script>{{end}}
-<script type="application/json" id="rm-page-data">{{pagedataJSON}}</script>
-<script id="rm-report-app-js">{{.JS}}</script>
+{{embeddedJSON "rm-source-ids" .SourceIDsJSON}}{{end}}
+{{embeddedJSON "rm-ui-vocabulary" .UIVocabularyJSON}}
+{{embeddedJSON "rm-term-mentions" .TermMentionsJSON}}
+{{with .SceneJSON}}{{embeddedJSON "rm-scene" .}}{{end}}
+{{embeddedJSON "rm-page-data" pagedataJSON}}
+<div class="status" id="rm-load-status" role="status" data-error="{{t "This report could not be opened. Reload the page."}}">{{t "Opening report…"}}</div>
+{{reportBundle .JS}}
+<script id="rm-report-boot">{{reportBoot}}</script>
 </body>
 </html>

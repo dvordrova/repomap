@@ -865,7 +865,15 @@ function rmSavedScene(doc){
   // one part the page draws.
   function inputPart(id){var part=byID[scene.part(id)];return part&&!part.dataset.activation&&!part.dataset.branch?part:null;}
   function inputGroupTitle(id){return inputPart(id)?.dataset.title||'';}
-  function nodeByHref(href){return href?nodes.find(function(n){return n.getAttribute('href')===href||'#'+n.id===href;})||null:null;}
+  // Every drawn node by its href and by '#'+its id, the first in page
+  // order: looked up once per name read, a scan of every node per name had
+  // taken Metabase's page minutes.
+  var hrefIndex=null;
+  function nodeByHref(href){
+    if(!href)return null;
+    if(!hrefIndex){hrefIndex=new Map();nodes.forEach(function(n){[n.getAttribute('href'),'#'+n.id].forEach(function(key){if(key&&!hrefIndex.has(key))hrefIndex.set(key,n);});});}
+    return hrefIndex.get(href)||null;
+  }
   // What the reading column reads with (31-reading-column.js): every name
   // it reads is read in the report and shown on the canvas, the camera
   // moving only when it is out of sight.
@@ -1101,7 +1109,7 @@ function rmSavedScene(doc){
     // opened the registering call, inside initServer). The reading opens
     // at it; its line number goes with that link.
     var ownPage=n.dataset.activation&&n.dataset.owner?document.getElementById(n.dataset.owner):null;
-    var ownLine=ownPage?Array.from(ownPage.querySelectorAll(':scope>.component-own-work li[data-input]')).find(function(li){return li.dataset.input===n.id;}):null;
+    var ownLine=ownPage?((rmComponentFlowData(ownPage)||{}).Own||[]).find(function(row){return row.Input===n.id;}):null;
     if(ownLine){
       var ownHolder=rmEl('ul','map-component-own-list map-input-own');ownHolder.appendChild(rmOwnWorkLine(map.readingContext(),ownLine));
       var anchored=card.querySelector('[data-reading-anchor]');
@@ -1256,7 +1264,7 @@ function rmSavedScene(doc){
     // must not reinterpret that restoration as a new centred selection.
     if(saved?.page===map.closest('[data-report-page]')?.id&&target&&
       (saved.value?.scope===target.id||saved.value?.operation===target.id))return;
-    if(n===document.getElementById('overview')||n===document.getElementById('repository-map')){reset();return;}
+    if(n===document.getElementById('overview')||n===document.getElementById('repository-map')||n===map){reset();return;}
     if(target)select(target,n!==target,null,true);
   }
   // The Entrypoints link of a component's details lands on the program's

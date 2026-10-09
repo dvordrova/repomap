@@ -76,3 +76,77 @@ export class Picker {
 export function pickAll(picker: Picker): Array<string | number> {
   return [picker.choose(["a"]), pick([1]), new Picker("p").prefix];
 }
+
+/**
+ * Serialize a pair while retaining its two declared types.
+ * The alias preserves both named fields.
+ *
+ * @example
+ * ```ts
+ * type Input = Pair<string>;
+ * type Output = SerializedPair<Input>;
+ * const first: Output["first"] = "level";
+ * const second: Output["second"] = "next";
+ * ```
+ *
+ * @remarks
+ * This is a type declaration, not a runtime serializer.
+ * The example is documentation, not another declaration in the file.
+ * Its comment belongs to this alias even when the example makes the
+ * block longer than a nearby-comment heuristic would permit.
+ *
+ * @category Types
+ */
+export type SerializedPair<T> = { first: T; second: T };
+export type UndocumentedPair<T> = { value: T };
+
+// These compiler type strings are complete words, not the variable names.
+export const a: any = null;
+export const i: number = 1;
+
+/** Counts an authored level. */
+export const
+  authoredCount = 1;
+
+/** Read the authored count. */
+export function
+  readAuthoredCount(): number { return authoredCount; }
+
+export function undocumentedCount(): number { return authoredCount; }
+
+/** A blank line still leaves compiler-owned documentation. */
+
+export type AuthoredAfterBlank = number;
+export type UndocumentedAfterBlank = number;
+
+/** Names the authored response shape. */
+export interface AuthoredShape {
+  /** Counts response levels. */
+  readonly count:
+    number;
+  next: number;
+}
+
+/** Holds two contrasting methods. */
+export class AuthoredReader {
+  /** Reads the authored level. */
+  read(): number { return authoredCount; }
+  other(): number { return authoredCount; }
+}
+
+/** Describes two variables in one source declaration. */
+export const
+  sharedCommentFirst = 1,
+  sharedCommentSecond = 2;
+
+/** Counts inline levels. */ export const inlineOwned = 1;
+export const inlineUndocumented = 2;
+/** Reads the next independent level. */
+export const afterInlineOwned = 3;
+export const afterInlineUndocumented = 4;
+
+/** Describes the first same-line variable. */
+export const sameLineListFirst = 1, sameLineListSecond = 2;
+export const /** Counts a compiler-owned inner comment. */ insideDeclarationOwned = 1;
+export const /** Describes the first inline declaration. */ inlinePairFirst = 1; export const /** Describes the second inline declaration. */ inlinePairSecond = 2;
+export const unicodeLead = "😀"; export const /** Reports the Unicode-aware source position. */ unicodeOwned = 1;

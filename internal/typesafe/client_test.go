@@ -92,6 +92,25 @@ func TestVerdictsReadEachAnswerAlone(t *testing.T) {
 	}
 }
 
+func TestNoulOccurrencesKeepInvalidRequiredScores(t *testing.T) {
+	good := `{"type":"noul","noul":0}`
+	for _, raw := range []string{
+		`{"type":"noul","noul":null}`,
+		`{"type":"noul","noul":-0.1}`,
+		`{"type":"noul","noul":1.1}`,
+		`{"type":"noul","noul":1e309}`,
+		`{"type":"noul","noul":"NaN"}`,
+		`{"type":"noul","noul":0,"noul":0.9}`,
+	} {
+		for _, written := range []string{raw, raw + `,"bad":` + good, good + `,"bad":` + raw} {
+			verdicts, err := (&Client{}).Verdicts([]byte(`{"answers":{"bad":` + written + `,"good":` + good + `}}`))
+			if err != nil || !(verdicts["bad"].InvalidYes || verdicts["bad"].Conflict) || verdicts["good"].Yes == nil || *verdicts["good"].Yes != 0 {
+				t.Fatalf("invalid noul became a score or poisoned its neighbour: %s / %+v / %v", written, verdicts, err)
+			}
+		}
+	}
+}
+
 // A question names its item as its owner asks about it, and each option
 // carries its structured criteria, else its meaning, else null: the owner's
 // request shape (state = what we want, question = the item, criteria per

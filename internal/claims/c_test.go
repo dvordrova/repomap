@@ -6,6 +6,31 @@ import (
 	"testing"
 )
 
+func TestCNativeHeaderStopsBeforeSameLineNeighborAndPrototype(t *testing.T) {
+	for _, test := range []struct {
+		source     string
+		sites      []declarationSite
+		unresolved bool
+	}{
+		{"/* The first declaration owns this description. */\nint first(void) { return 1; } int second(void) { return 2; }", []declarationSite{{2, 5}, {2, 35}}, false},
+		{"/* The first declaration owns this description. */\nint first(void); int second(void) { return 2; }", []declarationSite{{2, 22}}, true},
+	} {
+		lines := splitLines(test.source)
+		docs, _ := cQuotes(lines)
+		bindCQuotes(lines, docs, test.sites)
+		if len(docs) != 1 || docs[0].DeclarationUnresolved != test.unresolved {
+			t.Fatalf("native header attachment: %+v", docs)
+		}
+		if !test.unresolved && (docs[0].DeclarationLine != 2 || docs[0].DeclarationColumn != 5) {
+			t.Fatalf("wrong original name tuple: %+v", docs[0])
+		}
+	}
+	legacy := []Claim{{Line: 1, DeclarationLine: 2, Text: "Legacy unique description."}}
+	if CDocstring(legacy, 2, []int{2}, 5) == "" || CDocstring(legacy, 2, []int{2, 2}, 5) != "" {
+		t.Fatal("legacy unique and ambiguous native sites not distinguished")
+	}
+}
+
 // cSource is a small C file with the comment shapes real C code has: a
 // licence at the top, the author's description, section banners, comments
 // above declarations and comments inside bodies.

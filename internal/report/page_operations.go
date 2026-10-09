@@ -519,31 +519,58 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		result.Edges = append(result.Edges, edge)
 	}
 	addAreas := func(owner *groupindex.Index, remote bool) []string {
-		var areaIDs []string
+		areaID := func(id string) string {
+			if remote {
+				return section.ID + "-area-" + safeIDFragment(owner.Target.ID) + "-" + safeIDFragment(id)
+			}
+			return section.ID + "-area-" + safeIDFragment(id)
+		}
+		groupNode := func(id string) string {
+			if remote {
+				return foreignNodeID(section.ID, owner.Target.ID, id)
+			}
+			return mapNodeID(id)
+		}
+		visible := map[string]bool{}
 		for _, container := range owner.Containers {
-			var children []string
-			for _, groupID := range container.GroupIDs {
-				id := mapNodeID(groupID)
-				if remote {
-					id = foreignNodeID(section.ID, owner.Target.ID, groupID)
+			for _, groupID := range groupindex.ContainerGroups(owner.Containers, container.ID) {
+				if _, ok := byID[groupNode(groupID)]; ok {
+					visible[container.ID] = true
+					break
 				}
+			}
+		}
+		var roots []string
+		for _, container := range owner.Containers {
+			if !visible[container.ID] {
+				continue
+			}
+			var children []string
+			for _, child := range owner.Containers {
+				if child.ParentID == container.ID && visible[child.ID] {
+					children = append(children, areaID(child.ID))
+				}
+			}
+			for _, groupID := range container.GroupIDs {
+				id := groupNode(groupID)
 				if _, exists := byID[id]; exists {
 					children = append(children, id)
 				}
 			}
-			if len(children) == 0 {
-				continue
-			}
-			id := section.ID + "-area-" + safeIDFragment(container.ID)
+			id := areaID(container.ID)
 			unit := "groups"
-			if len(children) == 1 {
+			count := len(groupindex.ContainerGroups(owner.Containers, container.ID))
+			if count == 1 {
 				unit = "group"
 			}
-			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: pageLane(container.Lane, container.Core)})
-			areaIDs = append(areaIDs, id)
+			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", count, unit), Lane: pageLane(container.Lane, container.Core)})
+			if container.ParentID == "" {
+				roots = append(roots, id)
+			}
 		}
-		return areaIDs
+		return roots
 	}
+
 	addAreas(index, false)
 	var peerRoots []string
 	for _, other := range builder.indexes {
@@ -553,8 +580,9 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		}
 		children := addAreas(&other, true)
 		covered := make(map[string]bool)
-		for _, id := range children {
-			for _, child := range strings.Fields(result.Nodes[byID[id]].Children) {
+		for _, container := range other.Containers {
+			for _, groupID := range groupindex.ContainerGroups(other.Containers, container.ID) {
+				child := foreignNodeID(section.ID, other.Target.ID, groupID)
 				covered[child] = true
 			}
 		}

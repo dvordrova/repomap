@@ -146,8 +146,8 @@ func TestAdaptiveSplitMemoNoCacheAndClear(t *testing.T) {
 	disabled.Enabled = false
 	prepared := p.prepared
 	run(disabled, 3)
-	if p.prepared-prepared != 3 {
-		t.Fatalf("NoCache performed extra hint preparations: %d", p.prepared-prepared)
+	if p.prepared-prepared != 6 {
+		t.Fatalf("NoCache needs one input preflight and one execution preparation per call: %d", p.prepared-prepared)
 	}
 	run(executor, 0)
 	// The supported cache-clear command removes this one directory, including

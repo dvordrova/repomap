@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -227,7 +228,10 @@ func TestCRepositoryTargetsFromLinkLines(t *testing.T) {
 		t.Fatal("the plan kept the units of programs it already projected")
 	}
 	native := target.native.(cproject.Program)
-	program := programindex.Target{Language: "c", Selector: native.Selector, Name: native.Name, AnchorFileRef: native.AnchorFileRef}
+	program := programindex.Target{Language: "c", Selector: native.Selector, Name: native.Name, AnchorFileRef: native.TargetAnchorFileRef(), Sources: []programindex.TargetSource{{FileRef: native.AnchorFileRef, Path: native.Anchor.Path}}}
+	if native.Manifest != "" && native.ManifestFileRef != native.AnchorFileRef {
+		program.Sources = append(program.Sources, programindex.TargetSource{FileRef: native.ManifestFileRef, Path: native.Manifest})
+	}
 	if !adapter.MatchProgramTarget(target, program) {
 		t.Fatal("the program's own ProgramTarget does not match")
 	}
@@ -278,10 +282,10 @@ func TestCRepositoryDiscoveryIsOrdinary(t *testing.T) {
 // makefile that links them represents both.
 func TestCRepositoryProgramsSharingEveryFile(t *testing.T) {
 	root, repository := writeCTestRepository(t, map[string]string{
-		"Makefile": "all: fast slow\n\n" +
+		"Makefile": "all:\ninclude build/main.mk\n\n%.o: %.c\n\t$(CC) -c $<\n",
+		"build/main.mk": "all: fast slow\n\n" +
 			"fast: main.o\n\t$(CC) -o fast main.o\n\n" +
-			"slow: main.o\n\t$(CC) -o slow main.o\n\n" +
-			"%.o: %.c\n\t$(CC) -c $<\n",
+			"slow: main.o\n\t$(CC) -o slow main.o\n",
 		"main.c": "int main(void) { return 0; }\n",
 	})
 	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root})
@@ -296,6 +300,31 @@ func TestCRepositoryProgramsSharingEveryFile(t *testing.T) {
 	restored, err := discovery.RestoreFiles([]corpus.FileID{makefile})
 	if err != nil || len(restored) != 2 || restored[0].Target.Selector != "c:fast" || restored[1].Target.Selector != "c:slow" {
 		t.Fatalf("restored %+v %v", restored, err)
+	}
+	child := cTestFileRef(t, repository, "build/main.mk")
+	childRestored, err := discovery.RestoreFiles([]corpus.FileID{child})
+	if err != nil || len(childRestored) != 2 {
+		t.Fatalf("included source restores no original targets: %+v %v", childRestored, err)
+	}
+	for _, row := range restored {
+		native := row.Target.native.(cproject.Program)
+		if native.Anchor.Path != "build/main.mk" || native.Anchor.Line == 0 || native.AnchorFileRef != string(child) || native.Manifest != "Makefile" || native.ManifestFileRef != string(makefile) || cProgramRoot(native) != "." {
+			t.Fatalf("root owner and included rule source were conflated: %+v", native)
+		}
+		adapter := cRepositoryTargetAdapterDescriptor()
+		program := programindex.Target{Selector: native.Selector, Name: native.Name, AnchorFileRef: string(makefile), Sources: []programindex.TargetSource{
+			{Path: "Makefile", FileRef: string(makefile)}, {Path: "build/main.mk", FileRef: string(child)},
+		}}
+		if !adapter.MatchProgramTarget(row.Target, program) {
+			t.Fatal("exact root and child source binding does not match")
+		}
+		for _, source := range program.Sources {
+			missing := program
+			missing.Sources = []programindex.TargetSource{source}
+			if adapter.MatchProgramTarget(row.Target, missing) {
+				t.Fatalf("a target missing a required native source matched: %+v", missing)
+			}
+		}
 	}
 }
 
@@ -452,7 +481,15 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		for _, choice := range []string{"loopMain", "loopProcessEvents", "readQueryFromClient"} {
 			if slices.ContainsFunc(question.Options, func(option llm.Option) bool { return option.Name == choice }) {
-				return llm.Verdict{Choice: choice, Probabilities: map[string]float64{choice: 0.9}}, true
+				probabilities := make(map[string]float64, len(question.Options))
+				for _, option := range question.Options {
+					if option.Name == choice {
+						probabilities[option.Name] = 0.9
+					} else {
+						probabilities[option.Name] = 0.1 / float64(len(question.Options)-1)
+					}
+				}
+				return llm.Verdict{Choice: choice, Probabilities: probabilities}, true
 			}
 		}
 		return llm.Verdict{}, false
@@ -491,7 +528,13 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(string(source), "\n")
-	for _, step := range regexp.MustCompile(`<code>(\w+)</code></span> <span class="anchor">kvd\.c:(\d+)<`).FindAllStringSubmatch(flow, -1) {
+	anchors := regexp.MustCompile(`<code>(\w+)</code></span> <span class="anchor"[^>]*>kvd\.c:(\d+)<`).FindAllStringSubmatch(flow, -1)
+	if len(anchors) == 0 {
+		t.Fatalf("the Main flow lost its callable declaration anchors:\n%s", flow)
+	}
+	registeredAnchor := false
+	for _, step := range anchors {
+		registeredAnchor = registeredAnchor || step[1] == "readQueryFromClient"
 		line := 0
 		for _, digit := range step[2] {
 			line = line*10 + int(digit-'0')
@@ -500,17 +543,87 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 			t.Fatalf("the step %s is placed at kvd.c:%d, not its declaration:\n%s", step[1], line, flow)
 		}
 	}
+	if !registeredAnchor {
+		t.Fatalf("the registered callable lost its own declaration anchor:\n%s", flow)
+	}
 }
 
-// mainFlowSection is the page's Main flow section, its source for the
-// component's reading.
+// mainFlowSection projects the component's actual shared page value through
+// the ordinary lazy formatter embedded in that same rendered page. The page
+// keeps only a reference and deep anchor, never an eager second reading.
 func mainFlowSection(t *testing.T, html string) string {
 	t.Helper()
-	start := strings.Index(html, `<section class="component-flow" hidden>`)
-	if start < 0 {
-		t.Fatal("the page has no Main flow")
+	if strings.Contains(html, `class="component-flow"`) {
+		t.Fatal("the page still prints an eager second Main flow")
 	}
-	return html[start : start+strings.Index(html[start:], "</section>")]
+	ref := regexp.MustCompile(`<section id="t1"[^>]* data-component-flow="(\d+)"`).FindStringSubmatch(html)
+	if ref == nil || !strings.Contains(html, `<span id="t1-flow" hidden></span>`) {
+		t.Fatal("the component lost its saved Main flow reference or deep anchor")
+	}
+	index, err := strconv.Atoi(ref[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := readPageData(t, []byte(html))
+	values, _ := page.data["values"].([]any)
+	if index >= len(values) {
+		t.Fatal("the component's Main flow reference is outside the shared page data")
+	}
+	value := page.value(index)
+	if len(value.get("Flow").list("Steps")) == 0 {
+		t.Fatal("the saved component reading has no Main flow steps")
+	}
+	raw, err := json.Marshal(value.raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := regexp.MustCompile(`(?s)<script type="application/json" id="rm-ui-vocabulary"( data-rm-encoding="gzip-base64")?>(.*?)</script>`).FindStringSubmatch(html)
+	if words == nil {
+		t.Fatal("the page has no UI vocabulary")
+	}
+	encodedWords, err := json.Marshal(words[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	vocabulary := "JSON.parse(" + string(encodedWords) + ")"
+	if words[1] != "" {
+		vocabulary = "JSON.parse(require('node:zlib').gunzipSync(Buffer.from(" + string(encodedWords) + ",'base64')).toString())"
+	}
+	start, end := strings.Index(html, "var rmFlowDisplay="), strings.Index(html, "function rmComponentFlowData(")
+	if start < 0 || end <= start {
+		t.Fatal("the page has no ordinary Main flow formatter")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("Node is required to verify the page's Main flow projection: %v", err)
+	}
+	script := `
+class Element {
+ constructor(tag,cls,text){this.tag=tag;this.className=cls||'';this.text=text||'';this.children=[];this.dataset={};}
+ appendChild(child){this.children.push(child);return child;}
+}
+const document={createTextNode:text=>({text:String(text)})};
+function rmEl(tag,cls,text){return new Element(tag,cls,text);}
+const vocabulary=` + vocabulary + `;
+function rmT(key,...args){if(!Object.prototype.hasOwnProperty.call(vocabulary,key))throw Error('missing UI '+key);return args.reduce((text,arg,i)=>text.replace('{'+i+'}',arg),vocabulary[key]);}
+` + html[start:end] + `
+const saved=` + string(raw) + `,into=rmEl('div');
+rmFlowDisplay.flow(saved,into);
+function escaped(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&#34;',"'":'&#39;'}[c]));}
+function write(item){
+ if(!(item instanceof Element))return escaped(item.text);
+ let attrs=item.className?' class="'+escaped(item.className)+'"':'';
+ for(const key of ['href','target','title'])if(item[key])attrs+=' '+key+'="'+escaped(item[key])+'"';
+ for(const [key,value] of Object.entries(item.dataset))attrs+=' data-'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase())+'="'+escaped(value)+'"';
+ return '<'+item.tag+attrs+'>'+escaped(item.text)+item.children.map(write).join('')+'</'+item.tag+'>';
+}
+process.stdout.write(into.children.map(write).join(''));
+`
+	projected, err := exec.CommandContext(t.Context(), node, "-e", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("ordinary Main flow projection: %v\n%s", err, projected)
+	}
+	return string(projected)
 }
 
 // The client links the fixture's net.c but never listens: the page says
@@ -577,12 +690,12 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 		"loop.c:loopSetBeforeSleep run by kvd", "loop.c:loopProcessEvents run by kvd", "loop.c:loopMain run by kvd", "loop.c:loopStop run by kvd", "loop.c:loopNowMs",
 		"loop_poll.c:loopApiCreate run by kvd", "loop_poll.c:loopApiAddEvent run by kvd", "loop_poll.c:loopApiPoll run by kvd",
 		"net.c:netListen run by kvd", "strbuf.c:sbConsume run by kvd", "strbuf.c:sbTrace", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbReserve", "strbuf.c:sbDrainForever",
-		"strbuf.c:sbRewind run by kvd", "strbuf.c:sbTruncate run by kvd"}
+		"strbuf.c:sbRewind run by kvd", "strbuf.c:sbTruncate run by kvd", "strbuf.c:sbCheckedBranches", "strbuf.c:sbNativeCommon", "strbuf.c:sbNativeDefault"}
 	if listed := neverRuns("kvcli"); !reflect.DeepEqual(listed, want) {
 		t.Fatalf("the client lists %v as never run, want %v", listed, want)
 	}
 	// The server never connects; the client does.
-	if listed, want := neverRuns("kvd"), []string{"loop.c:loopNowMs", "net.c:netConnect run by kvcli", "strbuf.c:sbTrace", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbReserve", "strbuf.c:sbDrainForever"}; !reflect.DeepEqual(listed, want) {
+	if listed, want := neverRuns("kvd"), []string{"kvd.c:documentedNeighbor", "kvd.c:undocumentedNeighbor", "kvd.c:prototypeNeighbor", "loop.c:loopNowMs", "net.c:netConnect run by kvcli", "strbuf.c:sbTrace", "strbuf.c:sbCheckOrAbort", "strbuf.c:sbReserve", "strbuf.c:sbDrainForever", "strbuf.c:sbCheckedBranches", "strbuf.c:sbNativeCommon", "strbuf.c:sbNativeDefault"}; !reflect.DeepEqual(listed, want) {
 		t.Fatalf("the server lists %v as never run, want %v", listed, want)
 	}
 }

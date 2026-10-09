@@ -82,7 +82,7 @@ func PreparedTargetNavigationPage(
 	if filepath.Clean(data.ArtifactsDir) != absoluteRunDir {
 		return TargetNavigationPage{}, fmt.Errorf("report: prepared target navigation data does not belong to the run")
 	}
-	entry, err := data.ProgramPortfolio.defaultEntry()
+	entry, err := data.ProgramPortfolio.defaultBinding()
 	if err != nil {
 		return TargetNavigationPage{}, fmt.Errorf("report: prepared target navigation program portfolio: %w", err)
 	}
@@ -129,7 +129,7 @@ func LoadTargetNavigationPage(runDir, runID string) (TargetNavigationPage, error
 	if data.ProgramPortfolio == nil {
 		return TargetNavigationPage{}, fmt.Errorf("report: target navigation program portfolio is missing")
 	}
-	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	defaultEntry, err := data.ProgramPortfolio.defaultBinding()
 	if err != nil {
 		return TargetNavigationPage{}, fmt.Errorf("report: target navigation program portfolio: %w", err)
 	}
@@ -294,7 +294,7 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 	if data.ProgramPortfolio == nil {
 		return fmt.Errorf("report: target navigation requires one exact ProgramPortfolio page")
 	}
-	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	defaultEntry, err := data.ProgramPortfolio.defaultBinding()
 	if err != nil {
 		return fmt.Errorf("report: target navigation ProgramPortfolio: %w", err)
 	}

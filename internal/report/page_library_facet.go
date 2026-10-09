@@ -9,7 +9,7 @@ func (builder *pageBuilder) libraryFacet(programTargetID string) []string {
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
 	}
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
+	for _, entry := range builder.data.ProgramPortfolio.programs() {
 		if entry.Target.ID == programTargetID {
 			return slices.Clone(entry.Target.Libraries)
 		}

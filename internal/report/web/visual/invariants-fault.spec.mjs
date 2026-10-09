@@ -12,26 +12,28 @@ import {fileURLToPath} from 'node:url';
 // JSON and Markdown all say INCOMPLETE. Each case runs the real spec once on
 // the fixture's synthetic graph, beside this suite on the next port.
 const web=fileURLToPath(new URL('../',import.meta.url));
-const port=Number(process.env.REPOMAP_TEST_PORT||8875)+1;
+const basePort=Number(process.env.REPOMAP_TEST_PORT||8875);
 const playwright=fileURLToPath(new URL('../node_modules/.bin/playwright',import.meta.url));
 
-function run(env){
+function run(env,dir,port){
   return new Promise(resolve=>{
-    const child=spawn(playwright,['test','visual/invariants.spec.mjs','--workers=1','--reporter=line'],
+    // Nested runners clean their output directory before starting. Keep
+    // them away from the parent suite and from each other's traces.
+    const child=spawn(playwright,['test','visual/invariants.spec.mjs','--workers=1','--reporter=line','--output',join(dir,'browser-results')],
       {cwd:web,env:{...process.env,...env,REPOMAP_TEST_PORT:String(port)},stdio:['ignore','pipe','pipe']});
     let output='';child.stdout.on('data',d=>output+=d);child.stderr.on('data',d=>output+=d);
     child.on('close',code=>resolve({code,output}));
   });
 }
 
-for(const [fault,when] of [['before-checks','before the first check'],['after-checks','after a few successful checks']])
+for(const [index,[fault,when]] of [['before-checks','before the first check'],['after-checks','after a few successful checks']].entries())
   test(`a harness failure ${when} fails strict acceptance and reads INCOMPLETE in every output`,async()=>{
     test.setTimeout(240_000);
     const dir=await mkdtemp(join(tmpdir(),'repomap-invariant-fault-'));
     try{
       const {code,output}=await run({REPOMAP_INVARIANT_FAULT:fault,REPOMAP_INVARIANT_STRICT:'1',REPOMAP_INVARIANT_GRAPHS:'no-inputs',
         REPOMAP_INVARIANT_LEVELS:'^home$',REPOMAP_INVARIANT_PANS:'2',REPOMAP_INVARIANT_MOVES:'2',REPOMAP_INVARIANT_OUT:dir,
-        REPOMAP_INVARIANT_REPORTS:'',REPOMAP_INVARIANT_PATHS:'canvas',REPOMAP_INVARIANT_HEAD:'fault-test'});
+        REPOMAP_INVARIANT_REPORTS:'',REPOMAP_INVARIANT_PATHS:'canvas',REPOMAP_INVARIANT_HEAD:'fault-test'},dir,basePort+index+1);
       expect(code,`strict acceptance fails:\n${output.slice(-1500)}`).not.toBe(0);
       expect(output).toMatch(/INCOMPLETE/);
       const saved=JSON.parse(await readFile(join(dir,'synthetic-no-inputs.canvas.json'),'utf8'));

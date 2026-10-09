@@ -598,6 +598,13 @@ function, lambda or class body starts afresh. iteration.py's checked_store
 checks each kind (`TestCumulativePythonACallSaysWhatItRunsUnder`).
 `typing.NoReturn` annotations are not read.
 
+An arm's deciding expression is saved from the original source text
+(`Condition`, `When`, PROGRAM_INDEX): an if or conditional expression's test
+with `holds`/`fails`, the operands before a short-circuit operand with
+`holds` for `and` and `fails` for `or`, and a match's subject with `matches`.
+Except bodies and try-else have no single condition. iteration.py's
+checked_branches checks each form, including multiple boolean operands.
+
 ## Handler tables and stored callbacks
 
 Python has no syntax for importing a package only for its effect. "A module-level import none of whose bindings the module reads" is no such fact: in freqtrade it finds 266 re-exports (`__init__`/`__all__` facades) and no registration, in beets none, so the dependency catalogue records no effect imports for Python (a recorded gap beside Go's `_` imports, GO "Packages imported for their effect").

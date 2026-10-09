@@ -21,6 +21,8 @@ func TestAPartAnsweredExampleIsNoCore(t *testing.T) {
 	offered := map[string]*llm.Criteria{}
 	opts.Categorizer = &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		switch key[strings.LastIndex(key, "|")+1:] {
+		case "helper", "grouping", "box":
+			return closedDecisions().Decide(key, question)
 		case "key_symbol":
 			return typesafetest.Choose("yes"), true
 		case "explains":

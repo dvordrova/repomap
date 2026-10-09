@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,12 +18,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
-	Version       = 20
-	HelperVersion = 28
+	Version       = 22
+	HelperVersion = 31
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -117,11 +119,12 @@ type Declaration struct {
 	Signature     string `json:"signature,omitempty"`
 	// SignatureIsSource distinguishes a written class/interface header or field from a
 	// compiler-rendered type, whose inferred imports can contain host paths.
-	SignatureIsSource bool     `json:"signature_is_source,omitempty"`
-	Exported          bool     `json:"exported"`
-	OwnerRef          string   `json:"owner_ref,omitempty"`
-	Location          Location `json:"location"`
-	EndLine           int      `json:"end_line,omitempty"`
+	SignatureIsSource bool                     `json:"signature_is_source,omitempty"`
+	Exported          bool                     `json:"exported"`
+	OwnerRef          string                   `json:"owner_ref,omitempty"`
+	Location          Location                 `json:"location"`
+	DocstringRanges   []programindex.LineRange `json:"docstring_ranges,omitempty"`
+	EndLine           int                      `json:"end_line,omitempty"`
 	// CodeLines counts the lines of the declaration's range that hold a
 	// compiler token; a module counts its whole file. Zero is unknown.
 	CodeLines int `json:"code_lines,omitempty"`
@@ -175,20 +178,23 @@ type Export struct {
 }
 
 type Call struct {
-	RepositoryPath   string       `json:"repository_path,omitempty"`
-	Ref              string       `json:"ref"`
-	CallerRef        string       `json:"caller_ref"`
-	CalleeRefs       []string     `json:"callee_refs"`
-	Invocation       string       `json:"invocation"`
-	ExternalPackage  string       `json:"external_package,omitempty"`
-	ExternalExport   string       `json:"external_export,omitempty"`
-	ExternalReceiver string       `json:"external_receiver,omitempty"`
-	ExternalName     string       `json:"external_name,omitempty"`
-	Expression       string       `json:"expression"`
-	Resolution       string       `json:"resolution"`
-	Location         Location     `json:"location"`
-	Pattern          *CallPattern `json:"pattern,omitempty"`
-	PatternsObserved int          `json:"patterns_observed"`
+	RepositoryPath  string   `json:"repository_path,omitempty"`
+	Ref             string   `json:"ref"`
+	CallerRef       string   `json:"caller_ref"`
+	CalleeRefs      []string `json:"callee_refs"`
+	Invocation      string   `json:"invocation"`
+	ExternalPackage string   `json:"external_package,omitempty"`
+	// DefaultLibrarySymbol is compiler proof on the invoked merged symbol,
+	// independent of its selected signature's raw package origin.
+	DefaultLibrarySymbol bool         `json:"default_library_symbol,omitempty"`
+	ExternalExport       string       `json:"external_export,omitempty"`
+	ExternalReceiver     string       `json:"external_receiver,omitempty"`
+	ExternalName         string       `json:"external_name,omitempty"`
+	Expression           string       `json:"expression"`
+	Resolution           string       `json:"resolution"`
+	Location             Location     `json:"location"`
+	Pattern              *CallPattern `json:"pattern,omitempty"`
+	PatternsObserved     int          `json:"patterns_observed"`
 	// SameValueAs is the ref of the earlier call this call is another
 	// spelling of (PROGRAM_INDEX SameValueAs): an operand of the same || or
 	// ?? written the same around its call, or an arm of the same
@@ -498,7 +504,9 @@ func (result Result) Validate() error {
 			return fmt.Errorf("jsts project: invalid path alias")
 		}
 		for _, target := range alias.Targets {
-			if target == "" || strings.HasPrefix(target, "/") || strings.Contains(target, "\\") || corpus.ForbiddenPath(strings.TrimPrefix(target, "./")) {
+			// Configured aliases are names-only compiler metadata. An installed
+			// dependency path is not a tracked source or native object owner.
+			if target == "" || target != path.Clean(target) || strings.HasPrefix(target, "/") || strings.Contains(target, "\\") || target == ".." || strings.HasPrefix(target, "../") {
 				return fmt.Errorf("jsts project: forbidden path alias target")
 			}
 		}
@@ -588,6 +596,11 @@ func (result Result) Validate() error {
 		if !validLocation(declaration.Location, fileRefs) {
 			return fmt.Errorf("jsts project: invalid declaration location for %q", declaration.Ref)
 		}
+		for position, line := range declaration.DocstringRanges {
+			if !validDocstringRange(line) || position > 0 && compareDocstringRanges(declaration.DocstringRanges[position-1], line) >= 0 {
+				return fmt.Errorf("jsts project: invalid docstring attachment for %q", declaration.Ref)
+			}
+		}
 		for _, overload := range declaration.Overloads {
 			if !validLocation(overload.Location, fileRefs) || unsafeDeclarationSignature(overload.Signature, false) {
 				return fmt.Errorf("jsts project: invalid overload of %q", declaration.Ref)
@@ -655,7 +668,7 @@ func (result Result) Validate() error {
 		if value.ExternalPackage == "" || value.ExternalName == "" || value.Resolution == "unresolved" {
 			continue
 		}
-		patternExternalOrigins[externalProgramObjectRef(value.ExternalPackage, value.ExternalReceiver, value.ExternalName, value.RepositoryPath)] = struct{}{}
+		patternExternalOrigins[externalProgramObjectRef(value.ExternalPackage, value.ExternalReceiver, value.ExternalName, value.RepositoryPath, value.DefaultLibrarySymbol)] = struct{}{}
 	}
 	usedPatternResults := make(map[string]struct{})
 	for _, value := range result.Calls {
@@ -781,6 +794,9 @@ func (result Result) Validate() error {
 		}
 		if !validWorkspaceOrigin(value.RepositoryPath, value.ExternalPackage, value.Resolution) {
 			return fmt.Errorf("jsts project: invalid workspace call authority")
+		}
+		if value.DefaultLibrarySymbol && (value.RepositoryPath != "" || value.ExternalPackage == "" || value.ExternalName == "" || value.Resolution != "exact" || len(value.CalleeRefs) != 0) {
+			return fmt.Errorf("jsts project: invalid compiler default-library symbol proof")
 		}
 		if (value.ExternalExport != "" || value.ExternalReceiver != "" || value.ExternalName != "") && value.ExternalPackage == "" {
 			return fmt.Errorf("jsts project: call has external symbol without package authority")
@@ -950,6 +966,16 @@ func canonicalize(result *Result) {
 	sort.Slice(result.Files, func(i, j int) bool { return result.Files[i].Path < result.Files[j].Path })
 	if result.Declarations == nil {
 		result.Declarations = []Declaration{}
+	}
+	for position := range result.Declarations {
+		lines := result.Declarations[position].DocstringRanges
+		if len(lines) == 0 {
+			result.Declarations[position].DocstringRanges = nil
+		} else {
+			owned := append([]programindex.LineRange(nil), lines...)
+			slices.SortFunc(owned, compareDocstringRanges)
+			result.Declarations[position].DocstringRanges = slices.Compact(owned)
+		}
 	}
 	sort.Slice(result.Declarations, func(i, j int) bool { return result.Declarations[i].Ref < result.Declarations[j].Ref })
 	if result.Imports == nil {
@@ -1295,4 +1321,19 @@ func sourceDigest(files []File) string {
 		}
 	}
 	return hex.EncodeToString(digest.Sum(nil))
+}
+
+func compareDocstringRanges(a, b programindex.LineRange) int {
+	for _, pair := range [][2]int{{a.Line, b.Line}, {a.Column, b.Column}, {a.EndLine, b.EndLine}, {a.EndColumn, b.EndColumn}} {
+		if pair[0] < pair[1] {
+			return -1
+		}
+		if pair[0] > pair[1] {
+			return 1
+		}
+	}
+	return 0
+}
+func validDocstringRange(r programindex.LineRange) bool {
+	return r.Line > 0 && r.Column > 0 && r.EndLine >= r.Line && r.EndColumn > 0 && (r.EndLine > r.Line || r.EndColumn > r.Column)
 }

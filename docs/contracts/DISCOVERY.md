@@ -5,6 +5,27 @@ Current implementation contract. Read only the sections relevant to the change.
 records the current product decisions and acceptance status. Historical runs and
 experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
+## Published example measurements
+
+README examples may show build time and provider usage from the exact completed
+run bound to each published HTML. Use the owner's `timing.command_ms` through
+publication, without adding child timing again. Sum live exchange input/output
+over the owner and its actual child runs, including measured retries and
+refusals. Local cached/shared answers preserve the original call's metrics;
+exclude those from new spending. Provider prefix-cache hits remain paid input
+and are a subset of total input. Transport usage already accumulates attempts;
+reasoning is already part of output. Preserve run identities and public HTML
+checksums with the measurement data. A different run's log cannot supply child
+scope for the published report.
+
+State local reuse, unavailable journals/logs and unreported usage explicitly.
+Do not label warm-run spending as a cold-build benchmark, replace unfinished
+examples with old unusable runs, or give pending measurements a zero value.
+When no provider invoice exists, monetary values are dated official-tariff
+estimates with their source and applicable rate range, not billed amounts.
+This documentation accounting does not add an analytical stage or change the
+ordinary pipeline.
+
 ## Corpus
 
 - Extract deterministic repository facts locally, then send bounded,
@@ -139,6 +160,25 @@ repository's name, which the corpus and go.mod give before any language
 adapter's prerequisites exist, so it asks while the Go planning snapshot is
 built; the snapshot must name the repository the same way.
 
+The classifier starts with the complete authority and uses the shared adaptive
+independent executor. Actual provider preparation, including UTF-8 bytes, prompt
+framing and output reservation, owns its request size. A refused composite item
+splits its larger encoded input axis: original file refs or whole guidance
+documents. Each final request covers a document-by-file rectangle, and every
+original document/file pair occurs exactly once across that complete cover.
+Documents, paths and refs are never clipped or renamed. An indivisible complete
+document plus one file that cannot fit remains an explicit provider-envelope
+failure. No fixed packing-byte window or file-count quota decides this cover.
+State binds the aggregate and exact local request digests rather than mutable
+plan positions; accepted siblings keep their original requests and outcomes.
+Actual remote resource refusals use the same lossless subdivision; malformed
+semantic responses do not opt into repartition. Transport/configuration/payment
+failures remain errors, never a successful empty guidance classification.
+
+A file shard is not a globally complete candidate set. Its missing alternatives
+cannot prove a unique entry; guidance must itself distinguish the exact file or
+public root. Locally unique but globally unsupported guesses remain omitted.
+
 The classifier restores accepted rows only to advertised file refs. A bare
 files array is the same answer without its wrapper, and one hypothesis string
 is a one-member list; missing or null `files`, or a row without a hypothesis
@@ -181,6 +221,10 @@ siblings; real resource refusals split every affected request in the round.
 Successful input snapshots stay unchanged for exact warm-cache reuse, including
 after children are added. A failed merge preserves its already accepted input
 claims, and an incomplete merge supplies no invented whole-repository overview.
+Already accepted singleton merge batches pass through unchanged, including after
+an actual resource refusal splits a larger merge; they require no new model
+completion. Non-progress preserves independent source-bound reductions rather
+than rereading them or concatenating their overviews.
 Optional terms are collected only from accepted file/source scopes: a guidance
 file with a refused hypothesis is not one, a document that lost only a
 malformed concept is.
@@ -189,10 +233,14 @@ Source and merge packing find the largest complete request prefix by probing
 exponentially growing windows, then searching within the last fit/refusal
 bracket. This avoids re-encoding every growing prefix, without repeatedly
 encoding the entire remaining reservoir when only a small window fits. Exact
-provider preparation still decides fit; UTF-8 splitting, worst-case ordinal
+Provider preparation treats only actual request-byte and context-envelope
+refusals as non-fitting inputs, in both source and merge packing. Other resource,
+configuration, transport and payment errors retain their original cause rather
+than becoming empty documentation. UTF-8 splitting, worst-case ordinal
 reservations, materialization, request bytes and adaptive execution are unchanged.
-An indivisible merge candidate is rejected before materialization even when it
-follows a valid window. Other preparation errors retain their original cause.
+A single already accepted merge candidate outside that input envelope is carried
+unchanged without a completion, even when it follows a fitting window. Other
+preparation errors retain their original cause.
 Regression comparisons preserve every materialized byte while checking that repeated preparation is reduced.
 
 ## Target selection
@@ -307,7 +355,10 @@ Regression comparisons preserve every materialized byte while checking that repe
   and an unknown or stray (not a selected target) default are discarded and
   journaled, never added to the targets; a missing default chooses nothing.
   The candidate reservoir is classified
-  in independent batches: a refused classification answer loses only its own
+  in independent batches sized by actual prepared request-byte and context
+  envelopes. The same fit boundary sizes closed default-comparison rounds;
+  other resource or technical failures remain errors. A refused
+  classification answer loses only its own
   batch, whose required representatives stay targets, whose native targets
   stay `standalone` with the recorded refusal, and whose guidance candidates
   stay unclassified; it does not end the run. The portfolio chooses a retained

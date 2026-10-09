@@ -61,9 +61,9 @@ function placeAt(scene,zoom){
   // its name's lines the bucket's whole width.
   for(const node of scene.nodes){
     if(!node.enter||node.display==='frame'||node.display==='deep'||node.band!==3)continue;
-    const r=node.rect,low=node.display==='bucket';
+    const r=node.rect,low=node.display==='bucket',px=Math.max(mark.size,Math.min(32,mark.size*node.text*zoom)),size=px/zoom;
     items.push({id:`zoom:${node.id}`,type:'zoom',box:node.id,x:r.x+r.width-inset-size/2,y:low?r.y+r.height-inset-size/2:r.y+inset+size/2,size,
-      shown:readable(node)&&r.width*zoom>=4*mark.size&&r.height*zoom>=2*mark.size});
+      shown:readable(node)&&r.width*zoom>=4*px&&r.height*zoom>=2*px});
   }
   return items;
 }
@@ -85,5 +85,5 @@ function crossings(runs,left,width){
 // size in pixels.
 export function project(scene,camera){
   return overlayAt(scene,camera.zoom).filter(item=>item.shown).map(item=>({...item,
-    left:item.x*camera.zoom+camera.x,top:item.y*camera.zoom+camera.y,px:mark.size}));
+    left:item.x*camera.zoom+camera.x,top:item.y*camera.zoom+camera.y,px:item.size*camera.zoom}));
 }

@@ -436,6 +436,15 @@ ordinary branch (`TestCFixtureACallSaysWhatItRunsUnder`). C has no raise or
 catch, and an early return is not read as a failing path: a C error check
 returning a code is a `branch`, a missing equivalent of Go's error arm.
 
+The deciding expression of an arm is saved as written (`Condition`, `When`,
+PROGRAM_INDEX): an if's condition or a standard ternary's first operand
+with `holds`/`fails`, the left operand of `&&`/`||`, and a switch's subject
+with `matches`. GNU's omitted-middle `a ?: b` has no saved condition yet.
+The guard of a noreturn call at that call has no deciding expression;
+an arm ending in one retains the arm's expression. strbuf.c's
+sbCheckedBranches checks then/else, short-circuit operands, ternary arms
+and switch calls at their original sites.
+
 ## What a program never runs
 
 A C function runs only when code that runs names it: calls it directly, or
@@ -497,7 +506,7 @@ which run nothing of their own, keep theirs.
 
 ### A makefile as the build's manifest
 
-A C program's makefile, the one its link or archive rule stands on, is its
+A C program's root makefile, selected in its native build's invocation directory, is its
 manifest, as a go.mod, a package.json or a deps.edn is (facts
 `deriveManifest`; owner 2026-10-02, after Lua's "How to run" said "the
 repository ships no manifest" beside the makefile whose dry run made
@@ -507,14 +516,55 @@ repository ships no manifest" beside the makefile whose dry run made
   else GNU make's first rule naming no special target or pattern), its
   prerequisites read through the makefile's own variables and its commands
   (Lua: `all: liblua.a lua`, makefile:113; the fixture: `all: kvd kvcli`,
-  Makefile:7);
+  Makefile:10 and build/main.mk:3);
 - `rule.<target>`: each other rule a reader may run (`make test`, with
   what it needs and runs), never an object's (`x.o`) or a special target;
-- `variable.<NAME>`: the assignments of the variables the goal's commands and
+- `variable.<NAME>`: the assignments of the variables every advertised rule's commands and
   make's own compiles and links use (CC, CFLAGS, CPPFLAGS, LDFLAGS, LDLIBS),
   followed through the variables their values name, each under its
   conditional (`variable.CFLAGS when ifeq ($(uname_S),SunOS)` and `when not
   ifeq …` in redis-1.3.6; Lua's `MYCFLAGS … -DLUA_USE_LINUX`, `CC= gcc`).
+Commands and variable values remain complete, with no display-length clipping.
+Distinct assignments and rule fragments at distinct original lines retain
+separate facts and anchors. The cumulative fixture's nondefault `portable`
+rule preserves its complete diagnostic compiler flags and referenced variable.
+Other language manifests preserve complete values, but have no exact GNU Make
+variable/recipe-closure equivalent.
+The owning makefile's `include`, `-include` and `sinclude` directives are also
+native source evidence. The facts reader follows only their named files in the
+corpus, including admitted `.mk` build sources; it does not scan other `.mk`
+files for manifests. Relative include filenames use the invocation directory,
+not the included file's directory. An absolute filename resolves only inside
+the exact bound checkout. Every include occurrence retains its directive,
+original path/line, enclosing conditions and read/unavailable/cycle/unresolved
+status. Only an active include cycle stops recursive source reading; repeat
+uses in another condition or owning makefile remain represented.
+Authored assignments and rule fragments retain their own anchors and values.
+Known literal `:=` bindings and rule prerequisites use their source-position
+environment; later assignments do not retroactively change them. Shell/Make
+functions and unknown conditional variable or default-goal choices are not
+executed or selected. Conditional fragments remain conditional evidence.
+The `default_goal` describes all unconditional fragments of that target and
+lists every contributing source fragment; original fragments, including the
+first fragment's recipe, remain separate facts. A conditional/unresolved
+`.DEFAULT_GOAL` retains its assignments and an explicit unresolved default.
+Included facts use their fragment's source anchor; their `Path` identifies the
+owning root makefile. Its working directory and shared output ownership apply
+to included rules too. Native `Program.Anchor` and `AnchorFileRef` locate the
+actual rule in an included fragment, while the paired `Manifest` and
+`ManifestFileRef` retain the invocation's root makefile. Both bindings enter the
+sealed program identity and are checked against the corpus. The projected
+ProgramIndex target uses the root manifest as its anchor and retains both
+root and child in its sources; target matching, restoration and facts keep
+that root working directory. A unique unconditional recipe source locates a
+native link/archive. Competing or only-conditional source sites remain the
+root manifest with line zero, without choosing a branch from the dry run.
+Whether a named rule exists is independent of whether its source site is
+unique, so a fragmented `all` still allows the ordinary native build fallback.
+The cumulative C fixture starts with an empty `all:` and
+includes `build/main.mk`, which supplies the server/client prerequisites, link
+commands and referenced link flags. The executable orientation contract checks
+their exact native anchors, complete default fragments and original owners.
 A makefile several programs name as their manifest (Lua's root makefile
 for `lua` and `liblua.a`, 5.1.5's src/Makefile for liblua.a, lua and luac,
 the fixture's Makefile for kvd and kvcli) files each `rule.<target>` under
@@ -559,14 +609,18 @@ entities.
 
 C comments enter the ordinary claims layer. A `/* */` block or a run of `//`
 lines that ends directly above a top-level declaration (a line starting at
-column 0 with a name) is that declaration's docstring. Its declaration line is
-where the declaration ends its header (`static int` / `foo(void)` ends on
-`foo`'s line). Places and the page's symbol cards read it through one rule,
-`claims.CDocstring`: it describes only the declaration located on that line or
-up to two lines above it (an Allman brace), so a comment above a prototype
-describes no neighbouring declaration. A comment before the file's first line
-of code that no declaration follows directly is the file's description, which
-describes no declaration; places shows it as the file's own documentation.
+column 0 with a name) is a candidate author description. The existing lexical
+header convention ends at its first parenthesis, brace, semicolon or initializer.
+The ordinary claims stage intersects that original header prefix with the sealed
+native module-owned declaration name locations. One exact native line/column
+binds the quote; no owner or multiple owners retain the original quote with
+`declaration_unresolved`, so a prototype never borrows a definition later on the
+same line. Places and symbol cards share `claims.CDocstring` and exact source
+coordinates. Saved line-only claims remain usable only at a unique native source
+site; two different columns on one line remain unknown. Repeated target views of
+the identical source site do not create ambiguity. A comment before the file's
+first line of code that no declaration follows directly is the file's description;
+a known unresolved declaration comment never becomes that file description.
 
 A licence, copyright or version-control stamp before the first line of code is
 not a claim (owner decision D5), even when it also states the file's purpose.

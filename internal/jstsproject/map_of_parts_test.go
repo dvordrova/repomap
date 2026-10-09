@@ -20,10 +20,10 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 )
 
-// The TypeScript parts request carries code structure only, and every
-// declaration takes one part or an entry off the map. SimulationField's
-// nested animate function is its lexical child: it is not listed and takes
-// SimulationField's part. A class method goes with its class; TypeScript has
+// The TypeScript grouping sends code structure only, and every declaration
+// takes one part or an entry off the map (partstest). SimulationField's
+// nested animate function is its lexical child and takes SimulationField's
+// part. A class method goes with its class; TypeScript has
 // no method declared outside its class body to check.
 func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	root := preparedCompilerProject(t)
@@ -83,12 +83,11 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	if drawer == "" || draw == "" || checked.PartOf[draw] != checked.PartOf[drawer] {
 		t.Fatalf("a class method left its class: %q %q", draw, drawer)
 	}
-	// Split, the method still follows its class, and every file's module
-	// body is a row of the assignment.
-	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: "application", Name: index.Target.Name, Root: "."}, root)
+	// With helpers, the method still follows its class.
+	split := partstest.CheckHelpers(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: "application", Name: index.Target.Name, Root: "."}, root)
 	drawer, draw = split.Symbols[[2]string{"src/platform.ts", "LevelDrawer"}], split.Symbols[[2]string{"src/platform.ts", "LevelDrawer.draw"}]
-	if !split.Split["src/platform.ts"] || split.PartOf[draw] != split.PartOf[drawer] {
-		t.Fatalf("split: a class method in %q, its class in %q", split.PartOf[draw], split.PartOf[drawer])
+	if split.PartOf[draw] == "" || split.PartOf[draw] != split.PartOf[drawer] {
+		t.Fatalf("a class method in %q, its class in %q", split.PartOf[draw], split.PartOf[drawer])
 	}
 	// A handler's assignment shows the words of the route that hands it
 	// over.

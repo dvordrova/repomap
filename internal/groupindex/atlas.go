@@ -104,6 +104,11 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 				}
 			}
 		}
+		for _, refusal := range target.RefusedParts {
+			for _, id := range refusal.MemberIDs {
+				sourceRefs[id] = ""
+			}
+		}
 		for _, entry := range target.OffMap {
 			for _, symbol := range entry.File.Symbols {
 				sourceRefs[symbol.ObjectID] = ""
@@ -572,24 +577,29 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		groupByID[group.ID] = group
 	}
 	containers := make([]Container, 0, len(target.Zones))
+	containerOfZone := make(map[string]string, len(target.Zones))
+	for position, zone := range target.Zones {
+		containerOfZone[zone.ID] = compactOrdinal("k", position)
+	}
 	for _, zone := range target.Zones {
-		var ids []string
-		core := false
-		lanes := make(map[Lane]int)
+		ids := []string{}
 		for _, boxID := range zone.BoxIDs {
-			groupID, ok := groupOfBox[boxID]
-			if !ok {
-				continue
+			if id := groupOfBox[boxID]; id != "" {
+				ids = append(ids, id)
 			}
-			ids = append(ids, groupID)
-			lanes[groupByID[groupID].Lane]++
-			core = core || groupByID[groupID].Core
-		}
-		// A zone of one group is that group; a container holds several.
-		if len(ids) < 2 {
-			continue
 		}
 		sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j], "g") })
+		containers = append(containers, Container{ID: containerOfZone[zone.ID], ParentID: containerOfZone[zone.ParentID], Title: strings.TrimSpace(zone.Title), Summary: strings.TrimSpace(zone.Line), GroupIDs: ids})
+	}
+	// Marks describe the complete accepted area, including descendant leaves;
+	// ownership remains exclusively direct and never repeats a group in ancestors.
+	for position := range containers {
+		lanes := make(map[Lane]int)
+		core := false
+		for _, id := range ContainerGroups(containers, containers[position].ID) {
+			lanes[groupByID[id].Lane]++
+			core = core || groupByID[id].Core
+		}
 		lane := LaneCore
 		best := 0
 		for _, candidate := range []Lane{LaneCore, LaneDependencies} {
@@ -600,14 +610,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if lanes[LaneTriggers] > 0 {
 			lane = LaneTriggers
 		}
-		summary := strings.TrimSpace(zone.Line)
-		container := Container{Title: strings.TrimSpace(zone.Title), Summary: summary, Lane: lane, Core: core, GroupIDs: ids}
-		containers = append(containers, container)
-	}
-	// Containers keep the atlas's zone order, which is the order the areas
-	// answer listed them; k1 is the first area the model named.
-	for position := range containers {
-		containers[position].ID = compactOrdinal("k", position)
+		containers[position].Lane, containers[position].Core = lane, core
 	}
 
 	connections := make([]Connection, 0, len(target.Arrows))
@@ -1056,6 +1059,24 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	if err != nil {
 		return projectedTarget{}, err
 	}
+	var refusedParts []RefusedPart
+	for _, proposal := range target.RefusedParts {
+		part := RefusedPart{Name: proposal.Name, Holds: proposal.Holds, Reason: proposal.Reason}
+		for _, ref := range proposal.MemberIDs {
+			key := sourceRefs[ref]
+			if key == "" {
+				if object, ok := objects[ref]; ok {
+					key = DeclarationKey(object)
+				}
+			}
+			id, ok := objectOfKey[key]
+			if !ok || key == "" {
+				return projectedTarget{}, fmt.Errorf("atlas projection: refused part %q names an unknown declaration %q", proposal.Name, ref)
+			}
+			part.SubjectIDs = appendUniqueString(part.SubjectIDs, id)
+		}
+		refusedParts = append(refusedParts, part)
+	}
 	var unsure []UnsureCall
 	// atlas.Validate holds every unsure call, idiom and declared-on site to
 	// its shape.
@@ -1123,6 +1144,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		StructuralEdges:    compileStructuralEdges(program, retained),
 		Connections:        connections,
 		OffMap:             offMap,
+		RefusedParts:       refusedParts,
 		MapFailure:         strings.TrimSpace(target.MapFailure),
 		Unsure:             unsure,
 		Idioms:             idioms,
@@ -1133,15 +1155,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	return projectedTarget{index: index, groupOfBox: groupOfBox, operationOf: operationOf}, nil
 }
 
-// projectOffMap lists the files the map of parts does not draw: the atlas's
-// off-map record with its reasons, and the files of parts made only of test
-// code under the reason tests with their part's name. A file a part holds is
-// not listed for the few declarations of it that are off the map; their
-// interpretations are still read. A file whose code several parts hold is
-// on the map: only the declarations no box of it took are listed, by their
-// subjects, under the reason undecided. A part its program never runs is
-// listed by its declarations, by file and with its name, under the reason
-// unreachable: its file may be another part's too.
+// projectOffMap keeps each off-map declaration and reason, including complete
+// files held by no accepted group. Unitless files stay path-only; test and
+// unreachable parts keep their existing separate records.
 func projectOffMap(target atlas.Target, unreached map[string][]programindex.Object, subjectOf func(atlas.Symbol) (string, bool)) ([]OffMapFile, error) {
 	var files []OffMapFile
 	seen := map[string]bool{}
@@ -1151,18 +1167,11 @@ func projectOffMap(target atlas.Target, unreached map[string][]programindex.Obje
 			files = append(files, file)
 		}
 	}
-	// A file a part holds some declarations of is on the map: what is off it
-	// there is listed by its subjects, under its own reason, and so is every
-	// undecided declaration. A file no part holds is listed whole.
-	held := map[string]bool{}
-	for _, box := range target.Boxes {
-		for _, file := range box.Files {
-			held[atlasPath(file.Path)] = true
-		}
-	}
+	// Every supplied declaration remains source-readable, including a file
+	// no accepted part holds. A genuinely unitless file remains path-only.
 	for _, entry := range target.OffMap {
 		path := atlasPath(entry.File.Path)
-		if entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked && (!held[path] || len(entry.File.Symbols) == 0) {
+		if entry.Reason == atlas.OffMapNoUnits || len(entry.File.Symbols) == 0 && entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked {
 			add(OffMapFile{Path: path, Reason: entry.Reason})
 			continue
 		}

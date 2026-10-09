@@ -695,7 +695,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // One way back to the program's Main flow while any of its component
       // is read (owner, 2026-09-29: it had taken a reader five actions).
       var ownerPage=systemMap&&map.readMainFlow&&node.dataset.owner?document.getElementById(node.dataset.owner):null;
-      if(ownerPage&&ownerPage.querySelector(':scope>.component-flow')){
+      if(ownerPage&&rmHasMainFlow(ownerPage)){
         var toFlow=document.createElement('button');toFlow.type='button';toFlow.className='map-main-flow-link';toFlow.textContent=rmT('Main flow');
         toFlow.addEventListener('click',function(){map.readMainFlow(node.dataset.owner);});heading.appendChild(toFlow);
       }
@@ -1075,8 +1075,29 @@ function rmMainFlowSteps(card){
   var flow=card.querySelector('[data-main-flow]');
   return flow?Array.from(flow.querySelectorAll('li[data-step-part]')).filter(function(step){return !step.closest('.map-flow-step-code');}):[];
 }
-function rmOpenFolds(card){return rmFoldKeys(card).filter(function(fold){return fold.detail.open;}).map(function(fold){return fold.key;});}
-function rmRestoreFolds(card,keys){var open=new Set(keys||[]);rmFoldKeys(card).forEach(function(fold){fold.detail.open=open.has(fold.key);});}
+function rmFlowFoldKeys(card){
+  var seen=new Map();
+  return rmMainFlowSteps(card).flatMap(function(step){
+    var twist=step.querySelector(':scope>.map-flow-step-twist');if(!twist)return [];
+    var identity=JSON.stringify([step.dataset.stepPart,step.dataset.stepKey]),n=(seen.get(identity)||0)+1;seen.set(identity,n);
+    return [{twist:twist,key:'flow-step:'+identity+'#'+n}];
+  });
+}
+function rmOpenFolds(card){
+  return rmFoldKeys(card).filter(function(fold){return fold.detail.open;}).map(function(fold){return fold.key;})
+    .concat(rmFlowFoldKeys(card).flatMap(function(fold){
+      var keys=fold.twist.getAttribute('aria-expanded')==='true'?[fold.key]:[],state=fold.twist.captureCalls();
+      if(state!==null)keys.push('flow-state:'+JSON.stringify([fold.key,state]));return keys;
+    }));
+}
+function rmRestoreFolds(card,keys){
+  var open=new Set(keys||[]),states=new Map();
+  open.forEach(function(key){if(key.startsWith('flow-state:')){try{var state=JSON.parse(key.slice(11));states.set(state[0],state[1]);}catch{}}});
+  // Recreate only the calls the reader opened, before restoring their own
+  // evidence folds. A return does not synthesize a navigation click.
+  rmFlowFoldKeys(card).forEach(function(fold){fold.twist.setExpanded(open.has(fold.key),states.get(fold.key));});
+  rmFoldKeys(card).forEach(function(fold){fold.detail.open=open.has(fold.key);});
+}
 // "Expand all" opens every fold of the reading; with all open it closes them.
 function rmExpandAllWord(card){
   var button=card.closest('.map-inspector')?.querySelector('[data-expand-all]');if(!button)return;

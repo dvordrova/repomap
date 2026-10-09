@@ -52,10 +52,12 @@ func (builder *pageBuilder) sharedJoin() *sharedCode {
 		return join
 	}
 	for _, section := range builder.sections {
-		join.held[section.programTargetID] = builder.heldFiles(section.programTargetID)
-	}
-	for _, section := range builder.sections {
-		for _, index := range builder.data.ProgramPortfolio.Entries {
+		// Ownership and declaration identity read the same complete target.
+		// Two portfolio-wide passes would evict every target before the
+		// second pass and decode every file again.
+		entries := builder.nativeTargets(section.programTargetID)
+		join.held[section.programTargetID] = heldFiles(builder.graphIndex(section.programTargetID), entries)
+		for _, index := range entries {
 			if index.Target.ID != section.programTargetID {
 				continue
 			}
@@ -78,8 +80,7 @@ func (builder *pageBuilder) sharedJoin() *sharedCode {
 // declarations its parts hold and those it names off the map (GroupsIndex
 // OffMap), by path; nil when its index draws no map and names no file off
 // it.
-func (builder *pageBuilder) heldFiles(targetID string) map[string]bool {
-	index := builder.graphIndex(targetID)
+func heldFiles(index *groupindex.Index, entries []programindex.Index) map[string]bool {
 	if index == nil || len(index.Groups) == 0 && len(index.OffMap) == 0 {
 		return nil
 	}
@@ -93,8 +94,8 @@ func (builder *pageBuilder) heldFiles(targetID string) map[string]bool {
 			members[id] = true
 		}
 	}
-	for _, entry := range builder.data.ProgramPortfolio.Entries {
-		if entry.Target.ID != targetID {
+	for _, entry := range entries {
+		if entry.Target.ID != index.Target.ID {
 			continue
 		}
 		for _, object := range entry.Objects {

@@ -575,14 +575,17 @@ func validateLiveCompletion(completion Completion, limits Limits) error {
 	if completion.ChoiceCount != 1 {
 		return fmt.Errorf("llm: completion has %d choices, want exactly one", completion.ChoiceCount)
 	}
+	if completion.FinishReason == FinishLength {
+		return NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitOutputTokens,
+			Limit: limits.MaxOutputTokens, Observed: completion.Metrics.OutputTokens,
+			ObservedKnown: completion.Metrics.OutputTokens > 0, FinishReason: string(FinishLength)})
+	}
 	if completion.FinishReason != FinishStop {
 		return fmt.Errorf("llm: completion did not stop normally (%s)", closedFinishReason(completion.FinishReason))
 	}
 	if len(completion.Response) > limits.MaxResponseBytes {
-		return fmt.Errorf(
-			"llm: response is %d bytes, limit is %d",
-			len(completion.Response), limits.MaxResponseBytes,
-		)
+		return NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitResponseBytes,
+			Limit: limits.MaxResponseBytes, Observed: len(completion.Response), ObservedKnown: true})
 	}
 	return nil
 }

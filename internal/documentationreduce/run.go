@@ -22,7 +22,7 @@ import (
 const (
 	requestVersion        = 1
 	executionContract     = "repomap.documentation-reduce.v2"
-	preparationVersion    = 3
+	preparationVersion    = 4
 	responseSchemaVersion = 3
 	// Use the shared output allowance; the configured provider ceiling still
 	// applies. A truncated completion is refused and its batch is split.
@@ -128,7 +128,8 @@ type mergeBatch struct {
 
 // Run exhaustively reduces the complete documentation_collect handoff. Large
 // documents are split only into lossless UTF-8 slices, then every accepted
-// shard is convergently reduced until one source-bound result remains.
+// shard is convergently reduced while complete merge progress is possible.
+// Independent accepted results survive without an invented combined overview.
 func Run(
 	ctx context.Context,
 	executor llm.Executor,
@@ -441,7 +442,7 @@ func unavailableReduction(response llm.EachResult[normalizedReduction]) bool {
 		return false
 	}
 	for _, rejected := range response.Outcome.ResponseRejections {
-		if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" || rejected.Kind == "provider_failed" {
+		if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" {
 			return true
 		}
 	}
@@ -510,6 +511,21 @@ func mergeTournament(ctx context.Context, executor llm.Executor, provider llm.Pr
 		}
 		var accepted, retained []normalizedReduction
 		for len(batches) > 0 {
+			// One already accepted reduction needs no further model decision.
+			// In particular, a refused merge can split into these independent
+			// survivors; rereading them would spend output budget without merging.
+			var merging []mergeBatch
+			for _, batch := range batches {
+				if len(batch.candidates) == 1 {
+					accepted = append(accepted, batch.candidates[0])
+				} else {
+					merging = append(merging, batch)
+				}
+			}
+			batches = merging
+			if len(batches) == 0 {
+				break
+			}
 			var fresh []mergeBatch
 			for _, batch := range batches {
 				if len(batch.wire) == 0 {
@@ -614,7 +630,9 @@ func packMergeBatches(
 			return nil, err
 		}
 		if count == 0 {
-			return nil, fmt.Errorf("documentation reduce: indivisible merge candidate does not fit provider request; no context was truncated")
+			// This is already accepted evidence. A redundant singleton framing
+			// outside the input envelope needs no completion; carry it unchanged.
+			count = 1
 		}
 		packed = append(packed, mergeBatch{candidates: candidates[start : start+count]})
 		start += count
@@ -879,7 +897,7 @@ func requestFits(provider llm.Provider, systemPrompt string, request any) (bool,
 		return true, nil
 	}
 	var resourceErr *llm.ResourceLimitError
-	if errors.As(err, &resourceErr) && resourceErr.Kind == llm.ResourceLimitRequestBytes {
+	if errors.As(err, &resourceErr) && (resourceErr.Kind == llm.ResourceLimitRequestBytes || resourceErr.Kind == llm.ResourceLimitContextTokens) {
 		return false, nil
 	}
 	return false, fmt.Errorf("documentation reduce: provider request preparation: %w", err)

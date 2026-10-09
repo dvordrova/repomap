@@ -96,9 +96,18 @@ func TestHandedAPIDecisionsFailAlone(t *testing.T) {
 		t.Fatalf("a handed symbol is not asked the talks question: %+v", def.Columns)
 	}
 	window := table.Window{Rows: []table.Row{{ID: "sym1"}}}
+	binds, talks := make(map[string]float64), make(map[string]float64)
+	for _, option := range def.Columns[0].Options {
+		binds[option] = 0
+	}
+	for _, option := range def.Columns[1].Options {
+		talks[option] = 0
+	}
+	binds["extension"], binds["none"] = 0.97, 0.03
+	talks[APINone], talks[APIServes] = 0.52, 0.48
 	result, err := table.DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
-		"sym1|binds": {Choice: "extension", Probabilities: map[string]float64{"extension": 0.97, "none": 0.03}},
-		"sym1|talks": {Choice: APINone, Probabilities: map[string]float64{APINone: 0.52, APIServes: 0.48}},
+		"sym1|binds": {Choice: "extension", Probabilities: binds},
+		"sym1|talks": {Choice: APINone, Probabilities: talks},
 	})
 	if err != nil || result.Answers[0]["binds"] != "extension" || len(result.Rejections) != 1 || result.Rejections[0].Cell != "talks" {
 		t.Fatalf("a near-tie on talks cost the symbol its binds: %+v %v", result, err)

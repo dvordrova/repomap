@@ -15,7 +15,7 @@ func TestCumulativeGoWorkerControlContext(t *testing.T) {
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
 	writePublishedGoFixtureModule(t, root)
-	authorities := analyzeGoFixture(t, root, repository, goFixtureRootPackage+"/cmd/worker", "cumulative-go-worker-control")
+	authorities := sharedGoFixtureAuthorities(t, root, repository, goFixtureRootPackage+"/cmd/worker", "cumulative-go-worker-control")
 	input, err := goadapter.BuildInput(repository, authorities.target, authorities.origins, authorities.direct,
 		authorities.external, authorities.core, authorities.dynamic, authorities.tests)
 	if err != nil {

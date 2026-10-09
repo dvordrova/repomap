@@ -2,9 +2,12 @@ package run
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -64,8 +67,11 @@ func TestCDeclarationsWrittenOnOneLineAreReadApart(t *testing.T) {
 		target.OffMap, target.MapFailure = nil, ""
 	}
 	programs := map[string]programindex.Index{}
-	for _, entry := range data.ProgramPortfolio.Entries {
+	if err := data.ProgramPortfolio.ReadProgramIndexes(func(entry programindex.Index) error {
 		programs[entry.Target.ID] = entry
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	indexes, err := groupindex.ProjectAtlas(programs, value)
 	if err != nil {
@@ -198,11 +204,29 @@ type pageDataView struct {
 
 func readPageData(t *testing.T, html []byte) *pageDataView {
 	t.Helper()
-	match := regexp.MustCompile(`(?s)<script type="application/json" id="rm-page-data">(.*?)</script>`).FindSubmatch(html)
+	match := regexp.MustCompile(`(?s)<script type="application/json" id="rm-page-data"( data-rm-encoding="gzip-base64")?>(.*?)</script>`).FindSubmatch(html)
 	if match == nil {
 		t.Fatal("the page has no data")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(match[1]))
+	raw := match[2]
+	if len(match[1]) != 0 {
+		packed, err := base64.StdEncoding.DecodeString(string(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := gzip.NewReader(bytes.NewReader(packed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err = io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := reader.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	view := &pageDataView{html: string(html)}
 	if err := decoder.Decode(&view.data); err != nil {

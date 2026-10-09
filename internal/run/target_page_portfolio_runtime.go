@@ -70,12 +70,16 @@ func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []tar
 	output.State("Report publication", "failed", details...)
 }
 
-// programIndex is the target's sealed program index. The run keeps every
-// child's index in memory (owner decision 2026-09-25) and its readers share
-// it read-only: facts, places, the group projection and the report allocate
-// what they sort or change (audited 2026-09-25), and a reader that must
-// change the index itself takes Index.Snapshot. A run without one in memory
-// reads the saved file.
+// releaseProgramIndex ends the completed page's native graph lifetime after
+// its exact sealed artifact has been persisted. The original ProgramTarget
+// remains in ProgramPage; readers restore the same validated artifact.
+func (run *targetPublishedRun) releaseProgramIndex() {
+	run.ProgramIndex = nil
+}
+
+// programIndex reads the target's sealed program index. A constructing page
+// may still supply its immutable value; completed ordinary pages use their
+// saved artifact without attaching the loaded graph to the portfolio run.
 func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
 	if run.ProgramIndex == nil {
 		return readRunProgramIndex(run.RunDir)

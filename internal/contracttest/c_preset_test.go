@@ -31,7 +31,7 @@ import (
 // callables kvd's own event loop keeps are asked once each with while what
 // they are kept, and no question is left unanswered.
 func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
-	fixture := loadCFixture(t)
+	fixture := sharedCFixture(t)
 	index := buildCIndex(t, fixture, "c:kvd")
 	layer, err := facts.Build(facts.Input{Repository: fixture.repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
 	if err != nil {
@@ -533,11 +533,6 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 		Fill    []map[string]any `json:"fill"`
 		Context map[string]any   `json:"context"`
 		Rows    []map[string]any `json:"rows"`
-		Units   []struct {
-			Ref  string `json:"ref"`
-			Path string `json:"path"`
-			Box  string `json:"box"`
-		} `json:"units"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
@@ -545,24 +540,14 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 	preset.mu.Lock()
 	preset.requests = append(preset.requests, slices.Clone(prepared.Bytes()))
 	preset.mu.Unlock()
-	var answer any
+	answer, handled, err := presetGroupsAnswer(prepared.Bytes(), sourcePartName)
+	if err != nil {
+		return llm.Completion{}, err
+	}
 	switch {
-	case request.Task == "repomap.atlas.parts.v2":
-		// One part per source file, or per box of a split file, is as good
-		// a map as any for this test.
-		var groups []map[string]any
-		for _, unit := range request.Units {
-			name := unit.Path
-			if unit.Box != "" {
-				name = unit.Path + ": " + unit.Box
-			}
-			groups = append(groups, map[string]any{"name": name, "units": []string{unit.Ref}})
-		}
-		answer = map[string]any{"groups": groups}
+	case handled:
 	case request.Task == "repomap.atlas.describe.v1":
 		answer = map[string]any{"description": "Preset description."}
-	case request.Task == "repomap.atlas.areas.v1":
-		answer = map[string]any{"areas": []any{}}
 	case request.Table == "atlas_boundaries", request.Table == "atlas_systems", request.Table == "atlas_joints", request.Table == "atlas_targets", request.Table == "atlas_symbols":
 		outgoing := false
 		for _, column := range request.Fill {
@@ -719,6 +704,9 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 		symbol, _ := question.Item["symbol"].(string)
 		usage, _ := question.Item["usage"].(string)
 		column := key[strings.LastIndex(key, "|")+1:]
+		if verdict, ok := presetGrouping(column, question, sourcePartName); ok {
+			return verdict, true
+		}
 		if registered, _ := json.Marshal(question.Item["registered"]); strings.Contains(string(registered), "--symbols") {
 			preset.mu.Lock()
 			preset.leaked = append(preset.leaked, key)
@@ -806,9 +794,6 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			return typesafetest.Choose("none"), true
 		case "role":
 			return typesafetest.Choose("domain"), true
-		case "boxes":
-			// Every file stays whole: its parts are its files.
-			return typesafetest.Choose("one box"), true
 		case "helper":
 			return typesafetest.Choose("responsibility"), true
 		}

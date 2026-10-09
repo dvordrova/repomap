@@ -9,7 +9,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildModel,markersPerSide} from './model.mjs';
-import {layoutLevels,cardWords,programWords,units,chipBox,bucketBox,keepTitles,narrowestLane} from './levels.mjs';
+import {layoutLevels,cardWords,programWords,programCardHeight,programInventoryHeight,units,chipBox,bucketBox,keepTitles,narrowestLane} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelAfterZoom,connectionOf,bands,enterable,memberView} from './scene.mjs';
 import {overlayAt,project,mark} from './overlay.mjs';
 import {zoomAction} from './store.mjs';
@@ -82,12 +82,12 @@ function checkScene(name,model,geometry,scene,problems){
   }
   for(const node of scene.nodes){
     if(!['card','area','program'].includes(node.display)||!finite(node.rect))continue;
-    const item=model.nodes.get(node.id)?.item,program=node.display==='program';
+    const item=model.nodes.get(node.id)?.item,program=['program','area'].includes(node.display);
     const words=program?programWords({...node,item},node.rect.width/node.text,measure):cardWords(node,item?.summary||'',measure,{room:node.enter?24:0});
     if(!words.title.length){problems.push(['words',`${where}: ${node.id}'s title does not stand in its card`]);continue;}
     const blocks=program?[[words.title,node.title],[words.role,item?.role],[words.purpose,item?.summary]]:[[words.title,node.title],[words.lines,item?.summary]];
     for(const [lines,text] of blocks)if(lines.length&&bare(lines.join(''))!==bare(text))problems.push(['words',`${where}: ${node.id} cuts "${lines.join(' ').slice(0,40)}"`]);
-    const c=units.programCard,height=program?2*c.pad+words.title.length*c.line+(words.role.length?words.role.length*c.textLine+6:0)+(words.purpose.length?words.purpose.length*c.textLine+6:0)
+    const c=units.programCard,height=program?programCardHeight({...node,item},node.rect.width/node.text,measure,node.inventoryHeight)
       :28+words.title.length*21.25+(words.lines.length?6+words.lines.length*18:0);
     if(height>node.rect.height/node.text+1)problems.push(['words',`${where}: ${node.id}'s words take ${height.toFixed(0)} of ${(node.rect.height/node.text).toFixed(0)}`]);
     // A part's card is no taller than what it shows needs (the lint's 45%:
@@ -176,7 +176,7 @@ function checkScene(name,model,geometry,scene,problems){
   for(let i=0;i<50;i++){
     const z=zoom*Math.pow(2,(i/49)*4-1.5);
     for(const item of project(scene,{x:0,y:0,zoom:z})){
-      if(item.px<20||item.px>28)problems.push(['markers',`${where}: ${item.id} drawn ${item.px}px`]);
+      if(item.px<20||item.px>(item.type==='zoom'?32:28))problems.push(['markers',`${where}: ${item.id} drawn ${item.px}px`]);
       if(item.type!=='marker'||item.row&&item.index>0)continue;
       const r=item.rect,half=item.size/2,edge=item.side==='in'?r.x:r.x+r.width;
       if(Math.abs(item.x+(item.side==='in'?half:-half)-edge)>1e-6*Math.max(1,r.width))problems.push(['markers',`${where}: ${item.id} does not touch its box`]);
@@ -373,23 +373,106 @@ for(const [name,page] of pages){
   });
 }
 
-// A closed part's card holds its declarations' outline, as a program's holds
-// its parts' (owner via the coordinator, 2026-10-03: casdoor's Shared UI
-// components and etcd's Snapshot engine, neighbours drawn larger than their
-// words may grow, had stood as words over a blank card): one outline per top
-// tile, a type's members inside its own, each inside the card, at every
-// level that draws the part closed.
-test('a closed part\'s card holds its declarations\' outlines',async()=>{
+// Same named children keep distinct source identities; a long inventory
+// scrolls without discarding rows, and entering reuses the original geometry.
+test('closed components name every direct area and part without ghost boxes',async()=>{
   const [,base]=syntheticPages.find(([name])=>name==='synthetic-cycles');
-  const items=base.items.map(item=>item.id==='n-t1-g2'?{...item,symbols:[{name:'Profile',kind:'type'},{name:'load',kind:'method',owner:1},{name:'save',kind:'function'}]}:item);
-  const model=buildModel({...base,items},{measure});
-  const geometry=await layoutLevels(model,{...canvas,measure});
-  let checked=0;
-  for(const level of levelsOf(model))for(const node of sceneAt(model,geometry,level,{}).nodes){
-    if(node.id!=='n-t1-g2'||node.display!=='card')continue;
-    assert.equal(node.ghosts?.length,2,`at ${level.join('/')||'the whole map'}: its two top tiles' outlines`);
-    for(const r of node.ghosts)assert.ok(r.x>=node.rect.x-1e-6&&r.y>=node.rect.y-1e-6&&r.x+r.width<=node.rect.x+node.rect.width+1e-6&&r.y+r.height<=node.rect.y+node.rect.height+1e-6,'an outline inside its card');
-    checked++;
+  const program=base.items.find(item=>item.branch==='component'),loose='loose-extra';
+  const title='A very long shared responsibility name with several words to wrap whole';
+  const items=base.items.map(item=>item.id===program.id?{...item,children:[...item.children,loose]}:
+    program.children.includes(item.id)?{...item,title}:item);
+  items.push({id:loose,title,summary:'An independently owned loose part.'});
+  const model=buildModel({...base,items},{measure}),geometry=await layoutLevels(model,{...canvas,measure});
+  const overview=sceneAt(model,geometry),node=overview.nodes.find(node=>node.id===program.id);
+  assert.deepEqual(node.contents.map(child=>child.id),[...program.children,loose]);
+  assert.equal(node.contents.length,4);
+  assert.equal(new Set(node.contents.map(child=>child.title)).size,1,'same titles do not collapse distinct children');
+  assert.equal(node.ghosts,undefined,'no unlabeled rectangles behind the words');
+  const words=programWords({...node,item:model.nodes.get(node.id).item},node.rect.width/node.text,measure);
+  for(const child of words.contents)assert.equal(child.lines.join(' ').replace(/\s+/g,''),title.replace(/\s+/g,''));
+  assert.equal(node.inventoryHeight,programInventoryHeight(words,canvas.height/2));
+  assert.ok(node.rect.height/node.text>=programCardHeight({...node,item:model.nodes.get(node.id).item},node.rect.width/node.text,measure,canvas.height/2)-.01);
+  const before=JSON.stringify([...geometry.boxes]);
+  const inside=sceneAt(model,geometry,chainOf(model,program.children[0]));
+  assert.ok(inside.nodes.some(child=>child.id===program.children[0]&&child.display==='frame'));
+  assert.equal(JSON.stringify([...geometry.boxes]),before,'entry preserves every saved world rectangle');
+  const many={...node,contents:Array.from({length:80},(_,i)=>({id:`child-${i}`,title}))};
+  const complete=programWords(many,units.programCard.width,measure);
+  assert.equal(complete.contents.length,80);
+  assert.equal(complete.contents.at(-1).id,'child-79');
+  assert.ok(programInventoryHeight(complete)>canvas.height/2);
+  assert.equal(programInventoryHeight(complete,canvas.height/2),canvas.height/2,'viewport bounds visible list, not its complete rows');
+});
+
+// Saved containment determines every level; leaf endpoints retain identity.
+test('nested areas lay out bottom-up and open through the entire saved chain',async()=>{
+  const item=(id,fields={})=>({id,title:id,branch:'',activation:'',lane:'core',summary:'',symbols:[],symbolCalls:[],children:[],category:'part',...fields});
+  const page={items:[item('program',{branch:'component',category:'component',children:['compiler','storage']}),
+    item('compiler',{branch:'area',children:['statements','prepare']}),item('statements',{branch:'area',children:['writes','select']}),
+    item('writes',{branch:'area',children:['insert','update']}),item('storage'),item('prepare'),item('select'),
+    item('insert',{symbols:[{name:'sqliteInsert',kind:'function',path:'insert.c',line:3}]}),item('update')],
+    relations:[{id:'calls1',from:'insert',to:'prepare',scope:'structure',calls:[{callee:'sqlitePrepare'}]},
+      {id:'calls2',from:'select',to:'insert',scope:'structure'}],areas:[],scene:{version:1,inputs:{},systems:{}}};
+  const model=buildModel(page,{measure}),geometry=await layoutLevels(model,{...canvas,measure});
+  const chain=chainOf(model,'insert');
+  assert.deepEqual(chain,['program','compiler','statements','writes','insert']);
+  const original=model.edges.map(e=>[e.id,e.from,e.to]);
+  for(let depth=0;depth<=chain.length;depth++){
+    const level=chain.slice(0,depth),scene=sceneAt(model,geometry,level),problems=[];
+    checkScene('recursive',model,geometry,scene,problems);
+    assert.deepEqual(problems,[],`depth ${depth}: ${JSON.stringify(problems)}`);
+    for(const id of level.filter(id=>id!=='insert'))assert.equal(scene.nodes.find(n=>n.id===id)?.display,'frame');
+    for(const id of level.filter(id=>id!=='insert'))assert.deepEqual(scene.nodes.find(n=>n.id===id).rect,geometry.boxes.get(id),'entry preserves the original container border, not its letterboxed content');
+    if(depth===chain.length)assert.ok(scene.members.some(m=>m.name==='sqliteInsert'));
   }
-  assert.ok(checked>0,'the part is drawn closed at some level');
+  assert.deepEqual(model.edges.map(e=>[e.id,e.from,e.to]),original);
+  assert.deepEqual(model.leaves('compiler'),['insert','update','select','prepare']);
+  const open=sceneAt(model,geometry,chain),back=sceneAt(model,geometry,chain.slice(0,-1));
+  assert.deepEqual(open.nodes.find(n=>n.id==='insert').rect,back.nodes.find(n=>n.id==='insert').rect,'Back changes level, not geometry');
+});
+
+// The same overlay geometry governs the drawn icon and pointer hit area.
+test('magnifiers grow with their card up to a readable cap and remain clickable',()=>{
+  const node={id:'area',display:'area',enter:true,band:3,text:1,rect:{x:0,y:0,width:260,height:240}};
+  const scene={nodes:[node],markers:[],ports:[],edges:[],text:1};
+  let previous=0;
+  for(const zoom of [.8,1,1.25,1.6,2,4]){
+    const item=project(scene,{x:0,y:0,zoom})[0];
+    assert.ok(item.px>=previous&&item.px>=22&&item.px<=32);
+    assert.equal(hitTest(scene,{x:item.x,y:item.y},zoom)?.type,'zoom');
+    assert.equal(hitTest(scene,{x:item.x+item.size*.45,y:item.y+item.size*.45},zoom)?.type,'zoom');
+    previous=item.px;
+  }
+});
+
+test('opening programs preserves their outer border and extends every port route through letterbox gutters',async()=>{
+  const axes=new Set(),ways=new Set(),portAxes={horizontal:0,vertical:0};let checkedPorts=0;
+  for(const [name,page] of syntheticPages){
+    const {model,geometry}=await prepare(name,page);
+    for(const program of [...model.nodes.values()].filter(n=>n.kind==='program')){
+      const outer=geometry.boxes.get(program.id),inner=geometry.scales.get(program.id)?.frame;
+      if(!outer||!inner)continue;
+      if(Math.abs(outer.x-inner.x)>1e-6)axes.add('horizontal');
+      if(Math.abs(outer.y-inner.y)>1e-6)axes.add('vertical');
+      const opened=sceneAt(model,geometry,[program.id]);
+      assert.deepEqual(opened.nodes.find(n=>n.id===program.id).rect,outer,`${name}: original program border`);
+      for(const port of geometry.ports.get(program.id)||[]){
+        checkedPorts++;ways.add(port.way);
+        if(Math.abs(outer.x-inner.x)>1e-6)portAxes.horizontal++;
+        if(Math.abs(outer.y-inner.y)>1e-6)portAxes.vertical++;
+        assert.ok(Math.abs(port.point.x-(port.way==='out'?outer.x+outer.width:outer.x))<1e-6,`${name}: ${port.id} lies on outer border`);
+        assert.ok(port.point.y>=outer.y&&port.point.y<=outer.y+outer.height);
+        const routes=(geometry.routes.get(program.id)||[]).filter(route=>route.port===port.id);
+        assert.ok(routes.length>0);
+        for(const route of routes){
+          assert.deepEqual(port.way==='out'?route.points.at(-1):route.points[0],port.point);
+          for(let i=1;i<route.points.length;i++)assert.ok(Math.abs(route.points[i].x-route.points[i-1].x)<1e-6||Math.abs(route.points[i].y-route.points[i-1].y)<1e-6,'gutter segment remains orthogonal');
+        }
+      }
+    }
+  }
+  assert.ok(checkedPorts>0,'real inbound/outbound port routes checked');
+  assert.deepEqual([...ways].sort(),['in','out'],'both route directions exercised');
+  assert.ok(portAxes.horizontal>0&&portAxes.vertical>0,`ports in both gutters: ${JSON.stringify(portAxes)}`);
+  assert.deepEqual([...axes].sort(),['horizontal','vertical'],'both letterbox directions exercised');
 });

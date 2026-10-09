@@ -20,7 +20,7 @@ type ednDecoder struct {
 var nativeFields = map[string]bool{
 	"filename": true, "row": true, "col": true, "end-row": true, "end-col": true, "name-row": true, "name-col": true, "lang": true,
 	"name": true, "from": true, "to": true, "ns": true, "defined-by": true, "defined-by->lint-as": true, "arglist-strs": true,
-	"doc": true, "private": true, "macro": true, "from-var": true, "arity": true, "id": true, "scope-end-row": true, "scope-end-col": true,
+	"doc": true, "private": true, "macro": true, "protocol-name": true, "from-var": true, "arity": true, "id": true, "scope-end-row": true, "scope-end-col": true,
 	"class": true, "method-name": true, "call": true, "type": true, "message": true,
 	"fixed-arities": true, "varargs-min-arity": true,
 }

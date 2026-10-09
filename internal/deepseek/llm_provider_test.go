@@ -681,14 +681,14 @@ func TestLLMProviderCompletePreservesTerminalLengthResourceOutcome(t *testing.T)
 	}))
 	defer server.Close()
 	client := llmProviderTestClient(server)
-	prepared, _ := llm.NewPrepared([]byte(`{"request":true}`))
+	prepared, _ := llm.NewPrepared([]byte(`{"max_tokens":100,"request":true}`))
 	completion, err := client.Complete(context.Background(), prepared)
 	if err == nil {
 		t.Fatal("length completion was accepted")
 	}
 	var limitErr *ResourceLimitError
 	if !errors.As(err, &limitErr) || limitErr.Kind != ResourceLimitOutputTokens ||
-		limitErr.Limit != client.MaxTokens || limitErr.Observed != 100 ||
+		limitErr.Limit != 100 || limitErr.ConfiguredMaxTokens != 100 || limitErr.Observed != 100 ||
 		!limitErr.ObservedKnown ||
 		completion.FinishReason != llm.FinishLength || completion.Metrics.Attempts != 1 ||
 		completion.Metrics.ProviderResponseBytes != len(response) {
@@ -1104,14 +1104,34 @@ func TestLLMProviderPrepareRefusesByDeclaredContextBeforeSending(t *testing.T) {
 	limits := llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 100}
 	_, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 1200), ResponseFormatJSON: true}, limits)
 	var limitErr *ResourceLimitError
-	if !errors.As(err, &limitErr) || limitErr.Kind != ResourceLimitContextTokens || limitErr.Limit != 400 || limitErr.InputTokens < 400 || limitErr.ConfiguredMaxTokens != 100 {
+	if !errors.As(err, &limitErr) || limitErr.Kind != ResourceLimitContextTokens || limitErr.Limit != 400 || !limitErr.ObservedKnown || limitErr.Observed <= 400 || limitErr.InputTokens != 0 || limitErr.ConfiguredMaxTokens != 100 {
 		t.Fatalf("declared context did not refuse locally: %#v / %v", limitErr, err)
 	}
-	if _, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 600), ResponseFormatJSON: true}, limits); err != nil {
+	if _, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 50), ResponseFormatJSON: true}, limits); err != nil {
 		t.Fatalf("a fitting request was refused: %v", err)
 	}
 	client.ContextTokens = 0
 	if _, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 1200), ResponseFormatJSON: true}, limits); err != nil {
 		t.Fatalf("an undeclared context refused locally: %v", err)
+	}
+}
+
+func TestKnownOfficialContextIsPreventiveWithoutEnvironmentOverride(t *testing.T) {
+	client := &Client{HTTPClient: &http.Client{}, Endpoint: defaultEndpoint, Model: defaultModel, MaxTokens: 128_000, Auth: authNone}
+	limits := llmProviderTestLimits(128_000)
+	limits.MaxRequestBytes = llm.SemanticRecordByteLimit
+	_, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("🧠😀🦄🚀", 120_000)}, limits)
+	var resource *llm.ResourceLimitError
+	if !errors.As(err, &resource) || resource.Kind != llm.ResourceLimitContextTokens || resource.Limit != 1_000_000 {
+		t.Fatalf("known model escaped preflight: %v", err)
+	}
+	client.ContextTokens = 3_000_000
+	if _, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("🧠😀🦄🚀", 120_000)}, limits); err != nil {
+		t.Fatal(err)
+	}
+	client.ContextTokens = 0
+	client.Endpoint = "https://compatible.example/v1/chat/completions"
+	if client.contextTokenLimit() != 0 {
+		t.Fatal("custom endpoint inherited the official model's envelope")
 	}
 }

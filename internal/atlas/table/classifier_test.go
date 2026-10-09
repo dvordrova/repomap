@@ -1,7 +1,9 @@
 package table
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -9,6 +11,48 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/typesafe"
 )
+
+// A categorizer may own an envelope different from Jev's. Tables must ask
+// its preparation, and preserve every original row when it requires a split.
+type twoRowCategorizer struct{ typesafe.Client }
+
+func (c *twoRowCategorizer) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
+	var body struct{ Questions map[string]json.RawMessage }
+	if err := json.Unmarshal([]byte(prompt.User), &body); err != nil {
+		return llm.Prepared{}, err
+	}
+	if len(body.Questions) > 2 {
+		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{Kind: llm.ResourceLimitContextTokens, Limit: 2, Observed: len(body.Questions), ObservedKnown: true})
+	}
+	return c.Client.Prepare(prompt, limits)
+}
+
+func TestClassifierPartitionUsesTheActualProviderPreparation(t *testing.T) {
+	c := &twoRowCategorizer{}
+	window := closedWindow()
+	window.Rows = append(window.Rows, Row{ID: "s3", Fields: []Field{{Name: "name", Value: "Third"}}})
+	needs, err := ClassifierNeedsPartition(c, closedDefinition(), window)
+	if err != nil || !needs {
+		t.Fatalf("preflight: needs=%t err=%v", needs, err)
+	}
+	pieces, err := FitClassifierWindows(c, closedDefinition(), []Window{window})
+	if err != nil || len(pieces) != 2 {
+		t.Fatalf("partition: pieces=%d err=%v", len(pieces), err)
+	}
+	var rows []Row
+	for _, piece := range pieces {
+		if piece.Refused != "" {
+			t.Fatalf("accepted neighbour refused: %s", piece.Refused)
+		}
+		if err := prepareClassifier(c, closedDefinition(), piece); err != nil {
+			t.Fatal(err)
+		}
+		rows = append(rows, piece.Rows...)
+	}
+	if fmt.Sprint(rows) != fmt.Sprint(window.Rows) {
+		t.Fatal("partition changed row evidence or order")
+	}
+}
 
 func closedDefinition() Definition {
 	return Definition{
@@ -30,6 +74,127 @@ func chose(choice string, probabilities map[string]float64) llm.Verdict {
 
 func yes(p float64) llm.Verdict { return llm.Verdict{Yes: &p} }
 
+func TestRequiredProbabilitiesRefuseOnlyTheirCellAndKeepExplicitZero(t *testing.T) {
+	def := Definition{Stage: "scores", Columns: []Column{
+		{Name: "part", Kind: Choice, Options: []string{"A", "B"}, Alone: true},
+		{Name: "other", Kind: Choice, Options: []string{"A", "B"}},
+	}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	for name, invalid := range map[string]llm.Verdict{
+		"missing rival":        chose("A", map[string]float64{"A": 0.9}),
+		"missing chosen":       chose("A", map[string]float64{"B": 0}),
+		"negative":             chose("A", map[string]float64{"A": 1, "B": -0.1}),
+		"over one":             chose("A", map[string]float64{"A": 2, "B": 0}),
+		"NaN":                  chose("A", map[string]float64{"A": math.NaN(), "B": 0}),
+		"infinite rival":       chose("A", map[string]float64{"A": 1, "B": math.Inf(1)}),
+		"invalid known marker": {Choice: "A", Probabilities: map[string]float64{"A": 1, "B": 0}, InvalidProbabilities: []string{" B "}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			valid := chose("A", map[string]float64{"A": 1, "B": 0, "unknown": math.NaN()})
+			result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
+				"s1|part": invalid, "s1|other": valid, "s2|part": valid, "s2|other": valid,
+			})
+			if err != nil || result.Answers[0]["part"] != "" || result.Answers[0]["other"] != "A" || result.Answers[1]["part"] != "A" || result.Uncertain(0) || len(result.Rejections) != 1 || result.Rejections[0].Cell != "part" {
+				t.Fatalf("invalid score repaired or refused accepted neighbour: %+v / %v", result, err)
+			}
+		})
+	}
+}
+
+func TestRawScoreOccurrencesKeepKnownRefusalsAndDiscardUnknownExtras(t *testing.T) {
+	def := Definition{Stage: "scores", Columns: []Column{{Name: "pick", Kind: Choice, Options: []string{"A", "B"}}}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	good := `{"type":"choice","choice":"A","probabilities":{"A":1,"B":0}}`
+	for _, bad := range []string{
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":null}}`,
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":"NaN"}}`,
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":1e309}}`,
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":0," B ":0.5}}`,
+		`{"type":"choice","choice":"A","choice":"B","probabilities":{"A":1,"B":0}}`,
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":0},"probabilities":{"A":1}}`,
+	} {
+		for _, copies := range []string{bad, bad + `,"s1|pick":` + good, good + `,"s1|pick":` + bad} {
+			verdicts, err := (&typesafe.Client{}).Verdicts([]byte(`{"answers":{"s1|pick":` + copies + `,"s2|pick":` + good + `}}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := DecodeClassifierAnswers(def, window, verdicts)
+			if err != nil || result.Answers[0] != nil || result.Uncertain(0) || result.Answers[1]["pick"] != "A" {
+				t.Fatalf("known invalid occurrence repaired: %s / %+v / %v", copies, result, err)
+			}
+		}
+	}
+	for _, extra := range []string{
+		`{"TYPE":" choice ","choice":" A ","probabilities":{" A ":1,"b":0,"unknown":null,"another":"NaN"}}`,
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":0,"unknown":1e309}}`,
+		`{"type":"choice","choice":"A","probabilities":{"A":1,"B":0,"unknown":1,"unknown":0}}`,
+	} {
+		verdicts, err := (&typesafe.Client{}).Verdicts([]byte(`{"answers":{"s1|pick":` + extra + `,"s1|pick":` + good + `,"s2|pick":` + good + `}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := DecodeClassifierAnswers(def, window, verdicts)
+		if err != nil || result.Answers[0]["pick"] != "A" || len(result.Rejections) != 0 {
+			t.Fatalf("unknown extra poisoned known complete scores: %s / %+v / %v", extra, result, err)
+		}
+	}
+}
+
+func TestRequiredProbabilityValidationPrecedesCutoffAndRankedNoul(t *testing.T) {
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	def := Definition{Stage: "cutoff", YesAt: 0.8, Columns: []Column{{Name: "open", Kind: Choice, Options: []string{"yes", "no"}}}}
+	result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
+		"s1|open": chose("no", map[string]float64{"no": 1}),
+		"s2|open": chose("no", map[string]float64{"no": 1, "yes": 0}),
+	})
+	if err != nil || result.Answers[0] != nil || result.Answers[1]["open"] != "no" || result.Uncertain(0) {
+		t.Fatalf("missing yes repaired as cutoff no: %+v / %v", result, err)
+	}
+	def = Definition{Stage: "ranked", Ranked: true, Columns: []Column{{Name: "key", Kind: Choice, Options: []string{"yes"}, Optional: true}}}
+	for _, invalid := range []llm.Verdict{yes(math.NaN()), yes(math.Inf(1)), yes(-0.1), yes(1.1), {InvalidYes: true}} {
+		result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{"s1|key": invalid, "s2|key": yes(0)})
+		if err != nil || result.Answers[0] != nil || result.Answers[1] == nil || result.Answers[1][ProbabilityCell("key")] != "0.0000" || result.Uncertain(0) {
+			t.Fatalf("invalid noul published rank: %+v / %v", result, err)
+		}
+	}
+}
+
+func TestYesAtRequiresAClosedChoiceButStillDecidesFromScores(t *testing.T) {
+	def := Definition{Stage: "cutoff", YesAt: 0.8, Columns: []Column{
+		{Name: "open", Kind: Choice, Options: []string{"yes", "no"}, Alone: true},
+		{Name: "other", Kind: Choice, Options: []string{"A", "B"}},
+	}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	for _, choice := range []string{"", "outside"} {
+		for _, raw := range []bool{false, true} {
+			t.Run(fmt.Sprintf("choice=%q/raw=%t", choice, raw), func(t *testing.T) {
+				verdicts := map[string]llm.Verdict{
+					"s1|open":  chose(choice, map[string]float64{"yes": 0.9, "no": 0.1}),
+					"s1|other": chose("A", map[string]float64{"A": 1, "B": 0}),
+					"s2|open":  chose(" YES ", map[string]float64{"yes": 0.7, "no": 0.3}),
+					"s2|other": chose("A", map[string]float64{"A": 1, "B": 0}),
+				}
+				if raw {
+					encodedChoice, _ := json.Marshal(choice)
+					choiceField := `"choice":` + string(encodedChoice) + `,`
+					if choice == "" {
+						choiceField = ""
+					}
+					var err error
+					verdicts, err = (&typesafe.Client{}).Verdicts([]byte(`{"answers":{"s1|open":{"type":"choice",` + choiceField + `"probabilities":{"yes":0.9,"no":0.1}},"s1|other":{"type":"choice","choice":"A","probabilities":{"A":1,"B":0}},"s2|open":{"type":"choice","choice":" YES ","probabilities":{"yes":0.7,"no":0.3}},"s2|other":{"type":"choice","choice":"A","probabilities":{"A":1,"B":0}}}}`))
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				result, err := DecodeClassifierAnswers(def, window, verdicts)
+				if err != nil || result.Answers[0]["open"] != "" || result.Answers[0]["other"] != "A" || result.Answers[1]["open"] != "no" || result.Answers[1]["other"] != "A" || result.Uncertain(0) || len(result.Rejections) != 1 || result.Rejections[0].Cell != "open" {
+					t.Fatalf("invalid closed choice accepted or cutoff semantics/neighbours changed: %+v / %v", result, err)
+				}
+			})
+		}
+	}
+}
+
 // A chosen option that does not lead its runner-up by the margin refuses
 // its own row, not its neighbour; an unlisted choice is never taken.
 func TestDecodeClassifierRefusesUncertainRowsAlone(t *testing.T) {
@@ -43,7 +208,7 @@ func TestDecodeClassifierRefusesUncertainRowsAlone(t *testing.T) {
 	}
 	result, err = DecodeClassifierAnswers(closedDefinition(), window, map[string]llm.Verdict{
 		"s1|part": chose("c9", map[string]float64{"c9": 1}),
-		"s2|part": chose("none", map[string]float64{"none": 1}),
+		"s2|part": chose("none", map[string]float64{"none": 1, "Serving": 0}),
 	})
 	if err != nil || result.Answers[0] != nil || result.Answers[1]["part"] != "none" {
 		t.Fatalf("unlisted choice: %+v %v", result, err)
@@ -80,7 +245,7 @@ func TestAClassifierChoiceMustLeadItsRunnerUp(t *testing.T) {
 		}
 	}
 	window := Window{Rows: []Row{{ID: "p1"}}}
-	result, _ := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{"p1|role": chose("domain", map[string]float64{"domain": 0.51, "interface": 0.49})})
+	result, _ := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{"p1|role": chose("domain", map[string]float64{"domain": 0.51, "interface": 0.49, "wiring": 0, "support": 0})})
 	if len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, `against "interface" at 0.49`) {
 		t.Fatalf("the journal does not name the runner-up: %+v", result.Rejections)
 	}
@@ -156,8 +321,8 @@ func TestOptionalColumnsCanBeLeftEmpty(t *testing.T) {
 	}}
 	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
 	result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
-		"s1|explains": yes(0.8), "s1|talks": chose("db", map[string]float64{"db": 0.9}),
-		"s2|explains": yes(0.2), "s2|talks": chose("none of these", map[string]float64{"none of these": 0.9}),
+		"s1|explains": yes(0.8), "s1|talks": chose("db", map[string]float64{"db": 0.9, "sdk": 0.1, "none of these": 0}),
+		"s2|explains": yes(0.2), "s2|talks": chose("none of these", map[string]float64{"none of these": 0.9, "db": 0.1, "sdk": 0}),
 	})
 	if err != nil || result.Answers[0]["explains"] != "yes" || result.Answers[0]["talks"] != "db" || len(result.Answers[1]) != 0 || result.Answers[1] == nil {
 		t.Fatalf("result %+v %v", result, err)
@@ -201,7 +366,7 @@ func TestFitClassifierWindowsHalvesOversizedBodiesAndKeepsRows(t *testing.T) {
 	rows := 0
 	for _, piece := range fitted {
 		call, _ := ClassifierCall(jev, def, piece)
-		if len(call.Prompt.User) > ClassifierBodyBytes {
+		if len(call.Prompt.User) > (typesafe.RequestTokenLimit - 1) {
 			t.Fatalf("piece body %d bytes", len(call.Prompt.User))
 		}
 		rows += len(piece.Rows)
@@ -211,13 +376,10 @@ func TestFitClassifierWindowsHalvesOversizedBodiesAndKeepsRows(t *testing.T) {
 	}
 }
 
-// The envelope decides per row. A row whose question may exceed it is
-// packed in its place, and its neighbours keep their bytes and window; a
-// row still over the bound packed goes alone in its place, so a refusal by
-// the model cannot take its neighbours' answers; a row that would exceed
-// the envelope even at the sparsest density is refused unsent with what
-// was measured. Without a packed form a row over the bound is asked alone
-// as built, for the model to decide as before.
+// Provider preparation decides whether each complete row fits. Only an
+// oversized row is packed; its neighbours keep their bytes and order. A
+// row that still cannot fit is refused locally without reaching transport,
+// including when no packed form exists.
 func TestFitClassifierWindowsPacksInPlaceAndRefusesOnlyWhatCannotFit(t *testing.T) {
 	jev := &typesafe.Client{}
 	field := func(id string, bytes int) Row {
@@ -233,8 +395,8 @@ func TestFitClassifierWindowsPacksInPlaceAndRefusesOnlyWhatCannotFit(t *testing.
 		return Row{ID: row.ID, Fields: []Field{{Name: "name", Value: row.ID}, {Name: "packed", Value: strings.Repeat("p", len(row.Fields[1].Value.(string))/4)}}}
 	}
 	window := Window{Context: closedWindow().Context, Rows: []Row{
-		field("s1", 100), field("big", ClassifierQuestionBytes+1000), field("s2", 100),
-		field("mid", ClassifierQuestionBytes*3/2), field("huge", ClassifierQuestionCeiling*5), field("s3", 100),
+		field("s1", 100), field("big", (typesafe.QuestionTokenLimit-1)+1000), field("s2", 100),
+		field("mid", (typesafe.QuestionTokenLimit-1)*3/2), field("huge", (typesafe.QuestionTokenLimit-1)*5), field("s3", 100),
 	}}
 	shape := func(fitted []Window) ([]string, []string, []string) {
 		var windows, order, refused []string
@@ -259,8 +421,8 @@ func TestFitClassifierWindowsPacksInPlaceAndRefusesOnlyWhatCannotFit(t *testing.
 	if !slices.Equal(order, []string{"s1", "big", "s2", "mid", "huge", "s3"}) || !slices.Equal(windows, []string{"s1,big,s2", "mid", "huge", "s3"}) {
 		t.Fatalf("windows %v: rows keep their order, and only a row still over the bound leaves its window", windows)
 	}
-	if len(refused) != 1 || fitted[2].Refused == "" || !strings.Contains(refused[0], "row huge was not sent: even packed") ||
-		!strings.Contains(refused[0], fmt.Sprintf("over Jev's envelope of %d and %d", ClassifierQuestionTokens, ClassifierRequestTokens)) {
+	if len(refused) != 2 || fitted[2].Refused == "" || !strings.Contains(refused[1], "row huge was not sent: even packed") ||
+		!strings.Contains(refused[0], fmt.Sprintf("configured=%d", typesafe.QuestionTokenLimit)) {
 		t.Fatalf("refusals %q", refused)
 	}
 	first := fitted[0]
@@ -277,7 +439,7 @@ func TestFitClassifierWindowsPacksInPlaceAndRefusesOnlyWhatCannotFit(t *testing.
 		t.Fatal(err)
 	}
 	windows, _, refused = shape(fitted)
-	if !slices.Equal(windows, []string{"s1", "big", "s2", "mid", "huge", "s3"}) || len(refused) != 1 || !strings.Contains(refused[0], "row huge was not sent: as built") {
+	if !slices.Equal(windows, []string{"s1", "big", "s2", "mid", "huge", "s3"}) || len(refused) != 3 || !strings.Contains(refused[2], "row huge was not sent: as built") {
 		t.Fatalf("without a packed form: windows %v, refusals %q", windows, refused)
 	}
 }
@@ -313,6 +475,100 @@ func TestCriteriaFromACatalogueAreTheOptionsOwnTerms(t *testing.T) {
 	result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{"d1|box": chose("b3", map[string]float64{"b3": 0.7, "b2": 0.2, "Replies": 0.1})})
 	if err != nil || result.Answers[0]["box"] != "b3" {
 		t.Fatalf("answer %v, %v", result.Answers, err)
+	}
+}
+
+func TestRowCatalogueCriteriaAreFactoredWithoutChangingEvidenceOrClosedDecisions(t *testing.T) {
+	for _, untyped := range []bool{false, true} {
+		t.Run(fmt.Sprintf("untyped=%t", untyped), func(t *testing.T) {
+			entries := []map[string]any{
+				{"ref": "c1", "title": "Read", "criteria": strings.Repeat("read-source ", 600), "anchor": "storage.c:11"},
+				{"ref": "c2", "title": "Write", "criteria": strings.Repeat("write-source ", 600), "anchor": "storage.c:22"},
+				{"ref": "c3", "title": "write", "criteria": strings.Repeat("commit-source ", 600), "anchor": "storage.c:33"},
+			}
+			var catalogue any = entries
+			if untyped {
+				catalogue = []any{entries[0], entries[1], entries[2]}
+			}
+			def := Definition{Stage: "orientation_flow", Contract: "flow", System: "Follow the program's work", Classifier: true,
+				Columns: []Column{{Name: "next", Kind: Choice, OptionsFrom: "candidates", CriteriaFrom: "criteria", Item: "step"}}}
+			window := Window{Rows: []Row{{ID: "t1.n1", Fields: []Field{{Name: "step", Value: "main"}, {Name: "candidates", Value: catalogue}}}}}
+			original, _ := json.Marshal(window)
+			// The zero-value client supports the real encoder and Prepare, but
+			// cannot make an HTTP request.
+			client := &typesafe.Client{Model: "jev-1.13.0"}
+			call, err := ClassifierCall(client, def, window)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var body struct {
+				Questions map[string]struct {
+					Criteria     map[string]string `json:"criteria"`
+					Instructions struct {
+						Step struct {
+							Name       string           `json:"step"`
+							Candidates []map[string]any `json:"candidates"`
+						} `json:"step"`
+					} `json:"instructions"`
+				} `json:"questions"`
+			}
+			if err := json.Unmarshal([]byte(call.Prompt.User), &body); err != nil {
+				t.Fatal(err)
+			}
+			q := body.Questions["t1.n1|next"]
+			if q.Instructions.Step.Name != "main" || len(q.Instructions.Step.Candidates) != 3 || len(q.Criteria) != 3 {
+				t.Fatalf("lost original question/closed choices: %+v", q)
+			}
+			for i, label := range []string{"Read", "c2", "c3"} {
+				entry := q.Instructions.Step.Candidates[i]
+				if entry["ref"] != entries[i]["ref"] || entry["title"] != entries[i]["title"] || entry["anchor"] != entries[i]["anchor"] || entry["criteria"] != nil {
+					t.Fatalf("changed catalogue identity/source fields: %+v", entry)
+				}
+				text := entries[i]["criteria"].(string)
+				if q.Criteria[label] != text || strings.Count(call.Prompt.User, text) != 1 {
+					t.Fatalf("criteria not preserved exactly once for %s", label)
+				}
+			}
+			if _, err := client.Prepare(call.Prompt, call.Limits); err != nil {
+				t.Fatalf("factored complete question does not fit: %v", err)
+			}
+			// Reconstruct the former duplicate representation with exactly the
+			// same evidence, and verify the actual single-question envelope.
+			var duplicated map[string]any
+			_ = json.Unmarshal([]byte(call.Prompt.User), &duplicated)
+			questions := duplicated["questions"].(map[string]any)
+			instructions := questions["t1.n1|next"].(map[string]any)["instructions"].(map[string]any)
+			instructions["step"] = fieldsMap(window.Rows[0].Fields)
+			raw, _ := json.Marshal(duplicated)
+			oldPrompt := call.Prompt
+			oldPrompt.User = string(raw)
+			if _, err := client.Prepare(oldPrompt, call.Limits); !classifierInputRefused(err) {
+				t.Fatalf("duplicate form should exceed the real envelope: %v", err)
+			}
+			result, err := call.DecodeValidate([]byte(`{"answers":{"t1.n1|next":{"type":"choice","choice":"c3","probabilities":{"Read":0.1,"c2":0.1,"c3":0.8}}}}`))
+			if err != nil || result.Answers[0]["next"] != "c3" {
+				t.Fatalf("original closed ref was not decoded: %+v %v", result, err)
+			}
+			after, _ := json.Marshal(window)
+			if string(original) != string(after) {
+				t.Fatal("request factoring mutated the original window")
+			}
+		})
+	}
+}
+
+func TestRowCatalogueKeepsCriteriaNotActuallyCarriedByTheOptions(t *testing.T) {
+	def := Definition{Stage: "classifier", Contract: "c", System: "s", Columns: []Column{{Name: "part", Kind: Choice,
+		OptionsFrom: "candidates", CriteriaFrom: "criteria", Criteria: map[string]llm.Criteria{"c1": {What: "Explicit decision criterion"}}}}}
+	window := Window{Rows: []Row{{ID: "n1", Fields: []Field{{Name: "candidates", Value: []map[string]any{
+		{"ref": "c1", "title": "Serving", "criteria": "Original source evidence", "anchor": "server.c:8"},
+	}}}}}}
+	call, err := ClassifierCall(&typesafe.Client{}, def, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(call.Prompt.User, "Original source evidence") || !strings.Contains(call.Prompt.User, "Explicit decision criterion") || !strings.Contains(call.Prompt.User, "server.c:8") {
+		t.Fatalf("factoring erased independent source or explicit criterion: %s", call.Prompt.User)
 	}
 }
 

@@ -89,3 +89,36 @@ _Noreturn void sbDrainForever(strbuf *sb) {
 /* Two functions written on one line are two declarations, each read by
  * itself: a link to their line is no identity (review, 2026-10-03). */
 void sbRewind(strbuf *sb) { sb->len = 0; sb->buf[0] = '\0'; } void sbTruncate(strbuf *sb) { if (sb->len > 0) sb->buf[--sb->len] = '\0'; }
+
+/* Each call keeps the condition and the arm at its own place. */
+void sbCheckedBranches(strbuf *sb, int ready, int retry) {
+    if (ready) {
+        sbAvail(sb);
+    } else {
+        sbTrace(sb, "not ready");
+    }
+    ready && retry && sbAvail(sb);
+    ready || retry || sbAvail(sb);
+    ready ? sbAvail(sb) : sbAvail(sb);
+    switch (ready) {
+    case 1:
+        sbTrace(sb, "ready");
+        break;
+    }
+}
+
+/* Two native builds observe different declarations in this same source file.
+ * Shared file ownership does not make a conditional declaration available
+ * to both programs. sbNativeCommon remains present in both views. */
+int sbNativeCommon(strbuf *sb) {
+#ifdef REPOMAP_NATIVE_VARIANT
+    /* sbAvail exists in both builds; only this build observes the call. */
+    if (sb != NULL) sbAvail(sb);
+#endif
+    return 1;
+}
+#ifdef REPOMAP_NATIVE_VARIANT
+int sbNativeVariant(void) { return 2; }
+#else
+int sbNativeDefault(void) { return 3; }
+#endif

@@ -10,7 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
@@ -49,7 +48,7 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 	t.Setenv("GOWORK", "off")
 	root, repository := materializeFixtureRepository(t, "go")
 	writePublishedGoFixtureModule(t, root)
-	worker := analyzeGoFixture(t, root, repository, goFixtureRootPackage+"/cmd/worker", "cumulative-go-worker-starts")
+	worker := sharedGoFixtureAuthorities(t, root, repository, goFixtureRootPackage+"/cmd/worker", "cumulative-go-worker-starts")
 	index, err := goadapter.Build(repository, worker.target, worker.origins, worker.direct, worker.external, worker.core, worker.dynamic, worker.tests)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +158,7 @@ func TestCumulativePythonStartsAreAskedPerStatement(t *testing.T) {
 			break
 		}
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	input, err := sharedPythonFixtureInput(t, repository, target)
 	if err != nil {
 		t.Fatal(err)
 	}

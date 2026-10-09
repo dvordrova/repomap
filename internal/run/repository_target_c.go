@@ -92,7 +92,13 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 		},
 		MatchProgramTarget: func(target repositoryTypedTarget, program programindex.Target) bool {
 			native, ok := target.native.(cproject.Program)
-			return ok && program.Selector == native.Selector && program.Name == native.Name && program.AnchorFileRef == native.AnchorFileRef
+			if !ok || program.Selector != native.Selector || program.Name != native.Name || program.AnchorFileRef != native.TargetAnchorFileRef() {
+				return false
+			}
+			hasSource := func(filePath, ref string) bool {
+				return slices.ContainsFunc(program.Sources, func(source programindex.TargetSource) bool { return source.Path == filePath && source.FileRef == ref })
+			}
+			return hasSource(native.Anchor.Path, native.AnchorFileRef) && (native.Manifest == "" || hasSource(native.Manifest, native.ManifestFileRef))
 		},
 		ValidatePlanAuthority: func(authority any, _ repositoryTypedTarget) error {
 			if authority != nil {
@@ -221,6 +227,9 @@ func cRepositoryHasSource(repository *corpus.Corpus) bool {
 // cProgramRoot is the directory a program belongs to: its link output's,
 // its main file's, or the library directory itself.
 func cProgramRoot(program cproject.Program) string {
+	if program.Manifest != "" {
+		return path.Dir(program.Manifest)
+	}
 	if program.Kind == cproject.ProgramLibrary {
 		return program.Name
 	}
@@ -263,6 +272,7 @@ func discoverCRepositoryTargets(ctx context.Context, options repositoryTargetRun
 	}
 	for index, program := range programs {
 		own(corpus.FileID(program.AnchorFileRef), index)
+		own(corpus.FileID(program.TargetAnchorFileRef()), index)
 		for _, unit := range program.Units {
 			own(corpus.FileID(unit.FileRef), index)
 			if linkedBy[unit.Path] == nil {
@@ -296,7 +306,7 @@ func discoverCRepositoryTargets(ctx context.Context, options repositoryTargetRun
 			offers++
 		}
 		if offers == 0 {
-			offer(corpus.FileID(program.AnchorFileRef), cLinkFileHypothesis)
+			offer(corpus.FileID(program.TargetAnchorFileRef()), cLinkFileHypothesis)
 		}
 	}
 	resolve := func(ref corpus.FileID) []int { return owners[ref] }

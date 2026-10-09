@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -87,6 +88,40 @@ func TestReadRunDirRestoresDefaultProgramPortfolioAndOpenablePaths(t *testing.T)
 		if !slices.Contains(data.OpenablePaths, sourcePath) {
 			t.Errorf("projected source path %q is not openable: %#v", sourcePath, data.OpenablePaths)
 		}
+	}
+}
+
+func TestSavedRunPortfolioUsesOneOwnedNativeSetAndExactOriginalBinding(t *testing.T) {
+	runDir := t.TempDir()
+	index, _, _ := writeReportFinalGraphArtifacts(t, runDir, reportProgramIndexFixture(t, "python", "executable"))
+	writeReportProgramFile(t, filepath.Join(runDir, "snapshot.json"), []byte(`{"repo_name":"fixture"}`))
+	writeReportProgramFile(t, filepath.Join(runDir, "metadata.json"), []byte(`{"repo_name":"fixture"}`))
+	data, err := ReadRunDir(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := &data.ProgramPortfolio.Entries[0]
+	if len(data.programIndexes) != 1 || data.defaultProgramIndex == nil ||
+		data.defaultProgramIndexArtifactFilename != programindex.ArtifactFilename ||
+		&data.programIndexes[0].Objects[0] != &owned.Objects[0] ||
+		&data.defaultProgramIndex.Objects[0] != &owned.Objects[0] {
+		t.Fatal("saved restore kept another full native set beside its owned portfolio")
+	}
+	want, err := programindex.Encode(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := programindex.Encode(*owned)
+	if err != nil || !bytes.Equal(actual, want) {
+		t.Fatalf("saved restore changed original native bytes: %v", err)
+	}
+	// A successfully restored report never substitutes its retained native
+	// rows for the artifact required by a later restoration.
+	if err := os.Remove(filepath.Join(runDir, programindex.ArtifactFilename)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRunDir(runDir); err == nil {
+		t.Fatal("missing native artifact was repaired by previous restoration")
 	}
 }
 

@@ -62,16 +62,31 @@ func CPath(filePath string) bool {
 	return classifyPath(filePath) == kindC
 }
 
-// CDocstring is the text of the C docstring in docs that describes the
-// declaration located at line, or "" when none does; declarations are the
-// lines the file's other declarations are located at. A C docstring names the
-// line where the declaration directly below it ends its header, and a
-// declaration is located at its name, on that line or on the few above it
-// (static int / foo(void), struct foo / {). So the file's own description,
-// which names no line, describes no declaration, and neither does a comment
-// above a prototype or a macro, on whose line no declaration is located.
-func CDocstring(docs []Claim, line int, declarations []int) string {
+// CDocstring reads exact native C name coordinates when supplied by extraction.
+// Known unresolved lexical headers never attach to a symbol. Older line-only
+// claims use their original header-end convention only at a unique declaration
+// line; declarations lists distinct native source sites, including two columns
+// on one line. File descriptions and prototype comments remain separate claims.
+func CDocstring(docs []Claim, line int, declarations []int, column ...int) string {
 	for _, doc := range docs {
+		if doc.DeclarationUnresolved {
+			continue
+		}
+		if doc.DeclarationColumn > 0 {
+			if doc.DeclarationLine == line && len(column) > 0 && doc.DeclarationColumn == column[0] {
+				return doc.Text
+			}
+			continue
+		}
+		ownersOnLine := 0
+		for _, declared := range declarations {
+			if declared == line {
+				ownersOnLine++
+			}
+		}
+		if ownersOnLine > 1 {
+			continue
+		}
 		if doc.DeclarationLine == 0 || line <= doc.Line || line > doc.DeclarationLine || doc.DeclarationLine-line > cHeaderLines {
 			continue
 		}
@@ -349,4 +364,48 @@ func cBlockProse(text string) string {
 		text = text[1:]
 	}
 	return strings.TrimSpace(text)
+}
+
+// bindCQuotes intersects the existing lexical header with closed native source
+// name sites. A prototype with no native definition never borrows a later body.
+func bindCQuotes(lines []string, docs []quote, sites []declarationSite) {
+	comments, _ := cLex(lines)
+	commentEnds := map[int]int{}
+	for _, comment := range comments {
+		commentEnds[comment.start+1] = comment.end + 1
+	}
+	byLine := map[int][]declarationSite{}
+	for _, site := range sites {
+		byLine[site.Line] = append(byLine[site.Line], site)
+	}
+	for i := range docs {
+		doc := &docs[i]
+		if doc.DeclarationLine == 0 {
+			continue
+		}
+		headerEnd := doc.DeclarationLine
+		first := headerEnd - 1
+		// The preceding comment may span lines; find its lexical declaration start.
+		if end, known := commentEnds[doc.Line]; known {
+			first = end
+		}
+		endColumn := strings.IndexAny(lines[headerEnd-1], "({;=")
+		if endColumn < 0 {
+			endColumn = len(lines[headerEnd-1])
+		}
+		owners := map[declarationSite]bool{}
+		for row := first + 1; row <= headerEnd; row++ {
+			for _, site := range byLine[row] {
+				if site.Line != headerEnd || site.Column <= endColumn {
+					owners[site] = true
+				}
+			}
+		}
+		doc.DeclarationUnresolved = len(owners) != 1
+		if len(owners) == 1 {
+			for site := range owners {
+				doc.DeclarationLine, doc.DeclarationColumn = site.Line, site.Column
+			}
+		}
+	}
 }

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -55,7 +54,7 @@ func callWords(index programindex.Index, path string, selectors ...string) []str
 func TestACommandGroupsWordIsGivenByPositionAndADestsByName(t *testing.T) {
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		_, index, _, err := jstsproject.Build(t.Context(), repository, root)
+		_, index, _, err := sharedJSTSFixture(t, repository, root)
 		if err != nil {
 			t.Fatal(err)
 		}

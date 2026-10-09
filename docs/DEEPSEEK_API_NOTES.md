@@ -34,12 +34,18 @@ override; `REPOMAP_LLM_MAX_TOKENS` is the only one.
 `REPOMAP_LLM_CONTEXT_TOKENS` (or `DEEPSEEK_CONTEXT_TOKENS`, accepted with either
 family) declares the provider's context window, for example `524288` for a
 server that hosts the same model family with half the official window. With
-it set, a request whose estimated prompt tokens (bytes ÷ 3) plus the output
-reservation exceed the window is refused locally before any transport
-attempt, with the same context refusal the provider would send; the owning
-stage partitions it as usual. It changes no request bytes and no cache key.
-Unset, the check is left to the provider, whose refusal is recognised and
-partitioned the same way after a round trip.
+it set, preparation checks the complete encoded request and reserves the requested
+output allowance before transport. For the official V4 flash/pro family it
+uses one token per encoded UTF-8 request byte as a conservative input
+reservation, plus the complete output allowance (owner decision, 2026-10-06).
+There is no local tokenizer, asset, regex dependency or runtime download.
+The known official `api.deepseek.com` V4 flash/pro family uses its
+1,000,000-token context when no override is supplied, including `deepseek-flash`.
+A custom endpoint or unknown model uses its explicitly configured context;
+it never inherits the official window merely by model name. The owning stage divides
+complete evidence on this preparation resource result. Unexpected actual
+provider refusals retain adaptive fallback. The limit changes no prepared
+request bytes or exact cache identity.
 
 `bearer` requires a key and sends `Authorization: Bearer ...`. `none`
 requires an explicit endpoint and sends no Authorization header. Endpoints must

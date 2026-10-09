@@ -123,6 +123,37 @@ func (view *GroupGraphView) Hydrate(programs []programindex.Index) error {
 	return view.Validate()
 }
 
+// hydratePortfolio reads each complete bound native body only while hydrating
+// its original overlay. The complete native portfolio is not accumulated.
+func (view *GroupGraphView) hydratePortfolio(portfolio *ProgramPortfolio) error {
+	if view == nil || portfolio == nil || portfolio.Len() != len(view.Indexes) {
+		return fmt.Errorf("group graph view: ProgramIndex and overlay sets differ")
+	}
+	if err := portfolio.validateBindings(); err != nil {
+		return err
+	}
+	hydrated := make([]groupindex.Index, 0, len(view.Indexes))
+	position := 0
+	for program, err := range portfolio.indexes() {
+		if err != nil {
+			return err
+		}
+		index, err := view.Indexes[position].Hydrate(program)
+		if err != nil {
+			return fmt.Errorf("group graph view: hydrate %q: %w", program.Target.ID, err)
+		}
+		hydrated = append(hydrated, index)
+		position++
+	}
+	bound := *view
+	bound.hydrated = hydrated
+	if err := bound.Validate(); err != nil {
+		return err
+	}
+	view.hydrated = hydrated
+	return nil
+}
+
 // SourcePaths returns every repository-relative location carried by the final
 // graph. Multi-target finalization uses it to extend each page's source
 // authority before embedding the shared graph.
@@ -176,7 +207,7 @@ func BindGroupGraphView(data *ReportData, indexes []groupindex.Index) error {
 	if data == nil || data.ProgramPortfolio == nil {
 		return fmt.Errorf("group graph view: report ProgramPortfolio is unavailable")
 	}
-	entry, err := data.ProgramPortfolio.defaultEntry()
+	entry, err := data.ProgramPortfolio.defaultBinding()
 	if err != nil {
 		return err
 	}
@@ -212,6 +243,7 @@ func validateLocalGroupIndexExtension(local, selected groupindex.Index) error {
 		!reflect.DeepEqual(selected.Target, local.Target) ||
 		!reflect.DeepEqual(selected.Subjects, local.Subjects) ||
 		!reflect.DeepEqual(selected.Groups, local.Groups) ||
+		!reflect.DeepEqual(selected.Containers, local.Containers) ||
 		!reflect.DeepEqual(selected.StructuralEdges, local.StructuralEdges) {
 		return fmt.Errorf("group graph view: matched set does not preserve local graph authority")
 	}

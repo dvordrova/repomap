@@ -70,6 +70,7 @@ type pageFieldFacts struct {
 
 // fieldFacts builds a program's field accesses once.
 func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts {
+	builder.activateNativeScope(index.Target.ID)
 	if cached := builder.fieldsByTarget[index.Target.ID]; cached != nil {
 		return cached
 	}

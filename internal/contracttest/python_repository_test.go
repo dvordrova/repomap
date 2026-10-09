@@ -34,7 +34,7 @@ func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
 	if len(target.Packages) != 1 || !target.Packages[0].Namespace || target.Packages[0].Name != "fixture_shared" {
 		t.Fatalf("native namespace inventory = %#v", target.Packages)
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	input, err := sharedPythonFixtureInput(t, repository, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestCumulativePythonLibraryExportsItsAPI(t *testing.T) {
 			target = candidate
 		}
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	input, err := sharedPythonFixtureInput(t, repository, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1056,7 +1056,7 @@ func TestCumulativePythonChainedCallsKeepTheirOwnPositions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input, err := pythonprogramindex.BuildInput(t.Context(), repository, pythonFixtureTarget(t, catalog))
+	input, err := sharedPythonFixtureInput(t, repository, pythonFixtureTarget(t, catalog))
 	if err != nil {
 		t.Fatal(err)
 	}
