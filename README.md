@@ -31,7 +31,7 @@ without a matching source at that revision are marked **No source**.
 | --- | --- |
 | Utility / library | [type-fest](https://dvordrova.github.io/repomap/type-fest#canvas) — TypeScript types |
 | Game / mixed | [Python tutorial game](https://dvordrova.github.io/repomap/python-tutorial-game#canvas) — React/TypeScript frontend with a Python backend |
-| Mixed | [Airflow](https://dvordrova.github.io/repomap/airflow#canvas) — TypeScript UI and Python server, [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) — React frontend and Go server, [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) — TypeScript frontend and Clojure server, [repomap](https://dvordrova.github.io/repomap/repomap#canvas) — Go CLI and JavaScript report UI |
+| Mixed | [Airflow core](https://dvordrova.github.io/repomap/airflow#canvas) — Python server, scheduler and CLI (`airflow-core` only), [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) — React frontend and Go server, [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) — TypeScript frontend and Clojure server, [repomap](https://dvordrova.github.io/repomap/repomap#canvas) — Go CLI and JavaScript report UI |
 
 ### Python
 
@@ -40,7 +40,7 @@ without a matching source at that revision are marked **No source**.
 | CLI | [beets](https://dvordrova.github.io/repomap/beets#canvas) |
 | Utility / library | [pykrx](https://dvordrova.github.io/repomap/pykrx#canvas) |
 | Game / mixed | [Python tutorial game](https://dvordrova.github.io/repomap/python-tutorial-game#canvas) — backend and browser frontend |
-| Mixed | [Freqtrade](https://dvordrova.github.io/repomap/freqtrade#canvas) — trading bot, CLI and API, [Airflow](https://dvordrova.github.io/repomap/airflow#canvas) — workflow orchestration, server, workers and CLI |
+| Mixed | [Freqtrade](https://dvordrova.github.io/repomap/freqtrade#canvas) — trading bot, CLI and API, [Airflow core](https://dvordrova.github.io/repomap/airflow#canvas) — workflow orchestration: API server, scheduler, executors and CLI (`airflow-core` only) |
 
 ### C
 
@@ -65,6 +65,7 @@ they are not estimates of a first build from an empty cache.
 
 | Report | Build time | Jev tokens (in / out) | DeepSeek tokens (in / out) | DeepSeek cached input | Estimated new API cost (USD) | Local reused responses |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| [Airflow core](https://dvordrova.github.io/repomap/airflow#canvas) | 14m 40s | 20,595,176 / 2,020,311 | 6,718,030 / 464,609 | — ‡ | $2.1515–$3.4379 ‡ | 348 |
 | [beets](https://dvordrova.github.io/repomap/beets#canvas) | 6m 31s | 8,146,736 / 477,456 | 969,243 / 81,739 | 184,188 | $0.5095–$0.6769 | 755 |
 | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas) | 5m 19s | 5,236,341 / 271,788 | 853,483 / 51,352 | 124,032 | $0.3605–$0.5011 | 699 |
 | [etcd](https://dvordrova.github.io/repomap/etcd#canvas) | 15m 1s | 26,709,217 / 1,140,686 | 5,653,469 / 187,597 | 471,932 | $2.0130–$2.9042 | 394 |
@@ -72,7 +73,7 @@ they are not estimates of a first build from an empty cache.
 | [Headscale](https://dvordrova.github.io/repomap/headscale#canvas) | 3m 14s | 14,065,093 / 579,176 | 816,113 / 18,041 | 84,992 | $0.7115–$0.8322 | 1 |
 | [k6](https://dvordrova.github.io/repomap/k6#canvas) | 1m 9s | 40,449 / 816 † | 0 / 0 † | 0 | $0.0017 † | 931 |
 | [Lua](https://dvordrova.github.io/repomap/lua#canvas) | 1m 13s | 2,505,458 / 150,109 | 387,693 / 6,877 | 67,964 | $0.1575–$0.2098 | 304 |
-| [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) | 2h 38m 46s | 1,383,758 / 139,171 | 21,754,859 / 2,919,059 | 5,137,792 | $4.3175–$8.5769 | 23,850 |
+| [Metabase](https://dvordrova.github.io/repomap/metabase#canvas) | 1h 3m 30s | 86,863,667 / 18,233,687 | 17,383,894 / 1,923,155 | — ‡ | $7.4098–$11.1712 ‡ | 14,502 |
 | [Moby](https://dvordrova.github.io/repomap/moby#canvas) | 22m 54s | 30,935,180 / 1,467,975 † | 3,734,451 / 311,776 † | 181,248 | $2.0199–$2.7405 † | 17 |
 | [Othello](https://dvordrova.github.io/repomap/othello#canvas) | 30s | 790,746 / 36,737 | 62,639 / 2,703 | 21,117 | $0.0411–$0.0490 | 19 |
 | [pykrx](https://dvordrova.github.io/repomap/pykrx#canvas) | 49s | 940,145 / 71,205 | 174,824 / 6,607 | 21,632 | $0.0665–$0.0935 | 0 |
@@ -105,6 +106,13 @@ run artifacts. Their ordinary logs and aggregate live-call counters agree with
 the available journals; the missing child journals cannot be independently audited.
 The historical journals do not preserve a usage-completeness flag, so all token
 counts and estimates describe recorded usage rather than a certified billed total.
+
+‡ Metabase (2026-10-08) and Airflow core (2026-10-09) were built with the
+recursive grouping: Metabase's run asked every grouping question anew, the
+Airflow core run is a first build of one target (`--target
+python:airflow-core:script:airflow`, 1,271 Python files; the whole repository
+selects 450 targets). Their journals record no DeepSeek cache-hit tokens, so the
+cost counts all DeepSeek input as uncached: an upper estimate.
 
 SQLite and Othello use their original completed run metadata and all saved target
 journals; a separate command-wrapper log is unavailable for those two runs.
