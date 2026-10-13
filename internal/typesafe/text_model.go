@@ -41,7 +41,7 @@ var _ llm.Categorizer = (*TextModel)(nil)
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{
-		"categorizer": json.RawMessage(`"text_model.lines.v3"`),
+		"categorizer": json.RawMessage(`"text_model.lines.v4"`),
 		"provider":    m.Provider.State(),
 	})
 	return state
@@ -183,10 +183,10 @@ func answersFromLines(asked []askedQuestion, response []byte) ([]byte, error) {
 			continue
 		}
 		next = at + 1
-		answer := strings.TrimRight(strings.Trim(strings.TrimSpace(line), "`\"'*"), ".")
+		answer := strings.TrimSpace(line)
 		question := asked[at]
 		if len(question.options) == 0 {
-			switch word := strings.ToLower(answer); {
+			switch word := strings.ToLower(strings.Trim(answer, "`\"'*")); {
 			case strings.HasPrefix(word, "yes"):
 				answers[question.key] = map[string]any{"type": "noul", "noul": 1}
 			case strings.HasPrefix(word, "no"):
@@ -208,8 +208,20 @@ func answersFromLines(asked []askedQuestion, response []byte) ([]byte, error) {
 }
 
 // matchOption is the option the answer names: the same text in any case,
-// else the longest option the answer contains; else the answer as written.
+// as written or without quotes, backticks, bold and a trailing dot; else the
+// longest option the answer contains; else the answer as written.
 func matchOption(options []string, answer string) string {
+	bare := strings.TrimRight(strings.Trim(answer, "`\"'*"), ".")
+	for _, option := range options {
+		if strings.EqualFold(option, answer) {
+			return option
+		}
+	}
+	for _, option := range options {
+		if strings.EqualFold(option, bare) {
+			return option
+		}
+	}
 	folded := strings.ToLower(answer)
 	best := ""
 	for _, option := range options {
