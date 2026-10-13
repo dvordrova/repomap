@@ -1,3 +1,13 @@
+## 2026-10-13 — closed questions without Jev; `repomap test_llm`
+
+Without `JEV_KEY` the closed questions go to the text model
+(`typesafe.TextModel`): numbered questions as plain text, one `N. answer`
+line each in order, turned into Jev's answers object (chosen option 1, others
+0; yes 1/0) so the executor, cache and owners read it unchanged; windows keep
+Jev's request envelope. `repomap test_llm` checks the settings with one
+text-model and one categorizer request. Live: both paths `ok` (DeepSeek
+fallback: test 1.00, `entry`; Jev: test 0.98, `entry`).
+
 ## 2026-10-08/09 — the owner's grouping loop; facts, render and canvas at scale
 
 The Codex-era map machinery (source readings, rejoin, catalogues, admission,

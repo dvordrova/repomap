@@ -78,6 +78,13 @@ func Main() {
 		}
 		return
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "test_llm" {
+		if err := runTestLLM(context.Background(), os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) >= 2 && os.Args[1] == "replay" {
 		if err := runReplay(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			os.Exit(defaultRunExitCode(err))
@@ -1187,7 +1194,7 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  REPOMAP_LLM_TIMEOUT (default 10m; an attempt that hits it is retried)\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_API_KEY    quick setup; defaults to deepseek-v4-flash\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_*          compatibility configuration aliases\n")
-	fmt.Fprintf(writer, "  JEV_KEY             required with the model key: Jev decides keys, part roles and key declarations\n")
+	fmt.Fprintf(writer, "  JEV_KEY             optional: Jev decides the closed questions; without it the model above answers them\n")
 	fmt.Fprintf(writer, "  REPOMAP_JEV_MODEL   (default jev-1.13.0)\n")
 	fmt.Fprintf(writer, "  REPOMAP_JEV_ENDPOINT\n")
 	fmt.Fprintf(writer, "\nExamples:\n")
@@ -1196,4 +1203,5 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  repomap ../etcd --no-serve\n")
 	fmt.Fprintf(writer, "  repomap ../etcd --no-serve --github-url https://github.com/etcd-io/etcd\n")
 	fmt.Fprintf(writer, "  repomap cache clear\n")
+	fmt.Fprintf(writer, "  repomap test_llm     check the model settings with two tiny requests\n")
 }

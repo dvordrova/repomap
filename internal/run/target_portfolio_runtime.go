@@ -60,9 +60,16 @@ func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
 	return deepseek.NewFromEnv()
 }
 
-// newJevCategorizer is the categorizer of the closed decisions: Jev, which
-// requires JEV_KEY.
+// newJevCategorizer is the categorizer of the closed decisions: Jev when
+// JEV_KEY is set, else the run's text model asked the same questions.
 func newJevCategorizer() (llm.Categorizer, error) {
+	if strings.TrimSpace(os.Getenv("JEV_KEY")) == "" {
+		provider, err := deepseek.NewFromEnv()
+		if err != nil {
+			return nil, err
+		}
+		return &typesafe.TextModel{Provider: provider}, nil
+	}
 	client, err := typesafe.NewFromEnv()
 	if err != nil {
 		return nil, err
@@ -71,8 +78,7 @@ func newJevCategorizer() (llm.Categorizer, error) {
 }
 
 // newRunCategorizer builds a model run's categorizer before any analysis and
-// reports Jev's retries on the console. A run without one stops here: its
-// closed decisions never fall back to another model.
+// reports its retries on the console. A run without one stops here.
 func newRunCategorizer(factory func() (llm.Categorizer, error), output *runOutput) (llm.Categorizer, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("no categorizer answers the closed decisions of a model run; run with --no-model --target … to skip models")
@@ -88,6 +94,12 @@ func newRunCategorizer(factory func() (llm.Categorizer, error), output *runOutpu
 			client.Controller = llm.NewBatchController(table.ClassifierConcurrency)
 		}
 		client.OnRetry = func(progress llm.RetryProgress) { printRetry(output, "categorizer request", progress) }
+	}
+	if model, ok := categorizer.(*typesafe.TextModel); ok {
+		if client, ok := model.Provider.(*deepseek.Client); ok && client != nil {
+			client.OnWait = waitingOnTheModel(output)
+			client.OnRetry = func(progress llm.RetryProgress) { printRetry(output, "categorizer request", progress) }
+		}
 	}
 	return categorizer, nil
 }

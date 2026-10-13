@@ -6,10 +6,10 @@ package llm
 // and exact prepared bytes, journals it and gates its attempts like any
 // other; the owner turns its verdicts into decisions or explicit uncertainty.
 //
-// Jev is the only implementation. Its questions name the data by the fields
-// of Jev's request (`task`, `context.<field>`, `row`), and the owner still
-// sizes its requests, concurrency and output for Jev; a second
-// implementation would take those over when it exists.
+// Jev answers when JEV_KEY is set, else the text model is asked Jev's
+// request (typesafe.TextModel). Questions name the data by the fields of
+// Jev's request (`task`, `context.<field>`, `row`), and the owner sizes its
+// requests, concurrency and output for Jev.
 type Categorizer interface {
 	Provider
 	// Prompt is the exact request asking these questions, by key, over one

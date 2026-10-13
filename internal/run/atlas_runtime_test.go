@@ -21,11 +21,10 @@ import (
 // The closed decisions have no model but Jev: a model run without JEV_KEY,
 // or without any categorizer, stops before any artifact, corpus or model
 // call instead of degrading.
-func TestAModelRunWithoutJevKeyStopsBeforeAnalysis(t *testing.T) {
+func TestAModelRunWithoutCategorizerStopsBeforeAnalysis(t *testing.T) {
 	t.Setenv("JEV_KEY", "")
 	repositoryRoot := t.TempDir()
 	for want, factory := range map[string]func() (llm.Categorizer, error){
-		"JEV_KEY is required":                         newJevCategorizer,
 		"no categorizer answers the closed decisions": nil,
 	} {
 		debugDir := filepath.Join(t.TempDir(), "runs")

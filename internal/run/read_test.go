@@ -3,7 +3,6 @@ package run
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,20 +20,6 @@ func noClosedQuestions() (llm.Categorizer, error) { return &typesafetest.Categor
 
 // read makes model calls, so it needs JEV_KEY as it needs the model key,
 // and says so before it writes anything.
-func TestReadCommandRequiresJevKey(t *testing.T) {
-	t.Setenv("JEV_KEY", "")
-	input := readCommandInputFixture(t)
-	output := filepath.Join(t.TempDir(), "reading")
-	provider := func() (llm.Provider, error) { return &terminologyRuntimeProvider{}, nil }
-	args := []string{input, "--through", "files", "--output", output, "--debug-dir", t.TempDir()}
-	if err := runReadWithProvider(t.Context(), args, io.Discard, provider, newJevCategorizer); err == nil || !strings.Contains(err.Error(), "JEV_KEY is required") {
-		t.Fatalf("a reading without JEV_KEY: %v", err)
-	}
-	if _, err := os.Stat(output); !os.IsNotExist(err) {
-		t.Fatalf("a reading without JEV_KEY created its output: %v", err)
-	}
-}
-
 func readCommandInputFixture(t *testing.T) string {
 	t.Helper()
 	source := t.TempDir()
