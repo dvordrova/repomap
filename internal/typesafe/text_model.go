@@ -1,8 +1,6 @@
 package typesafe
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -43,7 +41,7 @@ var _ llm.Categorizer = (*TextModel)(nil)
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{
-		"categorizer": json.RawMessage(`"text_model.lines.v2"`),
+		"categorizer": json.RawMessage(`"text_model.lines.v3"`),
 		"provider":    m.Provider.State(),
 	})
 	return state
@@ -88,11 +86,6 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 			}
 		}
 		asked = append(asked, one)
-	}
-	if len(asked) == 1 {
-		text.WriteString("\nAnswer with one line: `1. <answer>`.\n")
-	} else {
-		fmt.Fprintf(&text, "\nAnswer with %d lines, `1. <answer>` through `%d. <answer>`.\n", len(asked), len(asked))
 	}
 	m.asked.Store(text.String(), asked)
 	return llm.Prompt{System: textModelSystem, User: text.String(), NoResponseAdjunct: true}, nil
@@ -162,47 +155,73 @@ func (m *TextModel) Verdicts(response []byte) (map[string]llm.Verdict, error) {
 	return m.reader.Verdicts(response)
 }
 
-// answersFromLines reads "N. answer" lines into Jev's answers object. A line
-// for no asked number is ignored; a question without a line stays unanswered.
+// answersFromLines reads the model's lines softly into Jev's answers object:
+// a numbered line answers its number, an unnumbered or out-of-range one the
+// next question in order; bullets, quotes and a trailing dot are dropped,
+// and an option named inside a longer answer is that option. A question
+// without a readable line stays unanswered for its owner to refuse.
 func answersFromLines(asked []askedQuestion, response []byte) ([]byte, error) {
 	answers := map[string]any{}
-	scanner := bufio.NewScanner(bytes.NewReader(response))
-	scanner.Buffer(make([]byte, 0, 64*1024), len(response)+1)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	next := 0
+	for _, line := range strings.Split(string(response), "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "-*•>#"))
+		if line == "" {
+			continue
+		}
 		digits := 0
 		for digits < len(line) && line[digits] >= '0' && line[digits] <= '9' {
 			digits++
 		}
-		if digits == 0 {
+		at := next
+		if digits > 0 && digits < len(line) && strings.ContainsRune(".:)", rune(line[digits])) {
+			if n, _ := strconv.Atoi(line[:digits]); n >= 1 && n <= len(asked) {
+				at = n - 1
+			}
+			line = line[digits+1:]
+		}
+		if at >= len(asked) {
 			continue
 		}
-		n, _ := strconv.Atoi(line[:digits])
-		if n < 1 || n > len(asked) {
-			continue
-		}
-		answer := strings.Trim(strings.TrimSpace(strings.TrimLeft(line[digits:], ".:)")), "`\"'*")
-		question := asked[n-1]
+		next = at + 1
+		answer := strings.TrimRight(strings.Trim(strings.TrimSpace(line), "`\"'*"), ".")
+		question := asked[at]
 		if len(question.options) == 0 {
-			switch strings.ToLower(answer) {
-			case "yes":
+			switch word := strings.ToLower(answer); {
+			case strings.HasPrefix(word, "yes"):
 				answers[question.key] = map[string]any{"type": "noul", "noul": 1}
-			case "no":
+			case strings.HasPrefix(word, "no"):
 				answers[question.key] = map[string]any{"type": "noul", "noul": 0}
 			}
 			continue
 		}
+		answer = matchOption(question.options, answer)
 		probabilities := make(map[string]float64, len(question.options))
 		for _, option := range question.options {
 			probabilities[option] = 0
-			if strings.EqualFold(option, answer) {
-				answer, probabilities[option] = option, 1
+			if option == answer {
+				probabilities[option] = 1
 			}
 		}
 		answers[question.key] = map[string]any{"type": "choice", "choice": answer, "probabilities": probabilities}
 	}
-	if len(answers) == 0 {
-		return nil, errors.New("typesafe: text model wrote no numbered answers")
-	}
 	return json.Marshal(map[string]any{"answers": answers})
+}
+
+// matchOption is the option the answer names: the same text in any case,
+// else the longest option the answer contains; else the answer as written.
+func matchOption(options []string, answer string) string {
+	folded := strings.ToLower(answer)
+	best := ""
+	for _, option := range options {
+		if strings.EqualFold(option, answer) {
+			return option
+		}
+		if option != "" && strings.Contains(folded, strings.ToLower(option)) && len(option) > len(best) {
+			best = option
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return answer
 }
