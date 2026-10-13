@@ -43,7 +43,7 @@ var _ llm.Categorizer = (*TextModel)(nil)
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{
-		"categorizer": json.RawMessage(`"text_model.lines.v1"`),
+		"categorizer": json.RawMessage(`"text_model.lines.v2"`),
 		"provider":    m.Provider.State(),
 	})
 	return state
@@ -88,6 +88,11 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 			}
 		}
 		asked = append(asked, one)
+	}
+	if len(asked) == 1 {
+		text.WriteString("\nAnswer with one line: `1. <answer>`.\n")
+	} else {
+		fmt.Fprintf(&text, "\nAnswer with %d lines, `1. <answer>` through `%d. <answer>`.\n", len(asked), len(asked))
 	}
 	m.asked.Store(text.String(), asked)
 	return llm.Prompt{System: textModelSystem, User: text.String(), NoResponseAdjunct: true}, nil
@@ -145,8 +150,12 @@ func (m *TextModel) Complete(ctx context.Context, prepared llm.Prepared) (llm.Co
 	if err != nil {
 		return completion, err
 	}
-	completion.Response, err = answersFromLines(asked.([]askedQuestion), completion.Response)
-	return completion, err
+	answers, err := answersFromLines(asked.([]askedQuestion), completion.Response)
+	if err != nil {
+		return completion, err
+	}
+	completion.Response = answers
+	return completion, nil
 }
 
 func (m *TextModel) Verdicts(response []byte) (map[string]llm.Verdict, error) {
