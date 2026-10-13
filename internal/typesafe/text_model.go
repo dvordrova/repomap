@@ -25,7 +25,10 @@ var textModelSystem string
 // so the executor, the cache and Verdicts read it as Jev's.
 type TextModel struct {
 	Provider llm.Provider
-	reader   Client
+	// Controller is the gate the run's text-model stages use: the closed
+	// questions go to the same account, so one 429 cools down both.
+	Controller *llm.BatchController
+	reader     Client
 	// asked keeps each prompt's questions by its text, and each prepared
 	// request's by its bytes, so Complete knows which line answers which.
 	asked    sync.Map // prompt text → []askedQuestion
@@ -37,7 +40,13 @@ type askedQuestion struct {
 	options []string // none for yes/no
 }
 
-var _ llm.Categorizer = (*TextModel)(nil)
+var (
+	_ llm.Categorizer            = (*TextModel)(nil)
+	_ llm.AttemptControllerOwner = (*TextModel)(nil)
+)
+
+// AttemptController is the run's text-model gate, or nil.
+func (m *TextModel) AttemptController() *llm.BatchController { return m.Controller }
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{

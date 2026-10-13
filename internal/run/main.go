@@ -34,6 +34,7 @@ import (
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 	"github.com/dvordrova/repomap/internal/terminology"
+	"github.com/dvordrova/repomap/internal/typesafe"
 )
 
 // Main is the repomap command: everything after the process's own name is
@@ -457,6 +458,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if !*noModel && deps.preselectedTarget == nil && !deps.siblingTargetRun {
 		if categorizer, err = newRunCategorizer(deps.newCategorizer, humanOutput); err != nil {
 			return err
+		}
+		if model, ok := categorizer.(*typesafe.TextModel); ok && model.Controller == nil {
+			model.Controller = deps.llmBatchController
 		}
 	}
 	// Target selection is the first model cube and runs before the per-run

@@ -21,6 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/terminology"
+	"github.com/dvordrova/repomap/internal/typesafe"
 )
 
 func runRead(args []string, stdout io.Writer) error {
@@ -134,6 +135,10 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 	if err != nil {
 		return err
 	}
+	controller := &llm.BatchController{}
+	if model, ok := categorizer.(*typesafe.TextModel); ok && model.Controller == nil {
+		model.Controller = controller
+	}
 	var termCollector *terminology.Collector
 	if collectTerms {
 		termCollector = terminology.NewCollector(readingTerminologyPaths(opts.Graph))
@@ -165,7 +170,7 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 	}
 	defer writer.Close()
 	opts.OwnerRunDir, opts.Provider, opts.Categorizer = absolute, provider, categorizer
-	opts.Executor = llm.Executor{RootDir: *cacheRoot, Enabled: !*noCache, BatchConcurrency: llm.DefaultBatchConcurrency, BatchController: &llm.BatchController{}, Observer: timed(output, debugdump.NewSemanticObserver(writer))}
+	opts.Executor = llm.Executor{RootDir: *cacheRoot, Enabled: !*noCache, BatchConcurrency: llm.DefaultBatchConcurrency, BatchController: controller, Observer: timed(output, debugdump.NewSemanticObserver(writer))}
 	opts.Stage, opts.State = output.Stage, output.State
 	started := time.Now()
 	result, err := reading.Read(ctx, opts)
