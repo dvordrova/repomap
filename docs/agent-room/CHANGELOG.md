@@ -15917,3 +15917,15 @@ siblings with it (one scale, their tiles read as its do), each member found
 by its part and index. Saved rate-envelope-queue render: entered Envelope
 construction, panned, Queue contracts' tiles in sight.
 `npm test` 178/178; visual 20/21 (same pre-existing spec).
+
+The reading column (owner, 2026-10-14): a part is named by its name in ink
+after a small square of its lane's colour, a core part's holding its diamond,
+not a pill outlined in that colour; a callable written inline is named by the
+function it is written in ("RateEnvelopeQueue.Start", not "anonymous
+function in RateEnvelopeQueue.Start" or "… calling …"), the unused words
+removed from the vocabulary; and its plain click opens its code — it had no
+tile to read and answered only a Cmd-click, which also drew the keyboard's
+focus ring. Report tests green; `npm test` 178/178; visual 20/21 (same
+pre-existing spec). Airflow re-run with every change of the day:
+20261014-111808, exit 0, 24.6 min (two windows over the output-token limit
+recorded as refusals).

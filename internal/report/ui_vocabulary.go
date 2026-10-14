@@ -65,7 +65,6 @@ var russianUI = map[string]string{
 	"This report needs JavaScript: every answer is in this file's data, and its script reads it.": "Отчёту нужен JavaScript: все ответы — в данных этого файла, их читает его скрипт.",
 	"Dispatch site":                         "Место выбора",
 	"This run could not read these targets": "Эти цели этот запуск прочитать не смог",
-	"anonymous function in {0}":             "анонимная функция в {0}",
 	"Its calls":                             "Обращения",
 	"+ helpers":                             "+ вспомогательные",
 	"one of these":                          "одна из этих",
@@ -934,18 +933,6 @@ var russianUI = map[string]string{
 	"what only it of those named alike reads, at {0}": "то, что из одноимённых читает только оно, в {0}",
 
 	// Callables one function writes alike (31-reading-column.js rmInlineText).
-	"anonymous function in {0} for {1}":       "анонимная функция в {0} для {1}",
-	"anonymous function in {0} calling {1}":   "анонимная функция в {0}, вызывающая {1}",
-	"anonymous function in {0} reading {1}":   "анонимная функция в {0}, читающая {1}",
-	"one of two anonymous functions in {0}":   "одна из двух анонимных функций в {0}",
-	"one of three anonymous functions in {0}": "одна из трёх анонимных функций в {0}",
-	"one of four anonymous functions in {0}":  "одна из четырёх анонимных функций в {0}",
-	"one of five anonymous functions in {0}":  "одна из пяти анонимных функций в {0}",
-	"one of six anonymous functions in {0}":   "одна из шести анонимных функций в {0}",
-	"one of seven anonymous functions in {0}": "одна из семи анонимных функций в {0}",
-	"one of eight anonymous functions in {0}": "одна из восьми анонимных функций в {0}",
-	"one of nine anonymous functions in {0}":  "одна из девяти анонимных функций в {0}",
-	"one of many anonymous functions in {0}":  "одна из многих анонимных функций в {0}",
 
 	// "About this run" when no question was asked (page.html).
 	"Questions were not generated in this run.": "Вопросы в этом запуске не создавались.",

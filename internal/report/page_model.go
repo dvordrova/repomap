@@ -1764,38 +1764,14 @@ func pluralS(count int) string {
 	return "s"
 }
 
-// inlineMany are the UI messages naming one of several callables a function
-// writes alike, by how many they are.
-var inlineMany = map[int]string{2: "one of two anonymous functions in {0}", 3: "one of three anonymous functions in {0}", 4: "one of four anonymous functions in {0}",
-	5: "one of five anonymous functions in {0}", 6: "one of six anonymous functions in {0}", 7: "one of seven anonymous functions in {0}",
-	8: "one of eight anonymous functions in {0}", 9: "one of nine anonymous functions in {0}"}
-
-// inlineWords names a callable written inline in the page's language, from
-// GroupsIndex's fields (ObjectFacts.Inline): the callable it only wraps by
-// that name, else "anonymous function in {In}", "… in {In} for {For}",
-// "… in {In} calling {Calls}", "… in {In} reading {Reads}", or "one of
-// {Of} anonymous functions in {In}" ("one of many" past nine); ""
-// for a callable named by its own name. The page writes these words; its
-// script never reads a name back into parts (review, 2026-10-03: the
-// script's pattern had missed a holder with a space).
+// inlineWords names a callable written inline by the function it is written
+// in, from GroupsIndex's fields (ObjectFacts.Inline), or by the callable it
+// only wraps; "" for a callable named by its own name (owner, 2026-10-14:
+// "anonymous function in X calling Y" had read as noise; its line is its
+// source link). The script never reads a name back into parts.
 func (builder *pageBuilder) inlineWords(name groupindex.InlineName) string {
 	if name.Wraps != "" || name.In == "" {
 		return name.Wraps
 	}
-	key, params := "anonymous function in {0}", []any{name.In}
-	switch {
-	case name.For != "":
-		key, params = "anonymous function in {0} for {1}", []any{name.In, name.For}
-	case name.Calls != "":
-		key, params = "anonymous function in {0} calling {1}", []any{name.In, name.Calls}
-	case name.Reads != "":
-		key, params = "anonymous function in {0} reading {1}", []any{name.In, name.Reads}
-	case name.Of > 1:
-		key = cmp.Or(inlineMany[name.Of], "one of many anonymous functions in {0}")
-	}
-	words, err := uiText(builder.language, key, params...)
-	if err != nil {
-		return name.String()
-	}
-	return words
+	return name.In
 }

@@ -77,7 +77,7 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 	// with spaces is no sentence: the card had split the call's one label
 	// at its spaces and lost casdoor's LDAP call (review, 2026-10-03).
 	for connection, want := range map[int][3]string{0: {"initServer", "passes callback", "acceptHandler"}, 1: {"anetTcpGenericConnect", "connects to", "anetAccept"},
-		2: {"redis.c", "includes", "adlist.h"}, 3: {"one of three anonymous functions in StartLdapServer", "calls", "initServer"}} {
+		2: {"redis.c", "includes", "adlist.h"}, 3: {"StartLdapServer", "calls", "initServer"}} {
 		call := builder.connectionCall(server.Connections[connection])
 		if call == nil {
 			t.Fatalf("connection %d has no call on its arrow", connection)

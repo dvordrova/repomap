@@ -269,6 +269,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The repository's root package is titled by its last segment. A program
   that is one part is that part: drawn where its card stood with the
   program's name, no frame and no inventory.
+  In the reading column a part is its name after a small square of its
+  lane's colour (a core part's with its diamond), and a callable written
+  inline is named by the function it is written in, its plain click opening
+  its code.
   An entered program's link with another program is a marker beside the box
   it reaches (left in, right out), as an input's or an outside system's; no
   arrow runs from the frame of the program entered.

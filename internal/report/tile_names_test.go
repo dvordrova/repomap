@@ -51,7 +51,7 @@ func TestAnInlineCallableIsReadByItsInlineName(t *testing.T) {
 	closure := groupindex.Subject{ID: "n42", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{
 		Name: "Run$1", Kind: programindex.ObjectFunction, Inline: groupindex.InlineName{In: "ReplicateCommand.Run"}, Anonymous: true,
 		Location: &programindex.Location{Path: "cmd/litestream/replicate.go", Line: 183, Column: 7}}}
-	if name, _ := builder.subjectDisplay(closure); name != "anonymous function in ReplicateCommand.Run" {
+	if name, _ := builder.subjectDisplay(closure); name != "ReplicateCommand.Run" {
 		t.Fatalf("the closure reads %q", name)
 	}
 	if !builder.inline(closure) {
@@ -71,10 +71,10 @@ func TestAnInlineCallableIsReadByItsInlineName(t *testing.T) {
 	}
 }
 
-// A callable written inline is named in words, in the page's language,
-// from GroupsIndex's fields, a holder with a space included (the browser's
-// pattern had missed one): the page writes the words and its script reads
-// no name back into parts (review, 2026-10-03). An entry saved under its
+// A callable written inline is named by the function it is written in,
+// from GroupsIndex's fields, a holder with a space included (owner,
+// 2026-10-14): the page writes the name and its script reads no name back
+// into parts (review, 2026-10-03). An entry saved under its
 // inline handler's name is said in the same words; a call made by it
 // carries them as its caller's name; and a row between two named
 // declarations is said by code, so neither the words nor the row reach
@@ -84,12 +84,11 @@ func TestAnInlineCallableIsNamedInWordsOfThePagesLanguage(t *testing.T) {
 		name   groupindex.InlineName
 		en, ru string
 	}{
-		{groupindex.InlineName{In: "Main loop"}, "anonymous function in Main loop", "анонимная функция в Main loop"},
-		{groupindex.InlineName{In: "Main loop", For: "doctor"}, "anonymous function in Main loop for doctor", "анонимная функция в Main loop для doctor"},
-		{groupindex.InlineName{In: "startPeer", Reads: "recvc"}, "anonymous function in startPeer reading recvc", "анонимная функция в startPeer, читающая recvc"},
-		{groupindex.InlineName{In: "Start", Calls: "ListenAndServe"}, "anonymous function in Start calling ListenAndServe", "анонимная функция в Start, вызывающая ListenAndServe"},
-		{groupindex.InlineName{In: "Main loop", Of: 3}, "one of three anonymous functions in Main loop", "одна из трёх анонимных функций в Main loop"},
-		{groupindex.InlineName{In: "Headscale.Serve", Of: 12}, "one of many anonymous functions in Headscale.Serve", ""},
+		{groupindex.InlineName{In: "Main loop"}, "Main loop", "Main loop"},
+		{groupindex.InlineName{In: "Main loop", For: "doctor"}, "Main loop", "Main loop"},
+		{groupindex.InlineName{In: "startPeer", Reads: "recvc"}, "startPeer", "startPeer"},
+		{groupindex.InlineName{In: "Start", Calls: "ListenAndServe"}, "Start", "Start"},
+		{groupindex.InlineName{In: "Main loop", Of: 3}, "Main loop", "Main loop"},
 		{groupindex.InlineName{Wraps: "listDatabases"}, "listDatabases", "listDatabases"},
 		{groupindex.InlineName{}, "", ""},
 	} {
@@ -111,7 +110,7 @@ func TestAnInlineCallableIsNamedInWordsOfThePagesLanguage(t *testing.T) {
 	closure := groupindex.Subject{ID: "n2", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "Main loop$1", Kind: programindex.ObjectFunction,
 		Inline: groupindex.InlineName{In: "Main loop", Of: 3}, Anonymous: true, Location: at(12)}}
 	callee := groupindex.Subject{ID: "n3", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "GetConfigString", Kind: programindex.ObjectFunction, Location: at(40)}}
-	for language, want := range map[DisplayLanguage]string{English: "one of three anonymous functions in Main loop", Russian: "одна из трёх анонимных функций в Main loop"} {
+	for language, want := range map[DisplayLanguage]string{English: "Main loop", Russian: "Main loop"} {
 		builder := &pageBuilder{language: language, subjects: map[string]subjectRef{subjectKey("t1", "n2"): {subject: closure}, subjectKey("t1", "n3"): {subject: callee}},
 			byProgram: map[string]*pageSection{"t1": {ID: "t1", Language: "go"}}, links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}}
 		entry := groupindex.Operation{ID: "o1", SubjectID: "n2", Kind: "continuous", Name: closure.Object.Inline.String(), Source: "fact"}

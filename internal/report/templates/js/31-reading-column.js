@@ -54,7 +54,9 @@ function rmDeclName(decl,text,go,title,bold,code){
   if(bold&&decl.bold)link.classList.add('map-reading-key');
   // A clipped name keeps its whole spelling on its hover, above the rest.
   if(title)link.title=link.title&&link.title!==title?link.title+'\n'+title:title;
-  if(go){
+  // A callable written inline has no tile of its own to read: a plain click
+  // opens its code (owner, 2026-10-14: it had answered only a Cmd-click).
+  if(go&&!decl.anonymous){
     link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();go(decl);
