@@ -114,7 +114,9 @@ function checkScene(name,model,geometry,scene,problems){
         if(sx*dx+sy*dy<=0||Math.abs(sx*dy)+Math.abs(sy*dx)>eps*Math.hypot(sx,sy)+eps)problems.push(['heads',`${where} ${edge.id}: head into ${id} does not point in`]);
       }
     }
-    // Every end in the level's frame.
+    // Every end in the level's frame; the whole map's arrows, drawn around
+    // an entered program, are checked at the whole map's level.
+    if(edge.container===''&&scene.level.length)continue;
     for(const p of [edge.points[0],edge.points.at(-1)])
       if(p.x<frame.x-px||p.y<frame.y-px||p.x>frame.x+frame.width+px||p.y>frame.y+frame.height+px)problems.push(['frame',`${where} ${edge.id}: end beyond the level's frame`]);
   }
@@ -220,7 +222,9 @@ function checkScene(name,model,geometry,scene,problems){
     const along=f=>{let d=f*total;for(const {a,b} of parts){const l=Math.hypot(b.x-a.x,b.y-a.y);if(d<=l){const t=l?d/l:0;return {x:a.x+t*(b.x-a.x),y:a.y+t*(b.y-a.y)};}d-=l;}return edge.points.at(-1);};
     for(const f of [0,.2,.35,.5,.65,.8,1]){
       const hit=hitTest(scene,along(f),zoom,()=>true);
-      if(hit?.type!=='edge'&&!(hit?.type==='port'&&edge.port))problems.push(['hits',`${where} ${edge.id}: ${f*100}% along it finds ${hit?.type||'nothing'} ${hit?.id||''}`]);
+      // A whole-map arrow into an entered program meets it at a port, where
+      // its way goes on inside.
+      if(hit?.type!=='edge'&&!(hit?.type==='port'&&(edge.port||edge.container===''&&scene.level.length&&(f===0||f===1))))problems.push(['hits',`${where} ${edge.id}: ${f*100}% along it finds ${hit?.type||'nothing'} ${hit?.id||''}`]);
     }
   }
 }

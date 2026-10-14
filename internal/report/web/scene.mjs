@@ -49,55 +49,62 @@ export function sceneAt(model,geometry,level=[],selection={}){
   // at the text its name reads at (levels.mjs programText).
   const unit=geometry.unit||1;
   let text=unit;
+  // The whole map's boxes and arrows, closed but `skip`: drawn at every
+  // level, the canvas a window on one map (owner, 2026-10-14: entering a
+  // program had emptied the canvas around it).
+  function drawRoots(open,skip=''){
+      for(const id of model.roots){
+        if(id===skip)continue;
+        const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
+        // The closed component names every existing area and loose part.
+        if(node.kind==='program')box(id,'program',rect,geometry.programText||unit,
+          {contents:programContents(model,node),inventoryHeight:geometry.programInventoryHeights.get(id)});
+        else if(node.kind==='inputs'){
+          // Closed: its kinds' marks in a row under its title, each read alone.
+          if(!open.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
+            rect:{x:rect.x+(16+i*22)*unit,y:rect.y+40*unit,width:18*unit,height:18*unit}}))});continue;}
+          // Open, its frame is its box: the map's arrows end on it.
+          const t=geometry.text.get(id);
+          box(id,'frame',rect,t,{title:node.name});
+          for(const group of node.children){
+            box(group,'kindgroup',rectOf(group),t,{inputKind:model.nodes.get(group).inputKind});
+            for(const input of model.nodes.get(group).children)box(input,'tile',rectOf(input),t,{inputKind:model.nodes.get(input).inputKind});
+          }
+        }
+        else if(node.kind==='outside'){
+          // An Outside frame's systems are drawn at the text their names read
+          // at, its title at the programs' beside it (levels.mjs systemText).
+          const named=geometry.text.get(id)||unit;
+          box(id,'frame',rect,named,{title:node.name,titleText:geometry.programText||unit});
+          for(const child of node.children){
+            const item=model.nodes.get(child);
+            if(item.kind==='system')box(child,'chip',rectOf(child),named,{systemKind:item.systemKind});
+            else if(item.kind==='bucket'&&open.has(child)){
+              const t=geometry.text.get(child);
+              box(child,'frame',frameOf(child),t,{bucket:true});
+              for(const system of item.children)box(system,'chip',rectOf(system),t,{systemKind:model.nodes.get(system).systemKind});
+            }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),named,{systemKinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
+          }
+        }
+        else if(node.kind==='note')box(id,'note',rect,unit);
+        else if(node.kind==='system')box(id,'chip',rect,unit,{systemKind:node.systemKind});
+        else if(node.kind==='input')box(id,'tile',rect,unit,{inputKind:node.inputKind});
+        else box(id,'card',rect,unit);
+      }
+      // A pair of programs joined only by code use is drawn while one of them
+      // is chosen, else only while one is pointed at (emphasisOf).
+      for(const route of geometry.routes.get('')||[]){
+        const edge=edgeOf(route,model,looked);
+        // A part read chooses its program here.
+        const chosen=selection.scope?model.rootOf(model.shown(selection.scope)):'';
+        if(route.uses&&!looked.has(route.from)&&!looked.has(route.to)&&chosen!==route.from&&chosen!==route.to)edge.rest=false;
+        edges.push(edge);
+      }
+  }
   if(!program){
     const open=new Set(level);
     text=inner?geometry.text.get(inner)||unit:unit;
-    for(const id of model.roots){
-      const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
-      // The closed component names every existing area and loose part.
-      if(node.kind==='program')box(id,'program',rect,geometry.programText||unit,
-        {contents:programContents(model,node),inventoryHeight:geometry.programInventoryHeights.get(id)});
-      else if(node.kind==='inputs'){
-        // Closed: its kinds' marks in a row under its title, each read alone.
-        if(!open.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
-          rect:{x:rect.x+(16+i*22)*unit,y:rect.y+40*unit,width:18*unit,height:18*unit}}))});continue;}
-        // Open, its frame is its box: the map's arrows end on it.
-        const t=geometry.text.get(id);
-        box(id,'frame',rect,t,{title:node.name});
-        for(const group of node.children){
-          box(group,'kindgroup',rectOf(group),t,{inputKind:model.nodes.get(group).inputKind});
-          for(const input of model.nodes.get(group).children)box(input,'tile',rectOf(input),t,{inputKind:model.nodes.get(input).inputKind});
-        }
-      }
-      else if(node.kind==='outside'){
-        // An Outside frame's systems are drawn at the text their names read
-        // at, its title at the programs' beside it (levels.mjs systemText).
-        const named=geometry.text.get(id)||unit;
-        box(id,'frame',rect,named,{title:node.name,titleText:geometry.programText||unit});
-        for(const child of node.children){
-          const item=model.nodes.get(child);
-          if(item.kind==='system')box(child,'chip',rectOf(child),named,{systemKind:item.systemKind});
-          else if(item.kind==='bucket'&&open.has(child)){
-            const t=geometry.text.get(child);
-            box(child,'frame',frameOf(child),t,{bucket:true});
-            for(const system of item.children)box(system,'chip',rectOf(system),t,{systemKind:model.nodes.get(system).systemKind});
-          }else if(item.kind==='bucket')box(child,'bucket',rectOf(child),named,{systemKinds:[...new Set(item.children.map(s=>model.nodes.get(s).systemKind))]});
-        }
-      }
-      else if(node.kind==='note')box(id,'note',rect,unit);
-      else if(node.kind==='system')box(id,'chip',rect,unit,{systemKind:node.systemKind});
-      else if(node.kind==='input')box(id,'tile',rect,unit,{inputKind:node.inputKind});
-      else box(id,'card',rect,unit);
-    }
-    // A pair of programs joined only by code use is drawn while one of them
-    // is chosen, else only while one is pointed at (emphasisOf).
-    for(const route of geometry.routes.get('')||[]){
-      const edge=edgeOf(route,model,looked);
-      // A part read chooses its program here.
-      const chosen=selection.scope?model.rootOf(model.shown(selection.scope)):'';
-      if(route.uses&&!looked.has(route.from)&&!looked.has(route.to)&&chosen!==route.from&&chosen!==route.to)edge.rest=false;
-      edges.push(edge);
-    }
+    drawRoots(open);
     return finish();
   }
   // Inside a program: its frame, its areas closed but the one entered, its
@@ -111,6 +118,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
   const open=new Set(level);
   const deepestArea=[...level].reverse().find(id=>model.nodes.get(id)?.kind==='area');
   text=geometry.text.get(deepestArea||program)||own;
+  drawRoots(open,program);
   box(program,'frame',frameOf(program),own,{program:true});
   function drawChildren(container){
     const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;

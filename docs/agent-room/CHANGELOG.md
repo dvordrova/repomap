@@ -15828,3 +15828,11 @@ narrowing to the room left, no shift to stay inside the canvas — a tip past
 the edge is cut there. The marker tip's per-frame `setShift` re-render is
 gone. An arrow's card is still placed once, at the pointer, when it opens.
 `npm test` 178/178; visual 23/24 (same pre-existing spec).
+
+Entering a program had emptied the canvas around it (owner: "хоба и ничего
+вокруг"): a program's level drew only its own frame. Every level now draws
+the whole map's boxes and arrows closed around what is entered, at their own
+places (`drawRoots`), the entered program open in place of its card; a
+whole-map arrow into it meets its border at its port. The scene invariants
+check whole-map arrows at the whole map's level, and accept a port at such an
+arrow's end. `npm test` 178/178; visual 23/24 (same pre-existing spec).
