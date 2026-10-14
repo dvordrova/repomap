@@ -20,7 +20,6 @@ import {callCard} from './call-card.mjs';
 import {BriefRows,FrameConnections} from './call-card-view.jsx';
 import {PartSymbols} from './part-symbols.jsx';
 import {createLook} from './look.mjs';
-import {placeCard} from './card-place.mjs';
 import './scene.css';
 
 const t=(...args)=>window.rmT?window.rmT(...args):args[0];
@@ -229,7 +228,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     resting=setTimeout(()=>host.classList.remove('scene-moving'),150);
   });
   let instance=null,initializing=true,overviewFit='rest';
-  const look=createLook();
+  // Hover answers at once (owner, 2026-10-14: the delays were felt).
+  const look=createLook({dwell:50});
   let lookTimer,handleRect=null;
   const pump=()=>{
     clearTimeout(lookTimer);
@@ -473,7 +473,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   let pointing=0;
   const pointSoon=target=>{
     clearTimeout(pointing);
-    pointing=setTimeout(()=>store.dispatch({type:'point',target}),90);
+    pointing=setTimeout(()=>store.dispatch({type:'point',target}),30);
   };
   const onCard=event=>!!event.target.closest?.('.flow-floating-card,.scene-program-inside,[data-input-group-kind]');
   // A press that moves the pointer or the camera is a drag: the click
@@ -713,15 +713,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       head=item.kind==='database'?t('Database'):item.kind==='request'?t('Request'):item.kind==='sdk'?t('SDK'):item.kind==='queue'?t('Queue'):item.kind==='started'?t('Runs a program'):t('Outside');
       names=item.systems.map(id=>({id,name:model.nodes.get(id)?.name||''}));
     }
-    // The tip stands on its marker's side (an input's left, else right) at
-    // its words' own size, its top at the marker's, moved and narrowed by
-    // nothing: the canvas is a window on the map, and a tip past its edge is
-    // cut there (owner, 2026-10-14: tips had changed side, width and height
-    // with the room left, rewrapping at every move). A long list stands in
+    // The tip stands right of its marker, its top at the marker's, at its
+    // words' own size, moved and narrowed by nothing: the canvas is a window
+    // on the map, and a tip past its edge is cut there (owner, 2026-10-14:
+    // tips had changed side, width and height with the room left, and an
+    // input's had stood across the canvas from it). A long list stands in
     // two columns.
     const shown=names,gap=6;
     const columns=shown.length>12?2:1;
-    const side=item.side==='in'?'left':'right';
     const top=item.top-item.px/2;
     const keep=()=>{look.enter(key);store.dispatch({type:'look',key});};
     return <div ref={ref} data-card={key} className={`scene-tip scene-mark-tip flow-floating-card nodrag nopan nowheel ${columns>1?'scene-tip-columns':''}`}
@@ -729,14 +728,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       onMouseLeave={event=>{if(event.currentTarget.contains(document.activeElement))return;look.leave(key,performance.now(),{x:event.clientX,y:event.clientY},ref.current?.getBoundingClientRect());pump();}}
       onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){look.leave(key,performance.now());pump();}}}
       onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()}
-      style={{top,...(side==='right'?{left:item.left+item.px/2+gap}:{right:size().width-(item.left-item.px/2-gap)})}}>
+      style={{top,left:item.left+item.px/2+gap}}>
       <b>{head}</b>{shown.map(row=><button type="button" className="flow-card-name" data-marker-member={row.id} key={row.id}
         onClick={event=>{event.stopPropagation();look.end();store.dispatch({type:'look',key:''});read(row.id,event);}}>{row.name}</button>)}</div>;
   }
   function ArrowCard({edgeKey,scene}){
     const [,id,way]=/^edge:(.*):(on|back)$/.exec(edgeKey)||[];
     const edge=scene.edges.find(edge=>edge.id===id);
-    const ref=useRef(null),[at,setAt]=useState(null);
+    const ref=useRef(null);
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const pinned=state.pinned.includes(edgeKey);
     const v=useSyncExternalStore(camera.subscribe,camera.get);
@@ -749,16 +748,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       go:(part,key)=>chooseMember(part,(model.nodes.get(part)?.item?.symbols||[]).findIndex(symbol=>symbolKey(symbol)===key)),
       input:id=>read(id),
     };
-    useLayoutEffect(()=>{
-      const el=ref.current;if(!el||!handleRect)return;
-      const box=host.getBoundingClientRect(),size=el.getBoundingClientRect();
-      const placed=placeCard({handle:handleRect,frame:null,canvas:box,size:{width:size.width,height:size.height}});
-      setAt({x:placed.x-box.left,y:placed.y-box.top});
-    },[edgeKey,pinned]);
     if(!edge||!card.total)return null;
+    // The end the card tells of is marked with a dot, and the card stands
+    // right of it, its top at the dot's: one place for every tip (owner,
+    // 2026-10-14: an arrow's card had opened wherever the pointer was).
+    const end=backward?edge.points[0]:edge.points.at(-1),dot={x:end.x*v.zoom+v.x,y:end.y*v.zoom+v.y};
+    const at={x:dot.x+12,y:dot.y-12};
     const other=edge.heads.start&&edge.heads.end;
     const swap=event=>{event.stopPropagation();const next=`edge:${id}:${backward?'on':'back'}`;store.dispatch({type:'unpin',key:edgeKey});look.enter(next);store.dispatch({type:'look',key:next});store.dispatch({type:'pin',key:next});};
-    return <div ref={ref} data-card={edgeKey} className="flow-calls-place flow-floating-card scene-card nopan" style={{left:at?.x||0,top:at?.y||0,visibility:at?'visible':'hidden'}}
+    return <><span className="scene-arrow-end" style={{left:dot.x,top:dot.y}}/><div ref={ref} data-card={edgeKey} className="flow-calls-place flow-floating-card scene-card nopan" style={{left:at.x,top:at.y}}
       onMouseEnter={()=>{look.enter(edgeKey);}} onMouseLeave={event=>{look.leave(edgeKey,performance.now());pump();}}
       onClick={event=>{event.stopPropagation();if(!pinned)store.dispatch({type:'pin',key:edgeKey});}}>
       <div className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`} style={{width:420,maxHeight:Math.max(160,Math.min(520,host.clientHeight-16))}}>
@@ -766,7 +764,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         <header className="flow-card-head"><div className="flow-card-title"><span>{nameOf(from)}</span><i>→</i><span>{nameOf(into)}</span></div>
           {other&&<p className="flow-card-count"><button type="button" onClick={swap}>{t('Calls the other way')}</button></p>}</header>
         <div className="flow-card-body"><BriefRows card={card} into={nameOf(into)} choose={choose}/></div>
-      </div></div>;
+      </div></div></>;
   }
 
   const nodeObjects=new Map(),edgeObjects=new Map();

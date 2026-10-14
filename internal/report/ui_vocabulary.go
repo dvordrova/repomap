@@ -175,7 +175,7 @@ var russianUI = map[string]string{
 	"Close all":                             "Свернуть все",
 	"calls":                                 "вызовы",
 	"possible calls":                        "возможные вызовы",
-	"returns or takes a type":               "возвращает или принимает тип",
+	"returns, takes or implements a type":   "возвращает, принимает или реализует тип",
 	"All":                                   "Все",
 	"{0} results":                           "Результатов: {0}",
 	"Zoom to see inside":                    "Приближайте, чтобы увидеть содержимое",

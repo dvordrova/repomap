@@ -1459,11 +1459,16 @@ post-layout edits are deleted.
   10.5px to leave, one pinch crossing one level boundary; a pan never
   changes it. Entered, a program draws nothing beyond itself; a part is
   entered at the zoom its declarations read at.
-- `overlay.mjs` keeps markers and ports at 22 screen pixels. Magnifiers grow
-  with their card text scale from 22 to at most 32 screen pixels, with a picture
-  filling the button minus 6 pixels. Closed program cards retain a 10px screen
-  corner radius so this inset keeps the button inside the painted rounded frame
-  at every camera zoom. The same world rectangle supplies drawing
+- `overlay.mjs` draws markers, ports and magnifiers in their box's world: 22
+  of the box's word pixels, so on screen they grow and shrink with their box
+  as its words do, and stand hidden below 12 screen pixels (owner,
+  2026-10-14: the canvas is a window on the map; a marker of one screen size
+  had shrunk against its box as the camera came close, a magnifier growing
+  to a cap had stood past its card's corner). A magnifier stands inside its
+  card's top right corner, its inset in the same units. A marker whose
+  declaration's row its type's card cuts stands on that type's "… +N" row,
+  never dropped. A marker's tip, and an arrow's card, stand right of their
+  marker or of a yellow dot on the arrow's head, their top at its top. The same world rectangle supplies drawing
   and pointer hit testing on every camera tick. A magnifier under the pointer shows the `zoom-in` cursor
   on the actual canvas pane through the same hit test that owns its click;
   pointer-transparent overlay buttons do not create another mouse dispatch.

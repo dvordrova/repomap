@@ -286,7 +286,7 @@
 .flow-symbol-type>.flow-symbol-head{background:#e8edf4;border-bottom:1px solid #c5cedb}
 .flow-part-symbols .flow-symbol-row{height:24px;font:400 12.5px/24px ui-monospace,SFMono-Regular,Menlo,monospace;padding-left:20px!important}
 .flow-part-symbols .flow-symbol-more{position:absolute;padding:0 10px;font:500 13px/26px system-ui;color:#536176;border:1px dashed #9aa7b8;border-radius:6px;background:#fff}
-.flow-part-symbols svg path.flow-symbol-returns,.flow-part-symbols svg path.flow-symbol-takes{stroke-dasharray:1.5 3;stroke:var(--type-arrow)}
+.flow-part-symbols svg path.flow-symbol-returns,.flow-part-symbols svg path.flow-symbol-takes,.flow-part-symbols svg path.flow-symbol-implements{stroke-dasharray:1.5 3;stroke:var(--type-arrow)}
 .flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:29px;height:20px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
 .flow-part-zoom:hover{color:#243044}
 .flow-part:has(.flow-part-zoom)>strong{padding-right:34px}

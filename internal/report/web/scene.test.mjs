@@ -182,7 +182,7 @@ function checkScene(name,model,geometry,scene,problems){
   for(let i=0;i<50;i++){
     const z=zoom*Math.pow(2,(i/49)*4-1.5);
     for(const item of project(scene,{x:0,y:0,zoom:z})){
-      if(item.px<20||item.px>(item.type==='zoom'?32:28))problems.push(['markers',`${where}: ${item.id} drawn ${item.px}px`]);
+      if(item.px<mark.least)problems.push(['markers',`${where}: ${item.id} drawn ${item.px}px`]);
       if(item.type!=='marker'||item.row&&item.index>0)continue;
       const r=item.rect,half=item.size/2,edge=item.side==='in'?r.x:r.x+r.width;
       if(Math.abs(item.x+(item.side==='in'?half:-half)-edge)>1e-6*Math.max(1,r.width))problems.push(['markers',`${where}: ${item.id} does not touch its box`]);
@@ -436,17 +436,18 @@ test('nested areas lay out bottom-up and open through the entire saved chain',as
   assert.deepEqual(open.nodes.find(n=>n.id==='insert').rect,back.nodes.find(n=>n.id==='insert').rect,'Back changes level, not geometry');
 });
 
-// The same overlay geometry governs the drawn icon and pointer hit area.
-test('magnifiers grow with their card up to a readable cap and remain clickable',()=>{
+// The same overlay geometry governs the drawn icon and pointer hit area. A
+// magnifier is drawn in its card's world: its size on screen follows the
+// zoom as its card's does, inside the card's corner (owner, 2026-10-14).
+test('magnifiers grow with their card and remain clickable inside it',()=>{
   const node={id:'area',display:'area',enter:true,band:3,text:1,rect:{x:0,y:0,width:260,height:240}};
   const scene={nodes:[node],markers:[],ports:[],edges:[],text:1};
-  let previous=0;
   for(const zoom of [.8,1,1.25,1.6,2,4]){
     const item=project(scene,{x:0,y:0,zoom})[0];
-    assert.ok(item.px>=previous&&item.px>=22&&item.px<=32);
+    assert.ok(Math.abs(item.px-mark.size*zoom)<1e-9,'as large as a word of its card');
+    assert.ok(item.x+item.size/2<=node.rect.width&&item.y-item.size/2>=0,'inside its card');
     assert.equal(hitTest(scene,{x:item.x,y:item.y},zoom)?.type,'zoom');
     assert.equal(hitTest(scene,{x:item.x+item.size*.45,y:item.y+item.size*.45},zoom)?.type,'zoom');
-    previous=item.px;
   }
 });
 

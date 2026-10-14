@@ -66,8 +66,8 @@ function rmKey(nodes,edges,category){
   // draw it.
   var kindsShown=[];nodes.forEach(function(n){var kind=n.dataset.activation;if(kind&&kindsShown.indexOf(kind)<0&&globalThis.rmKindMark?.(kind))kindsShown.push(kind);});
   kindsShown.forEach(function(kind){var label=rmEl('span','flow-key-kind');label.append(globalThis.rmKindMark(kind),document.createTextNode(rmT((globalThis.rmKindNames||{})[kind]||kind)));key.appendChild(label);});
-  var types=nodes.some(function(n){try{return (rmPage.data(n,'symbolCalls')||[]).some(function(link){return link[2]==='returns'||link[2]==='takes';});}catch(_){return false;}});
-  [[false,'calls',edges.some(function(e){return !e.possible;})],[true,'possible calls',edges.some(function(e){return e.possible;})],['types','returns or takes a type',types]].filter(function(item){return item[2];}).forEach(function(item){
+  var types=nodes.some(function(n){try{return (rmPage.data(n,'symbolCalls')||[]).some(function(link){return link[2]==='returns'||link[2]==='takes'||link[2]==='implements';});}catch(_){return false;}});
+  [[false,'calls',edges.some(function(e){return !e.possible;})],[true,'possible calls',edges.some(function(e){return e.possible;})],['types','returns, takes or implements a type',types]].filter(function(item){return item[2];}).forEach(function(item){
     var label=rmEl('span','flow-key-stroke'+(item[0]==='types'?' flow-key-types':item[0]?' flow-key-possible':'')),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.setAttribute('viewBox','0 0 30 10');svg.setAttribute('width','30');svg.setAttribute('height','10');svg.setAttribute('aria-hidden','true');
     svg.innerHTML='<path d="M1 5H24"/><path d="M23 1.5 29 5 23 8.5z"/>';

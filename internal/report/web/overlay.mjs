@@ -1,17 +1,21 @@
-// The scene's overlay (PLAN S4): markers and ports keep one screen size at
-// every zoom, so where they stand is a function of the camera. `overlayAt`
-// gives world places at a zoom (hitTest uses it too); `project` the screen
-// places at a camera, run on every camera tick.
+// The scene's overlay (PLAN S4): markers, ports and magnifiers. Each is
+// drawn in its box's world, as large beside it as a word of its box (owner,
+// 2026-10-14: the canvas is a window on the map; a marker of one screen size
+// had shrunk against its box as the camera came close, and a magnifier
+// growing to a cap had stood past its card's corner). `overlayAt` gives
+// world places at a zoom (hitTest uses it too); `project` the screen places
+// at a camera, run on every camera tick.
 
-// A marker's and a port's screen size, the room between markers and from
-// the box's top, and the title size below which markers stay hidden.
-export const mark={size:22,gap:3,inset:6,readable:11};
+// A marker's, a port's and a magnifier's size in its box's word pixels, the
+// room between markers and from the box's top, and the screen size below
+// which one is not shown.
+export const mark={size:22,gap:3,inset:6,least:12};
 
 // Where each marker and port stands at `zoom`: a marker touches its box's
 // left (inputs) or right (outside) edge from outside, the stack from the
-// top under its title, each `mark.size` screen pixels; it shows once the
-// box's title reads and the stack fits beside the box. A port is centred on
-// its point of the program's border. World units.
+// top under its title; it shows once it is `mark.least` screen pixels and
+// the stack fits beside the box. A port is centred on its point of the
+// program's border. World units.
 // The last zoom's places are kept per scene: the pointer's hit test asks
 // at every move, at the camera's one zoom. The list is not to be changed.
 const placed=new WeakMap();
@@ -23,8 +27,6 @@ export function overlayAt(scene,zoom){
   return items;
 }
 function placeAt(scene,zoom){
-  const size=mark.size/zoom,gap=mark.gap/zoom,inset=mark.inset/zoom,pad=6/zoom;
-  const readable=marker=>(marker.text||scene.text)*17*zoom>=mark.readable;
   const items=[];
   // Each side's stack from the top, a marker stepping down past every
   // arrow running through the column it stands in (an arrow meeting that
@@ -33,11 +35,12 @@ function placeAt(scene,zoom){
   const runs=scene.edges.filter(edge=>edge.rest!==false).flatMap(edge=>edge.points.slice(1).map((b,i)=>[edge.points[i],b]));
   const stacks=new Map(),columns=new Map();
   for(const marker of scene.markers){
+    const t=marker.text||scene.text||1,size=mark.size*t,gap=mark.gap*t,inset=mark.inset*t,pad=6*t,big=size*zoom>=mark.least;
     const r=marker.rect,key=`${marker.box}:${marker.side}`;
     // A declaration's markers stand in a row beside its tile, outward.
     if(marker.row){
       const out=marker.side==='in'?-1:1,edge=marker.side==='in'?r.x:r.x+r.width;
-      items.push({...marker,type:'marker',x:edge+out*(size/2+marker.index*(size+gap)),y:r.y+r.height/2,size,shown:readable(marker)});
+      items.push({...marker,type:'marker',x:edge+out*(size/2+marker.index*(size+gap)),y:r.y+r.height/2,size,shown:big});
       continue;
     }
     if(!columns.has(key))columns.set(key,crossings(runs,marker.side==='in'?r.x-size:r.x+r.width,size));
@@ -53,20 +56,23 @@ function placeAt(scene,zoom){
     // A box's marker stands whenever its stack fits beside the box, whether
     // or not its title reads (owner, 2026-10-14: inputs and outside calls
     // had come and gone with the zoom).
-    const shown=y+size/2+inset<=r.y+r.height;
+    const shown=big&&y+size/2+inset<=r.y+r.height;
     const x=marker.side==='in'?r.x-size/2:r.x+r.width+size/2;
     items.push({...marker,type:marker.port?'port':'marker',x,y,size,shown});
   }
-  for(const port of scene.ports)items.push({...port,type:'port',x:port.point.x,y:port.point.y,size,shown:true});
+  for(const port of scene.ports){
+    const size=mark.size*(scene.text||1);
+    items.push({...port,type:'port',x:port.point.x,y:port.point.y,size,shown:size*zoom>=mark.least});
+  }
   // A box that can be entered has its magnifier in its top right corner,
-  // once its title reads: the only thing on the canvas that zooms. A closed
+  // inside its border: the only thing on the canvas that zooms. A closed
   // bucket's stands in its bottom right corner, beside its systems' marks,
   // its name's lines the bucket's whole width.
   for(const node of scene.nodes){
     if(!node.enter||node.display==='frame'||node.display==='deep'||node.band!==3)continue;
-    const r=node.rect,low=node.display==='bucket',px=Math.max(mark.size,Math.min(32,mark.size*node.text*zoom)),size=px/zoom;
+    const r=node.rect,low=node.display==='bucket',t=node.text||scene.text||1,size=mark.size*t,inset=mark.inset*t;
     items.push({id:`zoom:${node.id}`,type:'zoom',box:node.id,x:r.x+r.width-inset-size/2,y:low?r.y+r.height-inset-size/2:r.y+inset+size/2,size,
-      shown:readable(node)&&r.width*zoom>=4*px&&r.height*zoom>=2*px});
+      shown:size*zoom>=mark.least&&r.width>=4*size&&r.height>=2*size});
   }
   return items;
 }

@@ -198,14 +198,24 @@ export function sceneAt(model,geometry,level=[],selection={}){
     });
     for(const block of grid.blocks)if(block.more>0)
       members.push({part:id,index:block.head,rect:rectOfRow({column:block.column,y:block.y+symbolRow.header+block.rows.length*symbolRow.row,height:symbolRow.row}),text:tileText,name:`+${block.more}`});
-    const own=model.memberMarkersOf(id);
+    const own=model.memberMarkersOf(id),symbols=model.nodes.get(id).item?.symbols||[];
+    const rest={in:[...own.rest.in],out:[...own.rest.out]};
     for(const [index,sides] of own.members){
-      const member=members.find(m=>m.part===id&&m.index===index);if(!member)continue;
-      for(const side of ['in','out'])sides[side].forEach((marker,i)=>markers.push({
-        id:`${id}#${index}:${side}:${marker.kind}`,box:`${id}#${index}`,part:id,member:index,side,index:i,count:sides[side].length,rect:member.rect,row:true,text:tileText,...marker}));
+      // A member its type's card cuts stands in its type's "… +N" row: its
+      // marker stands there, never dropped (owner, 2026-10-14: the worker's
+      // Background work had vanished once RateEnvelopeQueue's rows were cut).
+      const owner=(symbols[index]?.owner||0)-1;
+      const member=members.find(m=>m.part===id&&m.index===index)||(owner>=0?members.findLast(m=>m.part===id&&m.index===owner):null);
+      if(!member){for(const side of ['in','out'])rest[side].push(...sides[side]);continue;}
+      for(const side of ['in','out'])sides[side].forEach(marker=>{
+        const key=`${id}#${member.index}:${side}:${marker.kind}`,known=markers.find(m=>m.id===key);
+        if(known){for(const field of ['members','systems','handled'])known[field]=[...new Set([...(known[field]||[]),...(marker[field]||[])])];return;}
+        const row=markers.filter(m=>m.box===`${id}#${member.index}`&&m.side===side).length;
+        markers.push({...marker,id:key,box:`${id}#${member.index}`,part:id,member:member.index,side,index:row,row:true,rect:member.rect,text:tileText});
+      });
     }
-    for(const side of ['in','out'])own.rest[side].forEach((marker,i)=>markers.push({
-      id:`${id}:${side}:${marker.kind}`,box:id,side,index:i,count:own.rest[side].length,rect:r,...marker}));
+    for(const side of ['in','out'])rest[side].forEach((marker,i)=>markers.push({
+      id:`${id}:${side}:${marker.kind}${rest[side].findIndex(m=>m.kind===marker.kind)<i?`:${i}`:''}`,box:id,side,index:i,count:rest[side].length,rect:r,...marker}));
   }
   function markersFor(id,boxText){
     const rect=rectOf(id),own=model.markersOf(id);

@@ -2307,7 +2307,9 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		return "", ""
 	}
 	// How the part's own declarations hang together, each pair and kind once:
-	// a call, a type a callable returns, a type it takes.
+	// a call, a type a callable returns, a type it takes, an interface a
+	// type implements (owner, 2026-10-14: Retry decisions' DefaultDecision
+	// implemented Decision in the column and nowhere on its card).
 	type link struct {
 		from, to int
 		kind     string
@@ -2326,6 +2328,9 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		for _, edge := range index.StructuralEdges {
 			if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationCalls {
 				add(edge.FromSubjectID, edge.ToSubjectID, "calls")
+			}
+			if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationImplements {
+				add(edge.FromSubjectID, edge.ToSubjectID, "implements")
 			}
 		}
 	}

@@ -237,9 +237,9 @@ const category=n=>n.dataset.activation?'input':'part';
 const labels=key=>key.children.map(c=>c.textContent);
 const part=calls=>({dataset:{lane:'core',symbolCalls:JSON.stringify(calls)}});
 const key=rmKey([part([[0,1,'calls'],[2,0,'returns']])],[{possible:false}],category);
-assert.deepEqual(labels(key),['Core','calls','returns or takes a type']);
+assert.deepEqual(labels(key),['Core','calls','returns, takes or implements a type']);
 assert.ok(key.children.at(-1).className.includes('flow-key-types'),'drawn as the type link');
-assert.deepEqual(labels(rmKey([part([[3,0,'takes']])],[],category)),['Core','returns or takes a type'],'a type a function takes is keyed too');
+assert.deepEqual(labels(rmKey([part([[3,0,'takes']])],[],category)),['Core','returns, takes or implements a type'],'a type a function takes is keyed too');
 assert.deepEqual(labels(rmKey([part([[0,1,'calls']]),{dataset:{lane:'core'}}],[{possible:false}],category)),['Core','calls'],'a map whose tiles link no type keys none');
 `)
 }

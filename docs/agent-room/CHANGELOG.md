@@ -16025,3 +16025,21 @@ frame of kinds), then the open set as the default after the owner tries it.
 - Checks: `npm test` 179/179, `go test ./internal/report/` ok,
   `make ui-visual-test` 20 passed + the pre-existing layout-worker failure;
   rate-envelope-queue screenshots of Retry decisions and Queue construction.
+
+## 2026-10-14 — markers in the map's world; one tip place; implements on tiles
+
+- Markers, ports and magnifiers are drawn in their box's world (22 of its
+  word pixels), hidden below 12 screen pixels; the magnifier sits inside its
+  card's corner. Owner: the Background work marker "resized" against its box
+  and the magnifier stuck out of the card.
+- A row marker whose declaration its type's card cuts moved onto the type's
+  "… +N" row (it had been dropped: RateEnvelopeQueue.worker's Background work
+  vanished once batch one drew larger tiles).
+- A marker's tip stands right of its marker; an arrow's card stands right of
+  a yellow dot on the arrow's head (the end it tells of). Hover dwell 120→50 ms,
+  emphasis 90→30 ms.
+- Tiles draw `implements` links (from the index's structural edges) as type
+  links; the legend reads "returns, takes or implements a type".
+- Checks: `npm test` 179/179, `go test`/`go vet ./internal/report/` ok,
+  `make ui-visual-test` 20 passed + the pre-existing failure; screenshots of
+  the marker tip, the arrow dot and Retry decisions' implements links.
