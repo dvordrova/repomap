@@ -15939,3 +15939,14 @@ listed rest and the rows its card cuts) choose the type, read whole in the
 column; and the focus ring stands only after Tab, not after a pointer's
 press followed by Shift or Cmd. Report tests green; `npm test` 178/178;
 visual 20/21 (same pre-existing spec).
+
+The skeptic of the display consilium traced Airflow's "wall" of faded input
+tiles to this morning's 53258fc9: the fill rule meant for programs and
+areas applied to every container, so the Inputs collection was entered
+whole at a scale its names cannot read. Collections are entered where their
+names read again. A tile's and a chip's screen-constant border now takes its
+width from their padding, as a card's does: "Get /api/ping" had broken in
+two at the zooms where the border grew (one line at every zoom on the
+saved service-pkg render). A box's big name is gone (10.5 down to 10 px)
+before its title comes in (10.5 to 11 px): they had stood doubled.
+`npm test` 178/178; visual 20/21 (same pre-existing spec).

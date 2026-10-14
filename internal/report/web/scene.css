@@ -148,6 +148,11 @@
 /* The border takes its room from a card's padding, never from its words
    (levels.mjs sizes a card by its words and a 14px padding). */
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}
+/* A tile's and a chip's border, as a card's, takes its width from their
+   padding, so their words keep their room at every zoom (owner, 2026-10-14:
+   "Get /api/ping" had broken in two where the border grew). */
+.scene-root .scene-scaled.scene-tile{padding:0 max(0px,calc(10px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}
+.scene-root .scene-scaled.scene-chip{padding:0 max(0px,calc(12px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))))}
 /* Closed programs and areas list every saved direct child by name. */
 .scene-program-card>.scene-words{background:transparent;width:100%}
 /* Role badges straddle the border outside the clipped words/inventory. */

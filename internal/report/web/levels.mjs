@@ -571,14 +571,16 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const text=new Map();
   for(const [id,inside] of local)text.set(id,(inside.text||1)*(scales.get(id)?.scale||1));
   const enterZoom=new Map(),exitZoom=new Map(),readZoom=new Map();
-  // A level is entered where its titles read or, sooner, once its card
-  // nearly fills the canvas (owner,
-  // 2026-10-14: Airflow's core filled the screen as a list of its areas'
-  // names, its boxes still closed): a level too large to read whole is
-  // shown whole first, its titles read by zooming on.
+  // A level is entered where its titles read or, a program's or an area's,
+  // sooner, once its card nearly fills the canvas (owner, 2026-10-14:
+  // Airflow's core filled the screen as a list of its areas' names, its
+  // boxes still closed): a level too large to read whole is shown whole
+  // first, its titles read by zooming on. A collection (Inputs, a kind, a
+  // bucket) is entered where its names read: entered sooner, Airflow's
+  // inputs had stood as a wall of faded tiles.
   for(const [id] of local){
     if(!id)continue;
-    const box=boxes.get(id),fills=box?reading.fills*fitZoom(box.width,box.height):Infinity;
+    const box=['program','area'].includes(nodes.get(id)?.kind)&&boxes.get(id),fills=box?reading.fills*fitZoom(box.width,box.height):Infinity;
     readZoom.set(id,reading.enter/text.get(id));
     const enter=Math.min(readZoom.get(id),fills);
     enterZoom.set(id,enter);exitZoom.set(id,enter*reading.exit/reading.enter);
