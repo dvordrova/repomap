@@ -1742,6 +1742,22 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 		}
 		steps = append(steps, step)
 	}
+	// Of several entries, the flow reads those that lead somewhere: an entry
+	// that calls nothing, or stands on no part, is a leaf of the API, not a
+	// way in (owner, 2026-10-14: rate-envelope-queue's flow had listed 47
+	// exports, most "calls nothing", its test suite's Setup last). A lone
+	// entry stays whatever it does (Lua 5.1.5's empty luaX_init).
+	if len(steps) > 1 {
+		var leading []pageStart
+		for _, step := range steps {
+			if step.Group != "" && !step.Silent {
+				leading = append(leading, step)
+			}
+		}
+		if len(leading) > 0 {
+			steps = leading
+		}
+	}
 	var elsewhere []pageElsewhere
 	for _, group := range order {
 		part := pageElsewhere{Group: group.Title, Href: "#" + groupAnchorID(section.ID, group.ID)}

@@ -123,13 +123,19 @@ func TestAnEntryReadsOnlyItsOwnWayAndItsPartsOtherConnectionsApart(t *testing.T)
 		b.subjectAt[subjectLocationKey("etc", "etc/noparser.c", line)] = id
 	}
 	section.Entrypoints = []pageEntrypoint{{Symbol: "luaX_init", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 21}}, {Symbol: "luaY_parser", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 25}}}
+	// A lone entry stays whatever it does: the empty luaX_init says it calls
+	// nothing.
+	section.Entrypoints = []pageEntrypoint{{Symbol: "luaX_init", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 21}}}
+	if lone, _ := b.startSteps(section, stubs); len(lone) != 1 || !lone[0].Silent || len(lone[0].Calls) != 0 {
+		t.Fatalf("the empty luaX_init alone: %+v", lone)
+	}
+	// Beside another entry, an entry that calls nothing is no way in.
+	section.Entrypoints = []pageEntrypoint{{Symbol: "luaX_init", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 21}}, {Symbol: "luaY_parser", Anchor: &pageAnchor{Path: "etc/noparser.c", Line: 25}}}
 	steps, elsewhere := b.startSteps(section, stubs)
-	if len(steps) != 2 || len(steps[0].Reaches)+len(steps[1].Reaches) != 0 {
+	if len(steps) != 2-1 || len(steps[0].Reaches) != 0 {
 		t.Fatalf("an entry read its part's connections as its way: %+v", steps)
 	}
-	if !steps[0].Silent || len(steps[0].Calls) != 0 {
-		t.Fatalf("the empty luaX_init: silent %v, calls %v", steps[0].Silent, steps[0].Calls)
-	}
+	steps = append([]pageStart{{}}, steps...)
 	// Its calls named as written, where they are written, in that order,
 	// their implementation not established.
 	var calls []string
