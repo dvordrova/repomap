@@ -22,6 +22,13 @@ const inputKind=kind=>inputKinds.includes(kind)?kind:'entry';
 // when none is.
 export const systemKinds=['database','request','sdk','queue','started','other'];
 const systemKind=kind=>systemKinds.includes(kind)?kind:'other';
+// The one part a program is, when it holds nothing else: drawn in its
+// place, with no frame around it (levels.mjs, scene.mjs).
+export function onlyPart(model,id){
+  const node=model.nodes.get(id);
+  if(node?.kind!=='program'||node.children.length!==1)return '';
+  return model.nodes.get(node.children[0])?.kind==='part'?node.children[0]:'';
+}
 // At most this many markers stand on a side of a box (PLAN B).
 export const markersPerSide=3;
 

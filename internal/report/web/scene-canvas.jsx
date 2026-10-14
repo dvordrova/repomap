@@ -781,7 +781,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     useEffect(()=>{
       if(state.level.length)map.dataset.sceneLevel=levelKey(state.level);else delete map.dataset.sceneLevel;
       if(scene.program)map.dataset.enteredProgram=scene.program;else delete map.dataset.enteredProgram;
-      location.textContent=state.level.length?state.level.map(nameOf).join(' / '):t('System map');
+      // A program that is one part names itself once.
+      location.textContent=state.level.length?state.level.map(nameOf).filter((name,i,names)=>name!==names[i-1]).join(' / '):t('System map');
     },[scene.key]);
     const lit=new Set(state.lit);
     // A box or an arrow that did not change keeps its object, so React Flow

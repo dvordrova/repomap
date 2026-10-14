@@ -11,7 +11,7 @@
 import {emphasis,recedes,focusAncestors} from './emphasis.mjs';
 import {overlayAt} from './overlay.mjs';
 import {tileRoom,tileHeader} from './symbols.mjs';
-import {programContents} from './model.mjs';
+import {programContents,onlyPart} from './model.mjs';
 
 // What can be entered: a level of its own opens inside it (a program
 // holding nothing has none).
@@ -119,7 +119,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
   const deepestArea=[...level].reverse().find(id=>model.nodes.get(id)?.kind==='area');
   text=geometry.text.get(deepestArea||program)||own;
   drawRoots(open,program);
-  box(program,'frame',frameOf(program),own,{program:true});
+  if(!onlyPart(model,program))box(program,'frame',frameOf(program),own,{program:true});
   function drawChildren(container){
     const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;
     for(const child of parent.children){

@@ -15855,3 +15855,11 @@ box keeps a port on the frame. A port beside a box is no kind of input or
 outside system and stands past the three a side. Saved service-pkg render:
 the library entered shows the markers beside Leader watchdog and the rest.
 `npm test` 178/178; visual 23/24 (same pre-existing spec).
+
+A program that is one part (rate-envelope-queue, service-pkg's examples)
+had opened as a frame holding one card of its own name. Its level is now
+that part with no title band or margin and no frame drawn (`onlyPart`), so
+entering it shows the part where its card stood, then its declarations; the
+location names it once. Saved rate-envelope-queue render checked: entered,
+the part's card alone with the Inputs card beside it, then its tiles.
+`npm test` 178/178; visual 23/24 (same pre-existing spec).

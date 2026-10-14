@@ -11,7 +11,7 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {wrapText} from './cards.mjs';
 import {tileGrid} from './symbols.mjs';
-import {programContents} from './model.mjs';
+import {programContents,onlyPart} from './model.mjs';
 
 // Layout engines, one worker each in the browser: the levels of the areas
 // are independent of one another (a closed area's card is its words, never
@@ -366,7 +366,13 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // with them and reads no better where it fits the canvas; one too
     // large to read whole is the camera's job.
     const boxes=children.map(child=>child.kind==='area'?closedArea(child):partBox(child,measure));
-    const at=direction=>layered(program.id,boxes,pairs,{ports,portPairs:[...portPairs.values()],options:{...interior,'elk.direction':direction}});
+    // A program that is one part is that part: no title band or margin
+    // around it, and no frame drawn (scene.mjs onlyPart), so entering the
+    // program shows the part where its card stood (owner, 2026-10-14:
+    // rate-envelope-queue had opened as a frame holding one card of its
+    // own name).
+    const one=onlyPart(model,program.id)?{band:0,spacing:0}:{};
+    const at=direction=>layered(program.id,boxes,pairs,{...one,ports,portPairs:[...portPairs.values()],options:{...interior,'elk.direction':direction}});
     const [down,across]=await Promise.all([at('DOWN'),at('RIGHT')]);
     const direction=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?'RIGHT':'DOWN';
     const laid=direction==='RIGHT'?across:down,k=1;
