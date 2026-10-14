@@ -510,7 +510,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   leaves room for its magnifier.
 - A level is entered framed whole at no less than its entry zoom; a box
   larger than the canvas there is entered at its top left, the rest a pan
-  away. A part's magnifier enters it at the zoom its declarations read at
+  away. A program's or an area's entry zoom is where its boxes' titles read
+  or, sooner, where its closed card stands at four fifths of the zoom that
+  fits it in the canvas (owner, 2026-10-14: Airflow's core had filled the
+  screen as its inventory, its boxes never shown); entered, it is framed by
+  its drawing, not by its card, and a pinch entering it while its drawing
+  stands small glides there and waits for the glide. A part's magnifier enters it at the zoom its declarations read at
   (eleven pixels): the part whole when it fits there, else its head and
   first column at the canvas's top left. Entering a level (a magnifier, a
   reading, an input's path) sets it before the camera moves, and that move

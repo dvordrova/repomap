@@ -98,14 +98,15 @@ export const units={
   input:{font:'600 13px system-ui',pad:10,mark:22,min:72,max:320,height:30},
   gap:12,
 };
-// A program is entered where its boxes' titles read at 12.75 pixels, which
-// is four fifths of the zoom that fits it in the canvas; an area where its
-// parts' do (PLAN S3: by zoom, with hysteresis, never by a pan).
+// A program is entered where its boxes' titles read at 12.75 pixels, an
+// area where its parts' do, or where its card stands at four fifths of the
+// zoom that fits it in the canvas, whichever comes first (PLAN S3: by zoom,
+// with hysteresis, never by a pan).
 // On the whole map at rest a program's name reads from eleven pixels, an
 // outside system's (a secondary word, as a description and an input's
 // name) from nine and a half (owner, 2026-10-02); they are sized for half a
 // pixel more, room for the browser's measure.
-export const reading={enter:.75,exit:.62,deep:860,deepExit:760,title:11.5,least:11,system:10,systemLeast:9.5};
+export const reading={enter:.75,exit:.62,fills:.8,deep:860,deepExit:760,title:11.5,least:11,system:10,systemLeast:9.5};
 
 const pairKey=(a,b)=>a<b?`${a}|${b}`:`${b}|${a}`;
 
@@ -537,10 +538,18 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // card is drawn at its level's.
   const text=new Map();
   for(const [id,inside] of local)text.set(id,(inside.text||1)*(scales.get(id)?.scale||1));
-  const enterZoom=new Map(),exitZoom=new Map();
+  const enterZoom=new Map(),exitZoom=new Map(),readZoom=new Map();
+  // A level is entered where its titles read or, sooner, once its card
+  // nearly fills the canvas (owner,
+  // 2026-10-14: Airflow's core filled the screen as a list of its areas'
+  // names, its boxes still closed): a level too large to read whole is
+  // shown whole first, its titles read by zooming on.
   for(const [id] of local){
     if(!id)continue;
-    enterZoom.set(id,reading.enter/text.get(id));exitZoom.set(id,reading.exit/text.get(id));
+    const box=boxes.get(id),fills=box?reading.fills*fitZoom(box.width,box.height):Infinity;
+    readZoom.set(id,reading.enter/text.get(id));
+    const enter=Math.min(readZoom.get(id),fills);
+    enterZoom.set(id,enter);exitZoom.set(id,enter*reading.exit/reading.enter);
   }
   for(const node of nodes.values())if(node.kind==='part'&&boxes.has(node.id)){
     const box=boxes.get(node.id);
@@ -574,6 +583,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   for(const [id,t] of text)text.set(id,t*unit);
   for(const [id,z] of enterZoom)enterZoom.set(id,z/unit);
   for(const [id,z] of exitZoom)exitZoom.set(id,z/unit);
+  for(const [id,z] of readZoom)readZoom.set(id,z/unit);
   const bounds={x:0,y:0,width:map.width*unit,height:map.height*unit};
   // The busiest program first: the one most arrows at rest join.
   const joins=id=>model.homePairs.filter(pair=>!pair.uses&&(pair.from===id||pair.to===id)).length;
@@ -587,7 +597,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // sight (its title wraps across it); an Outside frame only at its title's
   // corner.
   const closed=model.roots.filter(id=>['program','inputs','outside'].includes(nodes.get(id)?.kind)&&boxes.has(id)).map(id=>({...boxes.get(id),whole:nodes.get(id).kind!=='outside'}));
-  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,bounds,grids,unit,programInventoryHeights,areaInventoryHeights,programText:programText*unit,
+  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,readZoom,bounds,grids,unit,programInventoryHeights,areaInventoryHeights,programText:programText*unit,
     home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length,16,closed),whole:homeCamera(bounds,canvas,16,1/unit)};
 }
 

@@ -265,8 +265,16 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   const readCap=level=>1.35/(geometry.text.get(level.at(-1))||geometry.unit||1);
   function enter(level,{rect=null,smooth=true}={}){
     store.dispatch({type:'enter',level});
-    const scene=sceneOf(store.getState());
-    return moveCamera(frameCamera(rect||scene.focus,levelZoom(level),28,readCap(level),rect?null:contentOf(scene,level)),smooth);
+    return moveCamera(entryCamera(level,rect),smooth);
+  }
+  // A program or an area entered is framed by its drawing, not by its
+  // closed card: a card is its inventory's shape, and Airflow's tall core
+  // card had held its wide drawing as a strip across its middle (owner,
+  // 2026-10-14).
+  function entryCamera(level,rect=null){
+    const scene=sceneOf(store.getState()),content=contentOf(scene,level);
+    const drawing=!rect&&content&&['program','area'].includes(model.nodes.get(level.at(-1))?.kind)?content:null;
+    return frameCamera(rect||drawing||scene.focus,levelZoom(level),28,readCap(level),rect||drawing?null:content);
   }
   // What a level draws inside its frame: the bounds of its own boxes.
   function contentOf(scene,level){
@@ -315,6 +323,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const current=store.getState().level;
     if(!center&&(current.includes(id)||sceneOf(store.getState()).nodes.some(node=>node.id===id)&&rect&&inSight(rect)))return;
     store.dispatch({type:'enter',level});
+    if(level.at(-1)===id&&['program','area'].includes(node.kind))return moveCamera(entryCamera(level),smooth);
     const entered=level.at(-1)===id?contentOf(sceneOf(store.getState()),level):null;
     if(rect)moveCamera(frameCamera(rect,levelZoom(level),28,readCap(level),entered),smooth);
   }
@@ -490,7 +499,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   });
 
   // A zoom gesture may change the level; a pan never does.
-  let lastZoom=geometry.home.zoom,gestureAim=null;
+  let lastZoom=geometry.home.zoom,gestureAim=null,glideUntil=0;
   // One pinch (ctrl+wheel, a trackpad's pinch) crosses at most one level
   // boundary and stops short of the next; a pause ends it. The zoom a tick
   // asks for is React Flow's own; only a tick that would cross a second
@@ -506,6 +515,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       event.stopPropagation();return;
     }
     if(!event.ctrlKey||!instance||initializing)return;
+    if(performance.now()<glideUntil){event.preventDefault();event.stopPropagation();return;}
     const now=performance.now(),v=camera.get(),box=host.getBoundingClientRect();
     const aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
     if(!gesture||now-gesture.at>300){
@@ -548,10 +558,20 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const box=host.getBoundingClientRect(),aimScreen=gestureAim||{x:box.left+box.width/2,y:box.top+box.height/2};
     const action=zoomAction(previous,viewport,{x:(aimScreen.x-box.left-viewport.x)/viewport.zoom,y:(aimScreen.y-box.top-viewport.y)/viewport.zoom});
     if(!action)return;
-    const before=levelKey(store.getState().level);
+    const was=store.getState().level,before=levelKey(was);
     store.dispatch(action);
     const level=store.getState().level;
     if(levelKey(level)!==before&&level.length)callbacks.follow?.(level.at(-1));
+    // A program or an area a pinch enters while its drawing stands small in
+    // its card (entered once the card nearly fills the canvas, levels.mjs)
+    // glides to its drawing; the pinch waits for the glide.
+    if(level.length>was.length&&['program','area'].includes(model.nodes.get(level.at(-1))?.kind)){
+      const content=contentOf(sceneOf(store.getState()),level),{width,height}=size();
+      if(content&&content.width*viewport.zoom<.6*width&&content.height*viewport.zoom<.6*height){
+        glideUntil=performance.now()+480;
+        moveCamera(entryCamera(level));
+      }
+    }
   }
 
   // The keyboard on a chip or a bucket: focus points at it, Enter reads it.

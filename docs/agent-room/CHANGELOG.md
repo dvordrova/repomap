@@ -15635,3 +15635,16 @@ temporarily recorded at /private/tmp/gallery/quality-meeting-20261007.md.
   prose did not resolve its size. V4 removes that cycle; actual large paid
   savings remain unmeasured. /private/tmp/gallery/deepseek-airflow-failed-attempts-cost.json
   and airflow-frozen-orientation-full-accounting.json retain scope/provenance.
+
+### 2026-10-14 — a program filling the canvas shows its boxes
+
+Owner on the published Airflow report: the core program's card filled the
+screen as its area inventory and its boxes never appeared. Its entry zoom was
+where its titles read (about 3.6× the zoom that fits its card), and its wide
+drawing stood as a strip inside its tall card. A program or area is now also
+entered at four fifths of the zoom that fits its card, and entering it (pinch,
+magnifier, reading) frames its drawing; a pinch waits out the glide. The lane
+rule is measured where titles read (`geometry.readZoom`). Saved Airflow render
+(20261009-050908) checked in headless Chromium: one pinch tick past rest shows
+all 25 boxes; the magnifier frames the same. `npm test` 177/177; visual 23/24,
+the failing worker-failure spec fails identically on HEAD's templates.

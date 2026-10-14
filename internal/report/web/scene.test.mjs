@@ -131,7 +131,9 @@ function checkScene(name,model,geometry,scene,problems){
   // Step 1 drawing (daf1231e) kept at an area's entry zoom: 7.5 screen
   // pixels, its smallest (redis's Core server infrastructure, measured on
   // the daf1231e layout code at a 1056x632 canvas). Lanes of one level's
-  // own graph, with no box between them.
+  // own graph, with no box between them, where its titles read: a level
+  // entered sooner, shown whole while it fills the canvas, is an overview.
+  const laneZoom=Math.max(zoom,geometry.readZoom.get(scene.inner)||0);
   const boxes=scene.nodes.filter(node=>node.band===bands.box).map(node=>node.rect);
   const drawnAll=all.filter(s=>scene.edges.find(edge=>edge.id===s.edge).rest!==false);
   let narrowest=Infinity,between='';
@@ -147,7 +149,7 @@ function checkScene(name,model,geometry,scene,problems){
       if(d<narrowest){narrowest=d;between=`${s.edge} and ${t.edge}`;}
     }
   }
-  if(narrowest*zoom<laneGap)problems.push(['gaps',`${where}: lanes ${(narrowest*zoom).toFixed(1)}px apart (${between})`]);
+  if(narrowest*laneZoom<laneGap)problems.push(['gaps',`${where}: lanes ${(narrowest*laneZoom).toFixed(1)}px apart (${between})`]);
   // No arrow runs through a box it does not join.
   for(const edge of scene.edges){
     const ends=new Set([edge.from,edge.to]);
