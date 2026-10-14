@@ -15819,3 +15819,12 @@ execution, DAG scheduling), 8 in one still pairing Triggers and callbacks;
 Utilities (12 boxes) and Configuration (7) gathered nothing in all three.
 TestTheGroupingRecursesIntoAreasAndParts compared the boxes asked in one
 level in call order, which concurrency varies; it compares them as a set.
+
+The canvas is a window on the map (owner, 2026-10-14: "text keeps trying to
+crawl somewhere"): a box's tip and a marker's tip stand beside their box or
+marker on their own side at their words' own size (`width: max-content` up to
+a fixed bound), their top at the box's or marker's; no side flip, no
+narrowing to the room left, no shift to stay inside the canvas — a tip past
+the edge is cut there. The marker tip's per-frame `setShift` re-render is
+gone. An arrow's card is still placed once, at the pointer, when it opens.
+`npm test` 178/178; visual 23/24 (same pre-existing spec).

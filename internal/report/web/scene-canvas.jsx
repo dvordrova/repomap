@@ -679,22 +679,24 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // A chip's name, drawn at twelve pixels, reads at nine and a half, as
     // every secondary word (scene.css --word).
     const faded=node.text*12*v.zoom<9.5;
-    if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{left:(node.rect.x+node.rect.width)*v.zoom+v.x+6,top:Math.max(4,node.rect.y*v.zoom+v.y)}}><b>{head}</b>{note&&<span className="scene-tip-note">{note}</span>}</div>;
+    // A tip stands beside its box's right edge at its own size, its words'
+    // alone (scene.css .scene-box-tip), never narrowed or moved by the canvas
+    // edge (owner, 2026-10-14: a tip near the edge had rewrapped at every
+    // move of the map); past the edge it is cut there.
+    const side={left:(node.rect.x+node.rect.width)*v.zoom+v.x+6};
+    if(node.display==='chip'&&faded)return <div className="scene-tip scene-box-tip scene-tip-name" style={{...side,top:node.rect.y*v.zoom+v.y}}><b>{head}</b>{note&&<span className="scene-tip-note">{note}</span>}</div>;
     if(node.display==='chip')names=[...new Set([...(model.callers.get(node.id)||[])].map(part=>model.nodes.get(part)?.name||''))].map(name=>`← ${name}`);
     else if(node.display==='bucket')names=model.nodes.get(node.id).children.map(id=>model.nodes.get(id)?.name||'');
     else about=item?.role||item?.summary||'';
-    const left=(node.rect.x+node.rect.width)*v.zoom+v.x+6,top=node.rect.y*v.zoom+v.y;
-    return <div className={`scene-tip scene-box-tip ${names.length>12?'scene-tip-columns':''}`} style={{left,top:Math.max(4,top)}}>
+    const top=node.rect.y*v.zoom+v.y;
+    return <div className={`scene-tip scene-box-tip ${names.length>12?'scene-tip-columns':''}`} style={{...side,top}}>
       <b>{head}</b>{note&&<span className="scene-tip-note">{note}</span>}{about&&<span>{about}</span>}{names.map((name,i)=><span key={i}>{name}</span>)}</div>;
   }
-  // What a marker or a port stands for, one name to a line, each whole,
-  // wrapped where its side has no room for it: names told apart at their
-  // ends had all read "POST · /v3electionpb.…" (etcd's Server and Client
-  // registrations, final journeys 2026-10-02). It stands on its marker's
-  // side (an input's left, else right), or on the side with more room
-  // where that one has too little, and within the canvas.
+  // What a marker or a port stands for, one name to a line, each whole:
+  // names told apart at their ends had all read "POST · /v3electionpb.…"
+  // (etcd's Server and Client registrations, final journeys 2026-10-02).
   function MarkTip({item}){
-    const key=`mark:${item.id}`,ref=useRef(null),[shift,setShift]=useState(0);
+    const key=`mark:${item.id}`,ref=useRef(null);
     let head='',names=[];
     if(item.type==='port'){head=item.way==='out'?'→':'←';names=item.programs.map(id=>({id,name:nameOf(id)}));}
     else if(item.side==='in'){
@@ -704,28 +706,23 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       head=item.kind==='database'?t('Database'):item.kind==='request'?t('Request'):item.kind==='sdk'?t('SDK'):item.kind==='queue'?t('Queue'):item.kind==='started'?t('Runs a program'):t('Outside');
       names=item.systems.map(id=>({id,name:model.nodes.get(id)?.name||''}));
     }
-    const shown=names,{width,height}=size(),gap=6,edge=4,pad=20,between=14;
-    const widest=shown.reduce((width,row)=>Math.max(width,measure(row.name,'13px system-ui')),measure(head,'650 13px system-ui'));
-    const room={left:item.left-item.px/2-gap-edge,right:width-(item.left+item.px/2+gap)-edge};
-    const needs=columns=>columns*Math.ceil(widest+1)+(columns-1)*between+pad;
-    const own=item.side==='in'?'left':'right',other=own==='left'?'right':'left';
-    const side=room[own]>=needs(1)||room[own]>=room[other]?own:other;
-    // A long list stands in two columns where each has room for half the
-    // widest name.
-    const columns=shown.length>12&&room[side]>=2*Math.min(widest,200)+between+pad?2:1;
-    const tipWidth=Math.max(120,Math.min(room[side],needs(columns)));
+    // The tip stands on its marker's side (an input's left, else right) at
+    // its words' own size, its top at the marker's, moved and narrowed by
+    // nothing: the canvas is a window on the map, and a tip past its edge is
+    // cut there (owner, 2026-10-14: tips had changed side, width and height
+    // with the room left, rewrapping at every move). A long list stands in
+    // two columns.
+    const shown=names,gap=6;
+    const columns=shown.length>12?2:1;
+    const side=item.side==='in'?'left':'right';
     const top=item.top-item.px/2;
-    useLayoutEffect(()=>{
-      const h=ref.current?.offsetHeight||0,want=Math.max(edge,Math.min(top,height-h-edge))-top;
-      if(Math.abs(want-shift)>.5)setShift(want);
-    });
     const keep=()=>{look.enter(key);store.dispatch({type:'look',key});};
     return <div ref={ref} data-card={key} className={`scene-tip scene-mark-tip flow-floating-card nodrag nopan nowheel ${columns>1?'scene-tip-columns':''}`}
       onMouseEnter={keep} onFocusCapture={keep}
       onMouseLeave={event=>{if(event.currentTarget.contains(document.activeElement))return;look.leave(key,performance.now(),{x:event.clientX,y:event.clientY},ref.current?.getBoundingClientRect());pump();}}
       onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){look.leave(key,performance.now());pump();}}}
       onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()}
-      style={{width:tipWidth,maxHeight:Math.max(60,height-2*edge),top:top+shift,left:side==='right'?item.left+item.px/2+gap:item.left-item.px/2-gap-tipWidth}}>
+      style={{top,...(side==='right'?{left:item.left+item.px/2+gap}:{right:size().width-(item.left-item.px/2-gap)})}}>
       <b>{head}</b>{shown.map(row=><button type="button" className="flow-card-name" data-marker-member={row.id} key={row.id}
         onClick={event=>{event.stopPropagation();look.end();store.dispatch({type:'look',key:''});read(row.id,event);}}>{row.name}</button>)}</div>;
   }

@@ -255,6 +255,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   whole map draws them as one arrow between the two programs, an entered
   program as its box's port.
 
+- The canvas is a window on the map: a box's or a marker's tip stands
+  beside it on its own side at its words' own size and moves only with it;
+  nothing flips, narrows or shifts to stay inside the canvas, and a tip past
+  the edge is cut there (owner, 2026-10-14).
 - Outside frames and their chips are amber, parts and area frames and cards neutral (an
   area's level laid out down or across, whichever is nearer its card's proportion); core parts are
   rose, entry parts green, inputs blue and external communications amber,
