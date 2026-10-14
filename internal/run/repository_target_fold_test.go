@@ -88,4 +88,24 @@ func TestSoleConsumerModuleLibraryFoldsIntoItsExecutable(t *testing.T) {
 	if !journaled {
 		t.Fatalf("fold not journaled beside the model decision: %+v", folded.Outcome.Placements)
 	}
+	// The model reading the library as its module's program code folds it
+	// into that program even beside a second consumer.
+	program := append([]targetportfolio.Placement(nil), placements...)
+	program[library].Decision = "program_code"
+	read, err := applyRepositoryPlacements(build(), native, program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absorbed := false
+	for _, target := range read.Targets {
+		if target.Key == native[library].Target.Key {
+			t.Fatal("a library read as program code kept its own page")
+		}
+		if len(target.Absorbed) == 1 && target.Absorbed[0] == native[library].Target.Key && target.AbsorbedRoot == "." {
+			absorbed = true
+		}
+	}
+	if !absorbed || len(read.Targets) != len(native)-1 {
+		t.Fatalf("program code did not fold into its program: targets=%d", len(read.Targets))
+	}
 }

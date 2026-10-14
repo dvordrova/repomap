@@ -142,8 +142,11 @@ func nativeDecisions(rows []NativeCandidate, answers []NativeDecision, final boo
 			p.Rejected = strings.Join(answers, ", ")
 		} else {
 			answer := answers[0]
-			valid := slices.Contains([]string{"standalone", "shared_code", "tool", "example"}, answer)
+			valid := slices.Contains([]string{"standalone", "shared_code", "program_code", "tool", "example"}, answer)
 			if answer == "shared_code" && row.Kind != "library" && row.Kind != "module_library" {
+				valid = false
+			}
+			if answer == "program_code" && row.Kind != "module_library" {
 				valid = false
 			}
 			if ownerRef, seed := strings.CutPrefix(answer, "seed_of:"); seed {

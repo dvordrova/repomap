@@ -267,7 +267,11 @@ Regression comparisons preserve every materialized byte while checking that repe
   representative and never requiring every alternative file for the same
   target. Each native target has a separate closed target ref, even when several
   targets share a file. Every native ref must receive a placement decision:
-  `standalone`, `seed_of:<ref>`, `shared_code`, `tool`, or `example`. A Go
+  `standalone`, `seed_of:<ref>`, `shared_code`, `program_code`, `tool`, or
+  `example`. `program_code` (module libraries only; owner, 2026-10-14) is the
+  model reading a module as a program whose packages are its own code, not a
+  library: the library folds into the first standalone executable of its own
+  module that consumes it, or stays `shared_code` without one. A Go
   module library placed `shared_code` whose only consumer is one standalone
   executable is folded into that executable (`folded_into:<ref>` beside the
   model's decision in the journal): the executable's page claims the module

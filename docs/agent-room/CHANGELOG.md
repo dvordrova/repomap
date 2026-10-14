@@ -1,3 +1,14 @@
+## 2026-10-14 — the model can read a module library as its program's code
+
+Target placement gains `program_code` for Go module libraries (owner: "a
+library — I want the library; a service — the service; a mix — it
+depends"): the module is a program whose packages are its own code, so the
+library folds into the first standalone executable of its own module that
+consumes it, even beside a second consumer (wild-workouts: trainer and
+trainings are imported by the c4 diagram tool, so the sole-consumer fold
+never fired and each was analysed twice, ~46 requests). Without such a
+program it stays `shared_code`.
+
 ## 2026-10-14 — several contexts in one text-model request
 
 Without Jev a stage's windows of other contexts (`atlas_keys` a part each,

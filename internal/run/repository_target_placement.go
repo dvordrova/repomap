@@ -68,8 +68,33 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 		candidates[candidate.Target.Key] = candidate
 	}
 	foldPythonFacets(&plan, refs, candidates)
+	fold := func(candidate repositoryNativeCandidate, position, owner int, library analysistarget.Target, reason string) {
+		ownerRef := refs[plan.Targets[owner].Key]
+		plan.Targets[owner].Absorbed = append(plan.Targets[owner].Absorbed, candidate.Target.Key)
+		plan.Targets[owner].AbsorbedRoot = library.ModuleDir
+		plan.Targets[position].Placement = "folded_into:" + ownerRef
+		if plan.Default == candidate.Target.Key {
+			plan.Default = plan.Targets[owner].Key
+		}
+		plan.Outcome.Placements = append(plan.Outcome.Placements, repositoryPlacement{
+			Target: candidate.Target.Key.String(), Selector: plan.Targets[position].Selector,
+			Placement: targetportfolio.Placement{Candidate: candidate.Row, Decision: "folded_into:" + ownerRef, Reason: reason},
+		})
+	}
 	for _, candidate := range native {
 		position := positions[candidate.Target.Key]
+		library, isGoLibrary := repositoryGoTarget(candidate.Target)
+		isGoLibrary = isGoLibrary && library.Kind == analysistarget.KindModuleLibrary
+		// The model read this module's library as the code of the module's
+		// own program: its page is that program's. Without a standalone
+		// program of the module to hold it, it stays shared code.
+		if plan.Targets[position].Placement == "program_code" {
+			if owner, ok := ownStandaloneProgram(plan, positions, candidate, library); ok && isGoLibrary {
+				fold(candidate, position, owner, library, "the model read this module library as the code of its own program")
+				continue
+			}
+			plan.Targets[position].Placement = "shared_code"
+		}
 		if plan.Targets[position].Placement != "shared_code" {
 			continue
 		}
@@ -78,22 +103,9 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 		// and pkg/ packages is one program, not a program and a library. The
 		// model's shared_code decision stays in the journal; the page is the
 		// code's to compose. Two or more consumers keep the shared library.
-		if owner, folds := soleStandaloneConsumer(plan, positions, candidate); folds {
-			if library, isGo := repositoryGoTarget(candidate.Target); isGo && library.Kind == analysistarget.KindModuleLibrary {
-				ownerRef := refs[plan.Targets[owner].Key]
-				plan.Targets[owner].Absorbed = append(plan.Targets[owner].Absorbed, candidate.Target.Key)
-				plan.Targets[owner].AbsorbedRoot = library.ModuleDir
-				plan.Targets[position].Placement = "folded_into:" + ownerRef
-				if plan.Default == candidate.Target.Key {
-					plan.Default = plan.Targets[owner].Key
-				}
-				plan.Outcome.Placements = append(plan.Outcome.Placements, repositoryPlacement{
-					Target: candidate.Target.Key.String(), Selector: plan.Targets[position].Selector,
-					Placement: targetportfolio.Placement{Candidate: candidate.Row, Decision: "folded_into:" + ownerRef,
-						Reason: "a module library whose only consumer is one standalone executable is that executable's own code"},
-				})
-				continue
-			}
+		if owner, folds := soleStandaloneConsumer(plan, positions, candidate); folds && isGoLibrary {
+			fold(candidate, position, owner, library, "a module library whose only consumer is one standalone executable is that executable's own code")
+			continue
 		}
 		for _, consumer := range candidate.Consumers {
 			if position, ok := positions[consumer]; ok {
@@ -127,6 +139,21 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 	plan.Outcome.SelectedTargets = len(plan.Targets)
 	plan.Outcome.SelectedTargetRefs = repositoryTargetRefs(plan.Targets)
 	return plan, plan.Validate()
+}
+
+// ownStandaloneProgram returns the position of the first standalone
+// executable of the library's own module that consumes it.
+func ownStandaloneProgram(plan repositoryTargetPlan, positions map[repositoryTargetKey]int, candidate repositoryNativeCandidate, library analysistarget.Target) (int, bool) {
+	for _, consumer := range candidate.Consumers {
+		position, ok := positions[consumer]
+		if !ok || plan.Targets[position].Placement != "standalone" {
+			continue
+		}
+		if program, isGo := repositoryGoTarget(plan.Targets[position]); isGo && program.ModuleID == library.ModuleID {
+			return position, true
+		}
+	}
+	return 0, false
 }
 
 // soleStandaloneConsumer returns the position of the one standalone target
