@@ -15669,3 +15669,15 @@ ordinary title fades (17px word, gone at 10.5) and taking the inventory with
 it; it stands above the words' opaque layer. Saved Airflow render checked in
 headless Chromium (26 boxes named, none overflowing). `npm test` 178/178;
 visual 23/24 with the same pre-existing worker-failure spec.
+
+### 2026-10-14 — a smooth pointer and zoom on a large level
+
+Owner's Chrome trace of Airflow's core: each pointer move re-emphasized and
+redrew every box and arrow (~60 ms a move), and each zoom tick restyled and
+repainted every word and border through `--flow-zoom`. Now the emphasis
+follows the box or arrow the pointer rests on for 90 ms, unchanged boxes and
+arrows keep their React Flow objects (only what changed redraws), and during a
+gesture `--flow-zoom` steps by a seventh, settling on the exact zoom 120 ms
+after the camera rests. Saved Airflow render under 4× CPU throttling in
+headless Chromium: long tasks while pointing 7.4 s → 0.07 s, while zooming
+4.9 s → 0.13 s. `npm test` 178/178; visual 23/24 (same pre-existing spec).

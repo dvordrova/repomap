@@ -453,6 +453,14 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const box=host.getBoundingClientRect(),v=camera.get();
     return {x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
   };
+  // What the pointer rests on is emphasized once it rests there: a pointer
+  // crossing the map re-emphasized every box and arrow it passed, each a
+  // redraw of the whole level (owner's trace, 2026-10-14).
+  let pointing=0;
+  const pointSoon=target=>{
+    clearTimeout(pointing);
+    pointing=setTimeout(()=>store.dispatch({type:'point',target}),90);
+  };
   const onCard=event=>!!event.target.closest?.('.flow-floating-card,.scene-program-inside,[data-input-group-kind]');
   // A press that moves the pointer or the camera is a drag: the click
   // ending it acts on nothing.
@@ -473,7 +481,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // While a card is open or kept, what is being read stays: the way to
     // the card crosses boxes and empty canvas without changing the emphasis.
     const reading=!!look.key||store.getState().pinned.length>0;
-    if(!reading||target?.type==='edge')store.dispatch({type:'point',target:target?.type==='edge'?{...target,at:undefined}:target});
+    if(!reading||target?.type==='edge')pointSoon(target?.type==='edge'?{...target,at:undefined}:target);
     if(target?.type==='edge'){
       const key=`edge:${target.id}:${nearStart(target.edge,target.at)?'back':'on'}`;
       handleRect={left:event.clientX-12,top:event.clientY-12,right:event.clientX+12,bottom:event.clientY+12,width:24,height:24};
@@ -496,7 +504,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointerdown',()=>{pressed=true;},true);
   window.addEventListener('pointerup',()=>{pressed=false;},true);
   window.addEventListener('pointercancel',()=>{pressed=false;},true);
-  host.addEventListener('pointerleave',event=>{clearPointerCursor();if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
+  host.addEventListener('pointerleave',event=>{clearPointerCursor();clearTimeout(pointing);if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
     const v=camera.get(),press=down;down=null;
@@ -593,9 +601,19 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   }
   // The zoom words fade by (scene.css) is the one React Flow draws at,
   // whatever moved the camera: a gesture, a button, an entry, a resize.
+  // Every word, border and dash restyles when it changes, so during a
+  // gesture it follows in steps of a seventh and settles on the exact zoom
+  // once the camera rests (owner's trace, 2026-10-14: each zoom tick had
+  // restyled and repainted all of Airflow's core).
+  let appliedZoom=0,settle=0;
+  const applyZoom=zoom=>{appliedZoom=zoom;host.style.setProperty('--flow-zoom',String(zoom));};
   function ZoomVar(){
     const zoom=useStore(state=>state.transform[2]);
-    useLayoutEffect(()=>{host.style.setProperty('--flow-zoom',String(zoom));},[zoom]);
+    useLayoutEffect(()=>{
+      clearTimeout(settle);
+      if(!appliedZoom||Math.abs(Math.log(zoom/appliedZoom))>Math.log(1.15))applyZoom(zoom);
+      else if(zoom!==appliedZoom)settle=setTimeout(()=>applyZoom(zoom),120);
+    },[zoom]);
     return null;
   }
   function Overlay({scene,emphasis}){
@@ -734,6 +752,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       </div></div>;
   }
 
+  const nodeObjects=new Map(),edgeObjects=new Map();
+  const sameFlags=(a,b)=>{
+    const keys=Object.keys(a);
+    return keys.length===Object.keys(b).length&&keys.every(key=>a[key]===b[key]||(Array.isArray(a[key])&&Array.isArray(b[key])&&a[key].length===b[key].length&&a[key].every((v,i)=>v===b[key][i])));
+  };
   function App(){
     const state=useSyncExternalStore(store.subscribe,store.getState);
     const scene=sceneOf(state);
@@ -751,23 +774,38 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       location.textContent=state.level.length?state.level.map(nameOf).join(' / '):t('System map');
     },[scene.key]);
     const lit=new Set(state.lit);
+    // A box or an arrow that did not change keeps its object, so React Flow
+    // draws again only what a pointer or a choice changed: every box and
+    // arrow redrawn at each move of the pointer had cost Airflow's core
+    // 60 ms a move (owner's trace, 2026-10-14).
     const nodes=useMemo(()=>scene.nodes.map(node=>{
       const item=model.nodes.get(node.id)?.item;
       const groups=node.display==='inputs'?model.nodes.get(node.id).children.map(id=>({kind:model.nodes.get(id).inputKind,lit:model.nodes.get(id).children.some(input=>lit.has(input))})):undefined;
-      return {id:node.id,type:node.display,position:{x:node.rect.x,y:node.rect.y},width:node.rect.width,height:node.rect.height,
+      const className=`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`;
+      const tile=node.display==='card'&&state.member.chosen?.part===node.id?item?.symbols?.[state.member.chosen.index]||null:null;
+      const member=node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1}:undefined;
+      const prev=nodeObjects.get(node.id);
+      if(prev&&prev.data.node===node&&prev.className===className&&prev.data.lit===lit.has(node.id)&&prev.data.tile===tile
+        &&JSON.stringify(prev.data.groups)===JSON.stringify(groups)&&prev.data.member?.hot===member?.hot&&prev.data.member?.chosen===member?.chosen)return prev;
+      const made={id:node.id,type:node.display,position:{x:node.rect.x,y:node.rect.y},width:node.rect.width,height:node.rect.height,
         style:{width:node.rect.width,height:node.rect.height,'--scene-text':node.text},zIndex:node.band===bands.frame?-1:2,
-        selectable:false,draggable:false,connectable:false,focusable:false,
-        className:`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`,
-        data:{node,item,groups,kind:(entry,event)=>clickAt({type:'box',id:node.id,node,kind:entry.kind,group:entry.group},event),open:(id,event)=>{if(event.detail>0&&down?.moved)return;clickAt({type:'zoom',id},event);},lit:lit.has(node.id),tile:node.display==='card'&&state.member.chosen?.part===node.id?item?.symbols?.[state.member.chosen.index]||null:null,keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
+        selectable:false,draggable:false,connectable:false,focusable:false,className,
+        data:{node,item,groups,kind:(entry,event)=>clickAt({type:'box',id:node.id,node,kind:entry.kind,group:entry.group},event),open:(id,event)=>{if(event.detail>0&&down?.moved)return;clickAt({type:'zoom',id},event);},lit:lit.has(node.id),tile,keys:node.display==='chip'||node.display==='bucket'?keysOf(node):undefined,
           drawn:node.display==='deep'?geometry.grids.get(node.id):undefined,
-          member:node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1,point:()=>{},choose:()=>{}}:undefined}};
+          member:member&&{...member,point:()=>{},choose:()=>{}}}};
+      nodeObjects.set(node.id,made);
+      return made;
     }),[scene,emphasis,state.lit,pointed?.part,pointed?.index,chosen,state.member.chosen]);
     const edges=useMemo(()=>{
       const byID=new Map(scene.edges.map(edge=>[edge.id,edge])),drawn=new Set(scene.nodes.map(node=>node.id));
       return emphasis.order.filter(id=>!emphasis.edgeState.get(id).hidden).map(id=>{
       const edge=byID.get(id),flags=emphasis.edgeState.get(id);
       const ends=[edge.from,edge.to].map(end=>drawn.has(end)?end:scene.program||scene.nodes[0]?.id);
-      return {id,source:ends[0],target:ends[1],type:'scene',zIndex:flags.on?1:0,selectable:false,focusable:false,data:{...edge,...flags}};
+      const prev=edgeObjects.get(id);
+      if(prev&&prev.edge===edge&&prev.source===ends[0]&&prev.target===ends[1]&&sameFlags(prev.flags,flags))return prev.made;
+      const made={id,source:ends[0],target:ends[1],type:'scene',zIndex:flags.on?1:0,selectable:false,focusable:false,data:{...edge,...flags}};
+      edgeObjects.set(id,{edge,source:ends[0],target:ends[1],flags,made});
+      return made;
     });},[scene,emphasis]);
     const cards=[...new Set([state.look,...state.pinned].filter(key=>key.startsWith('edge:')))];
     return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
