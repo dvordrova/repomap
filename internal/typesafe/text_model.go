@@ -50,7 +50,7 @@ func (m *TextModel) AttemptController() *llm.BatchController { return m.Controll
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{
-		"categorizer": json.RawMessage(`"text_model.lines.v5"`),
+		"categorizer": json.RawMessage(`"text_model.lines.v6"`),
 		"provider":    m.Provider.State(),
 	})
 	return state
@@ -106,7 +106,10 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 		if err != nil {
 			return llm.Prompt{}, err
 		}
-		fmt.Fprintf(&text, "\n%d. %s\n   %s: %s\n", i+1, question.Ask, name, item)
+		// The key is written beside the number: two windows asking the same
+		// items under other keys are other requests, never one cached answer
+		// read under the other window's keys.
+		fmt.Fprintf(&text, "\n%d. [%s] %s\n   %s: %s\n", i+1, key, question.Ask, name, item)
 		one := askedQuestion{key: key}
 		for _, option := range question.Options {
 			one.options = append(one.options, option.Name)
@@ -221,6 +224,12 @@ func answersFromLines(asked []askedQuestion, response []byte) ([]byte, error) {
 				at = n - 1
 			}
 			line = line[digits+1:]
+		}
+		// A line may repeat the question's bracketed key; it is no answer.
+		if rest := strings.TrimSpace(line); strings.HasPrefix(rest, "[") {
+			if end := strings.Index(rest, "]"); end > 0 {
+				line = rest[end+1:]
+			}
 		}
 		if at >= len(asked) {
 			continue

@@ -1,3 +1,12 @@
+## 2026-10-14 — the text model writes each question's key
+
+`TextModel` kept a window's questions by the prompt's text, which held no
+keys: two windows asking the same items under other keys (wild-workouts,
+`group_enough` b4/b5) were one request, decoded under the other window's keys,
+refused and resent. Each question now carries its key in brackets after its
+number (`text_model.lines.v6`), as Jev's body does; a line repeating it is
+still read.
+
 ## 2026-10-14 — declared provider rate and request size; shared option lists
 
 Owner: `REPOMAP_LLM_RPM` (default 100) and `REPOMAP_LLM_BYTES_LIMIT` (default

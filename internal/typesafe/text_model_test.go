@@ -1,6 +1,7 @@
 package typesafe
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -44,6 +45,48 @@ func TestSharedOptionListsAreLabelledPastZ(t *testing.T) {
 	for n, want := range map[int]string{0: "A", 25: "Z", 26: "AA", 27: "AB", 52: "BA", 701: "ZZ", 702: "AAA"} {
 		if got := listLabel(n); got != want {
 			t.Errorf("listLabel(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// linesProvider answers every request with the same lines.
+type linesProvider struct{ lines string }
+
+func (p linesProvider) State() []byte { return []byte(`"lines"`) }
+func (p linesProvider) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, error) {
+	return llm.NewPrepared([]byte(prompt.User))
+}
+func (p linesProvider) Complete(context.Context, llm.Prepared) (llm.Completion, error) {
+	return llm.Completion{Response: []byte(p.lines)}, nil
+}
+
+// Two windows asking the same items under other keys are other requests,
+// and each reads its answers under its own keys.
+func TestTwoWindowsOfTheSameItemsKeepTheirOwnKeys(t *testing.T) {
+	model := &TextModel{Provider: linesProvider{lines: "1. [b9|enough] yes"}}
+	ask := func(key string) llm.Prepared {
+		t.Helper()
+		prompt, err := model.Prompt("task", nil, map[string]llm.Question{key: {Name: "box", Item: map[string]any{"name": "api"}, Ask: "Smaller boxes?"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		prepared, err := model.Prepare(prompt, llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return prepared
+	}
+	first, second := ask("b4|enough"), ask("b5|enough")
+	if string(first.Bytes()) == string(second.Bytes()) {
+		t.Fatal("two windows under other keys prepared one request")
+	}
+	for prepared, key := range map[*llm.Prepared]string{&first: "b4|enough", &second: "b5|enough"} {
+		completion, err := model.Complete(t.Context(), *prepared)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(completion.Response), `"`+key+`":{"noul":1`) {
+			t.Fatalf("%s read %s", key, completion.Response)
 		}
 	}
 }
