@@ -14,6 +14,25 @@
   var entries=[],components={},groupNodes={},codeEntries=new Map(),lastQuery='';
   function modelText(node){if(!node)return '';var copy=node.cloneNode(true);copy.querySelectorAll('.source-hint,.model-sources').forEach(function(n){n.remove();});return copy.textContent;}
   function add(entry){entry.title=entry.title||'';entry.summary=entry.summary||'';entry.path=entry.path||'';entry.haystack=(entry.title+' '+entry.summary+' '+entry.path+' '+entry.component+' '+(entry.additionalText||'')).toLowerCase();entries.push(entry);}
+  var symbolLists=new WeakMap();
+  function tileRows(entry){
+    var key=entry.source.dataset.sourceKey||entry.source.getAttribute('href');
+    for(var i=0;key&&i<entry.memberships.length;i++){
+      var node=entry.memberships[i].node;if(!node)continue;
+      if(!symbolLists.has(node))symbolLists.set(node,rmPage.data(node,'symbols')||[]);
+      var symbols=symbolLists.get(node),at=symbols.findIndex(function(symbol){return repomapMembers.symbolKey(symbol)===key&&symbol.kind!=='field';});
+      if(at<0)continue;
+      return {head:symbols[at].name+(symbols[at].text||''),fields:symbols.filter(function(symbol){return symbol.owner===at+1&&(symbol.kind==='field'||symbol.kind==='more');}).map(function(symbol){return symbol.name+(symbol.text||'');})};
+    }
+    var fields=entry.fields||(entry.destination?Array.from(entry.destination.querySelectorAll(':scope>.symbol-fields>li>.chip')).map(function(chip){return chip.firstChild.textContent;}):[]);
+    return {head:entry.title.replace(/:\d+$/,''),fields:fields};
+  }
+  // The index is built when Find is first used, not as the page opens
+  // (owner, 2026-10-15: a big report should open without waiting; built
+  // at once it had cost Metabase's first map 10 seconds on a slow machine).
+  var built=false;
+  function buildIndex(){
+  if(built)return;built=true;
   // What a map node is to a reader looking for it: its search kind and the
   // word its result shows. A component is listed once, below. An outside
   // call or its destination is not a part of the program (gethostbyname was
@@ -115,19 +134,6 @@
   });
   // A code result shows its declaration the way its tile does: a function
   // with what it takes and returns, a type with its fields.
-  var symbolLists=new WeakMap();
-  function tileRows(entry){
-    var key=entry.source.dataset.sourceKey||entry.source.getAttribute('href');
-    for(var i=0;key&&i<entry.memberships.length;i++){
-      var node=entry.memberships[i].node;if(!node)continue;
-      if(!symbolLists.has(node))symbolLists.set(node,rmPage.data(node,'symbols')||[]);
-      var symbols=symbolLists.get(node),at=symbols.findIndex(function(symbol){return repomapMembers.symbolKey(symbol)===key&&symbol.kind!=='field';});
-      if(at<0)continue;
-      return {head:symbols[at].name+(symbols[at].text||''),fields:symbols.filter(function(symbol){return symbol.owner===at+1&&(symbol.kind==='field'||symbol.kind==='more');}).map(function(symbol){return symbol.name+(symbol.text||'');})};
-    }
-    var fields=entry.fields||(entry.destination?Array.from(entry.destination.querySelectorAll(':scope>.symbol-fields>li>.chip')).map(function(chip){return chip.firstChild.textContent;}):[]);
-    return {head:entry.title.replace(/:\d+$/,''),fields:fields};
-  }
   function sectionsFor(node,selector){
     return Array.from(new Set(Array.from(node.querySelectorAll(selector)).map(function(a){
       var n=document.getElementById(a.dataset.questionMap||(a.getAttribute('href')||'').slice(1));
@@ -144,15 +150,17 @@
   document.querySelectorAll('.learn-concept').forEach(function(n){
     add({title:n.querySelector('summary').textContent,summary:modelText(n.querySelector('.model')),component:rmT('Term explanation'),section:'concepts',sections:sectionsFor(n,'a[href^="#"]'),kind:'term',type:rmT('Term'),destination:n});
   });
+  }
   function expanded(value){box.setAttribute('aria-expanded',value);}
   function changed(){box.dispatchEvent(new CustomEvent('repomap:find',{bubbles:true}));}
   var lastPlace='',lastScroll=0;
   function close(record){if(!panel.hidden)lastScroll=results.scrollTop;panel.hidden=true;expanded('false');if(record!==false)changed();}
   // Choosing a component on the map closes the results and searches that
   // component next: the two choices no longer disagree about where one is.
-  box.chooseComponent=function(id){component.value=Array.from(component.options).some(function(o){return o.value===id;})?id:'';page=0;close();};
+  box.chooseComponent=function(id){buildIndex();component.value=Array.from(component.options).some(function(o){return o.value===id;})?id:'';page=0;close();};
   box.searchState=function(){return {query:box.value,kind:kind.value,component:component.value,page:page,open:!panel.hidden};};
   box.restoreSearch=function(saved){
+    buildIndex();
     saved=saved||{};box.value=typeof saved.query==='string'?saved.query:'';
     kind.value=Array.from(kind.options).some(function(o){return o.value===saved.kind;})?saved.kind:'all';
     component.value=Array.from(component.options).some(function(o){return o.value===saved.component;})?saved.component:'';
@@ -182,6 +190,7 @@
     appendText(li,'p',(start?'… ':'')+summary.slice(start,end)+(end<summary.length?' …':''),'find-result-summary');
   }
   function render(){
+    buildIndex();
     var q=box.value.trim().toLowerCase();if(q!==lastQuery){page=0;lastQuery=q;}
     if(!q){close();return;}
     var terms=q.split(/\s+/),inScope=entries.filter(function(e){return (!component.value||e.section===component.value||e.sections?.includes(component.value))&&terms.every(function(t){return e.haystack.includes(t);});});
@@ -222,7 +231,7 @@
     pages.querySelector('[data-prev]').disabled=page===0;pages.querySelector('[data-next]').disabled=(page+1)*pageSize>=matches.length;
     changed();
   }
-  box.addEventListener('input',render);box.addEventListener('focus',function(){if(box.value)render();});
+  box.addEventListener('input',render);box.addEventListener('focus',function(){buildIndex();if(box.value)render();});
   [kind,component].forEach(function(select){select.addEventListener('change',function(){page=0;render();});});
   panel.querySelector('[data-close]').addEventListener('click',dismiss);
   pages.querySelector('[data-prev]').addEventListener('click',function(){page--;render();});pages.querySelector('[data-next]').addEventListener('click',function(){page++;render();});

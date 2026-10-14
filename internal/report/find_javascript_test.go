@@ -10,7 +10,7 @@ import "testing"
 // (Not on the map, or Not reachable from the entrypoints), and the result
 // shows the declaration as its tile does, a type with its fields.
 func TestFindListsOneResultPerDeclarationWithItsPrograms(t *testing.T) {
-	code := systemJSPiece(t, "40-find.js", "  // One entry per declaration", "  function sectionsFor(")
+	code := systemJSPiece(t, "40-find.js", "  var symbolLists=new WeakMap();", "  // The index is built when Find") + systemJSPiece(t, "40-find.js", "  // One entry per declaration", "  function sectionsFor(")
 	runSystemJS(t, `
 const entries=[],codeEntries=new Map(),components={server:'redis-server',bench:'redis-benchmark',cli:'redis-cli'},groupNodes={};
 function add(entry){entries.push(entry);}
@@ -86,7 +86,7 @@ assert.equal(entries[0].node,input,'it opens the input itself');
 // no remote, Code had found local_request_Election_Campaign_0 and opened
 // its part, never its reading).
 func TestFindReadsADeclarationWithNoSourceLinkByItsPlace(t *testing.T) {
-	code := systemJSPiece(t, "40-find.js", "  // One entry per declaration", "  function sectionsFor(") +
+	code := systemJSPiece(t, "40-find.js", "  var symbolLists=new WeakMap();", "  // The index is built when Find") + systemJSPiece(t, "40-find.js", "  // One entry per declaration", "  function sectionsFor(") +
 		systemJSPiece(t, "40-find.js", "  function membership(", "  function appendText(")
 	runSystemJS(t, `
 const entries=[],codeEntries=new Map(),components={server:'server'},groupNodes={};

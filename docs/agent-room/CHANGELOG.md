@@ -16155,3 +16155,9 @@ frame of kinds), then the open set as the default after the owner tries it.
 - `tileGrid` searches the divisor and the columns by halving (both only add
   room) instead of one step at a time; the canvas measures a text's width
   once per font. Metabase first map 68.7 → 63.3 s at 4×.
+- Find builds its index when first used (focus, a component chosen, a
+  restored search) instead of as the page opens; the JS tests' slices take
+  `tileRows` from its new place and stub `buildIndex`. Main-thread work at
+  Metabase's open drops ~10 s; its first map barely moves (63.3 → 62.3 s at
+  4×): the first map waits for every level's ELK layout and for parsing
+  34 MB of HTML, which is the next thing to change.

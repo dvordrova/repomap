@@ -249,7 +249,7 @@ assert.deepEqual(labels(rmKey([part([[0,1,'calls']]),{dataset:{lane:'core'}}],[{
 // the other component still chosen in them.
 func TestFindReturnsToItsPlaceAndFollowsTheChosenComponent(t *testing.T) {
 	closing := systemJSPiece(t, "40-find.js", "  var lastPlace=''", "  box.restoreSearch=")
-	render := systemJSPiece(t, "40-find.js", "  function render(){", "  box.addEventListener('input',render);")
+	render := "function buildIndex(){}\n" + systemJSPiece(t, "40-find.js", "  function render(){", "  box.addEventListener('input',render);")
 	runSystemJS(t, fakeElements+`
 const box={value:'list'},panel={hidden:true},kind={value:'all'},component={value:'',options:[{value:''},{value:'t1'},{value:'t2'}]};
 const results=new El('ol');let scrollTop=0;Object.defineProperty(results,'scrollTop',{get:()=>scrollTop,set:v=>{scrollTop=v;}});
@@ -319,7 +319,7 @@ assert.deepEqual([items[1].alias,items[1].explanation,items[1].source.Path,items
 // Find: a declaration that no map holds had its title as the way to its
 // row; one result per declaration had made that title plain text.
 func TestFindOpensADeclarationNoMapHoldsAtItsRow(t *testing.T) {
-	render := systemJSPiece(t, "40-find.js", "  function render(){", "  box.addEventListener('input',render);")
+	render := "function buildIndex(){}\n" + systemJSPiece(t, "40-find.js", "  function render(){", "  box.addEventListener('input',render);")
 	runSystemJS(t, fakeElements+`
 const box={value:'list'},panel={hidden:true},kind={value:'all'},component={value:'',options:[{value:''}]};
 const results=new El('ol'),status=new El('p'),pages=new El('div');pages.querySelector=()=>({disabled:false,textContent:''});
