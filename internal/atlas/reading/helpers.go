@@ -140,11 +140,14 @@ func (facts *roleFacts) labels(ids map[string]bool) []string {
 func (r *reader) askHelpers(ctx context.Context, round int, facts *roleFacts) (map[string]bool, error) {
 	helpers := map[string]bool{}
 	target := r.opts.Targets[round-1]
-	var groups rowGroups
+	// The target's files are asked together: their rows share no context,
+	// and each id names its file and its unit there.
+	var group rowGroup
+	var files int
 	var asked []*roleUnit
 	var unused, seeds []string
-	for _, file := range facts.files {
-		var group rowGroup
+	for k, file := range facts.files {
+		before := len(group.rows)
 		for i, unit := range file.units {
 			if unit.seed {
 				seeds = append(seeds, unit.path+":"+unit.name)
@@ -154,16 +157,16 @@ func (r *reader) askHelpers(ctx context.Context, round int, facts *roleFacts) (m
 				unused = append(unused, unit.path+":"+unit.name)
 				continue
 			}
-			group.rows = append(group.rows, table.Row{ID: fmt.Sprintf("d%d", i+1), Fields: unit.helperItem(facts)})
+			group.rows = append(group.rows, table.Row{ID: fmt.Sprintf("f%d.d%d", k+1, i+1), Fields: unit.helperItem(facts)})
 			asked = append(asked, unit)
 		}
-		if len(group.rows) > 0 {
-			groups = append(groups, group)
+		if len(group.rows) > before {
+			files++
 		}
 	}
 	if len(asked) > 0 {
-		r.opts.Stage(lines.StageRoleHelper, fmt.Sprintf("%s: asking whether %d declarations of %d files are helpers", target.Name, len(asked), len(groups)))
-		answers, err := r.runTableGroups(ctx, lines.RoleHelper(), round, groups, nil)
+		r.opts.Stage(lines.StageRoleHelper, fmt.Sprintf("%s: asking whether %d declarations of %d files are helpers", target.Name, len(asked), files))
+		answers, err := r.runTableGroups(ctx, lines.RoleHelper(), round, rowGroups{group}, nil)
 		if err != nil {
 			return nil, err
 		}

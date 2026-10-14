@@ -161,22 +161,26 @@ func (r *reader) askCalls(ctx context.Context, round int, bySymbol map[string][]
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	var groups rowGroups
+	// Every symbol's calls are asked together: the rows share no context
+	// and their ids run across symbols.
+	var all rowGroup
 	var sites []sourceSite
 	var symbolOf []string
 	subjects := map[string]rowSubject{}
 	for _, name := range names {
 		calls := bySymbol[name]
 		sort.Slice(calls, func(i, j int) bool { return calls[i].site.compare(calls[j].site) < 0 })
-		var rows []table.Row
 		for _, call := range calls {
 			id := fmt.Sprintf("call%d", len(sites)+1)
 			subjects[id] = rowSubject{id: fmt.Sprintf("apicall:%s@%s:%d:%d", name, call.site.path, call.site.line, call.site.column), path: call.site.path, line: call.site.line}
-			rows = append(rows, table.Row{ID: id, Fields: call.fields})
+			all.rows = append(all.rows, table.Row{ID: id, Fields: call.fields})
 			sites = append(sites, call.site)
 			symbolOf = append(symbolOf, name)
 		}
-		groups = append(groups, rowGroup{rows: rows})
+	}
+	var groups rowGroups
+	if len(all.rows) > 0 {
+		groups = rowGroups{all}
 	}
 	r.opts.Stage(lines.StageAPI, fmt.Sprintf("asking %d calls of %d outside symbols what the words each is given become", len(sites), len(names)))
 	previous := r.rowSubjects

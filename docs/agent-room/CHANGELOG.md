@@ -1,3 +1,17 @@
+## 2026-10-14 — a level's boxes, a target's helper files and every symbol's calls in one window
+
+Consilium (stage loops, coalescing layer, dedupe; judged): `runPreparedGroups`
+never packs two row groups, and the stages made one group per box
+(`group_enough`, 44 one-question requests on wild-workouts), per symbol
+(`enters`, 44) and per file (`role_helper`, 72). They now give one group;
+oversized windows still divide (`FitClassifierWindows`). Helper rows are
+`f<file>.d<unit>`; a changed file re-asks its target's helper window (Jev
+loses per-file warm reuse there). The `group_enough` part landed inside
+78ce0885. A coalescing layer in the executor (~450 lines, ~same gain) was
+rejected. Open for the owner: the catalogue into `group_assign` rows, the
+whole-target box always divided (−7), a library view over an executable's
+root as a second target (46 requests).
+
 ## 2026-10-14 — the text model writes each question's key
 
 `TextModel` kept a window's questions by the prompt's text, which held no

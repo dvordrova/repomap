@@ -247,7 +247,8 @@ contexts were removed on the same day; their copies are outside the tree).
 2. *The grouping question* (`atlas_group_enough`, Jev, `role_map.md` plus
    `prompts/group_enough.md`, options `group_enough_options.md`): a box of at
    most four elements (the owner's constant) is read as it is and not asked.
-   Every larger box is one question, "Does a newcomer read `box` as it is, or
+   Every larger box is one question, a level's boxes asked together (owner,
+   2026-10-14), "Does a newcomer read `box` as it is, or
    does it need smaller boxes inside?", its item the box's `name`, `holds`,
    `inside` (the boxes it sits in, outermost first) and `declarations`
    ("path: name"). Only a decided `needs smaller boxes` divides it; `grouped
@@ -310,8 +311,10 @@ and never fails the target. Without a model a target with units has no map:
 an explicit map failure. A target without a unit has a legitimate empty map.
 
 *The helper question* (`atlas_role_helper`, Jev; owner, 2026-09-28) runs
-first, once per unit of every non-test, non-generated file of the target, one
-request per file (`state.context` empty, prompt `role_helper.md`, options
+first, once per unit of every non-test, non-generated file of the target, the
+target's files asked together (row `f<file>.d<unit>`; owner, 2026-10-14:
+one request per file made 72 of a small repository's ~280; a changed file
+re-asks its target's window) (`state.context` empty, prompt `role_helper.md`, options
 `role_helper_options.md`, `none of these` among them): "What is
 `declaration` on our map: a helper, the code of a responsibility, or none of
 these?". The item is the unit's name, kind, `file`, signature, `lines`,
@@ -672,7 +675,8 @@ on an input's path such as access, adapter, logic or passthrough); a reader's
 arrival brings one back as its own question with an explicit `none` option.
 
 **Calls given words.** Each call outside tests that gives such a symbol at
-least one word is asked on its own what its words become on our map
+least one word is asked on its own (every symbol's calls in one table, owner
+2026-10-14) what its words become on our map
 (`repomap.atlas.enters.v1`, `enters`, Jev, `prompts/api_call.md`): an entry
 kind but `queue_consumer` (no outcome is offered in both this and `talks`), or
 `none`, from the one criteria file. The item is the symbol and its declared
