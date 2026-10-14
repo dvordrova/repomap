@@ -10,9 +10,11 @@
   --shadow:none;--shadow-sm:none;
   --zone-1:#dbeafe;--zone-2:#dcfce7;--zone-3:#fef3c7;--zone-4:#fce7f3;
   --zone-5:#e0e7ff;--zone-6:#ffedd5;--zone-7:#ccfbf1;--zone-8:#ede9fe;
-  /* One meaning per colour: purple is a link and nothing else; core parts
-     and areas are rose (--zone-4's hue), marked by the diamond. */
-  --link:#63429d;--link-bg:#f5f3f9;--link-line:#dcd6e7;--link-bg-hover:#eee7f7;
+  /* One meaning per colour (owner, 2026-10-14): green goes somewhere in the
+     report, purple with an arrow leaves it (the code, an outside page);
+     core parts and areas are rose (--zone-4's hue), marked by the diamond. */
+  --link:#176b62;--link-bg:#eef6f3;--link-line:#cfe3dc;--link-bg-hover:#e2f0eb;
+  --out:#63429d;
   --core:#913b6d;--core-ink:#62284a;--core-bg:var(--zone-4);--core-area:#fef4f9;
   --type-arrow:#7b8aa0;
   --mono:ui-monospace,SFMono-Regular,Menlo,monospace;

@@ -57,6 +57,7 @@ function rmDeclName(decl,text,go,title,bold,code){
   // A callable written inline has no tile of its own to read: a plain click
   // opens its code (owner, 2026-10-14: it had answered only a Cmd-click).
   if(go&&!decl.anonymous){
+    link.classList.add('rm-in');
     link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();go(decl);
@@ -119,10 +120,10 @@ function rmPeerBox(ctx,peer){
   return rmEl('span','map-part-box map-part-box-input',rmT('Inputs'));
 }
 // The hover of a name in another part: that part.
-function rmEndTitle(ctx,decl){
-  var node=decl.part?ctx.nodeByHref(decl.part):null;
-  return node?node.dataset.title:'';
-}
+// A name's part is not repeated on its hover: the part's box heads the
+// names under it (owner, 2026-10-14: "Retry decisions" had popped up over
+// DefaultDecision under the Retry decisions box).
+function rmEndTitle(ctx,decl){return '';}
 // A name as the column writes it: it breaks only after a dot or a slash,
 // never inside a word, at an underscore or at a hyphen (litestream's
 // "sql.Tx.Rollbac k", freqtrade's "process_open_trade / _positions",

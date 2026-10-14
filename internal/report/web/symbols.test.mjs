@@ -89,7 +89,11 @@ test('a tile is as wide as the longest name and every tile fits whole',()=>{
   assert.equal(grid.hidden,0,'nothing is counted away');
   assert.ok(grid.tileWidth>=27*8+22,'the longest name is not cut');
   assert.ok(grid.divisor>4,'a part with more tiles than its card holds at a quarter is drawn smaller');
-  assert.equal(tileGrid(names.slice(0,3).map(name=>({name})),[],{width:260,height:88},measure).divisor,4,'a small part keeps the quarter scale');
+  // A small part's tiles are drawn as large as its card holds them whole
+  // (owner, 2026-10-14: Retry decisions' tiles had filled a quarter of it).
+  const small=tileGrid(names.slice(0,3).map(name=>({name})),[],{width:260,height:88},measure);
+  assert.ok(small.hidden===0&&small.divisor<4,'a small part is drawn larger than a quarter');
+  assert.ok(tileGrid(names.slice(0,3).map(name=>({name})),[],{width:260,height:88},measure,{least:small.divisor-.25}).divisor===small.divisor,'and no larger than holds it whole');
 });
 
 test('tiles stand by file, files in the order their first declaration is listed',()=>{

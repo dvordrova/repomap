@@ -9,6 +9,11 @@ h4{font-size:.95rem;margin:.9rem 0 .3rem;font-weight:600}
 code,.anchor,.chip,.method{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:max(var(--text-small),.88em)}
 a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:.2em}
 a:hover{text-decoration-color:currentColor}
+/* A link out of the report: purple, an arrow after it (owner, 2026-10-14).
+   A name whose plain click reads it in the report (rm-in), a declaration's
+   tile on the map, and a link wearing its own mark stay. */
+a[target="_blank"]:not([data-symbol]):not(.rm-in):not(.repomap-link):not(.react-flow__attribution a){color:var(--out)!important}
+a[target="_blank"]:not([data-symbol]):not(.rm-in):not(.repomap-link):not(.react-flow__attribution a)::after{content:"\2197";display:inline-block;margin-left:.15em;font-size:.8em;text-decoration:none}
 button,input,select{font:inherit}
 button,a,input,select,summary{-webkit-tap-highlight-color:transparent}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px}

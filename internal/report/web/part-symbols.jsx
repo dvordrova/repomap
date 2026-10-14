@@ -28,7 +28,11 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
   // A declaration with those its links join. Pointing at one darkens its
   // links and recedes nothing; a chosen one recedes what its links do not
   // join, save what the pointer brings forward.
-  const joined=at=>new Set(at<0?[]:[at,...drawn.filter(([from,to])=>from===at||to===at).flat().filter(value=>typeof value==='number')]);
+  // A type stands with its own fields and methods, and a member with its
+  // type: Retry decisions' DefaultDecision, chosen, had receded its own data
+  // and Payload() with what its links do not join (owner, 2026-10-14).
+  const own=at=>{const block=blocks.find(block=>block.head===at||block.rows.includes(at));return block?[block.head,...block.rows]:[at];};
+  const joined=at=>new Set(at<0?[]:[...own(at),...drawn.filter(([from,to])=>from===at||to===at).flat().filter(value=>typeof value==='number')]);
   const lit=joined(hot),kept=joined(chosen);
   const tone=i=>chosen>=0&&!kept.has(i)&&!lit.has(i)?'flow-symbol-dim':'';
   // A row reads as a line of a class box: the visibility sign, the name and,
@@ -43,7 +47,7 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
       event.preventDefault();event.stopPropagation();member?.choose(i,event);
     };
     const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${symbol.quiet?'flow-symbol-quiet':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
-      'data-symbol':i,title:symbol.kind==='more'?undefined:`${symbol.full||symbol.name}${symbol.text||''}`,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
+      'data-symbol':i,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
     return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.code||symbol.href} target="_blank" {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
@@ -65,11 +69,10 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
           const bend=forward?Math.max(16,(end.x-start.x)/2):26;
           const on=hot>=0&&(from===hot||to===hot),receded=chosen>=0&&!on&&from!==chosen&&to!==chosen;
           return <path key={i} className={`flow-symbol-${kind||'calls'} ${on?'flow-symbol-call-hot':receded?'flow-symbol-call-dim':''}`}
-            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd={`url(#flow-symbol-arrow${on?'-hot':''})`}>
-            <title>{`${symbols[from].name} ${kind||'calls'} ${symbols[to].name}`}</title></path>;
+            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd={`url(#flow-symbol-arrow${on?'-hot':''})`}/>;
         })}
       </svg>
-      {blocks.map(block=><div key={block.head} className={`flow-symbol-block ${block.rows.length?'flow-symbol-type':''}`}
+      {blocks.map(block=><div key={block.head} className={`flow-symbol-block ${block.rows.length?'flow-symbol-type':''} ${block.head===chosen?'flow-symbol-block-chosen':''}`}
         style={{left:x(block.column),top:inset+block.y,width:tileWidth,height:block.height}}>
         {row(block.head,'flow-symbol-head')}
         {block.rows.map((i,k)=>row(i,'flow-symbol-row',k>0&&symbols[i].kind!=='field'&&symbols[i].kind!=='more'&&['field','more'].includes(symbols[block.rows[k-1]].kind)))}

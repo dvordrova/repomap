@@ -40,9 +40,11 @@ function rmFlowOwner(ctx,data,decl){
 // A call's hover: the part it goes into, what it hands over, and where it
 // is written ("called at redis.c:1273 · 1288").
 function rmFlowTitle(ctx,decl,call){
-  var part=decl&&rmFlowPart(ctx,decl.part),sites=(call.sites||[]).map(function(site,i){return i?site.at.split(':').pop():site.at;});
+  // No part's name: the heading over the name says where it stands (owner,
+  // 2026-10-14: "Retry decisions" had popped up over every name in its part).
+  var sites=(call.sites||[]).map(function(site,i){return i?site.at.split(':').pop():site.at;});
   var kind=call.kind||'calls',words=kind==='calls'||kind==='invokes_external'?'':rmEndWords.out[kind]||kind.replace(/_/g,' ');
-  return [part?part.dataset.title:'',words?rmT(words):'',sites.length?rmT('called at {0}',sites.join(' · ')):''].filter(Boolean).join('\n');
+  return [words?rmT(words):'',sites.length?rmT('called at {0}',sites.join(' · ')):''].filter(Boolean).join('\n');
 }
 // A call's name. A macro's call is the macro as written ("redisAssert"),
 // its hover naming what its expansion calls; the name reads that.

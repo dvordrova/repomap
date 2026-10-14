@@ -188,3 +188,11 @@
 .scene-root.scene-moving .react-flow__viewport{will-change:transform}
 /* An input's name stands in its measured lines (scene-canvas.jsx TileNode). */
 .scene-root .scene-tile>span.scene-tile-lines{white-space:pre;overflow-wrap:normal;overflow:hidden}
+/* A box pointed at, read or lit thickens its own border inward, one line at
+   every zoom: an outline drawn in the box's scale had stood apart from its
+   border, constant on screen, as a second line once the camera came close
+   (owner, 2026-10-14: "двойные обводки как дешман"). */
+.scene-root .react-flow__node :is(.flow-part,.flow-chip){outline:0!important}
+.scene-root .react-flow__node:is(.flow-node-connected,.flow-node-focus)>.scene-scaled:is(.flow-part,.flow-chip){border-color:#243044;box-shadow:inset 0 0 0 calc(1px / (var(--flow-zoom,1) * var(--scene-text,1))) #243044}
+.scene-root .react-flow__node:is(.flow-node-reading,.flow-node-lit)>.scene-scaled:is(.flow-part,.flow-chip){border-color:#243044;box-shadow:inset 0 0 0 calc(2px / (var(--flow-zoom,1) * var(--scene-text,1))) #243044}
+.scene-root .react-flow__node:is(.flow-node-reading,.flow-node-lit,.flow-node-focus) .flow-part.scene-deep{border-color:#243044;box-shadow:inset 0 0 0 calc(1.5px / (var(--flow-zoom,1) * var(--scene-card-scale,1))) #243044}

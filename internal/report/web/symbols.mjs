@@ -26,15 +26,18 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
     const a=blockOf[from],b=blockOf[to];
     if(a>=0&&b>=0&&a!==b)before[b].add(a);
   }
+  // A block's link column, unclamped: the longest chain of links leading to
+  // it.
   const depth=new Array(blocks.length).fill(-1),visiting=new Set();
-  const column=i=>{
+  const chain=i=>{
     if(depth[i]>=0)return depth[i];
     if(visiting.has(i))return 0;
     visiting.add(i);
-    const d=Math.max(0,...[...before[i]].map(from=>column(from)+1));
+    const d=Math.max(0,...[...before[i]].map(from=>chain(from)+1));
     visiting.delete(i);
-    return depth[i]=Math.min(columns-1,d);
+    return depth[i]=d;
   };
+  const column=i=>Math.min(columns-1,chain(i));
   // A type taller than the card shows the rows that fit and counts the rest.
   const most=Math.max(1,Math.floor((height-symbolRow.header-symbolRow.pad)/symbolRow.row)-1);
   // A block stands where its first declaration is listed: a type holding a
@@ -64,7 +67,9 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
     rows[block.head]={block:i,column:at.column,y:at.y,height:symbolRow.header};
     block.rows.forEach((symbol,k)=>{rows[symbol]={block:i,column:at.column,y:at.y+symbolRow.header+k*symbolRow.row,height:symbolRow.row};});
   }
-  return {blocks:[...placed].map(([i,at])=>({...blocks[i],...at})),rows,hidden};
+  // The columns its longest chain of links stands across.
+  const across=1+Math.max(0,...blocks.map((_,i)=>chain(i)));
+  return {blocks:[...placed].map(([i,at])=>({...blocks[i],...at})),rows,hidden,across};
 }
 
 // The tiles of a part as its card draws them. A tile is as wide as the
@@ -85,7 +90,7 @@ export const tileRoom={header:20,inset:8,columnGap:36,side:36};
 // the quarter scale whatever the divisor: 20 card units at a quarter.
 export const tileHeader=divisor=>tileRoom.header*4/divisor;
 export const tileFont=symbol=>`${symbol.key?750:symbol.owner?400:600} ${symbol.owner?12.5:13}px ui-monospace,SFMono-Regular,Menlo,monospace`;
-export function tileGrid(symbols,links,box,measure,{least=4,step=.5}={}){
+export function tileGrid(symbols,links,box,measure,{least=2,step=.25}={}){
   const shown=symbols.map((symbol,i)=>[symbol,i]).filter(([symbol])=>symbol.kind!=='skip');
   // Padding and border as canvas.css draws a head (10px a side) and a row
   // (12px left, 10px right) inside a 1px border.
@@ -98,14 +103,21 @@ export function tileGrid(symbols,links,box,measure,{least=4,step=.5}={}){
   // drawn once. Stopped at a fixed divisor, a part too large for it had its
   // declarations counted away again.
   const roomy=box.width>0&&box.height>0;
+  // The fewest columns that hold every tile, and enough for a caller, what
+  // it calls and what that returns, or for its longest chain of links when
+  // shorter; the columns share the card's width (owner, 2026-10-14: chi's
+  // two tiles, and Retry decisions' chain of two, had stood in a corner of
+  // their card, narrow for columns nothing filled).
+  const across=links.length?symbolBlocks(symbols,links,shown.length||1,Infinity,rank).across:1;
   for(let divisor=least;;divisor+=step){
     const inner={width:box.width*divisor,height:(box.height-tileHeader(divisor))*divisor};
-    const columns=Math.max(1,Math.floor((inner.width-2*side+gap)/(nameWidth+gap)));
-    const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*side-(columns-1)*gap)/columns));
-    const grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
-    // Columns enough for a caller, what it calls and what that returns, or
-    // one for each tile when there are fewer (owner, 2026-10-14: chi's two
-    // tiles had been shrunk for a third column into a corner of their card).
-    if(!roomy||grid.hidden===0&&(!links.length||columns>=Math.min(3,shown.length)))return grid;
+    const fit=Math.max(1,Math.floor((inner.width-2*side+gap)/(nameWidth+gap)));
+    let grid=null;
+    for(let columns=Math.min(fit,Math.min(3,across));columns<=fit;columns++){
+      const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*side-(columns-1)*gap)/columns));
+      grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
+      if(grid.hidden===0)break;
+    }
+    if(!roomy||grid.hidden===0&&fit>=Math.min(3,across))return grid;
   }
 }

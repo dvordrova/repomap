@@ -64,7 +64,7 @@ function CardNode({data}){
   // tile under its title (owner, 2026-09-29), in place of its description.
   if(data.tile&&words.title.length)return <>{handles}<Scaled node={node} className={`flow-part ${laneClass(node.lane)}`}>
     <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
-      <span className="scene-chosen-tile" title={data.tile.full||data.tile.name}>{data.tile.name}</span></div></Scaled></>;
+      <span className="scene-chosen-tile">{data.tile.name}</span></div></Scaled></>;
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     <div className="scene-words">{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
     {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>
@@ -132,7 +132,7 @@ const focusable=data=>data.keys?{tabIndex:0,'aria-label':data.node.title,...data
 function ChipNode({data}){
   const {node}=data;
   return <>{handles}<Scaled node={node} className={`flow-chip scene-chip ${data.item?.unestablished?'flow-chip-unestablished':''}`} data={focusable(data)}>
-    <Mark icon={systemIcons[node.systemKind]}/><span className="flow-chip-name" title={node.title}>{node.title}</span></Scaled></>;
+    <Mark icon={systemIcons[node.systemKind]}/><span className="flow-chip-name">{node.title}</span></Scaled></>;
 }
 // A closed bucket: its part's name over its systems' marks, never blank.
 // A closed part-group: one of our parts (its name on a part's card) in
@@ -142,7 +142,7 @@ function ChipNode({data}){
 function BucketNode({data}){
   const {node}=data;
   return <>{handles}<Scaled node={node} className="flow-chip scene-bucket scene-bucket-stack" data={focusable(data)}>
-    <span className="scene-bucket-face"><span className="scene-bucket-words"><span className="flow-chip-name" title={node.title}>{node.title}</span>
+    <span className="scene-bucket-face"><span className="scene-bucket-words"><span className="flow-chip-name">{node.title}</span>
     <span className="scene-bucket-marks">{node.systemKinds.map(kind=><Mark key={kind} icon={systemIcons[kind]}/>)}</span></span></span></Scaled></>;
 }
 function NoteNode({data}){

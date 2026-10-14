@@ -125,6 +125,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     var decl=decls[index]||{name:''},key=repomapMembers.declKey(decl),at=key&&partNode(decl.part);
     var link=at?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
+    if(at)link.classList.add('rm-in');
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();read(at,key);
@@ -325,6 +326,7 @@ function rmSettingWrites(sets,partNode,read){
     var key=repomapMembers.declKey(set),at=key&&partNode(set.part);
     var link=key?repomapMembers.sourceLink({Href:set.code||set.href,Open:set.open,Text:set.name,NoSource:set.no_source}):rmEl('span','',set.name);rmDotBreaks(link);
     link.classList.add('map-reading-name');if(set.source)link.title=set.source;
+    if(at)link.classList.add('rm-in');
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();read(at,key);
@@ -344,6 +346,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode,group
     var decl=decls[index]||{name:''},key=repomapMembers.declKey(decl),at=key&&partNode(decl.part);
     var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
+    if(at)link.classList.add('rm-in');
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();read(at,key);
@@ -467,6 +470,7 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
     var decl=decls[index]||{name:''},key=repomapMembers.declKey(decl),at=key&&partNode(decl.part);
     var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
+    if(at)link.classList.add('rm-in');
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();read(at,key);

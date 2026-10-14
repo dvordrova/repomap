@@ -16005,3 +16005,23 @@ frame of kinds), then the open set as the default after the owner tries it.
   pre-existing layout-worker failure only; rate-envelope-queue at 1000×650
   and 1440×900 in headless Chromium: the click enters Queue construction
   with NewRateEnvelopeQueue in sight.
+
+## 2026-10-14 — tiles fill their card; one highlight; green stays, purple leaves
+
+- Owner on rate-envelope-queue: Retry decisions' tiles stood in a quarter of
+  its card. `tileGrid` now takes the fewest columns that hold every tile
+  (at least its longest link chain, up to three) sharing the card's width, and
+  draws tiles as large as the card holds them whole (divisor from 2, not 4).
+- A type chosen keeps its own fields and methods lit; one mark for a chosen
+  declaration (dark doubled border for a block, tinted bold row for a member).
+- A box pointed at, read or lit thickens its border inward with an inset
+  shadow scaled like the border: the outline, drawn in the box's scale, had
+  stood apart as a second line once the camera came close.
+- No native hover repeats what is shown: tiles, chips and the column's names
+  no longer pop up their own name or their part's.
+- Links: `--link` is green (goes somewhere in the report); a link opening a
+  new tab (code, an outside page) is purple with ↗ (`--out`), unless its plain
+  click reads it in the report (`rm-in`).
+- Checks: `npm test` 179/179, `go test ./internal/report/` ok,
+  `make ui-visual-test` 20 passed + the pre-existing layout-worker failure;
+  rate-envelope-queue screenshots of Retry decisions and Queue construction.
