@@ -473,10 +473,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // What the pointer rests on is emphasized once it rests there: a pointer
   // crossing the map re-emphasized every box and arrow it passed, each a
   // redraw of the whole level (owner's trace, 2026-10-14).
-  let pointing=0;
+  // A pointer moving on over the same box keeps its wait: restarted at every
+  // move, the emphasis had come only once the mouse stopped (owner,
+  // 2026-10-14: "не отзывчиво", Inputs lit "очень медленно").
+  let pointing=0,aimed=null;
+  const sameTarget=(a,b)=>a===b||!!a&&!!b&&a.type===b.type&&a.id===b.id&&a.part===b.part&&a.index===b.index&&a.group===b.group;
   const pointSoon=target=>{
-    clearTimeout(pointing);
-    pointing=setTimeout(()=>store.dispatch({type:'point',target}),30);
+    if(sameTarget(target,aimed)||sameTarget(target,store.getState().pointer))return;
+    aimed=target;clearTimeout(pointing);
+    pointing=setTimeout(()=>{aimed=null;store.dispatch({type:'point',target});},30);
   };
   const onCard=event=>!!event.target.closest?.('.flow-floating-card,.scene-program-inside,[data-input-group-kind]');
   // A press that moves the pointer or the camera is a drag: the click
@@ -521,7 +526,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointerdown',()=>{pressed=true;},true);
   window.addEventListener('pointerup',()=>{pressed=false;},true);
   window.addEventListener('pointercancel',()=>{pressed=false;},true);
-  host.addEventListener('pointerleave',event=>{clearPointerCursor();clearTimeout(pointing);if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
+  host.addEventListener('pointerleave',event=>{clearPointerCursor();clearTimeout(pointing);aimed=null;if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
     const v=camera.get(),press=down;down=null;

@@ -16061,3 +16061,12 @@ frame of kinds), then the open set as the default after the owner tries it.
   pre-existing failure, `go test ./internal/report/` ok; headless Chromium:
   the dot at the dashed arrow's head from its first half, both names green,
   `visualViewport.scale` 1 after a pinch over the card.
+
+## 2026-10-14 — hover lights at once, a program card included
+
+- The pointer's wait restarted at every move, so a box lit only once the
+  mouse stopped (owner: rate-envelope-queue "не отзывчиво", Inputs lit "очень
+  медленно"). A move over the same box keeps its wait: lit 53–55 ms into a
+  continuous move at 4× CPU throttling in headless Chromium.
+- A program card pointed at had no emphasis style; the box pointed at (and
+  one read or lit) has a 2px inward border, one only connected 1px.
