@@ -15836,3 +15836,12 @@ places (`drawRoots`), the entered program open in place of its card; a
 whole-map arrow into it meets its border at its port. The scene invariants
 check whole-map arrows at the whole map's level, and accept a port at such an
 arrow's end. `npm test` 178/178; visual 23/24 (same pre-existing spec).
+
+service-pkg's map had an outside system "Go runtime" (kind db): its 42
+`sync.Mutex`/`RWMutex` Lock/Unlock calls. The Go adapter resolved them (package
+`sync`, receiver `*Mutex`); the talks question, answered by the text model
+(no JEV_KEY) from the usage `c.mu.Lock()` inside the ClickHouse client, said
+`db`. The `none` option now names threads' synchronization (a mutex, a wait
+group or condition, an atomic, an in-process channel) with an example of a
+mutex locked inside a client's code. Ordinary service-pkg run, text model,
+warm: no "Go runtime"; destinations ClickHouse, PostgreSQL, Redis, Http.
