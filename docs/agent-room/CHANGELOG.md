@@ -15764,3 +15764,17 @@ cap, call-graph clustering, a canvas-only collapse, a reworded root prompt
 alone. `TestManyBoxesAreGatheredIntoLargerParts`,
 `TestDecodeGatherRefusesOnlyWhatIsWrong`; atlas/reading suite green; vet
 clean; `make test` red only in the known JSTS helper (`node.getChildren`).
+
+The gathering's first Airflow run paired leftovers ("Utilities and CLI",
+"Timetables and serialization"). The prompt now says most boxes may stay
+alone, a pair is never a group for being left over, and a group's `holds`
+names the one work its boxes share — a group only sayable as "A and B" stays
+apart. Probe on the saved root request, 3 draws each: the old prompt paired
+"Serialization and triggers" and "Callbacks and plugins" in all three; the new
+one paired a leftover in one draw of three (Timetables + Serialization),
+Utilities and CLI alone in all. Draws vary more.
+
+An area's closed card was coloured by its lane, so Airflow's Utilities read
+rose for two core parts of many; REPORT already says area frames are neutral
+and the core or entry mark is the glyph on the card's border. The card is
+neutral now; the glyph stays.

@@ -65,7 +65,7 @@ function CardNode({data}){
   if(data.tile&&words.title.length)return <>{handles}<Scaled node={node} className={`flow-part ${laneClass(node.lane)}`}>
     <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
       <span className="scene-chosen-tile" title={data.tile.full||data.tile.name}>{data.tile.name}</span></div></Scaled></>;
-  return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
+  return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     <div className="scene-words">{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
     {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>
     <BigName node={node}/>
@@ -74,7 +74,10 @@ function CardNode({data}){
 function ProgramNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title,node.contents,item]);
-  return <>{handles}<Scaled node={node} className={`scene-program-card ${node.display==='area'?`flow-part scene-area-card ${laneClass(node.lane)}`:''}`} data={node.display==='area'?{'data-summary-area':node.id}:{'data-component-overview':node.id}}>
+  // An area's card is neutral, its core or entry mark the glyph on its
+  // border (REPORT: parts and area frames neutral, core parts rose); a rose
+  // area had made Airflow's Utilities read as core for two of its parts.
+  return <>{handles}<Scaled node={node} className={`scene-program-card ${node.display==='area'?'flow-part scene-area-card':''}`} data={node.display==='area'?{'data-summary-area':node.id}:{'data-component-overview':node.id}}>
     <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
     {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}{' '}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}

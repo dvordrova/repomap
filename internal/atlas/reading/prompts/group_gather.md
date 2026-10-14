@@ -17,10 +17,13 @@ stands between this box and its smaller boxes; opening it shows its smaller
 boxes as they are.
 
 A smaller box that sits with no other stays alone: leave it out of every
-group. Do not make a group of what is left over. A group is named by the work
+group. Most boxes may stay alone. Two boxes are never a group because they
+are what is left after the others are grouped. A group is named by the work
 its boxes do together, never by being common, shared, general, other or
 miscellaneous. Do not put every smaller box in one group. Put each smaller
 box in at most one group.
 
-Give each group a name of two to four words, one sentence `holds` that says
-which work it holds, and the refs of its smaller boxes in `boxes`.
+Give each group a name of two to four words, one sentence `holds` that names
+the one larger kind of work its boxes share, and the refs of its smaller
+boxes in `boxes`. When the only way to say what a group holds is to list
+each box's own work ("A and B"), its boxes share no work: leave them alone.
