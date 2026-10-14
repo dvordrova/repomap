@@ -41,3 +41,15 @@ test('one pinch crosses one level boundary and stops short of the next',()=>{
   assert.ok(held>=2&&held<4,`held at ${held}, past the first boundary and short of the second`);
   assert.equal(pinchLimit(held,1,depthAt,gesture),1,'and back across it');
 });
+
+// A box's kind mark is a target apart from its box: the pointer crossing the
+// Inputs card onto its Background work mark points at the mark (owner,
+// 2026-10-14: the mark had stayed unlit, the card still pointed at).
+test('pointing moves from a box onto its kind mark',()=>{
+  const reduce=sceneReducer({model:null,geometry:()=>null,scene:()=>null});
+  const card={type:'box',id:'inputs'},mark={type:'box',id:'inputs',kind:'continuous',group:'inputs~continuous'};
+  const onCard=reduce(initialState,{type:'point',target:card});
+  const onMark=reduce(onCard,{type:'point',target:mark});
+  assert.equal(onMark.pointer.group,'inputs~continuous');
+  assert.equal(reduce(onMark,{type:'point',target:{...mark}}),onMark,'the same mark again changes nothing');
+});

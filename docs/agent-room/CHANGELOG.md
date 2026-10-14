@@ -16073,3 +16073,7 @@ frame of kinds), then the open set as the default after the owner tries it.
 - A kind's mark in a closed Inputs card, pointed at in the reading or on the
   map, darkens its ground (no ring); the map's pointer had skipped the mark
   as if it were a card, so pointing at it there lit nothing.
+- The store took a kind mark for its box (`same` compared type and id), so a
+  pointer reaching the mark across its Inputs card kept the card pointed and
+  lit no mark; a direct jump onto the mark had passed the first check.
+  `same` compares group, part and index too (store test added).

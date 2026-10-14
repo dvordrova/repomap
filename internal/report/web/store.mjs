@@ -37,7 +37,10 @@ export const initialState={
   version:0,
 };
 
-const same=(a,b)=>a===b||a&&b&&a.type===b.type&&a.id===b.id;
+// One target: a box's kind mark is a target apart from its box (owner,
+// 2026-10-14: the pointer reaching Background work across its Inputs card
+// had kept the card pointed and lit no mark).
+const same=(a,b)=>a===b||a&&b&&a.type===b.type&&a.id===b.id&&a.group===b.group&&a.part===b.part&&a.index===b.index;
 // `context` gives the reducer what a zoom needs: {model, geometry, scene()}.
 export function sceneReducer(context){
   return (state,action)=>{
