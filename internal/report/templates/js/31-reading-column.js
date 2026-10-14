@@ -469,8 +469,9 @@ function rmPartView(ctx,node,data){
   var view=rmEl('div','map-part-reading');
   var title=rmEl('div','map-part-title');title.appendChild(rmPartBox(ctx,node.getAttribute('href'),node.dataset.title,true));view.appendChild(title);
   if(node.dataset.summary)view.appendChild(rmModelText('p','map-card-summary',node.dataset.summary,node.dataset.summaryRef));
+  // Its files are not listed apart: each declaration below links its own
+  // code (owner, 2026-10-14: paths that looked like links and were none).
   var files=data.files||[];
-  if(files.length){var fileList=rmEl('ul','map-part-files meta');files.forEach(function(file){fileList.appendChild(rmDotBreaks(rmEl('li','',file)));});view.appendChild(fileList);}
   // Its declarations in Go's order (by kind, then name); those reached from
   // outside the part ("Called from": a caller in another part, an input
   // registered at it, a callable handed over) are its ways in.

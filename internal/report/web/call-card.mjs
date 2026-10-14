@@ -152,7 +152,10 @@ export function briefCard(card){
     if(!entry.name)return;
     if(!into.has(part))into.set(part,new Map());
     const key=entry.at?`${entry.at.part}\0${entry.at.key}`:entry.input?entry.input.id:entry.name;
-    if(!into.get(part).has(key))into.get(part).set(key,entry);
+    if(!into.get(part).has(key)){into.get(part).set(key,{...entry,callers:entry.caller?[{name:entry.caller,at:entry.callerAt}]:[]});return;}
+    // One callee called from several callers names each of them.
+    const known=into.get(part).get(key);
+    if(entry.caller&&!known.callers.some(caller=>caller.name===entry.caller))known.callers.push({name:entry.caller,at:entry.callerAt});
   };
   for(const group of card.groups){
     for(const fold of group.folds)for(const part of fold.parts)for(const row of part.rows)add(part.name,{name:row.callee,href:row.href,at:row.calleeAt});
@@ -162,7 +165,7 @@ export function briefCard(card){
       // acceptHandler"), not the socket call at its far end.
       if(row.sides?.length>1)add(pair.name,{name:`${row.sides[0].path[0]?.name||row.caller} ⇢ ${row.sides.at(-1).path[0]?.name||row.callee}`,href:row.site});
       else if(row.inputRefs)for(const ref of row.inputRefs)add(pair.name,{name:ref.name,input:ref});
-      else if(row.callee)add(pair.name,{name:row.callee,href:row.calleeHref,at:row.calleeAt});
+      else if(row.callee)add(pair.name,{name:row.callee,href:row.calleeHref,at:row.calleeAt,caller:row.caller,callerAt:row.callerAt});
       else if(row.other&&row.other!==pair.name&&row.other!==group.name)add(pair.name,{name:row.other,href:row.otherHref});
       else add(pair.name,{name:''});
     }

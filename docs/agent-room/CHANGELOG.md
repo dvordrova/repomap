@@ -15950,3 +15950,12 @@ two at the zooms where the border grew (one line at every zoom on the
 saved service-pkg render). A box's big name is gone (10.5 down to 10 px)
 before its title comes in (10.5 to 11 px): they had stood doubled.
 `npm test` 178/178; visual 20/21 (same pre-existing spec).
+
+Owner's next round (2026-10-14): a box's input and outside markers stand
+whenever their stack fits beside the box, not only once its title reads; an
+arrow's card names who makes each call ("Run → GoRecover", several callers
+listed), not the callee alone; a part's reading lists no file paths (they
+read as links and were none; each declaration links its code); a handler
+named as its input is said once ("listen", not "listen → listen").
+`npm test` 178/178; report tests green; visual 20/21 (same pre-existing
+spec).

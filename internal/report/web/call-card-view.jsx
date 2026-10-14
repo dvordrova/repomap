@@ -93,7 +93,8 @@ export function CallRows({card,choose=null,counts=true}){
             if(row.sides)return <SidesRow key={i} row={row} choose={choose}/>;
             const again=i>0&&rows[i-1].caller===row.caller&&rows[i-1].kind!=='other';
             return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?<InputNames refs={row.inputRefs} choose={choose}/>:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
-              {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}</p>;
+              {/* A handler named as its input is said once ("listen", not "listen → listen"). */}
+              {row.callee!==row.caller&&<>{verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}</>}</p>;
           })}</div>}
         </div>;
       })}
@@ -153,7 +154,8 @@ export function BriefRows({card,into='',choose=null}){
     {part.names.length>0&&<ul>
       {part.names.slice(0,briefMost).map(entry=><li key={entry.at?`${entry.at.part}\0${entry.at.key}`:entry.input?.id||entry.name}>{entry.input
         ?<InputNames refs={[entry.input]} choose={choose}/>
-        :<Name at={entry.at} href={entry.href} choose={choose}>{entry.name}</Name>}</li>)}
+        :<>{entry.callers?.length>0&&!(entry.callers.length===1&&entry.callers[0].name===entry.name)&&<>{entry.callers.map((caller,i)=><React.Fragment key={caller.name}>{i>0&&', '}<Name at={caller.at} choose={choose}>{caller.name}</Name></React.Fragment>)}<i className="flow-card-arrow"> → </i></>}
+          <Name at={entry.at} href={entry.href} choose={choose}>{entry.name}</Name></>}</li>)}
       {part.names.length>briefMost&&<li className="flow-card-more" aria-hidden="true">…</li>}</ul>}
   </section>)}</div>;
 }

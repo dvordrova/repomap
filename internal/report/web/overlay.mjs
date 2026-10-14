@@ -50,7 +50,10 @@ function placeAt(scene,zoom){
       }
     }
     stacks.set(key,y+size+gap);
-    const shown=readable(marker)&&y+size/2+inset<=r.y+r.height;
+    // A box's marker stands whenever its stack fits beside the box, whether
+    // or not its title reads (owner, 2026-10-14: inputs and outside calls
+    // had come and gone with the zoom).
+    const shown=y+size/2+inset<=r.y+r.height;
     const x=marker.side==='in'?r.x-size/2:r.x+r.width+size/2;
     items.push({...marker,type:marker.port?'port':'marker',x,y,size,shown});
   }
