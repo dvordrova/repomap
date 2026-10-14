@@ -13,6 +13,7 @@ import {buildModel,inputKindTitles} from './model.mjs';
 import {layoutLevels,homeCamera,units,cardWords,programWords} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit,memberView} from './scene.mjs';
 import {project,mark} from './overlay.mjs';
+import {bigName} from './cards.mjs';
 import {createStore,sceneReducer,initialState,createCamera,zoomAction} from './store.mjs';
 import {kindIcon,kindNames,systemIcons} from './kind-icons.mjs';
 import {callCard} from './call-card.mjs';
@@ -39,6 +40,14 @@ function Mark({icon,className='',label='',kind=''}){
   return <svg className={`flow-kind-mark ${className}`} data-kind-mark={kind||undefined} viewBox="0 0 16 16" width="14" height="14" aria-hidden={label?undefined:'true'} role={label?'img':undefined} aria-label={label||undefined}>
     {icon.paths.map((d,i)=><path key={i} d={d}/>)}</svg>;
 }
+// A part's or an area's name across its card, shown while its words are
+// too small to read (scene.css .scene-big-name), when it reads larger
+// there than its title.
+function BigName({node}){
+  const name=useMemo(()=>bigName(node.title||'',node.rect.width/node.text-28,node.rect.height/node.text-28,measure),[node.title,node.rect.width,node.rect.height,node.text]);
+  if(name.size<17*1.2)return null;
+  return <div className="scene-big-name" aria-hidden="true" style={{fontSize:name.size}}>{name.lines.join('\n')}</div>;
+}
 const laneClass=lane=>lane==='core'?'flow-core':lane==='triggers'?'flow-entry':'';
 // A box drawn at its level's text size: its world rectangle holds its
 // content laid out at `text` world units to a pixel.
@@ -59,6 +68,7 @@ function CardNode({data}){
   return <>{handles}<Scaled node={node} className={`flow-part ${node.display==='area'?'scene-area-card':''} ${laneClass(node.lane)}`} data={node.display==='area'?{'data-summary-area':node.id}:undefined}>
     <div className="scene-words">{words.title.length>0&&<strong data-box-title={node.id}>{words.title.join('\n')}</strong>}{' '}
     {words.lines.length>0&&<div className="flow-description flow-description-lines">{words.lines.join('\n')}</div>}</div>
+    <BigName node={node}/>
   </Scaled></>;
 }
 function ProgramNode({data}){
@@ -72,6 +82,7 @@ function ProgramNode({data}){
       {words.contents.map(child=><li key={child.id}><button type="button" data-program-child={child.id}
         onClick={event=>{event.stopPropagation();data.open(child.id,event);}}>{child.lines.join('\n')}</button></li>)}
     </ul>}</div>
+    {node.display==='area'&&<BigName node={node}/>}
   </Scaled>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<Scaled node={node} className="scene-role-layer" style={{width:0,height:0}}>
       <span className={`flow-role-symbol flow-role-${node.lane}`} aria-hidden="true"/></Scaled>}

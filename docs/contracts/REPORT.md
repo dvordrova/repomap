@@ -515,7 +515,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   fits it in the canvas (owner, 2026-10-14: Airflow's core had filled the
   screen as its inventory, its boxes never shown); entered, it is framed by
   its drawing, not by its card, and a pinch entering it while its drawing
-  stands small glides there and waits for the glide. A part's magnifier enters it at the zoom its declarations read at
+  stands small glides there and waits for the glide. A part's or an area's card
+  whose title is too small to read names itself across the card instead, its
+  title at the largest size whose lines fit whole, its inventory gone with
+  its title. A part's magnifier enters it at the zoom its declarations read at
   (eleven pixels): the part whole when it fits there, else its head and
   first column at the canvas's top left. Entering a level (a magnifier, a
   reading, an input's path) sets it before the camera moves, and that move

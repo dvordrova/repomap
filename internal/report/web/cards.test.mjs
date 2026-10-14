@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines} from './cards.mjs';
+import {bigName,prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark,descriptionLines} from './cards.mjs';
 
 // canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
 const column=260-2*1.5-2*16;
@@ -265,4 +265,13 @@ test('a card description is cut after a whole word, never inside one',()=>{
   const words=new Set('Loads, filters, and applies pluggable trading components.'.split(' '));
   for(const line of lines)for(const word of line.replace(/…$/,'').split(' '))assert.ok(words.has(word),`"${word}" is a whole word`);
   assert.deepEqual(descriptionLines('Short text.',100*6,2,measure),['Short text.']);
+});
+
+test('a box names itself across its card at the largest size that fits whole',()=>{
+  const measure=(text,font)=>String(text).length*Number(/(\d+(?:\.\d+)?)px/.exec(font)[1])*.5;
+  const name=bigName('Configuration and settings',232,300,measure);
+  assert.ok(name.size>17*1.2,`size ${name.size}`);
+  for(const line of name.lines)assert.ok(measure(line,`700 ${name.size}px system-ui`)<=232);
+  assert.ok(name.lines.length*name.size*1.15<=300);
+  assert.deepEqual(name.lines.join(' '),'Configuration and settings');
 });

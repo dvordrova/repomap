@@ -15648,3 +15648,13 @@ rule is measured where titles read (`geometry.readZoom`). Saved Airflow render
 (20261009-050908) checked in headless Chromium: one pinch tick past rest shows
 all 25 boxes; the magnifier frames the same. `npm test` 177/177; visual 23/24,
 the failing worker-failure spec fails identically on HEAD's templates.
+
+### 2026-10-14 — a small box names itself across its card
+
+Owner: in an entered program's overview the boxes stood as tiny inventories
+or blank. A part's or an area's card now shows its title across the card at
+the largest size whose lines fit whole (`cards.mjs bigName`), coming in as its
+ordinary title fades (17px word, gone at 10.5) and taking the inventory with
+it; it stands above the words' opaque layer. Saved Airflow render checked in
+headless Chromium (26 boxes named, none overflowing). `npm test` 178/178;
+visual 23/24 with the same pre-existing worker-failure spec.

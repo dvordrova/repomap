@@ -98,6 +98,20 @@ export function fitTitle(title,width,font,measure){
   return {scale,lines:wrapText(title,scale<1?widest:width,font,measure)};
 }
 
+// A box too small for its words to read names itself across it: its title
+// at the largest size whose lines, words whole, fit `width` by `height`
+// (owner, 2026-10-14: an entered program's boxes had stood as tiny
+// inventories). Returns {size, lines}.
+export function bigName(title,width,height,measure,weight=700){
+  let low=0,high=Math.max(0,height),best={size:0,lines:[]};
+  for(let i=0;i<18&&high-low>.25;i++){
+    const size=(low+high)/2,font=`${weight} ${size}px system-ui`;
+    const lines=widestPiece(title,font,measure)<=width?wrapText(title,width,font,measure):null;
+    if(lines&&lines.length*size*1.15<=height){best={size,lines};low=size;}else high=size;
+  }
+  return best;
+}
+
 // A program's Outside frame holds its destinations as chips of one size,
 // each naming its destination in at most two lines, in rows wrapped toward
 // a square instead of one strip (overview.mjs outsideChips): beside or

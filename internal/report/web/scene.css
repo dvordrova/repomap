@@ -168,3 +168,10 @@
 .scene-program-inside::-webkit-scrollbar{width:10px}
 .scene-program-inside::-webkit-scrollbar-thumb{background:#9aabbe;border:2px solid #f8fafc;border-radius:5px}
 .scene-program-inside::-webkit-scrollbar-track{background:#eef2f7}
+
+/* A part's or an area's name across its card while its title is too small
+   to read: it comes in as the title fades (--word 17, gone at 10.5), the
+   inventory going with the title (owner, 2026-10-14). */
+.scene-root .react-flow__node .scene-program-inside{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 2),1)}
+.scene-root .react-flow__node .scene-big-name{position:absolute;inset:0;z-index:2;padding:14px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:pre-line;font-family:system-ui;font-weight:700;line-height:1.15;color:#243044;pointer-events:none;
+  opacity:calc(1 - clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 2),1))}
