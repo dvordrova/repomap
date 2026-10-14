@@ -16152,3 +16152,6 @@ frame of kinds), then the open set as the default after the owner tries it.
   Every container had walked every edge up its ancestors (1,262 Metabase
   areas × all edges). Metabase first map 98.4 → 68.7 s at 4×; scene tests
   unchanged (the pairs are the same by construction).
+- `tileGrid` searches the divisor and the columns by halving (both only add
+  room) instead of one step at a time; the canvas measures a text's width
+  once per font. Metabase first map 68.7 → 63.3 s at 4×.

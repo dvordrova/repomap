@@ -24,7 +24,15 @@ import './scene.css';
 
 const t=(...args)=>window.rmT?window.rmT(...args):args[0];
 const context2d=document.createElement('canvas').getContext('2d');
-const measure=(text,font)=>{context2d.font=font;return context2d.measureText(String(text??'')).width;};
+// A text's width is measured once per font: the canvas measured the same
+// names again for every card, chip and tile grid.
+const widths=new Map();
+const measure=(text,font)=>{
+  const key=`${font}\u0000${text??''}`;
+  let width=widths.get(key);
+  if(width===undefined){context2d.font=font;width=context2d.measureText(String(text??'')).width;widths.set(key,width);}
+  return width;
+};
 // A tile's declaration as the reading keys it: its identity (decl_key),
 // else its link, else its place (26-map-members.js symbolKey).
 const symbolKey=symbol=>symbol?symbol.decl_key||symbol.href||symbol.open||(symbol.path?JSON.stringify([symbol.path,symbol.line||0]):''):'';

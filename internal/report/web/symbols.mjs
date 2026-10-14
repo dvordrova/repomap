@@ -109,15 +109,31 @@ export function tileGrid(symbols,links,box,measure,{least=2,step=.25}={}){
   // two tiles, and Retry decisions' chain of two, had stood in a corner of
   // their card, narrow for columns nothing filled).
   const across=links.length?symbolBlocks(symbols,links,shown.length||1,Infinity,rank).across:1;
-  for(let divisor=least;;divisor+=step){
+  const least3=Math.min(3,across);
+  // At one divisor: the fewest columns holding every tile, or null when
+  // none does. More columns and a larger divisor only add room, so both
+  // are searched by halving, not one step at a time: stepped, Metabase's
+  // parts had spent 11 seconds of its first map here on a slow machine
+  // (owner, 2026-10-15).
+  const at=divisor=>{
     const inner={width:box.width*divisor,height:(box.height-tileHeader(divisor))*divisor};
     const fit=Math.max(1,Math.floor((inner.width-2*side+gap)/(nameWidth+gap)));
-    let grid=null;
-    for(let columns=Math.min(fit,Math.min(3,across));columns<=fit;columns++){
+    const make=columns=>{
       const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*side-(columns-1)*gap)/columns));
-      grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
-      if(grid.hidden===0)break;
-    }
-    if(!roomy||grid.hidden===0&&fit>=Math.min(3,across))return grid;
-  }
+      return {divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
+    };
+    let lo=Math.min(fit,least3),hi=fit,grid=make(hi);
+    if(grid.hidden>0||fit<least3)return {grid,holds:false};
+    while(lo<hi){const mid=Math.floor((lo+hi)/2),tried=make(mid);if(tried.hidden===0){hi=mid;grid=tried;}else lo=mid+1;}
+    if(grid.columns!==hi)grid=make(hi);
+    return {grid,holds:true};
+  };
+  const divisorAt=k=>least+k*step;
+  let first=at(divisorAt(0));
+  if(!roomy||first.holds)return first.grid;
+  // Double the steps until a divisor holds, then halve back to the least.
+  let fail=0,good=1,found=at(divisorAt(good));
+  while(!found.holds){fail=good;good*=2;found=at(divisorAt(good));}
+  while(good-fail>1){const mid=Math.floor((fail+good)/2),tried=at(divisorAt(mid));if(tried.holds){good=mid;found=tried;}else fail=mid;}
+  return found.grid;
 }
