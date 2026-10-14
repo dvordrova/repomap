@@ -21,9 +21,9 @@ without a matching source at that revision are marked **No source**.
 
 | Type | Examples |
 | --- | --- |
-| Server | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas), [etcd](https://dvordrova.github.io/repomap/etcd#canvas), [Headscale](https://dvordrova.github.io/repomap/headscale#canvas), [Moby](https://dvordrova.github.io/repomap/moby#canvas) |
+| Server | [Casdoor](https://dvordrova.github.io/repomap/casdoor#canvas), [etcd](https://dvordrova.github.io/repomap/etcd#canvas), [Headscale](https://dvordrova.github.io/repomap/headscale#canvas), [Moby](https://dvordrova.github.io/repomap/moby#canvas), [template](https://dvordrova.github.io/repomap/template#canvas) — Go service template with two services |
 | CLI | [k6](https://dvordrova.github.io/repomap/k6#canvas), [repomap](https://dvordrova.github.io/repomap/repomap#canvas) |
-| Utility / library | [Telebot](https://dvordrova.github.io/repomap/telebot#canvas) |
+| Utility / library | [Telebot](https://dvordrova.github.io/repomap/telebot#canvas), [service-pkg](https://dvordrova.github.io/repomap/service-pkg#canvas) — building blocks for Go services, [rate-envelope-queue](https://dvordrova.github.io/repomap/rate-envelope-queue#canvas) — in-memory queue and scheduler |
 
 ### JavaScript / TypeScript
 
