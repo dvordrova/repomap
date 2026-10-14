@@ -15929,3 +15929,13 @@ focus ring. Report tests green; `npm test` 178/178; visual 20/21 (same
 pre-existing spec). Airflow re-run with every change of the day:
 20261014-111808, exit 0, 24.6 min (two windows over the output-token limit
 recorded as refusals).
+
+More from the owner (2026-10-14): a flow of several entries reads only the
+entries that lead somewhere (an entry calling nothing or on no part is an
+API leaf; rate-envelope-queue had listed 47, its test suite's Setup last; a
+lone entry stays); an input's path names a step once where a callable
+written inline repeated its function's name; a type's "… +N" rows (its
+listed rest and the rows its card cuts) choose the type, read whole in the
+column; and the focus ring stands only after Tab, not after a pointer's
+press followed by Shift or Cmd. Report tests green; `npm test` 178/178;
+visual 20/21 (same pre-existing spec).

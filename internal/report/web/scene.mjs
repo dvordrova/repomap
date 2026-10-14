@@ -10,7 +10,7 @@
 //               pan never changes it.
 import {emphasis,recedes,focusAncestors} from './emphasis.mjs';
 import {overlayAt} from './overlay.mjs';
-import {tileRoom,tileHeader} from './symbols.mjs';
+import {tileRoom,tileHeader,symbolRow} from './symbols.mjs';
 import {programContents,onlyPart} from './model.mjs';
 
 // What can be entered: a level of its own opens inside it (a program
@@ -174,10 +174,16 @@ export function sceneAt(model,geometry,level=[],selection={}){
     const {grid,box:card}=drawn,s=r.width/card.width;
     const rectOfRow=row=>tileRect(r,drawn,row);
     const tileText=s/grid.divisor*13/17;
+    // A type's "… +N" rows, its listed rest and the rows its card cuts,
+    // choose the type: the reading names all of it (owner, 2026-10-14:
+    // they had answered nothing).
+    const headOf=new Map(grid.blocks.map(block=>[grid.rows[block.head]?.block,block.head]));
     (model.nodes.get(id).item?.symbols||[]).forEach((symbol,index)=>{
       const row=grid.rows[index];
-      if(row)members.push({part:id,index,rect:rectOfRow(row),text:tileText,name:symbol.name});
+      if(row)members.push({part:id,index:symbol.kind==='more'?headOf.get(row.block)??index:index,rect:rectOfRow(row),text:tileText,name:symbol.name});
     });
+    for(const block of grid.blocks)if(block.more>0)
+      members.push({part:id,index:block.head,rect:rectOfRow({column:block.column,y:block.y+symbolRow.header+block.rows.length*symbolRow.row,height:symbolRow.row}),text:tileText,name:`+${block.more}`});
     const own=model.memberMarkersOf(id);
     for(const [index,sides] of own.members){
       const member=members.find(m=>m.part===id&&m.index===index);if(!member)continue;

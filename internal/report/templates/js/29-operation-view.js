@@ -280,8 +280,14 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   var spine=path.spine;
   if(spine&&(spine.steps||[]).length){
     var flow=rmEl('div','system-path-spine');flow.appendChild(rmEl('p','map-reading-label',rmT('Its flow')));
-    (spine.steps||[]).forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-step'));});
-    var branches=(spine.branches||[]).filter(function(entry){return !entry.helper;}),helpers=(spine.branches||[]).filter(function(entry){return entry.helper;});
+    // A step named as the one before it in the same part is that step: a
+    // callable written inline is named by the function it is written in
+    // (owner, 2026-10-14: "RateEnvelopeQueue.worker" had stood three times).
+    var said=function(entry){return (entry.part||'')+'\u0000'+((decls[entry.decl]||{}).name||'');},last='';
+    var steps=(spine.steps||[]).filter(function(entry){var key=said(entry),again=key===last;last=key;return !again;});
+    steps.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-step'));});
+    var seen=new Set(steps.map(said));
+    var branches=(spine.branches||[]).filter(function(entry){if(entry.helper)return false;var key=said(entry);if(seen.has(key))return false;seen.add(key);return true;}),helpers=(spine.branches||[]).filter(function(entry){return entry.helper;});
     if(branches.length){flow.appendChild(rmEl('p','meta',rmT('then into:')));branches.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-branch'));});}
     if(helpers.length){var line=rmEl('p','system-path-spine-helpers');line.appendChild(rmEl('span','meta',rmT('helpers:')+' '));helpers.forEach(function(entry,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(entry.decl));});flow.appendChild(line);}
     section.appendChild(flow);

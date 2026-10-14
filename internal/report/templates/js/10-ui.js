@@ -137,3 +137,9 @@ var rmPage = (function () {
   function lineLink(path,line){var base=load().base;return base?base+path+(line>0?'#L'+line:''):'';}
   return {data:data,link:link,lineLink:lineLink};
 })();
+
+// The keyboard's focus ring stands only for the keyboard's Tab: after a
+// pointer's press a key such as Shift or Cmd no longer rings what was
+// clicked (owner, 2026-10-14: a green outline had read as a selection).
+document.addEventListener('pointerdown',function(){document.documentElement.classList.add('rm-pointer');},true);
+document.addEventListener('keydown',function(event){if(event.key==='Tab')document.documentElement.classList.remove('rm-pointer');},true);

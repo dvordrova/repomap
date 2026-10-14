@@ -12,3 +12,6 @@ a:hover{text-decoration-color:currentColor}
 button,input,select{font:inherit}
 button,a,input,select,summary{-webkit-tap-highlight-color:transparent}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* After a pointer's press no focus ring stands until Tab moves the focus
+   (10-ui.js). */
+.rm-pointer :focus-visible{outline:none!important}
