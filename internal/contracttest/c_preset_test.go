@@ -548,6 +548,9 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 	case handled:
 	case request.Task == "repomap.atlas.describe.v1":
 		answer = map[string]any{"description": "Preset description."}
+	case request.Task == "repomap.atlas.group_gather.v1":
+		// The preset gathers nothing: every smaller box stays where it is.
+		answer = map[string]any{"groups": []any{}}
 	case request.Table == "atlas_boundaries", request.Table == "atlas_systems", request.Table == "atlas_joints", request.Table == "atlas_targets", request.Table == "atlas_symbols":
 		outgoing := false
 		for _, column := range request.Fill {

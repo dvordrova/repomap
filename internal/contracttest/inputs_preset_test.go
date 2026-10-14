@@ -95,6 +95,9 @@ func (p *inputsPreset) Complete(_ context.Context, prepared llm.Prepared) (llm.C
 	case handled:
 	case request.Task == "repomap.atlas.describe.v1":
 		answer = map[string]any{"description": "Preset description."}
+	case request.Task == "repomap.atlas.group_gather.v1":
+		// The preset gathers nothing: every smaller box stays where it is.
+		answer = map[string]any{"groups": []any{}}
 	default:
 		if request.Table == "" {
 			return llm.Completion{}, fmt.Errorf("inputs preset: no answer for task %q", request.Task)

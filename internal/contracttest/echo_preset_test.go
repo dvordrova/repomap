@@ -372,6 +372,9 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 		}
 	case request.Task == "repomap.atlas.describe.v1":
 		response = []byte(`{"description":"Preset description."}`)
+	case request.Task == "repomap.atlas.group_gather.v1":
+		// The preset gathers nothing: every smaller box stays where it is.
+		response = []byte(`{"groups":[]}`)
 	default:
 		if request.Table == "" {
 			return llm.Completion{}, fmt.Errorf("echo preset: no answer for task %q", request.Task)

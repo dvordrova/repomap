@@ -37,6 +37,7 @@ import (
 const (
 	proposeTask  = "repomap.atlas.group_propose.v1"
 	describeTask = "repomap.atlas.describe.v1"
+	gatherTask   = "repomap.atlas.group_gather.v1"
 )
 
 // Map is one target's checked map of parts.
@@ -274,6 +275,9 @@ func (p *preset) Complete(_ context.Context, prepared llm.Prepared) (llm.Complet
 		response = map[string]any{"boxes": boxes}
 	case describeTask:
 		response = map[string]string{"description": "Preset description."}
+	case gatherTask:
+		// The preset gathers nothing: every smaller box stays where it is.
+		response = map[string]any{"groups": []any{}}
 	case "":
 		if len(request.Fill) == 0 {
 			return llm.Completion{}, fmt.Errorf("parts preset: a request with no task and no table")
