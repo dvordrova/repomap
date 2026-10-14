@@ -15690,3 +15690,11 @@ the last move), drawn sharp again at rest. Saved Airflow render checked in
 headless Chromium mid-pan and at rest; `npm test` 178/178; visual 23/24 (same
 pre-existing spec). The trace's IntersectionObserver time (~11 ms a frame) is
 a browser extension's, not the report's.
+
+A box's name across its card had run over it ("Example DAGs and plugins" in
+four lines where three were measured): the browser wrapped a line measured to
+fit, and at a small zoom the card's border, constant on the screen, took
+room from the name. The name keeps its measured lines (`white-space: pre`),
+its padding shrinks as the border grows (as the card's own), and it is sized
+for 92% of the room. Saved Airflow render, 14 zoom steps: 300 names shown,
+none past its card.

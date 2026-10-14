@@ -44,7 +44,7 @@ function Mark({icon,className='',label='',kind=''}){
 // too small to read (scene.css .scene-big-name), when it reads larger
 // there than its title.
 function BigName({node}){
-  const name=useMemo(()=>bigName(node.title||'',node.rect.width/node.text-28,node.rect.height/node.text-28,measure),[node.title,node.rect.width,node.rect.height,node.text]);
+  const name=useMemo(()=>bigName(node.title||'',(node.rect.width/node.text-28)*.92,(node.rect.height/node.text-28)*.92,measure),[node.title,node.rect.width,node.rect.height,node.text]);
   if(name.size<17*1.2)return null;
   return <div className="scene-big-name" aria-hidden="true" style={{fontSize:name.size}}>{name.lines.join('\n')}</div>;
 }
