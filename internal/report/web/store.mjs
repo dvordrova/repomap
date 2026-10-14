@@ -68,6 +68,9 @@ export function sceneReducer(context){
     }
     case 'relayout':
       return {...state,version:state.version+1,pointer:null};
+    // The experiment's open set (scene.mjs openAt, ?scene=open).
+    case 'open':
+      return {...state,open:action.open};
     default:
       return state;
     }

@@ -15973,3 +15973,18 @@ gap that names `--flow-zoom`. The owner dropped the map's path: no
 breadcrumb over the canvas, none in the toolbar's location line.
 `npm test` 179/179; report tests green; visual 20/21 (same pre-existing
 spec).
+
+The consilium's experiment, behind `?scene=open` (the default unchanged):
+what is drawn open follows the zoom alone (`scene.mjs openAt`: a program,
+area or part opens at its entry zoom and closes at its exit zoom, only
+where it stands within a screen's margin of the view; a part's tiles open
+only at rest; a pan recomputes nothing until it rests), every open program
+drawn where it stands (`drawProgram`), the level kept as the reader's place
+and no longer changed by a zoom; the pinch is React Flow's. Without the
+view cull the first try opened everything (624 nodes, 24,677 DOM nodes, long
+tasks 5–10× today's). With it, Airflow under 4× CPU throttle, program →
+area → part: long tasks 4.7 s vs 6.9 s zooming in (worst frame 1.4 s vs
+3.3 s), 0.25 s vs 0.14 s panning, 4.6 s vs 4.5 s oscillating at a
+threshold, 6.0 s vs 13.4 s zooming out; same picture drawn. Viable; next
+per the plan: geometry (part card in its grid's proportion, Inputs as a
+frame of kinds), then the open set as the default after the owner tries it.

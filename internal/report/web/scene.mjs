@@ -52,9 +52,9 @@ export function sceneAt(model,geometry,level=[],selection={}){
   // The whole map's boxes and arrows, closed but `skip`: drawn at every
   // level, the canvas a window on one map (owner, 2026-10-14: entering a
   // program had emptied the canvas around it).
-  function drawRoots(open,skip=''){
+  function drawRoots(open,skip=new Set()){
       for(const id of model.roots){
-        if(id===skip)continue;
+        if(skip.has(id))continue;
         const node=model.nodes.get(id),rect=rectOf(id);if(!rect)continue;
         // The closed component names every existing area and loose part.
         if(node.kind==='program')box(id,'program',rect,geometry.programText||unit,
@@ -101,63 +101,77 @@ export function sceneAt(model,geometry,level=[],selection={}){
         edges.push(edge);
       }
   }
+  // The experiment of a zoom-driven drawing (openAt, behind the canvas's
+  // ?scene=open flag): every program, area and part in `selection.open` is
+  // drawn open where it stands, the level kept as the reader's place.
+  if(selection.open){
+    const open=selection.open,opened=model.roots.filter(id=>open.has(id)&&model.nodes.get(id)?.kind==='program');
+    drawRoots(open,new Set(opened));
+    for(const id of opened)drawProgram(id,open);
+    text=unit;
+    return finish();
+  }
   if(!program){
     const open=new Set(level);
     text=inner?geometry.text.get(inner)||unit:unit;
     drawRoots(open);
     return finish();
   }
-  // Inside a program: its frame, its areas closed but the one entered, its
-  // loose parts; one text scale for every title at the level, the entered
-  // area's. The program's own boxes beside the area entered keep the
-  // program's text, their words as large as their cards (owner,
-  // 2026-10-02: litestream's loose "Replica client backends" had read at
-  // the area's text in a card twice its parts' size, four fifths empty).
-  const partText=geometry.scales.get(program)?.scale||1;
-  const own=geometry.text.get(program)||partText;
-  const open=new Set(level);
-  const deepestArea=[...level].reverse().find(id=>model.nodes.get(id)?.kind==='area');
-  text=geometry.text.get(deepestArea||program)||own;
-  drawRoots(open,program);
-  if(!onlyPart(model,program))box(program,'frame',frameOf(program),own,{program:true});
-  function drawChildren(container){
-    const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;
-    // A part entered opens its siblings with it: at one scale their tiles
-    // read as its do, and the map is one world the camera moves over
-    // (owner, 2026-10-14: panning from a part entered had shown its
-    // neighbours closed).
-    const deepHere=parent.children.some(id=>open.has(id)&&model.nodes.get(id)?.kind==='part');
-    const isDeep=id=>open.has(id)||deepHere&&geometry.grids.has(id);
-    for(const child of parent.children){
-      const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
-      if(node.kind==='area'&&open.has(child)){
-        box(child,'frame',frameOf(child),geometry.text.get(child)||localText,{area:true,lane:node.item?.lane||''});
-        drawChildren(child);
-      }else if(node.kind==='area'){
-        box(child,'area',rect,localText,{lane:node.item?.lane||'',contents:programContents(model,node),inventoryHeight:geometry.areaInventoryHeights.get(child)});
-        markersFor(child,localText);
-      }else{
-        // The part a program is takes the program's name.
-        box(child,isDeep(child)?'deep':'card',rect,localText,{lane:node.item?.lane||'',...(onlyPart(model,container)===child?{title:model.nodes.get(container).name}:{})});
-        if(isDeep(child))deepFor(child);else markersFor(child);
-      }
-    }
-    const lookedHere=new Set([...looked,...parent.children.filter(id=>open.has(id))]);
-    if(container!==program)for(const child of parent.children)lookedHere.add(child);
-    // A link with another program is a marker beside the box it reaches,
-    // as an input's or an outside system's (owner, 2026-10-14): no arrow
-    // runs from the frame of the program entered.
-    for(const route of geometry.routes.get(container)||[])if(!route.port)edges.push(edgeOf(route,model,lookedHere));
+  {
+    const open=new Set(level);
+    const deepestArea=[...level].reverse().find(id=>model.nodes.get(id)?.kind==='area');
+    text=geometry.text.get(deepestArea||program)||geometry.text.get(program)||(geometry.scales.get(program)?.scale||1);
+    drawRoots(open,new Set([program]));
+    drawProgram(program,open);
+    return finish();
   }
-  drawChildren(program);
 
-  for(const port of geometry.ports.get(program)||[]){
-    const reached=port.child&&nodes.find(node=>node.id===port.child);
-    if(reached)markers.push({id:port.id,box:port.child,side:port.way==='out'?'out':'in',rect:reached.rect,text:reached.text,
-      port:true,kind:'program',programs:port.programs,way:port.way,edges:port.edges});
-    else ports.push({id:port.id,programs:port.programs,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
+  // Inside a program: its frame, its areas closed but those open, its
+  // loose parts; the program's own boxes keep the program's text, their
+  // words as large as their cards (owner, 2026-10-02: litestream's loose
+  // "Replica client backends" had read at the area's text in a card twice
+  // its parts' size, four fifths empty).
+  function drawProgram(program,open){
+    const partText=geometry.scales.get(program)?.scale||1;
+    const own=geometry.text.get(program)||partText;
+    if(!onlyPart(model,program))box(program,'frame',frameOf(program),own,{program:true});
+    function drawChildren(container){
+      const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;
+      // A part entered opens its siblings with it: at one scale their tiles
+      // read as its do, and the map is one world the camera moves over
+      // (owner, 2026-10-14: panning from a part entered had shown its
+      // neighbours closed).
+      const deepHere=!selection.open&&parent.children.some(id=>open.has(id)&&model.nodes.get(id)?.kind==='part');
+      const isDeep=id=>open.has(id)&&geometry.grids.has(id)||deepHere&&geometry.grids.has(id);
+      for(const child of parent.children){
+        const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
+        if(node.kind==='area'&&open.has(child)){
+          box(child,'frame',frameOf(child),geometry.text.get(child)||localText,{area:true,lane:node.item?.lane||''});
+          drawChildren(child);
+        }else if(node.kind==='area'){
+          box(child,'area',rect,localText,{lane:node.item?.lane||'',contents:programContents(model,node),inventoryHeight:geometry.areaInventoryHeights.get(child)});
+          markersFor(child,localText);
+        }else{
+          // The part a program is takes the program's name.
+          box(child,isDeep(child)?'deep':'card',rect,localText,{lane:node.item?.lane||'',...(onlyPart(model,container)===child?{title:model.nodes.get(container).name}:{})});
+          if(isDeep(child))deepFor(child);else markersFor(child);
+        }
+      }
+      const lookedHere=new Set([...looked,...parent.children.filter(id=>open.has(id))]);
+      if(container!==program)for(const child of parent.children)lookedHere.add(child);
+      // A link with another program is a marker beside the box it reaches,
+      // as an input's or an outside system's (owner, 2026-10-14): no arrow
+      // runs from the frame of the program entered.
+      for(const route of geometry.routes.get(container)||[])if(!route.port)edges.push(edgeOf(route,model,lookedHere));
+    }
+    drawChildren(program);
+    for(const port of geometry.ports.get(program)||[]){
+      const reached=port.child&&nodes.find(node=>node.id===port.child);
+      if(reached)markers.push({id:port.id,box:port.child,side:port.way==='out'?'out':'in',rect:reached.rect,text:reached.text,
+        port:true,kind:'program',programs:port.programs,way:port.way,edges:port.edges});
+      else ports.push({id:port.id,programs:port.programs,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
+    }
   }
-  return finish();
 
   // A part entered: its declarations' tiles, each a member the pointer
   // finds, its markers on the declarations they stand for (a row of them
@@ -414,3 +428,35 @@ export function pinchLimit(from,to,depthAt,gesture,steps=30){
 
 // A frame's connections as the reading column groups them (model.mjs).
 export const frameGroups=(model,id)=>model.frameGroups(id);
+
+// The experiment's open set (?scene=open): the programs, areas and parts
+// the zoom opens, each under an open one. A box opens at its entry zoom and
+// stays open down to its exit zoom (a band, so a trackpad's inertia at the
+// threshold does not open and close it); a part's tiles open only when
+// `parts` (the camera at rest).
+export function openAt(model,geometry,zoom,was=new Set(),{parts=true,view=null}={}){
+  const open=new Set();
+  // Only what stands in sight, with a screen's margin round it, opens: a
+  // box off the canvas stays closed, its insides not drawn.
+  const seen=id=>{
+    if(!view)return true;
+    const r=geometry.boxes.get(id)||geometry.scales.get(id)?.frame;if(!r)return true;
+    return r.x<view.x+view.width&&r.x+r.width>view.x&&r.y<view.y+view.height&&r.y+r.height>view.y;
+  };
+  // Moving, a part's tiles stay as they were: open ones close past their
+  // band, none opens until the camera rests.
+  const partOpens=id=>parts?opens(id):was.has(id)&&opens(id);
+  const opens=id=>zoom>=(was.has(id)?geometry.exitZoom.get(id)??Infinity:geometry.enterZoom.get(id)??Infinity);
+  const visit=id=>{
+    const node=model.nodes.get(id);if(!node)return;
+    if(node.kind==='part'){if(geometry.grids.has(id)&&partOpens(id)&&seen(id))open.add(id);return;}
+    if(!['program','area','inputs','bucket'].includes(node.kind))return;
+    if(!geometry.local.has(id)&&node.kind==='area')return;
+    if(!opens(id)||!seen(id))return;
+    open.add(id);
+    for(const child of node.children||[])visit(child);
+  };
+  for(const id of model.roots)visit(id);
+  for(const id of model.roots)if(model.nodes.get(id)?.kind==='outside')for(const child of model.nodes.get(id).children)if(model.nodes.get(child)?.kind==='bucket'&&opens(child))open.add(child);
+  return open;
+}
