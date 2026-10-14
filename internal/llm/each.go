@@ -84,3 +84,15 @@ func ExecuteJSONEach[T any](
 	}
 	return results
 }
+
+// OutcomeAs is outcome carrying value in place of its own: one window's
+// part of a request that asked several.
+func OutcomeAs[A, B any](outcome Outcome[A], value B) Outcome[B] {
+	return Outcome[B]{
+		ResponseContext: outcome.ResponseContext, ResponseRejections: outcome.ResponseRejections,
+		HTTPResponse: outcome.HTTPResponse, Value: value, CacheKey: outcome.CacheKey, Cached: outcome.Cached,
+		Request: outcome.Request, RequestSHA256: outcome.RequestSHA256, RequestBytes: outcome.RequestBytes,
+		Response: outcome.Response, ResponseSHA256: outcome.ResponseSHA256, ResponseBytes: outcome.ResponseBytes,
+		FinishReason: outcome.FinishReason, ChoiceCount: outcome.ChoiceCount, Metrics: outcome.Metrics, Issues: outcome.Issues,
+	}
+}

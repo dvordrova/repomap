@@ -41,7 +41,7 @@ type askedQuestion struct {
 }
 
 var (
-	_ llm.Categorizer            = (*TextModel)(nil)
+	_ llm.SectionedCategorizer   = (*TextModel)(nil)
 	_ llm.AttemptControllerOwner = (*TextModel)(nil)
 )
 
@@ -57,15 +57,38 @@ func (m *TextModel) State() []byte {
 }
 
 func (m *TextModel) Prompt(task string, shared map[string]any, questions map[string]llm.Question) (llm.Prompt, error) {
-	keys := make([]string, 0, len(questions))
-	for key := range questions {
-		keys = append(keys, key)
+	return m.prompt(task, []llm.Section{{Context: shared, Questions: questions}})
+}
+
+// PromptSections asks several windows in one request: each context is
+// written before its own questions, numbered on across the request. One
+// section is Prompt's request.
+func (m *TextModel) PromptSections(task string, sections []llm.Section) (llm.Prompt, error) {
+	return m.prompt(task, sections)
+}
+
+func (m *TextModel) prompt(task string, sections []llm.Section) (llm.Prompt, error) {
+	type numbered struct {
+		key      string
+		question llm.Question
+		section  int
 	}
-	sort.Strings(keys)
+	var flat []numbered
+	for s, section := range sections {
+		keys := make([]string, 0, len(section.Questions))
+		for key := range section.Questions {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			flat = append(flat, numbered{key: key, question: section.Questions[key], section: s})
+		}
+	}
+	single := len(sections) == 1
 	var text strings.Builder
 	text.WriteString("Task:\n" + task + "\n")
-	if len(shared) > 0 {
-		encoded, err := json.Marshal(shared)
+	if single && len(sections[0].Context) > 0 {
+		encoded, err := json.Marshal(sections[0].Context)
 		if err != nil {
 			return llm.Prompt{}, err
 		}
@@ -74,11 +97,11 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 	// An option list several questions share is written once, before the
 	// questions, and each of them names it: the list with its meanings is
 	// most of a question, and a window's questions usually share one.
-	lists := make([]string, len(keys))
+	lists := make([]string, len(flat))
 	uses := map[string]int{}
-	for i, key := range keys {
+	for i, one := range flat {
 		var list strings.Builder
-		for _, option := range questions[key].Options {
+		for _, option := range one.question.Options {
 			fmt.Fprintf(&list, "- %s%s\n", option.Name, optionMeaning(option))
 		}
 		lists[i] = list.String()
@@ -95,9 +118,20 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 		}
 	}
 	text.WriteString("\nQuestions:\n")
-	asked := make([]askedQuestion, 0, len(keys))
-	for i, key := range keys {
-		question := questions[key]
+	asked := make([]askedQuestion, 0, len(flat))
+	for i, one := range flat {
+		if !single && (i == 0 || flat[i-1].section != one.section) {
+			context := "none"
+			if shared := sections[one.section].Context; len(shared) > 0 {
+				encoded, err := json.Marshal(shared)
+				if err != nil {
+					return llm.Prompt{}, err
+				}
+				context = string(encoded)
+			}
+			fmt.Fprintf(&text, "\nContext %d:\n%s\n", one.section+1, context)
+		}
+		question := one.question
 		name := question.Name
 		if name == "" {
 			name = "row"
@@ -109,10 +143,10 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 		// The key is written beside the number: two windows asking the same
 		// items under other keys are other requests, never one cached answer
 		// read under the other window's keys.
-		fmt.Fprintf(&text, "\n%d. [%s] %s\n   %s: %s\n", i+1, key, question.Ask, name, item)
-		one := askedQuestion{key: key}
+		fmt.Fprintf(&text, "\n%d. [%s] %s\n   %s: %s\n", i+1, one.key, question.Ask, name, item)
+		asking := askedQuestion{key: one.key}
 		for _, option := range question.Options {
-			one.options = append(one.options, option.Name)
+			asking.options = append(asking.options, option.Name)
 		}
 		switch {
 		case len(question.Options) == 0:
@@ -127,7 +161,7 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 				}
 			}
 		}
-		asked = append(asked, one)
+		asked = append(asked, asking)
 	}
 	m.asked.Store(text.String(), asked)
 	return llm.Prompt{System: textModelSystem, User: text.String(), NoResponseAdjunct: true}, nil

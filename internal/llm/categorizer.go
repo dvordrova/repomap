@@ -20,6 +20,21 @@ type Categorizer interface {
 	Verdicts(response []byte) (map[string]Verdict, error)
 }
 
+// Section is one window of a sectioned request: the context its questions
+// share and its questions, keyed apart from every other section's.
+type Section struct {
+	Context   map[string]any
+	Questions map[string]Question
+}
+
+// SectionedCategorizer asks the windows of several contexts in one request,
+// each context before its own questions. The text model does; Jev's request
+// holds one context, so Jev is asked a window a request.
+type SectionedCategorizer interface {
+	Categorizer
+	PromptSections(task string, sections []Section) (Prompt, error)
+}
+
 // Question is one closed question about one item.
 type Question struct {
 	// Name is what the request calls the item, such as "file" or

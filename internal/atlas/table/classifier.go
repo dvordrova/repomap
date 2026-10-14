@@ -427,12 +427,141 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 	if !Closed(def) {
 		return llm.Call[Result]{}, fmt.Errorf("table %s: not a closed table", def.Stage)
 	}
+	questions, err := classifierQuestions(def, window)
+	if err != nil {
+		return llm.Call[Result]{}, err
+	}
+	prompt, err := c.Prompt(def.System, classifierContext(def, window.Context), questions)
+	if err != nil {
+		return llm.Call[Result]{}, fmt.Errorf("table %s: %w", def.Stage, err)
+	}
+	state, err := classifierState(def, prompt, ".classifier.v2")
+	if err != nil {
+		return llm.Call[Result]{}, err
+	}
+	return llm.Call[Result]{
+		State:  state,
+		Prompt: prompt,
+		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 1},
+		DecodeValidate: func(raw []byte) (Result, error) {
+			verdicts, err := c.Verdicts(raw)
+			if err != nil {
+				return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
+			}
+			return DecodeClassifierAnswers(def, window, verdicts)
+		},
+	}, nil
+}
+
+func classifierState(def Definition, prompt llm.Prompt, contract string) ([]byte, error) {
+	return json.Marshal(struct {
+		Contract string  `json:"contract"`
+		Prompt   string  `json:"prompt_sha256"`
+		Request  string  `json:"request_sha256"`
+		Margin   float64 `json:"margin"`
+		YesAt    float64 `json:"yes_at,omitempty"`
+		Top      bool    `json:"top_choice,omitempty"`
+	}{def.Contract + contract, sha256Hex([]byte(def.System)), sha256Hex([]byte(prompt.User)), ClassifierMargin, def.YesAt, def.TopChoice})
+}
+
+// SectionWindow is window with its row ids prefixed by its section, so its
+// questions' keys stay apart from the other windows a sectioned request asks.
+func SectionWindow(window Window, section int) Window {
+	renamed := window
+	renamed.Rows = make([]Row, len(window.Rows))
+	for i, row := range window.Rows {
+		row.ID = fmt.Sprintf("s%d.%s", section+1, row.ID)
+		renamed.Rows[i] = row
+	}
+	return renamed
+}
+
+// Sections are a sectioned request's answers: each window's result, or why
+// that window alone was refused.
+type Sections struct {
+	Results []Result
+	Errs    []error
+}
+
+// ClassifierSectionsCall asks several windows, each with its own context, in
+// one request of a categorizer that takes sections. The windows' row ids
+// must already be apart (SectionWindow). Each window decodes its own
+// answers and check; a refused window does not take its neighbours, and
+// the request is refused only when every window is.
+func ClassifierSectionsCall(c llm.SectionedCategorizer, def Definition, windows []Window, check func(Answers) error) (llm.Call[Sections], error) {
+	if !Closed(def) {
+		return llm.Call[Sections]{}, fmt.Errorf("table %s: not a closed table", def.Stage)
+	}
+	sections := make([]llm.Section, len(windows))
+	for i, window := range windows {
+		questions, err := classifierQuestions(def, window)
+		if err != nil {
+			return llm.Call[Sections]{}, err
+		}
+		sections[i] = llm.Section{Context: classifierContext(def, window.Context), Questions: questions}
+	}
+	prompt, err := c.PromptSections(def.System, sections)
+	if err != nil {
+		return llm.Call[Sections]{}, fmt.Errorf("table %s: %w", def.Stage, err)
+	}
+	state, err := classifierState(def, prompt, ".classifier.sections.v1")
+	if err != nil {
+		return llm.Call[Sections]{}, err
+	}
+	return llm.Call[Sections]{
+		State:  state,
+		Prompt: prompt,
+		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 1},
+		DecodeValidate: func(raw []byte) (Sections, error) {
+			verdicts, err := c.Verdicts(raw)
+			if err != nil {
+				return Sections{}, fmt.Errorf("table %s: %w", def.Stage, err)
+			}
+			answer := Sections{Results: make([]Result, len(windows)), Errs: make([]error, len(windows))}
+			refused := 0
+			for i, window := range windows {
+				answer.Results[i], answer.Errs[i] = DecodeClassifierAnswers(def, window, verdicts)
+				if answer.Errs[i] == nil && check != nil {
+					if err := check(answer.Results[i].Answers); err != nil {
+						answer.Errs[i] = fmt.Errorf("table %s: %w", def.Stage, err)
+					}
+				}
+				if answer.Errs[i] != nil {
+					refused++
+				}
+			}
+			if refused == len(windows) {
+				return Sections{}, answer.Errs[0]
+			}
+			return answer, nil
+		},
+	}, nil
+}
+
+// SectionsFit reports whether the categorizer prepares one request asking
+// these windows, within the request limit.
+func SectionsFit(c llm.SectionedCategorizer, def Definition, windows []Window) (bool, error) {
+	call, err := ClassifierSectionsCall(c, def, windows, nil)
+	if err != nil {
+		return false, err
+	}
+	prepared, err := llm.Prepare(c, call.Prompt, call.Limits)
+	if classifierInputRefused(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return prepared.Len() <= call.Limits.MaxRequestBytes, nil
+}
+
+func classifierQuestions(def Definition, window Window) (map[string]llm.Question, error) {
 	questions := make(map[string]llm.Question, len(window.Rows)*len(def.Columns))
 	for _, row := range window.Rows {
 		for _, column := range def.Columns {
 			options := columnOptions(column, window.Context, row)
 			if len(options) == 0 {
-				return llm.Call[Result]{}, fmt.Errorf("table %s: row %s column %s has no options", def.Stage, row.ID, column.Name)
+				return nil, fmt.Errorf("table %s: row %s column %s has no options", def.Stage, row.ID, column.Name)
 			}
 			names := namesFor(column, window.Context, row, options)
 			question := llm.Question{Name: column.Item, Ask: columnQuestion(column, names)}
@@ -458,33 +587,7 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 			questions[questionKey(row, column)] = question
 		}
 	}
-	prompt, err := c.Prompt(def.System, classifierContext(def, window.Context), questions)
-	if err != nil {
-		return llm.Call[Result]{}, fmt.Errorf("table %s: %w", def.Stage, err)
-	}
-	state, err := json.Marshal(struct {
-		Contract string  `json:"contract"`
-		Prompt   string  `json:"prompt_sha256"`
-		Request  string  `json:"request_sha256"`
-		Margin   float64 `json:"margin"`
-		YesAt    float64 `json:"yes_at,omitempty"`
-		Top      bool    `json:"top_choice,omitempty"`
-	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex([]byte(prompt.User)), ClassifierMargin, def.YesAt, def.TopChoice})
-	if err != nil {
-		return llm.Call[Result]{}, err
-	}
-	return llm.Call[Result]{
-		State:  state,
-		Prompt: prompt,
-		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 1},
-		DecodeValidate: func(raw []byte) (Result, error) {
-			verdicts, err := c.Verdicts(raw)
-			if err != nil {
-				return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
-			}
-			return DecodeClassifierAnswers(def, window, verdicts)
-		},
-	}, nil
+	return questions, nil
 }
 
 // DecodeClassifierAnswers accepts a row when every column is decided: a

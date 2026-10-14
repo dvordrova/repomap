@@ -949,7 +949,24 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 		// The categorizer has its own rate limits and its own gate.
 		executor.BatchConcurrency, executor.BatchController = table.ClassifierConcurrency, r.classifierGate
 	}
-	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+	// rowPrefix is each window's row-id prefix in the request that asked it:
+	// a sectioned request keys each window's rows apart.
+	rowPrefix := make([]string, len(windows))
+	results := make([]llm.EachResult[table.Result], len(windows))
+	if sectioned, ok := r.opts.Categorizer.(llm.SectionedCategorizer); ok && classifier && len(calls) > 1 {
+		asked, err := r.askSections(ctx, executor, provider, sectioned, def, windows, check, rowPrefix)
+		if err != nil {
+			return nil, err
+		}
+		results = asked
+	} else {
+		each := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+		for i, window := range windows {
+			if window.Refused == "" {
+				results[i] = each[asked[i]]
+			}
+		}
+	}
 	for i, window := range windows {
 		if window.Refused != "" {
 			// Its row would exceed the categorizer's envelope even packed
@@ -974,7 +991,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			r.printWindow(def, window, nil, "refused: "+window.Refused, 0)
 			continue
 		}
-		result := results[asked[i]]
+		result := results[i]
 		// The prompt and input follow the exchange: a window refused whole or
 		// in a row or cell keeps all its payloads in the run.
 		if err := r.writeWindowExchange(window, []byte(def.System), window.Request, result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0); err != nil {
@@ -996,12 +1013,12 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 					if value.Uncertain(j) {
 						// The response answered the row, uncertainly: that is
 						// its answer, remembered so a warm reading asks nothing.
-						answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven, uncertain: true, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: window.Rows[j].ID}
+						answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven, uncertain: true, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: rowPrefix[i] + window.Rows[j].ID}
 					}
 					rejectedRows++
 					continue
 				}
-				answers[offsets[i]+j] = rowAnswer{answer: value.Answers[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: window.Rows[j].ID}
+				answers[offsets[i]+j] = rowAnswer{answer: value.Answers[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: rowPrefix[i] + window.Rows[j].ID}
 			}
 			use.Given += rejectedRows
 			reason := ""
@@ -1473,4 +1490,92 @@ func countPlaces(byDepth map[int][]atlas.Place) int {
 		total += len(places)
 	}
 	return total
+}
+
+// askSections asks the windows of a text-model table in sectioned requests:
+// windows join a request in order, each with its own context, while their
+// questions stay within one classifier window and the provider prepares
+// the request; a window alone keeps its own request. It returns each
+// window's part of the request that asked it.
+func (r *reader) askSections(ctx context.Context, executor llm.Executor, provider llm.Provider, c llm.SectionedCategorizer, def table.Definition, windows []table.Window, check func(table.Answers) error, rowPrefix []string) ([]llm.EachResult[table.Result], error) {
+	sectioned := func(members []int) []table.Window {
+		renamed := make([]table.Window, len(members))
+		for k, i := range members {
+			renamed[k] = table.SectionWindow(windows[i], k)
+		}
+		return renamed
+	}
+	var bundles [][]int
+	var current []int
+	questions := 0
+	for i, window := range windows {
+		if window.Refused != "" {
+			continue
+		}
+		n := len(window.Rows) * len(def.Columns)
+		if len(current) > 0 && questions+n <= table.ClassifierQuestions {
+			joined := append(slices.Clone(current), i)
+			fits, err := table.SectionsFit(c, def, sectioned(joined))
+			if err != nil {
+				return nil, err
+			}
+			if fits {
+				current, questions = joined, questions+n
+				continue
+			}
+		}
+		if len(current) > 0 {
+			bundles = append(bundles, current)
+		}
+		current, questions = []int{i}, n
+	}
+	if len(current) > 0 {
+		bundles = append(bundles, current)
+	}
+	calls := make([]llm.Call[table.Sections], len(bundles))
+	for b, members := range bundles {
+		if len(members) > 1 {
+			for k, i := range members {
+				rowPrefix[i] = fmt.Sprintf("s%d.", k+1)
+			}
+			call, err := table.ClassifierSectionsCall(c, def, sectioned(members), check)
+			if err != nil {
+				return nil, err
+			}
+			calls[b] = call
+			continue
+		}
+		call, err := table.ClassifierCall(c, def, windows[members[0]])
+		if err != nil {
+			return nil, err
+		}
+		decode := call.DecodeValidate
+		calls[b] = llm.Call[table.Sections]{State: call.State, Prompt: call.Prompt, Limits: call.Limits,
+			DecodeValidate: func(raw []byte) (table.Sections, error) {
+				value, err := decode(raw)
+				if err == nil && check != nil {
+					err = check(value.Answers)
+					if err != nil {
+						err = fmt.Errorf("table %s: %w", def.Stage, err)
+					}
+				}
+				if err != nil {
+					return table.Sections{}, err
+				}
+				return table.Sections{Results: []table.Result{value}, Errs: []error{nil}}, nil
+			}}
+	}
+	each := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+	results := make([]llm.EachResult[table.Result], len(windows))
+	for b, members := range bundles {
+		for k, i := range members {
+			var value table.Result
+			err := each[b].Err
+			if err == nil {
+				value, err = each[b].Outcome.Value.Results[k], each[b].Outcome.Value.Errs[k]
+			}
+			results[i] = llm.EachResult[table.Result]{Outcome: llm.OutcomeAs(each[b].Outcome, value), Err: err}
+		}
+	}
+	return results, nil
 }

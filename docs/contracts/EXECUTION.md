@@ -369,7 +369,15 @@ The display-translation cube behind `--lang`
   (`REPOMAP_LLM_BYTES_LIMIT`, default 262,144 bytes), not Jev's envelope, and
   writes an option list several questions of a window share once, before the
   questions, each of them naming it (owner decision 2026-10-14: the repeated
-  lists were ~90% of a request and held windows to 4–6 questions). Preparation measures the encoded request, including
+  lists were ~90% of a request and held windows to 4–6 questions). The text
+  model also takes several windows of other contexts in one request
+  (`llm.SectionedCategorizer`): a stage's windows join a request in order
+  while their questions stay within one classifier window and the provider
+  prepares it, each context written before its own questions and each
+  window's row ids prefixed `s<k>.`; each window decodes its own answers, a
+  refused window does not take its neighbours, and the request is refused
+  only when every window is. Jev's request holds one context, so Jev is
+  asked a window a request. Preparation measures the encoded request, including
   complete context, questions and choice criteria, before transport. Without
   the provider tokenizer it reserves one token per UTF-8 byte and the one
   output token, rather than extrapolating average densities from old answers.

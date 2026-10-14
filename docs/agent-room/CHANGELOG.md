@@ -1,3 +1,11 @@
+## 2026-10-14 — several contexts in one text-model request
+
+Without Jev a stage's windows of other contexts (`atlas_keys` a part each,
+`atlas_core` an area each, `atlas_group_assign` a box each) join one request
+of the text model, each context before its own questions
+(`table.ClassifierSectionsCall`, `TextModel.PromptSections`); rows are keyed
+`s<k>.<id>` so memo recall finds them. Jev keeps one context a request.
+
 ## 2026-10-14 — a level's boxes, a target's helper files and every symbol's calls in one window
 
 Consilium (stage loops, coalescing layer, dedupe; judged): `runPreparedGroups`
