@@ -15797,3 +15797,11 @@ An area's closed card was coloured by its lane, so Airflow's Utilities read
 rose for two core parts of many; REPORT already says area frames are neutral
 and the core or entry mark is the glyph on the card's border. The card is
 neutral now; the glyph stays.
+
+An area's level was always laid out down, then drawn at one scale in its
+closed card, the shape of its inventory: Airflow's "Triggers and callbacks"
+(two boxes) had stood as a narrow column in a wide frame. An area now takes
+the direction (down or across) nearest its card's proportion, as a program
+takes the one fitting the canvas; its open frame is neutral like its card.
+Saved Airflow render checked in headless Chromium (the two boxes side by
+side filling the frame); `npm test` 178/178; visual 23/24 (same spec).

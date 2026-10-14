@@ -255,7 +255,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   whole map draws them as one arrow between the two programs, an entered
   program as its box's port.
 
-- Outside frames and their chips are amber, parts and area frames neutral; core parts are
+- Outside frames and their chips are amber, parts and area frames and cards neutral (an
+  area's level laid out down or across, whichever is nearer its card's proportion); core parts are
   rose, entry parts green, inputs blue and external communications amber,
   identities the saved lanes supply. Each colour means one thing (owner,
   2026-09-28): purple is a link and nothing else, a key declaration is bold

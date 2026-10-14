@@ -93,8 +93,9 @@ function ProgramNode({data}){
 }
 function FrameNode({data}){
   const {node}=data,kind=node.kind;
-  const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection'
-    :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
+  // An open area's frame is neutral, as its closed card (REPORT); its core
+  // and entry parts inside carry their colours.
+  const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   const titleText=node.titleText||node.text,band=units.band(1)*titleText;
   return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}>

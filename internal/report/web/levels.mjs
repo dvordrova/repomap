@@ -306,10 +306,19 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // area is a closed card naming what it holds, read in the column. Levels
   // are laid out top down, a level at once, so no deeper one is laid out
   // in vain.
+  // Of both directions, the one nearest its closed card's proportion: the
+  // card is its inventory's shape and the level stands inside it at one
+  // scale, so a level laid out down in a wide card had stood as a narrow
+  // column in empty margins (owner, 2026-10-14: Airflow's "Triggers and
+  // callbacks", two boxes one over the other).
   const layArea=async area=>{
     const parts=area.children.map(id=>nodes.get(id)).filter(Boolean);
     const pairs=pairsOf(model,model.edges,childOf(area.id));
-    const laid=await layered(area.id,parts.map(part=>part.kind==='area'?closedArea(part):partBox(part,measure)),pairs);
+    const boxes=parts.map(part=>part.kind==='area'?closedArea(part):partBox(part,measure));
+    const card=closedArea(area),aspect=card.width/card.height;
+    const [down,across]=await Promise.all(['DOWN','RIGHT'].map(direction=>layered(area.id,boxes,pairs,{options:{...interior,'elk.direction':direction}})));
+    const off=laid=>Math.abs(Math.log(laid.width/laid.height/aspect));
+    const laid=off(across)<off(down)/1.05?across:down;
     return {...laid,text:1,pairs,kind:'area'};
   };
   let frontier=[...nodes.values()].filter(node=>node.kind==='area'&&nodes.get(model.parent(node.id))?.kind==='program');
