@@ -14,6 +14,9 @@ import (
 const (
 	StageGroupEnough = "atlas_group_enough"
 	StageGroupAssign = "atlas_group_assign"
+	// StageGroupGather gathers a divided box's many smaller boxes into the
+	// larger parts a newcomer opens first (owner, 2026-10-14).
+	StageGroupGather = "atlas_group_gather"
 )
 
 //go:embed prompts/group_enough.md

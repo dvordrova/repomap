@@ -195,6 +195,7 @@ const (
 	SemanticStageAtlasPartsAdmission = "atlas_parts_admission"
 	SemanticStageAtlasGroupEnough    = "atlas_group_enough"
 	SemanticStageAtlasGroupAssign    = "atlas_group_assign"
+	SemanticStageAtlasGroupGather    = "atlas_group_gather"
 	SemanticStageAtlasProgram        = "atlas_program"
 	SemanticStageAtlasInputs         = "atlas_inputs"
 	SemanticStageAtlasSystems        = "atlas_systems"
@@ -837,6 +838,7 @@ var semanticStages = map[string]struct{}{
 	SemanticStageAtlasPartsAdmission:   {},
 	SemanticStageAtlasGroupEnough:      {},
 	SemanticStageAtlasGroupAssign:      {},
+	SemanticStageAtlasGroupGather:      {},
 	SemanticStageAtlasProgram:          {},
 	SemanticStageAtlasInputs:           {},
 	SemanticStageAtlasSystems:          {},

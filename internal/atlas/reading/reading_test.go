@@ -136,7 +136,10 @@ type tableProvider struct {
 	// description; nil writes "About <name>.", and a description it returns
 	// empty is refused.
 	groupFor func(box, file string) string
-	describe func(name string) string
+	// gatherFor answers a gathering with its groups; none when nil.
+	gatherFor      func(request groupGatherInput) []map[string]any
+	gatherRequests [][]byte
+	describe       func(name string) string
 	// designRequests counts the proposal and description requests;
 	// proposed keeps each proposal request and described each description
 	// request by part name.
@@ -646,6 +649,21 @@ func TestRequestBytesCarryNoIdentities(t *testing.T) {
 // design answers the grouping's proposals and the parts' descriptions; ok
 // is false for any other request.
 func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, error) {
+	if task == groupGatherTask {
+		var request groupGatherInput
+		if err := json.Unmarshal(body, &request); err != nil {
+			return nil, true, err
+		}
+		provider.mu.Lock()
+		provider.gatherRequests = append(provider.gatherRequests, append([]byte(nil), body...))
+		provider.mu.Unlock()
+		groups := []map[string]any{}
+		if provider.gatherFor != nil {
+			groups = provider.gatherFor(request)
+		}
+		raw, err := json.Marshal(map[string]any{"groups": groups})
+		return raw, true, err
+	}
 	if task != groupProposeTask && task != designDescribeTask {
 		return nil, false, nil
 	}

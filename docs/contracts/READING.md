@@ -278,7 +278,26 @@ contexts were removed on the same day; their copies are outside the tree).
    unanswered element or one of a refused window goes, by code, with the most
    of its decided call, read and hand-over neighbours; one with none is a box
    of its own, named by its declaration (`group_undecided`).
-5. Every smaller box holding an element goes back to step 2. A box whose
+5. *The gathering* (`atlas_group_gather`, DeepSeek, `prompts/group_gather.md`
+   alone, task `repomap.atlas.group_gather.v1`; owner, 2026-10-14): a box
+   divided into more than four smaller boxes (the leaf constant) has them
+   gathered into the larger parts a newcomer opens first, from the box's
+   `name`, `holds` and `inside` and each smaller box's closed `ref`, `name`,
+   `holds` and `declarations` count: `{"groups":[{"name","holds","boxes":
+   ["b1",...]}]}`. Code makes each group of two or more a box between the box
+   and its smaller boxes, holding their declarations; it is divided by
+   construction and never asked about. A box left out of every group stays
+   where it is; no count is given. The decoder: a wrapper, case, whitespace,
+   a ref's case or spaces, a string for a list and a repeated ref are forms;
+   an unknown ref is discarded; a group without a name or holds, and a box
+   put in two groups, are refused at that group or box (`group_refused`); a
+   group of fewer than two boxes or of every box gains nothing. A refused
+   answer leaves the box as it is (`window_rejected`). One pass: the
+   gathered parts are not gathered again. (Every root proposal had named the
+   author's packages one by one: Airflow's core 25 boxes, nats-server 22,
+   freqtrade 16, Metabase's app 17.)
+6. Every smaller box holding an element goes back to step 2, inside its
+   gathered part when it has one. A box whose
    elements all went in one smaller box gains nothing from it and is read as
    it is, so every division has at least two children and the loop ends.
 

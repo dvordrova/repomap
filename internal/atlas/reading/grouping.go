@@ -27,7 +27,10 @@ import (
 //     whether any larger box is grouped enough;
 //  3. DeepSeek proposes the smaller boxes of a box that is not;
 //  4. Jev puts each of its elements in one of them;
-//  5. each smaller box goes back to step 2.
+//  5. a box divided into more than groupLeafSize smaller boxes has them
+//     gathered by DeepSeek into the larger parts a newcomer opens first,
+//     each a box between it and its smaller boxes (grouping_gather.go);
+//  6. each smaller box goes back to step 2.
 //
 // A box whose elements all went in one smaller box gains nothing from it and
 // is read as it is. The boxes read as they are become the parts of the map,
@@ -60,6 +63,9 @@ type groupNode struct {
 	children    []*groupNode
 	// helpers are the helper units code placed in this part.
 	helpers []string
+	// gathered marks a larger part the gathering made: divided by
+	// construction, never asked about.
+	gathered bool
 }
 
 // inside names the boxes a node sits in, outermost first, the target's own
@@ -134,6 +140,9 @@ func (r *reader) groupTarget(ctx context.Context, view *designView, round int, f
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := r.gatherGroups(ctx, levelRound, level, assigning); err != nil {
+			return nil, nil, err
+		}
 		pending = children
 	}
 	blocked := r.placeHelpers(view, root, facts, helpers)
@@ -152,7 +161,7 @@ func (r *reader) askEnough(ctx context.Context, round, level int, nodes []*group
 	target := r.opts.Targets[(round-1)%len(r.opts.Targets)]
 	r.opts.Stage(lines.StageGroupEnough, fmt.Sprintf("%s: asking whether %d boxes of level %d need smaller boxes", target.Name, len(nodes), level))
 	var divide, asked []*groupNode
-	var groups rowGroups
+	var boxes rowGroup
 	for i, node := range nodes {
 		fields := []table.Field{{Name: "name", Value: node.name}}
 		if node.holds != "" {
@@ -176,8 +185,14 @@ func (r *reader) askEnough(ctx context.Context, round, level int, nodes []*group
 			divide = append(divide, node)
 			continue
 		}
-		groups = append(groups, rowGroup{rows: []table.Row{row}})
+		boxes.rows = append(boxes.rows, row)
 		asked = append(asked, node)
+	}
+	// A level's boxes share no context and their ids are distinct, so they
+	// are asked together; windows divide only when a request does not fit.
+	var groups rowGroups
+	if len(boxes.rows) > 0 {
+		groups = rowGroups{boxes}
 	}
 	answers, err := r.runTableGroups(ctx, def, round, groups, nil)
 	if err != nil {

@@ -622,6 +622,9 @@ dispatch:
 		}
 	}
 	r.reportStage(lines.StageZones)
+	if _, asked := r.uses[lines.StageGroupGather]; asked {
+		r.reportStage(lines.StageGroupGather)
+	}
 	r.reportStage(lines.StageDescribe)
 	return nil
 }

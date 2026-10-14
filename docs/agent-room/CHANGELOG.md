@@ -15733,3 +15733,20 @@ room from the name. The name keeps its measured lines (`white-space: pre`),
 its padding shrinks as the border grows (as the card's own), and it is sized
 for 92% of the room. Saved Airflow render, 14 zoom steps: 300 names shown,
 none past its card.
+
+### 2026-10-14 — the gathering: many boxes gathered into larger parts
+
+Owner on Airflow's core (25 boxes at its top level, a web of arrows): a
+consilium (investigator, prompt critic, skeptic) found no coarsening step on
+the main path — the areas request that had been one was removed with the
+grouping loop (7dfa55d7) — and every root proposal naming the author's
+packages one by one (Airflow 25, nats-server 22, Metabase app 17, freqtrade
+16). The skeptic's design, owner-approved: after the assignment, a box with
+more than four smaller boxes has DeepSeek say which sit together in a larger
+part (`atlas_group_gather`, names/holds/counts only, closed refs); code makes
+each group of two or more an intermediate box holding their declarations,
+never asked again; the smaller boxes go on as before. Rejected: a numeric
+cap, call-graph clustering, a canvas-only collapse, a reworded root prompt
+alone. `TestManyBoxesAreGatheredIntoLargerParts`,
+`TestDecodeGatherRefusesOnlyWhatIsWrong`; atlas/reading suite green; vet
+clean; `make test` red only in the known JSTS helper (`node.getChildren`).
