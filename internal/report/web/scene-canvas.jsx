@@ -13,7 +13,7 @@ import {buildModel,inputKindTitles} from './model.mjs';
 import {layoutLevels,homeCamera,units,cardWords,programWords} from './levels.mjs';
 import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit,memberView} from './scene.mjs';
 import {project,mark} from './overlay.mjs';
-import {bigName} from './cards.mjs';
+import {bigName,wrapText} from './cards.mjs';
 import {createStore,sceneReducer,initialState,createCamera,zoomAction} from './store.mjs';
 import {kindIcon,kindNames,systemIcons} from './kind-icons.mjs';
 import {callCard} from './call-card.mjs';
@@ -119,9 +119,12 @@ function GroupNode({data}){
     <Scaled node={{...node,rect:{...node.rect,height:units.band(.8)*node.text}}} className="scene-group-title">
       <Mark icon={kindIcon(node.inputKind)}/><strong>{node.title}</strong></Scaled></div></>;
 }
+// An input's name in the lines layout measured it in (levels.mjs inputBox),
+// never wrapped again by the browser at another zoom.
 function TileNode({data}){
-  const {node}=data;
-  return <>{handles}<Scaled node={node} className={`scene-tile ${data.lit?'flow-lit':''}`} data={{'data-input-id':node.id}}><Mark icon={kindIcon(node.inputKind)} kind={node.inputKind}/><span>{node.title}</span></Scaled></>;
+  const {node}=data,c=units.input;
+  const lines=useMemo(()=>wrapText(node.title||'',node.rect.width/node.text-c.mark-2*c.pad,c.font,measure).slice(0,2),[node.title,node.rect.width,node.text]);
+  return <>{handles}<Scaled node={node} className={`scene-tile ${data.lit?'flow-lit':''}`} data={{'data-input-id':node.id}}><Mark icon={kindIcon(node.inputKind)} kind={node.inputKind}/><span className="scene-tile-lines">{lines.join('\n')}</span></Scaled></>;
 }
 // A chip and a bucket take the keyboard's focus: focused, a chip whose name
 // does not read is named, as pointed at; Enter reads it.
@@ -182,7 +185,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.className='flow-root scene-root';stage.appendChild(host);
   map.classList.add('flow-enabled','flow-initializing');map.dataset.scene='';
   if(source){source.style.display='none';source.setAttribute('aria-hidden','true');}
-  const location=document.createElement('div');location.className='flow-location';location.setAttribute('aria-live','polite');stage.insertBefore(location,host);
+  // No breadcrumb over the canvas (owner, 2026-10-14: "путь не нужен"); the
+  // column names what is read.
   const status=document.createElement('p');status.className='flow-loading';status.textContent=t('Arranging the map…');stage.appendChild(status);
   function sizeWorkspace(){
     const workspace=stage.closest('.map-workspace');if(!workspace)return;
@@ -198,7 +202,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   const size=()=>({width:host.clientWidth||1200,height:host.clientHeight||700});
   let geometry;
   try{geometry=await layoutLevels(model,{...size(),measure});}
-  catch(error){host.remove();status.remove();location.remove();map.classList.remove('flow-enabled','flow-initializing');if(source){source.style.display='';source.removeAttribute('aria-hidden');}throw error;}
+  catch(error){host.remove();status.remove();map.classList.remove('flow-enabled','flow-initializing');if(source){source.style.display='';source.removeAttribute('aria-hidden');}throw error;}
   let layoutKey=String(Math.round(geometry.bounds.width))+'x'+String(Math.round(geometry.bounds.height));
 
   // The scene of the current level, kept until the level, the choice or
@@ -767,7 +771,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       if(state.level.length)map.dataset.sceneLevel=levelKey(state.level);else delete map.dataset.sceneLevel;
       if(scene.program)map.dataset.enteredProgram=scene.program;else delete map.dataset.enteredProgram;
       // A program that is one part names itself once.
-      location.textContent=state.level.length?state.level.map(nameOf).filter((name,i,names)=>name!==names[i-1]).join(' / '):t('System map');
     },[scene.key]);
     const lit=new Set(state.lit);
     // A box or an arrow that did not change keeps its object, so React Flow

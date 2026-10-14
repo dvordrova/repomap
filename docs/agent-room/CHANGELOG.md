@@ -15959,3 +15959,17 @@ read as links and were none; each declaration links its code); a handler
 named as its input is said once ("listen", not "listen → listen").
 `npm test` 178/178; report tests green; visual 20/21 (same pre-existing
 spec).
+
+Display consilium (architect, UX critic, skeptic; 2026-10-14) agreed a staged
+plan: S0 nothing room-taking follows the zoom; an experiment of a zoom-driven
+open set behind a flag, measured under 4× CPU throttle before any rebuild;
+then geometry (part card in its grid's proportion, Inputs as a frame of kind
+containers), then the open set behind a flag, deletions only after the
+owner accepts. S0 landed: chip and frame-title font sizes no longer follow
+the zoom, an input's name stands in the lines layout measured
+(`white-space: pre`), the removed inventory's font rule is gone, and
+`lints.zoom.test.mjs` fails any font, line-height, width, height, margin or
+gap that names `--flow-zoom`. The owner dropped the map's path: no
+breadcrumb over the canvas, none in the toolbar's location line.
+`npm test` 179/179; report tests green; visual 20/21 (same pre-existing
+spec).

@@ -111,9 +111,9 @@ function rmCrumbs(container,segments,fallback){
     locationName.textContent=place+(sectionTitle?' · '+sectionTitle:'');
     readingIntent.textContent=question?question.querySelector('.reading-question').textContent:searchIntent?rmT('Search: {0}',searchIntent):'';
     readingIntent.hidden=!readingIntent.textContent;
-    var map=current.querySelector('[data-map-explorer]');
-    mapContext.hidden=!map;
-    if(map){crumbSegments=map.explorationPath?.()||[];rmCrumbs(mapContext,crumbSegments,{href:'#'+mapDestination(map).id,title:map.explorationLabel()});}
+    // The map's path is not shown (owner, 2026-10-14: "путь не нужен"):
+    // the canvas is a window on the map and the column names what is read.
+    mapContext.hidden=true;crumbSegments=[];
     syncComponentChoice();
   }
   function mapDestination(map){return document.getElementById(map.explorerScope)||map.explorerOperation||home;}

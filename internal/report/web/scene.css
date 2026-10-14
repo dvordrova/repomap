@@ -172,7 +172,6 @@
 .scene-root .scene-scaled.scene-bucket-stack .scene-bucket-face,.scene-root .scene-scaled.scene-bucket-stack::before,.scene-root .scene-scaled.scene-bucket-stack::after{border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)))}
 .scene-bucket-open .scene-frame-title>strong{color:#243044}
 
-.scene-root .scene-program-inside{font-size:min(13px,calc(20.8px / (var(--flow-zoom,1) * var(--scene-text,1))));line-height:calc(18em / 13)}
 
 .scene-program-inside::-webkit-scrollbar{width:10px}
 .scene-program-inside::-webkit-scrollbar-thumb{background:#9aabbe;border:2px solid #f8fafc;border-radius:5px}
@@ -187,3 +186,5 @@
   opacity:clamp(0,calc((10.5 - var(--flow-zoom,1) * var(--scene-text,1) * 17) * 2),1)}
 /* The map moving is one composited layer (scene-canvas.jsx scene-moving). */
 .scene-root.scene-moving .react-flow__viewport{will-change:transform}
+/* An input's name stands in its measured lines (scene-canvas.jsx TileNode). */
+.scene-root .scene-tile>span.scene-tile-lines{white-space:pre;overflow-wrap:normal;overflow:hidden}
