@@ -1,3 +1,14 @@
+## 2026-10-14 — a struct tag's separator is not a field name
+
+soft-serve (`pkg/config/config.go`, `envSeparator:"\n"`) failed every run
+before the model: `tagAliases` took each tag key's value as a field name, and
+the program index refused the newline alias as "invalid object input". A
+value with edge spaces or control characters is no longer a name; the
+refusal now names the object and the failing check. Go fixture
+`SeparatedLevelsInfoResponse` keeps only `json:names`; struct tags have no
+native equivalent in Python, JS/TS, Clojure or C. soft-serve `cmd/soft`
+`--no-model`: exit 0, report written.
+
 ## 2026-10-13 — closed questions without Jev; `repomap test_llm`
 
 Without `JEV_KEY` the closed questions go to the text model

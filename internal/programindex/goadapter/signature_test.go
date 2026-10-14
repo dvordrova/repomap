@@ -19,6 +19,9 @@ func TestTagAliasesNameEachFormat(t *testing.T) {
 	if len(got) != 2 || got[0].Format != "json" || got[0].Name != "count_label" || got[1].Format != "db" || got[1].Name != "count" {
 		t.Fatalf("aliases = %+v", got)
 	}
+	if got := tagAliases(`json:"names" envSeparator:"\n" default:" a "`); len(got) != 1 || got[0].Format != "json" || got[0].Name != "names" {
+		t.Fatalf("separator aliases = %+v", got)
+	}
 	if tagAliases("") != nil {
 		t.Fatal("an absent tag has aliases")
 	}

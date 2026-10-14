@@ -230,9 +230,10 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 		line, column                        int
 		types                               []programindex.Location
 	}{
-		"GetLevelsInfoResponse":      {"Count", "Count int", "Count int", "json:count", 5, 2, nil},
-		"OtherLevelsInfoResponse":    {"Count", "Count string", "Count string", "json:count_label", 10, 2, nil},
-		"EmbeddedLevelsInfoResponse": {"GetLevelsInfoResponse", "GetLevelsInfoResponse " + goFixtureRootPackage + "/internal/storefixture.GetLevelsInfoResponse", "GetLevelsInfoResponse storefixture.GetLevelsInfoResponse", "", 15, 2, []programindex.Location{{Path: path, Line: 4, Column: 6}}},
+		"GetLevelsInfoResponse":       {"Count", "Count int", "Count int", "json:count", 5, 2, nil},
+		"OtherLevelsInfoResponse":     {"Count", "Count string", "Count string", "json:count_label", 10, 2, nil},
+		"SeparatedLevelsInfoResponse": {"Names", "Names []string", "Names []string", "json:names", 28, 2, nil},
+		"EmbeddedLevelsInfoResponse":  {"GetLevelsInfoResponse", "GetLevelsInfoResponse " + goFixtureRootPackage + "/internal/storefixture.GetLevelsInfoResponse", "GetLevelsInfoResponse storefixture.GetLevelsInfoResponse", "", 15, 2, []programindex.Location{{Path: path, Line: 4, Column: 6}}},
 	}
 	for _, declaration := range authorities.core.Types {
 		if expected, ok := want[declaration.Name]; ok {

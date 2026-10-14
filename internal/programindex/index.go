@@ -2681,15 +2681,33 @@ func validateObjectInput(value ObjectInput) error {
 	if !value.Visibility.Valid() {
 		return fmt.Errorf("program index: invalid object visibility")
 	}
-	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) ||
-		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
-		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
-		!validDocstringRanges(value.Location, canonicalDocstringRanges(value.DocstringRanges)) ||
-		!validAliases(canonicalAliases(value.Aliases)) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		(value.Unreachable || value.Macro) && !callableKind(value.Kind) || value.Anonymous && !callableKind(value.Kind) ||
-		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) ||
-		!validComparisons(value.Kind, canonicalComparisons(value.Comparisons)) {
-		return fmt.Errorf("program index: invalid object input")
+	checks := []struct {
+		field string
+		valid bool
+	}{
+		{"source ref", validText(value.SourceRef)},
+		{"kind", value.Kind.Valid()},
+		{"name", validText(value.Name)},
+		{"signature", validOptionalText(value.Signature)},
+		{"owner ref", validOptionalText(value.OwnerRef)},
+		{"container ref", validOptionalText(value.ContainerRef)},
+		{"location", validOptionalLocation(value.Location)},
+		{"directory", validObjectDirectory(value.Kind, value.Directory)},
+		{"docstring ranges", validDocstringRanges(value.Location, canonicalDocstringRanges(value.DocstringRanges))},
+		{"aliases", validAliases(canonicalAliases(value.Aliases))},
+		{"type locations", validTypeLocations(value.Kind, value.Types)},
+		{"end line", validEndLine(value.Location, value.EndLine)},
+		{"code lines", validCodeLines(value.Location, value.EndLine, value.CodeLines)},
+		{"unreachable or macro", !(value.Unreachable || value.Macro) || callableKind(value.Kind)},
+		{"anonymous", !value.Anonymous || callableKind(value.Kind)},
+		{"parameter stores", validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores))},
+		{"rows", validRows(value.Kind, value.Rows)},
+		{"comparisons", validComparisons(value.Kind, canonicalComparisons(value.Comparisons))},
+	}
+	for _, check := range checks {
+		if !check.valid {
+			return fmt.Errorf("program index: invalid object input %q: %s", value.SourceRef, check.field)
+		}
 	}
 	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
 		if !validOptionalText(typed.Name) || !validOptionalText(typed.Type) || typed.Name == "" && typed.Type == "" || !validOptionalText(typed.TypeRef) {

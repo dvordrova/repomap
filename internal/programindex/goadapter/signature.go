@@ -38,8 +38,9 @@ func shortSignature(signature string) string {
 }
 
 // tagAliases reads a struct tag's format names: `json:"count,omitempty"
-// db:"count"` names the field count in json and db. Options after the comma
-// and the "-" exclusion are not names.
+// db:"count"` names the field count in json and db. Options after the comma,
+// the "-" exclusion and a value with edge spaces or control characters, such
+// as `envSeparator:"\n"`, are not names.
 func tagAliases(tag string) []programindex.Alias {
 	var result []programindex.Alias
 	for tag != "" {
@@ -56,7 +57,7 @@ func tagAliases(tag string) []programindex.Alias {
 		tag = tag[colon+1+len(value):]
 		name, _ := reflect.StructTag(format + ":" + value).Lookup(format)
 		name, _, _ = strings.Cut(name, ",")
-		if name != "" && name != "-" {
+		if name != "" && name != "-" && name == strings.TrimSpace(name) && !strings.ContainsFunc(name, unicode.IsControl) {
 			result = append(result, programindex.Alias{Format: format, Name: name})
 		}
 	}
