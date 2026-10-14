@@ -11,9 +11,9 @@ import (
 )
 
 // A target divided into more than four boxes has them gathered into the
-// larger parts a newcomer opens first: each group of two or more is an area
-// between the target and its boxes, and a box gathered with no other stays
-// at the top. The gathering is asked from the boxes' names, holds and
+// larger parts a newcomer opens first: each group Jev finds one part is an
+// area between the target and its boxes; a box gathered with no other, or in
+// a group Jev finds only its boxes side by side, stays at the top. The gathering is asked from the boxes' names, holds and
 // counts alone, inside nothing.
 func TestManyBoxesAreGatheredIntoLargerParts(t *testing.T) {
 	graph := unitGraph(t, serviceFiles())
@@ -34,6 +34,7 @@ func TestManyBoxesAreGatheredIntoLargerParts(t *testing.T) {
 		}
 	}
 	jev := newGroupJev()
+	jev.apart = []string{"Storage"}
 	jev.enough = append(jev.enough, "db.go", "cache.go", "routes.go", "auth.go", "log.go")
 	result, err := Read(t.Context(), serviceOptions(t, graph, provider, jev))
 	if err != nil {
@@ -57,6 +58,9 @@ func TestManyBoxesAreGatheredIntoLargerParts(t *testing.T) {
 			t.Fatalf("box %+v lacks its count or holds", box)
 		}
 	}
+	if !slices.Equal(jev.keptAsked, []string{"Web", "Storage"}) {
+		t.Fatalf("Jev was asked about %v; want every proposed group", jev.keptAsked)
+	}
 	target := result.Atlas.Targets[0]
 	zones := map[string]atlas.Zone{}
 	for _, zone := range target.Zones {
@@ -72,15 +76,15 @@ func TestManyBoxesAreGatheredIntoLargerParts(t *testing.T) {
 		slices.Sort(titles)
 		return titles
 	}
-	if zones["Web"].ParentID != "" || zones["Storage"].ParentID != "" {
-		t.Fatalf("areas %+v; want Web and Storage at the top", target.Zones)
+	if zones["Web"].ParentID != "" || !slices.Equal(held("Web"), []string{"auth.go", "routes.go"}) {
+		t.Fatalf("areas %+v; want Web at the top holding auth.go and routes.go", target.Zones)
 	}
-	if got := map[string][]string{"Web": held("Web"), "Storage": held("Storage")}; !reflect.DeepEqual(got, map[string][]string{"Web": {"auth.go", "routes.go"}, "Storage": {"cache.go", "db.go"}}) {
-		t.Fatalf("the larger parts hold %v", got)
+	if _, ok := zones["Storage"]; ok {
+		t.Fatal("a group Jev found only its boxes side by side was gathered")
 	}
 	for _, box := range target.Boxes {
-		if box.Title == "log.go" && box.ZoneID != "" {
-			t.Fatal("log.go, gathered with no other box, left the top")
+		if (box.Title == "log.go" || box.Title == "db.go" || box.Title == "cache.go") && box.ZoneID != "" {
+			t.Fatalf("%s, in no kept group, left the top", box.Title)
 		}
 	}
 }

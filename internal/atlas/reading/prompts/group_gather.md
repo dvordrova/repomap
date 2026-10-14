@@ -16,14 +16,21 @@ of work, which a newcomer would explain in the same breath. Each larger part
 stands between this box and its smaller boxes; opening it shows its smaller
 boxes as they are.
 
-A smaller box that sits with no other stays alone: leave it out of every
-group. Most boxes may stay alone. Two boxes are never a group because they
-are what is left after the others are grouped. A group is named by the work
-its boxes do together, never by being common, shared, general, other or
-miscellaneous. Do not put every smaller box in one group. Put each smaller
-box in at most one group.
+Every group you name costs the newcomer one more box to open, so name a
+group only when it is worth it: when its smaller boxes do one larger kind of
+work that has a name of its own, a name that is not made of the boxes' own
+names. "Order handling" over checkout, payment and shipping is such a group;
+"Search and e-mails" over the product search and the e-mail sender is not:
+it only joins two boxes' names and says nothing a newcomer did not already
+read. A group named "A and B" after its boxes A and B is never a group. When
+you hesitate, leave the boxes alone. Most boxes stay alone; naming no group
+at all is a good answer.
+
+Two boxes are never a group because they are what is left after the others
+are grouped, or because they sit under one broad word (common, shared,
+general, platform, core, support, other, miscellaneous). Do not put every
+smaller box in one group. Put each smaller box in at most one group.
 
 Give each group a name of two to four words, one sentence `holds` that names
 the one larger kind of work its boxes share, and the refs of its smaller
-boxes in `boxes`. When the only way to say what a group holds is to list
-each box's own work ("A and B"), its boxes share no work: leave them alone.
+boxes in `boxes`.

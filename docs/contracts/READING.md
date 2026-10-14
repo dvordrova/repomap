@@ -293,7 +293,14 @@ contexts were removed on the same day; their copies are outside the tree).
    an unknown ref is discarded; a group without a name or holds, and a box
    put in two groups, are refused at that group or box (`group_refused`); a
    group of fewer than two boxes or of every box gains nothing. A refused
-   answer leaves the box as it is (`window_rejected`). One pass: the
+   answer leaves the box as it is (`window_rejected`). Before it is made, each
+   proposed group is a question to Jev (`atlas_group_keep`, `role_map.md`
+   plus `prompts/group_keep.md`, options `group_keep_options.md`), every group
+   of a level one row of one batch: "Is `group` one larger part a newcomer
+   names as one thing, or only its smaller boxes side by side?", its item the
+   group's `name`, `holds`, `inside` and its boxes' names and holds. Only a
+   decided `one part` is gathered; `only its boxes`, a near-tie or a refused
+   window leaves its boxes where they are. One pass: the
    gathered parts are not gathered again. (Every root proposal had named the
    author's packages one by one: Airflow's core 25 boxes, nats-server 22,
    freqtrade 16, Metabase's app 17.)

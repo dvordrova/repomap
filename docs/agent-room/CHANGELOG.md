@@ -15805,3 +15805,17 @@ the direction (down or across) nearest its card's proportion, as a program
 takes the one fitting the canvas; its open frame is neutral like its card.
 Saved Airflow render checked in headless Chromium (the two boxes side by
 side filling the frame); `npm test` 178/178; visual 23/24 (same spec).
+
+Two filters against a gathering that adds a box saying nothing ("Triggers and
+callbacks" over Triggers and Callbacks and listeners): the prompt now says
+each group costs the newcomer a box to open, a group named "A and B" after
+its boxes is never one, and naming no group is a good answer; and Jev asks,
+every proposed group of a level in one batch, whether it is one larger part
+a newcomer names as one thing (`atlas_group_keep`, options `one part` /
+`only its boxes`, examples from a shop, not Airflow) — only a decided `one
+part` is gathered. Probe of the prompt on the saved Airflow requests, 3
+draws: the root kept 2–3 meaningful groups in two draws (API servers, Job
+execution, DAG scheduling), 8 in one still pairing Triggers and callbacks;
+Utilities (12 boxes) and Configuration (7) gathered nothing in all three.
+TestTheGroupingRecursesIntoAreasAndParts compared the boxes asked in one
+level in call order, which concurrency varies; it compares them as a set.

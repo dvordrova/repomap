@@ -22,7 +22,9 @@ import (
 // arrows a newcomer could not take in. A box divided into more than
 // groupLeafSize smaller boxes, the owner's bound of what reads as it is, has
 // DeepSeek say which of them sit together in a larger part, from their names,
-// holds and declaration counts alone. Code makes each group of two or more a
+// holds and declaration counts alone, and Jev, every proposed group of a
+// level in one batch, whether each is one thing a newcomer names (owner,
+// 2026-10-14: no box added on a doubt). Code makes each kept group a
 // box between the box and its smaller boxes, holding their declarations; it
 // is divided by construction, so nothing asks about it again, and the
 // smaller boxes go on to be asked about as before. One pass, no recursion.
@@ -217,6 +219,7 @@ func (r *reader) gatherGroups(ctx context.Context, round, level int, nodes []*gr
 		return err
 	}
 	use := r.use(lines.StageGroupGather)
+	proposed := make([][]gatherGroup, len(many))
 	for i, node := range many {
 		result := results[i]
 		window := table.Window{Stage: lines.StageGroupGather, Round: round, Index: i}
@@ -246,22 +249,78 @@ func (r *reader) gatherGroups(ctx context.Context, round, level int, nodes []*gr
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageGroupGather, Target: target.ID, Kind: "group_refused", Count: len(answer.Refused), Samples: answer.Refused,
 				Reason: node.name + ": a group without a name or holds, or a smaller box put in two groups; each stays where it is", ResponseRef: ref})
 		}
-		gatherInto(node, answer.Groups)
-		for _, child := range node.children {
-			if len(child.children) > 0 && child.gathered {
-				names := make([]string, len(child.children))
-				for j, box := range child.children {
-					names[j] = box.name
-				}
-				fmt.Fprintf(&r.tables, "- %s: %s (%s)\n", child.name, child.holds, strings.Join(names, ", "))
+		for _, group := range answer.Groups {
+			names := make([]string, len(group.boxes))
+			for j, box := range group.boxes {
+				names[j] = node.children[box].name
 			}
+			fmt.Fprintf(&r.tables, "- %s: %s (%s)\n", group.name, group.holds, strings.Join(names, ", "))
 		}
 		if len(answer.Groups) == 0 {
 			r.tables.WriteString("no larger parts; its smaller boxes stay as they are\n")
 		}
 		r.tables.WriteString("\n")
+		proposed[i] = answer.Groups
+	}
+	kept, err := r.keepGroups(ctx, round, level, many, proposed)
+	if err != nil {
+		return err
+	}
+	for i, node := range many {
+		gatherInto(node, kept[i])
 	}
 	return nil
+}
+
+// keepGroups asks Jev, all proposed groups of a level in one batch, whether
+// each is one larger part a newcomer names as one thing; only a decided
+// "one part" is gathered. A group that only puts its boxes side by side, a
+// near-tie and a refused window leave its boxes where they are: no box is
+// added on a doubt.
+func (r *reader) keepGroups(ctx context.Context, round, level int, nodes []*groupNode, proposed [][]gatherGroup) ([][]gatherGroup, error) {
+	kept := make([][]gatherGroup, len(nodes))
+	var group rowGroup
+	type at struct{ node, group int }
+	var asked []at
+	for i, node := range nodes {
+		inside := append(node.inside(), node.name)
+		if node.parent == nil {
+			inside = []string{node.name}
+		}
+		for j, candidate := range proposed[i] {
+			boxes := make([]map[string]any, len(candidate.boxes))
+			for k, box := range candidate.boxes {
+				child := node.children[box]
+				boxes[k] = map[string]any{"name": child.name, "holds": child.holds}
+			}
+			group.rows = append(group.rows, table.Row{ID: fmt.Sprintf("g%d", len(group.rows)+1), Fields: []table.Field{
+				{Name: "name", Value: candidate.name}, {Name: "holds", Value: candidate.holds}, {Name: "inside", Value: inside}, {Name: "boxes", Value: boxes}}})
+			asked = append(asked, at{i, j})
+		}
+	}
+	if len(asked) == 0 {
+		return kept, nil
+	}
+	target := r.opts.Targets[(round-1)%len(r.opts.Targets)]
+	r.opts.Stage(lines.StageGroupKeep, fmt.Sprintf("%s: asking whether %d larger parts of level %d are each one thing", target.Name, len(asked), level))
+	answers, err := r.runTableGroups(ctx, lines.GroupKeepTable(), round, rowGroups{group}, nil)
+	if err != nil {
+		return nil, err
+	}
+	for n, place := range asked {
+		candidate := proposed[place.node][place.group]
+		switch answers[n].answer["gathering"] {
+		case lines.GroupOnePart:
+			kept[place.node] = append(kept[place.node], candidate)
+			fmt.Fprintf(&r.tables, "%s: one part; gathered\n", candidate.name)
+		case lines.GroupOnlyItsBoxes:
+			fmt.Fprintf(&r.tables, "%s: only its boxes; not gathered\n", candidate.name)
+		default:
+			fmt.Fprintf(&r.tables, "%s: undecided; not gathered\n", candidate.name)
+		}
+	}
+	r.tables.WriteString("\n")
+	return kept, nil
 }
 
 // gatherInto makes each group a box between node and the smaller boxes it

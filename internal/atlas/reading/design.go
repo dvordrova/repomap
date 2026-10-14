@@ -616,7 +616,7 @@ dispatch:
 	for _, view := range readers {
 		r.joinView(view)
 	}
-	for _, stage := range []string{lines.StageRoleHelper, lines.StageGroupEnough, lines.StageGroupAssign} {
+	for _, stage := range []string{lines.StageRoleHelper, lines.StageGroupEnough, lines.StageGroupAssign, lines.StageGroupKeep} {
 		if _, asked := r.uses[stage]; asked {
 			r.reportStage(stage)
 		}

@@ -163,11 +163,15 @@ type groupJev struct {
 	// near-tie when the box it names is among the options. into answers
 	// whole boxes by the options offered: the first listed option present
 	// takes every declaration.
-	helper      map[string]llm.Verdict
-	tie         map[string]string
-	nearTie     map[string]string
-	into        []string
-	enough      []string
+	helper  map[string]llm.Verdict
+	tie     map[string]string
+	nearTie map[string]string
+	into    []string
+	enough  []string
+	// apart names the gathered groups Jev finds only their boxes side by
+	// side; every other group asked is one part.
+	apart       []string
+	keptAsked   []string
 	askedBoxes  []string
 	declared    map[string][]string
 	helperItems map[string]map[string]any
@@ -188,6 +192,12 @@ func newGroupJev() *groupJev {
 			if verdict, ok := jev.helper[name]; ok {
 				return verdict, true
 			}
+		case "gathering":
+			jev.keptAsked = append(jev.keptAsked, name)
+			if slices.Contains(jev.apart, name) {
+				return typesafetest.Choose(lines.GroupOnlyItsBoxes), true
+			}
+			return typesafetest.Choose(lines.GroupOnePart), true
 		case "grouping":
 			// The item is the box itself: its name and declarations.
 			box := question.Item
@@ -303,7 +313,8 @@ func TestTheGroupingRecursesIntoAreasAndParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := result.Atlas.Targets[0]
-	if !slices.Equal(jev.askedBoxes, []string{"example.com/svc", "Web", "Storage"}) {
+	// Boxes of one level are asked at once, in no fixed order.
+	if asked := slices.Sorted(slices.Values(jev.askedBoxes)); !slices.Equal(asked, []string{"Storage", "Web", "example.com/svc"}) {
 		t.Fatalf("asked boxes %v; want the target, Web and Storage, the boxes of more than four declarations", jev.askedBoxes)
 	}
 	for _, declaration := range jev.declared["example.com/svc"] {

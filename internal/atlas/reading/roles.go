@@ -450,5 +450,5 @@ func boxChoice(answer table.Answer, boxes []roleBox) int {
 // d1…dn) rather than places, as in the role split: a warm cache keeps them
 // when a file is added or edited earlier in path order.
 func localRows(def table.Definition) bool {
-	return def.Stage == lines.StageRoleHelper || def.Stage == lines.StageGroupEnough || def.Stage == lines.StageGroupAssign
+	return def.Stage == lines.StageRoleHelper || def.Stage == lines.StageGroupEnough || def.Stage == lines.StageGroupAssign || def.Stage == lines.StageGroupKeep
 }
