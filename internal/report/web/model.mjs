@@ -182,7 +182,14 @@ export function buildModel(page,{measure,t=text=>text}={}){
   const parent=id=>nodes.get(id)?.parent||'';
   const ancestors=id=>{const out=[];for(let at=parent(id);at;at=parent(at))out.push(at);return out;};
   const rootOf=id=>{let at=id;while(parent(at))at=parent(at);return at;};
-  const leaves=id=>{const node=nodes.get(id);return node?.children.length?node.children.flatMap(leaves):[id];};
+  // A box's leaves, each box's once: the tree does not change, and emphasis
+  // asks for every box drawn at every pointing.
+  const leafCache=new Map();
+  const leaves=id=>{
+    if(leafCache.has(id))return leafCache.get(id);
+    const node=nodes.get(id),found=node?.children.length?node.children.flatMap(leaves):[id];
+    leafCache.set(id,found);return found;
+  };
   const within=(id,box)=>id===box||ancestors(id).includes(box);
   const programOf=id=>{
     const node=nodes.get(id);if(!node)return '';

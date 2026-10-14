@@ -16126,3 +16126,24 @@ frame of kinds), then the open set as the default after the owner tries it.
   `open` action, `sceneAt`'s open-set branch, `openFor`/`openMode` in the
   canvas are gone; one level-driven drawing remains. `npm test` 180/180,
   `make ui-visual-test` 20 passed + the pre-existing layout-worker failure.
+
+## 2026-10-15 — measuring how fast big reports open; leaves cached; the layout-failure test
+
+- Baseline at 4× CPU throttle (headless Chromium, first map drawn), page
+  carriers by size:
+  | report | page | HTML outside scripts (data-* attrs) | rm-page-data | first map |
+  |---|---|---|---|---|
+  | airflow (HEAD) | 14.4 MB | 8.6 MB (1.9) | 3.8 MB | 12.8 s |
+  | etcd (site, 10-09) | 27.7 MB | 9.0 MB (2.6) | 15.9 MB | 15.9 s |
+  | metabase (HEAD render of the 10-08 run) | 63.1 MB | 34.4 MB (12.2) | 25.4 MB | 117.2 s |
+  Airflow's main thread: ~4.8 s native (parsing 14.5 MB HTML, styles),
+  ~3 s page-data decode/parse, ~2 s React/React Flow, ~0.6 s column
+  readings; ELK 8 s on its workers. Rendering metabase takes 6 CPU minutes.
+- `leaves` (29-operation-view.js projection, model.mjs) is computed once per
+  node: Find indexed every node through every ancestor's leaves, emphasis
+  asked every drawn box's at every pointing. Metabase first map 117.2 →
+  98.4 s, script 33.0 → 20.7 s at 4×.
+- The layout-failure visual test failed for two days: layout is a pool of
+  workers with fallback retries, so failing the first message was recovered;
+  it now fails every layout and checks the static map, no pending canvas and
+  every failed worker terminated. `make ui-visual-test` 21/21.

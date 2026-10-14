@@ -4,7 +4,18 @@ function rmSystemProjection(nodes, edges) {
   var byID={},parents={};
   nodes.forEach(function(n){byID[n.id]=n;});
   nodes.forEach(function(n){(n.children||[]).forEach(function(id){parents[id]=n.id;});});
-  function leaves(id,seen){seen=seen||new Set();if(seen.has(id)||!byID[id])return [];seen.add(id);var n=byID[id];return n.children?.length?n.children.flatMap(function(c){return leaves(c,new Set(seen));}):[id];}
+  // A node's leaves, each node's once: the tree does not change, and
+  // recomputed for every node Find indexes and every box a pointer lights,
+  // they had cost Metabase's page 10 seconds of its first map on a slow
+  // machine (owner, 2026-10-15).
+  var leafCache=new Map();
+  function leaves(id,seen){
+    if(!seen&&leafCache.has(id))return leafCache.get(id);
+    seen=seen||new Set();if(seen.has(id)||!byID[id])return [];seen.add(id);var n=byID[id];
+    var found=n.children?.length?n.children.flatMap(function(c){return leaves(c,new Set(seen));}):[id];
+    if(seen.size===1)leafCache.set(id,found);
+    return found;
+  }
   var visible=nodes.filter(function(n){return !n.children?.length;}).map(function(n){return n.id;});
   var representatives={};nodes.forEach(function(n){representatives[n.id]=[n.id];});
   // Only the input catalogue contains input cards. Implementation and original

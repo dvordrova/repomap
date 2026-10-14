@@ -138,9 +138,11 @@ test('an arrow keeps its screen width while the camera zooms',async({page})=>{
   expect(errors).toEqual([]);
 });
 
-// A layout worker failing before the first drawing leaves the page's static
-// map and no pending canvas.
-test('a layout worker failing before the first drawing leaves no pending map',async({page})=>{
+// Layout failing before the first drawing, every worker and every fallback
+// (levels.mjs native: a pool of workers, each graph retried with fallback
+// options), leaves the page's static map and no pending canvas; each failed
+// worker is terminated. One worker failing alone is retried on another.
+test('a layout failing before the first drawing leaves no pending map',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>{
     const NativeWorker=Worker;
@@ -148,7 +150,7 @@ test('a layout worker failing before the first drawing leaves no pending map',as
     window.Worker=class extends NativeWorker{
       constructor(...args){super(...args);workerFailure.workers++;}
       postMessage(message,...args){
-        if(message.cmd==='layout'&&!workerFailure.failed){
+        if(message.cmd==='layout'){
           workerFailure.failed=true;
           queueMicrotask(()=>this.dispatchEvent(new ErrorEvent('error',{cancelable:true,message:'Forced map worker failure'})));
           return;
@@ -170,7 +172,9 @@ test('a layout worker failing before the first drawing leaves no pending map',as
   await expect(page.locator('.map-stage>svg')).not.toHaveCSS('display','none');
   await expect(page.locator('[data-map]')).not.toHaveClass(/flow-initializing/);
   await expect(page.locator('.flow-loading')).toHaveCount(0);
-  expect(await page.evaluate(()=>({workers:workerFailure.workers,terminations:workerFailure.terminations}))).toEqual({workers:1,terminations:1});
+  const workers=await page.evaluate(()=>({made:workerFailure.workers,ended:workerFailure.terminations}));
+  expect(workers.made,'a worker was asked').toBeGreaterThan(0);
+  expect(workers.ended,'every failed worker terminated').toBe(workers.made);
   expect(errors).toEqual([]);
 });
 
