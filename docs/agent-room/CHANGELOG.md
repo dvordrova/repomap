@@ -15884,3 +15884,14 @@ Owner's four questions on service-pkg (2026-10-14), all done:
   that is one part lists nothing and its part takes the program's name.
 `npm test` 178/178; visual 23/24 (same pre-existing spec); groupindex and
 report Go tests green. Saved Airflow and service-pkg renders checked.
+
+rate-envelope-queue (25 declarations) stayed one box: Jev's grouping
+question was a near-tie (needs smaller 0.54, grouped enough 0.46), the text
+model said grouped enough. The `grouped enough` option's example "a client
+for one web service: its options, request building, retries, response
+decoding and errors" described a whole library as one box; it is gone, and
+`needs smaller boxes` now names a library's data types with their options,
+the policies a caller chooses among and the engine that runs them (example:
+an HTTP client library's request options, retry policies and connection
+pool). Ordinary runs: rate-envelope-queue divided into 5 boxes with Jev and
+with the text model; service-pkg unchanged (10 top boxes).
