@@ -115,20 +115,37 @@ func TestAConnectionIntoAHelperIsMarkedAfterDecoding(t *testing.T) {
 // (a target seed) stands in the triggers lane; an area whose part takes
 // requests without holding the entry does not. An area is core when any part
 // in it is.
-func TestAnAreaIsTheEntryOnlyByItsSeedAndCoreByAnyPart(t *testing.T) {
+// An area takes a role only when every part in it has it (owner,
+// 2026-10-14): the entry's area holding another part is no entry area, and
+// an area is core only when all its parts are.
+func TestAnAreaTakesARoleOnlyWhenEveryPartHasIt(t *testing.T) {
 	p := helperTestProgram(t)
 	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, helperTestAtlas(p))
 	if err != nil {
 		t.Fatal(err)
 	}
-	areas := map[string]Container{}
+	groups := map[string]Group{}
+	for _, group := range indexes[0].Groups {
+		groups[group.ID] = group
+	}
 	for _, container := range indexes[0].Containers {
-		areas[container.Title] = container
+		triggers, core := true, true
+		for _, id := range ContainerGroups(indexes[0].Containers, container.ID) {
+			triggers = triggers && groups[id].Lane == LaneTriggers
+			core = core && groups[id].Core
+		}
+		if (container.Lane == LaneTriggers) != triggers || container.Core != core {
+			t.Fatalf("%s: lane %s core %v; its parts all entries %v, all core %v", container.Title, container.Lane, container.Core, triggers, core)
+		}
 	}
-	if start := areas["Start"]; start.Lane != LaneTriggers || start.Core {
-		t.Fatalf("the entry's area: %+v", start)
-	}
-	if requests := areas["Requests"]; requests.Lane == LaneTriggers || !requests.Core {
-		t.Fatalf("the area taking requests with a domain part: %+v", requests)
+	if start := func() Container {
+		for _, container := range indexes[0].Containers {
+			if container.Title == "Start" {
+				return container
+			}
+		}
+		return Container{}
+	}(); start.Lane == LaneTriggers {
+		t.Fatalf("the entry's area with another part: %+v", start)
 	}
 }

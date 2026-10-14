@@ -398,8 +398,11 @@ test('closed components name every direct area and part without ghost boxes',asy
   assert.equal(node.ghosts,undefined,'no unlabeled rectangles behind the words');
   const words=programWords({...node,item:model.nodes.get(node.id).item},node.rect.width/node.text,measure);
   for(const child of words.contents)assert.equal(child.lines.join(' ').replace(/\s+/g,''),title.replace(/\s+/g,''));
-  assert.equal(node.inventoryHeight,programInventoryHeight(words,canvas.height/2));
-  assert.ok(node.rect.height/node.text>=programCardHeight({...node,item:model.nodes.get(node.id).item},node.rect.width/node.text,measure,canvas.height/2)-.01);
+  // The card has its drawing's proportion, its words in it: the inventory
+  // takes the room under its title, the rest of the list scrolls.
+  const drawing=geometry.local.get(program.id),header=programCardHeight({...node,item:model.nodes.get(node.id).item},units.programCard.width,measure,0);
+  assert.ok(Math.abs(node.rect.height/node.text-Math.max(header,units.programCard.width*drawing.height/drawing.width))<.5,'the card has its drawing\'s proportion');
+  assert.ok(node.inventoryHeight<=programInventoryHeight(words,canvas.height/2)+1e-9);
   const before=JSON.stringify([...geometry.boxes]);
   const inside=sceneAt(model,geometry,chainOf(model,program.children[0]));
   assert.ok(inside.nodes.some(child=>child.id===program.children[0]&&child.display==='frame'));
@@ -453,21 +456,17 @@ test('magnifiers grow with their card up to a readable cap and remain clickable'
   }
 });
 
-test('opening programs preserves their outer border and extends every port route through letterbox gutters',async()=>{
-  const axes=new Set(),ways=new Set(),portAxes={horizontal:0,vertical:0};let checkedPorts=0;
+test('opening programs preserves their outer border and ends every port route on it',async()=>{
+  const ways=new Set();let checkedPorts=0;
   for(const [name,page] of syntheticPages){
     const {model,geometry}=await prepare(name,page);
     for(const program of [...model.nodes.values()].filter(n=>n.kind==='program')){
       const outer=geometry.boxes.get(program.id),inner=geometry.scales.get(program.id)?.frame;
       if(!outer||!inner)continue;
-      if(Math.abs(outer.x-inner.x)>1e-6)axes.add('horizontal');
-      if(Math.abs(outer.y-inner.y)>1e-6)axes.add('vertical');
       const opened=sceneAt(model,geometry,[program.id]);
       assert.deepEqual(opened.nodes.find(n=>n.id===program.id).rect,outer,`${name}: original program border`);
       for(const port of geometry.ports.get(program.id)||[]){
         checkedPorts++;ways.add(port.way);
-        if(Math.abs(outer.x-inner.x)>1e-6)portAxes.horizontal++;
-        if(Math.abs(outer.y-inner.y)>1e-6)portAxes.vertical++;
         assert.ok(Math.abs(port.point.x-(port.way==='out'?outer.x+outer.width:outer.x))<1e-6,`${name}: ${port.id} lies on outer border`);
         assert.ok(port.point.y>=outer.y&&port.point.y<=outer.y+outer.height);
         const routes=(geometry.routes.get(program.id)||[]).filter(route=>route.port===port.id);
@@ -481,6 +480,4 @@ test('opening programs preserves their outer border and extends every port route
   }
   assert.ok(checkedPorts>0,'real inbound/outbound port routes checked');
   assert.deepEqual([...ways].sort(),['in','out'],'both route directions exercised');
-  assert.ok(portAxes.horizontal>0&&portAxes.vertical>0,`ports in both gutters: ${JSON.stringify(portAxes)}`);
-  assert.deepEqual([...axes].sort(),['horizontal','vertical'],'both letterbox directions exercised');
 });

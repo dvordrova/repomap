@@ -21,7 +21,7 @@ func TestAreaTreeProjectionSealHydrateAndDerivedViewsKeepEmptyDirectParent(t *te
 		t.Fatal(err)
 	}
 	index := indexes[0]
-	if index.Containers[0].ParentID != "" || len(index.Containers[0].GroupIDs) != 0 || index.Containers[1].ParentID != "k1" || len(ContainerGroups(index.Containers, "k1")) != 4 || index.Containers[0].Lane != LaneTriggers || !index.Containers[0].Core {
+	if index.Containers[0].ParentID != "" || len(index.Containers[0].GroupIDs) != 0 || index.Containers[1].ParentID != "k1" || len(ContainerGroups(index.Containers, "k1")) != 4 || index.Containers[0].Lane != LaneCore || index.Containers[0].Core {
 		t.Fatalf("wrong tree %v", index.Containers)
 	}
 	sealed := OverlayFromIndex(index)

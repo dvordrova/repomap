@@ -74,10 +74,9 @@ function CardNode({data}){
 function ProgramNode({data}){
   const {node}=data,item=data.item;
   const words=useMemo(()=>wordsOf(node,item),[node.rect.width,node.rect.height,node.text,node.title,node.contents,item]);
-  // An area's card is neutral, its core or entry mark the glyph on its
-  // border (REPORT: parts and area frames neutral, core parts rose); a rose
-  // area had made Airflow's Utilities read as core for two of its parts.
-  return <>{handles}<Scaled node={node} className={`scene-program-card ${node.display==='area'?'flow-part scene-area-card':''}`} data={node.display==='area'?{'data-summary-area':node.id}:{'data-component-overview':node.id}}>
+  // An area's card takes the colour every part in it shares (GroupsIndex),
+  // else none.
+  return <>{handles}<Scaled node={node} className={`scene-program-card ${node.display==='area'?`flow-part scene-area-card ${laneClass(node.lane)}`:''}`} data={node.display==='area'?{'data-summary-area':node.id}:{'data-component-overview':node.id}}>
     <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
     {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}{' '}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}
@@ -93,9 +92,9 @@ function ProgramNode({data}){
 }
 function FrameNode({data}){
   const {node}=data,kind=node.kind;
-  // An open area's frame is neutral, as its closed card (REPORT); its core
-  // and entry parts inside carry their colours.
-  const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection':'';
+  // An open area's frame takes the colour every part in it shares.
+  const tone=kind==='program'?'flow-component':kind==='outside'||kind==='bucket'?'flow-communication':kind==='inputs'?'flow-input-collection'
+    :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   const titleText=node.titleText||node.text,band=units.band(1)*titleText;
   return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}>
@@ -531,7 +530,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   });
 
   // A zoom gesture may change the level; a pan never does.
-  let lastZoom=geometry.home.zoom,gestureAim=null,glideUntil=0;
+  let lastZoom=geometry.home.zoom,gestureAim=null;
   // One pinch (ctrl+wheel, a trackpad's pinch) crosses at most one level
   // boundary and stops short of the next; a pause ends it. The zoom a tick
   // asks for is React Flow's own; only a tick that would cross a second
@@ -547,7 +546,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       event.stopPropagation();return;
     }
     if(!event.ctrlKey||!instance||initializing)return;
-    if(performance.now()<glideUntil){event.preventDefault();event.stopPropagation();return;}
     const now=performance.now(),v=camera.get(),box=host.getBoundingClientRect();
     const aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
     if(!gesture||now-gesture.at>300){
@@ -590,20 +588,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const box=host.getBoundingClientRect(),aimScreen=gestureAim||{x:box.left+box.width/2,y:box.top+box.height/2};
     const action=zoomAction(previous,viewport,{x:(aimScreen.x-box.left-viewport.x)/viewport.zoom,y:(aimScreen.y-box.top-viewport.y)/viewport.zoom});
     if(!action)return;
-    const was=store.getState().level,before=levelKey(was);
+    const before=levelKey(store.getState().level);
     store.dispatch(action);
     const level=store.getState().level;
     if(levelKey(level)!==before&&level.length)callbacks.follow?.(level.at(-1));
-    // A program or an area a pinch enters while its drawing stands small in
-    // its card (entered once the card nearly fills the canvas, levels.mjs)
-    // glides to its drawing; the pinch waits for the glide.
-    if(level.length>was.length&&['program','area'].includes(model.nodes.get(level.at(-1))?.kind)){
-      const content=contentOf(sceneOf(store.getState()),level),{width,height}=size();
-      if(content&&content.width*viewport.zoom<.6*width&&content.height*viewport.zoom<.6*height){
-        glideUntil=performance.now()+480;
-        moveCamera(entryCamera(level));
-      }
-    }
   }
 
   // The keyboard on a chip or a bucket: focus points at it, Enter reads it.

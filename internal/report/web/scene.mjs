@@ -131,7 +131,8 @@ export function sceneAt(model,geometry,level=[],selection={}){
         box(child,'area',rect,localText,{lane:node.item?.lane||'',contents:programContents(model,node),inventoryHeight:geometry.areaInventoryHeights.get(child)});
         markersFor(child,localText);
       }else{
-        box(child,open.has(child)?'deep':'card',rect,localText,{lane:node.item?.lane||''});
+        // The part a program is takes the program's name.
+        box(child,open.has(child)?'deep':'card',rect,localText,{lane:node.item?.lane||'',...(onlyPart(model,container)===child?{title:model.nodes.get(container).name}:{})});
         if(open.has(child))deepFor(child);else markersFor(child);
       }
     }

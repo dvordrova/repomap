@@ -15863,3 +15863,24 @@ entering it shows the part where its card stood, then its declarations; the
 location names it once. Saved rate-envelope-queue render checked: entered,
 the part's card alone with the Inputs card beside it, then its tiles.
 `npm test` 178/178; visual 23/24 (same pre-existing spec).
+
+Owner's four questions on service-pkg (2026-10-14), all done:
+- Green parts beside white areas with an entry arrow said one thing two ways.
+  GroupsIndex now gives an area a role only when every part in it has it
+  (core when all are domain, entry when all are entries), else none, and the
+  canvas colours areas by it again; this replaces 2026-09-27's "core when
+  any part is". Tests rewritten to the rule
+  (`TestAnAreaTakesARoleOnlyWhenEveryPartHasIt`).
+- A card's shape did not show its drawing's: a closed area's and a
+  program's card now has its drawing's proportion (levels laid out top down,
+  then each level holding a laid-out area laid out again deepest first), its
+  words in it, its inventory in the room left. The pinch's glide to the
+  drawing, added this morning for the letterboxed drawings, is gone; an
+  area's direction is chosen as a program's, by the canvas.
+- service-pkg's three parts nothing in the repository calls (Readiness
+  barrier, Shared utilities, B-tree storage): no arrow, no joint — the map
+  is right; left as is.
+- The root package's title is its last segment ("service-pkg"); a program
+  that is one part lists nothing and its part takes the program's name.
+`npm test` 178/178; visual 23/24 (same pre-existing spec); groupindex and
+report Go tests green. Saved Airflow and service-pkg renders checked.

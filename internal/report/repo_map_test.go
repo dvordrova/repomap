@@ -17,12 +17,12 @@ func TestRootComponentKeepsItsNativeNameAcrossNavigationAndTranslation(t *testin
 		{ID: "nested", Name: "Root", Root: "nested/path", Kind: "library"},
 	}
 	labelSections(sections)
-	if sections[0].ShortLabel != "example.org/native (executable)" || sections[1].ShortLabel != "example.org/native (library)" || sections[2].ShortLabel != "nested/path" {
+	if sections[0].ShortLabel != "native (executable)" || sections[1].ShortLabel != "native (library)" || sections[2].ShortLabel != "nested/path" {
 		t.Fatalf("native component labels lost: %+v", sections)
 	}
 	page := &PreparedPage{view: &pageView{Sections: sections}}
 	page.rebuildDisplayLabels(Russian)
-	if sections[0].ShortLabel != "example.org/native (исполняемый компонент)" || sections[1].ShortLabel != "example.org/native (библиотека)" {
+	if sections[0].ShortLabel != "native (исполняемый компонент)" || sections[1].ShortLabel != "native (библиотека)" {
 		t.Fatalf("translated navigation renamed the native component: %q / %q", sections[0].ShortLabel, sections[1].ShortLabel)
 	}
 	if sections[2].Name != "Root" || sections[2].Root != "nested/path" || sections[1].Map.Nodes[0].FullTitle != "Root" {

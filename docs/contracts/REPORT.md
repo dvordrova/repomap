@@ -261,6 +261,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the edge is cut there (owner, 2026-10-14). Every level draws the whole
   map around what is entered, closed and in place; entering a program opens
   it where its card stood.
+  A program's or an area's closed card has its drawing's proportion, its
+  words in it and its inventory in the room under its title (the rest
+  scrolls), so entering it shows its drawing where its card stood; an area's
+  level is laid out down or across, whichever shows it larger in the canvas.
+  The repository's root package is titled by its last segment. A program
+  that is one part is that part: drawn where its card stood with the
+  program's name, no frame and no inventory.
   An entered program's link with another program is a marker beside the box
   it reaches (left in, right out), as an input's or an outside system's; no
   arrow runs from the frame of the program entered.
@@ -274,11 +281,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   arrow (entry) glyph on its top border near its left end, the legend
   drawing the same glyphs, instead of Core/Entrypoints above every title; a
   part shows its lane by its colour.
-- An area's mark is its GroupsIndex container's (READING): the core mark when
-  any part in it is the domain, the entry's area included (owner,
-  2026-09-27); the entry mark only on the area holding the program's entry (a
-  declaration its execution starts from, a target seed) when no domain part
-  stands in it; otherwise none, or the dependencies mark. Only the part
+- An area's mark and colour are its GroupsIndex container's (READING): an
+  area takes a role only when every part in it has it — the core mark when
+  all its parts are the domain, the entry mark when all are entries —
+  otherwise none (owner, 2026-10-14, replacing 2026-09-27's "core when any
+  part is": one colour means one thing on a part and on an area). Only the part
   holding the program's launch point has the entry mark; a part that only
   takes requests or listens has none and does not make its area the entry,
   its inputs' blue markers showing where the outside calls in. The component

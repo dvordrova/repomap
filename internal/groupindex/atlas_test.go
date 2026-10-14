@@ -435,7 +435,9 @@ func TestOnlyThePartHoldingALaunchPointIsTheEntry(t *testing.T) {
 	for _, container := range indexes[0].Containers {
 		areas[container.Title] = container.Lane
 	}
-	if want := map[string]Lane{"Start": LaneTriggers, "Requests": LaneCore}; !reflect.DeepEqual(areas, want) {
+	// An area takes a role only when every part in it has it: Start, the
+	// entry with another part, is no entry area.
+	if want := map[string]Lane{"Start": LaneCore, "Requests": LaneCore}; !reflect.DeepEqual(areas, want) {
 		t.Fatalf("areas %v, want %v", areas, want)
 	}
 }

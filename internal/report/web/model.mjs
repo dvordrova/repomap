@@ -354,5 +354,6 @@ function frameGroupsOf(model,id){
 
 // The closed component lists its existing direct areas and loose parts in
 // saved order. Names never create a child or merge equal named children.
-export const programContents=(model,node)=>(node.children||[]).map(id=>model.nodes.get(id))
+// A program that is one part lists nothing: the part is the program.
+export const programContents=(model,node)=>onlyPart(model,node.id)?[]:(node.children||[]).map(id=>model.nodes.get(id))
   .filter(child=>child&&['area','part'].includes(child.kind)).map(child=>({id:child.id,title:child.name}));

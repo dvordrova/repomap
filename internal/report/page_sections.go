@@ -771,8 +771,11 @@ func labelSections(sections []*pageSection) {
 			continue
 		}
 		section.ShortLabel = section.Root
+		// The repository's root package is named by its last segment, its
+		// whole import path left to the label (owner, 2026-10-14: the canvas
+		// had titled service-pkg's library "github.com/PavelAgarkov/service-pkg").
 		if section.Root == "." {
-			section.ShortLabel = section.Name
+			section.ShortLabel = path.Base(section.Name)
 		}
 		if section.Root == "" {
 			section.ShortLabel = section.Name

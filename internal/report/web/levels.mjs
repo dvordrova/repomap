@@ -286,10 +286,18 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const canvas={width:Math.max(320,width),height:Math.max(240,height)};
   const {nodes}=model;
   const local=new Map(),areaInventoryHeights=new Map();
+  // A closed area's card has its drawing's proportion once its level is
+  // laid out (owner, 2026-10-14: a card the shape of its words had held its
+  // drawing in empty margins): its words stand in it, its inventory in the
+  // room under its title, the rest of the list left to scroll. Before its
+  // level is laid out, and for one never drawn open, the card is its words.
   const closedArea=node=>{
-    const named={...node,contents:programContents(model,node)},cap=canvas.height/2;
-    areaInventoryHeights.set(node.id,programInventoryHeight(programWords(named,units.part.width,measure),cap));
-    return areaCard(named,local.get(node.id),measure,1,cap);
+    const named={...node,contents:programContents(model,node)},cap=canvas.height/2,width=units.part.width;
+    const words=programInventoryHeight(programWords(named,width,measure),cap),inside=local.get(node.id);
+    if(!inside){areaInventoryHeights.set(node.id,words);return areaCard(named,inside,measure,1,cap);}
+    const header=programCardHeight(named,width,measure,0),height=Math.max(header,width*inside.height/inside.width);
+    areaInventoryHeights.set(node.id,Math.max(0,Math.min(words,height-header)));
+    return {id:node.id,width,height};
   };
   const childOf=container=>id=>{
     for(let at=id;at;at=model.parent(at))if(model.parent(at)===container)return at;
@@ -306,22 +314,18 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // area is a closed card naming what it holds, read in the column. Levels
   // are laid out top down, a level at once, so no deeper one is laid out
   // in vain.
-  // Of both directions, the one nearest its closed card's proportion: the
-  // card is its inventory's shape and the level stands inside it at one
-  // scale, so a level laid out down in a wide card had stood as a narrow
-  // column in empty margins (owner, 2026-10-14: Airflow's "Triggers and
-  // callbacks", two boxes one over the other).
+  // Of both directions, the one showing the level larger in the canvas, as
+  // a program's; its card then takes its proportion (closedArea).
   const layArea=async area=>{
     const parts=area.children.map(id=>nodes.get(id)).filter(Boolean);
     const pairs=pairsOf(model,model.edges,childOf(area.id));
     const boxes=parts.map(part=>part.kind==='area'?closedArea(part):partBox(part,measure));
-    const card=closedArea(area),aspect=card.width/card.height;
     const [down,across]=await Promise.all(['DOWN','RIGHT'].map(direction=>layered(area.id,boxes,pairs,{options:{...interior,'elk.direction':direction}})));
-    const off=laid=>Math.abs(Math.log(laid.width/laid.height/aspect));
-    const laid=off(across)<off(down)/1.05?across:down;
+    const laid=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?across:down;
     return {...laid,text:1,pairs,kind:'area'};
   };
   let frontier=[...nodes.values()].filter(node=>node.kind==='area'&&nodes.get(model.parent(node.id))?.kind==='program');
+  const byDepth=[];
   for(let depth=1;frontier.length;depth++){
     const levels=await Promise.all(frontier.map(layArea));
     const next=[];
@@ -331,7 +335,15 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       if(depth<units.openDepth||shrink>=units.leastShrink)
         for(const id of area.children)if(nodes.get(id)?.kind==='area')next.push(nodes.get(id));
     });
+    byDepth.push(frontier);
     frontier=next;
+  }
+  // A level holding an area laid out after it is laid out again, deepest
+  // first, with that area's card now its drawing's proportion.
+  for(let depth=byDepth.length-2;depth>=0;depth--){
+    const again=byDepth[depth].filter(area=>area.children.some(id=>local.has(id)));
+    const levels=await Promise.all(again.map(layArea));
+    again.forEach((area,i)=>local.set(area.id,levels[i]));
   }
 
   // 2. Programs: compact closed area inventories and loose parts'
@@ -438,10 +450,13 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const node=nodes.get(id),inside=local.get(id);
     // A program's card holds its summary; entered, its drawing stands
     // inside the card at the scale that fits it.
+    // A program's card has its drawing's proportion, its words in it.
     if(node.kind==='program'){
-      const named={...node,contents:programContents(model,node)},maxInventoryHeight=canvas.height/2;
-      programInventoryHeights.set(id,programInventoryHeight(programWords(named,units.programCard.width,measure),maxInventoryHeight));
-      return {id,width:units.programCard.width*programText,height:programCardHeight(named,units.programCard.width,measure,maxInventoryHeight)*programText};
+      const named={...node,contents:programContents(model,node)},maxInventoryHeight=canvas.height/2,width=units.programCard.width;
+      const words=programInventoryHeight(programWords(named,width,measure),maxInventoryHeight);
+      const header=programCardHeight(named,width,measure,0),height=inside?.width>0?Math.max(header,width*inside.height/inside.width):programCardHeight(named,width,measure,maxInventoryHeight);
+      programInventoryHeights.set(id,Math.max(0,Math.min(words,height-header)));
+      return {id,width:width*programText,height:height*programText};
     }
     if(node.kind==='inputs')return {id,...inside.closed};
     if(node.kind==='outside')return {id,width:inside.width*systemText,height:inside.height*systemText};

@@ -593,24 +593,27 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	// Marks describe the complete accepted area, including descendant leaves;
 	// ownership remains exclusively direct and never repeats a group in ancestors.
+	// An area takes a role only when every part in it has it (owner,
+	// 2026-10-14): one colour means one thing on a part and on an area, and
+	// Airflow's Utilities, two core parts of many, had read as core. A mixed
+	// area is neutral.
 	for position := range containers {
+		groups := ContainerGroups(containers, containers[position].ID)
 		lanes := make(map[Lane]int)
-		core := false
-		for _, id := range ContainerGroups(containers, containers[position].ID) {
+		cores := 0
+		for _, id := range groups {
 			lanes[groupByID[id].Lane]++
-			core = core || groupByID[id].Core
-		}
-		lane := LaneCore
-		best := 0
-		for _, candidate := range []Lane{LaneCore, LaneDependencies} {
-			if lanes[candidate] > best {
-				lane, best = candidate, lanes[candidate]
+			if groupByID[id].Core {
+				cores++
 			}
 		}
-		if lanes[LaneTriggers] > 0 {
+		lane := LaneCore
+		if len(groups) > 0 && lanes[LaneTriggers] == len(groups) {
 			lane = LaneTriggers
+		} else if len(groups) > 0 && lanes[LaneDependencies] == len(groups) {
+			lane = LaneDependencies
 		}
-		containers[position].Lane, containers[position].Core = lane, core
+		containers[position].Lane, containers[position].Core = lane, len(groups) > 0 && cores == len(groups)
 	}
 
 	connections := make([]Connection, 0, len(target.Arrows))
