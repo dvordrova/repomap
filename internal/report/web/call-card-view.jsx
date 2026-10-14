@@ -23,9 +23,13 @@ const modified=event=>event.metaKey||event.ctrlKey||event.shiftKey||event.altKey
 // callee to where it lands. Casdoor's "StartLdapServer (inline, 3) →
 // GetConfigString" had left ldap/server.go:57 nowhere on the page.
 function Name({at,href,title,choose,children}){
-  if(!choose||!at||!choose.can(at.part,at.key))return <Link href={href} title={title}>{children}</Link>;
+  // An end named without its key is found by its name in its part (owner,
+  // 2026-10-14: a possible call's caller had stood as plain text).
+  const name=at?.name||(typeof children==='string'?children:'');
+  const key=at&&choose&&(at.key&&choose.can(at.part,at.key)?at.key:choose.find?.(at.part,name));
+  if(!choose||!at||!key||!choose.can(at.part,key))return <Link href={href} title={title}>{children}</Link>;
   children=dotted(children);
-  const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,at.key);};
+  const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,key);};
   return href?<a href={href} className="flow-card-name rm-in" title={title||undefined} target="_blank" onClick={read}>{children}</a>
     :<button type="button" className="flow-card-name" title={title||undefined} onClick={read}>{children}</button>;
 }
@@ -154,7 +158,7 @@ export function BriefRows({card,into='',choose=null}){
     {part.names.length>0&&<ul>
       {part.names.slice(0,briefMost).map(entry=><li key={entry.at?`${entry.at.part}\0${entry.at.key}`:entry.input?.id||entry.name}>{entry.input
         ?<InputNames refs={[entry.input]} choose={choose}/>
-        :<>{entry.callers?.length>0&&!(entry.callers.length===1&&entry.callers[0].name===entry.name)&&<>{entry.callers.map((caller,i)=><React.Fragment key={caller.name}>{i>0&&', '}<Name at={caller.at} choose={choose}>{caller.name}</Name></React.Fragment>)}<i className="flow-card-arrow"> → </i></>}
+        :<>{entry.callers?.length>0&&!(entry.callers.length===1&&entry.callers[0].name===entry.name)&&<>{entry.callers.map((caller,i)=><React.Fragment key={caller.name}>{i>0&&', '}<Name at={caller.at} href={caller.href} choose={choose}>{caller.name}</Name></React.Fragment>)}<i className="flow-card-arrow"> → </i></>}
           <Name at={entry.at} href={entry.href} choose={choose}>{entry.name}</Name></>}</li>)}
       {part.names.length>briefMost&&<li className="flow-card-more" aria-hidden="true">…</li>}</ul>}
   </section>)}</div>;

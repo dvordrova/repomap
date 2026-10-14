@@ -16043,3 +16043,17 @@ frame of kinds), then the open set as the default after the owner tries it.
 - Checks: `npm test` 179/179, `go test`/`go vet ./internal/report/` ok,
   `make ui-visual-test` 20 passed + the pre-existing failure; screenshots of
   the marker tip, the arrow dot and Retry decisions' implements links.
+
+## 2026-10-14 — an arrow's card: the far end, its caller a link, no page zoom
+
+- Touching an arrow's half shows the dot and the card at its other end (the
+  only head of a one-way arrow).
+- A caller in an arrow's card whose page key is missing or names no tile is
+  found by name in its part (RateEnvelopeQueue.worker, a possible call's
+  caller, had stood as plain text); else its call site opens.
+- A pinch over a card or a tip closes it (unless kept) and is prevented: it
+  had zoomed the whole page, the card and the dot growing with it.
+- Checks: `npm test` 179/179, `make ui-visual-test` 20 passed + the
+  pre-existing failure, `go test ./internal/report/` ok; headless Chromium:
+  the dot at the dashed arrow's head from its first half, both names green,
+  `visualViewport.scale` 1 after a pinch over the card.
