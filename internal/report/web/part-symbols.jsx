@@ -67,7 +67,10 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
           // within a column it bows out to the right of both rows.
           const start={x:x(a.column)+tileWidth,y:ay},end=forward?{x:x(b.column),y:by}:{x:x(b.column)+tileWidth,y:by};
           const bend=forward?Math.max(16,(end.x-start.x)/2):26;
-          const on=hot>=0&&(from===hot||to===hot),receded=chosen>=0&&!on&&from!==chosen&&to!==chosen;
+          // At rest the links stand faint, the tiles' names over them; a
+          // declaration pointed at or chosen draws its own (owner,
+          // 2026-10-14: the links had read as a tangle over the names).
+          const on=hot>=0&&(from===hot||to===hot),receded=!on&&!(chosen>=0&&(from===chosen||to===chosen));
           return <path key={i} className={`flow-symbol-${kind||'calls'} ${on?'flow-symbol-call-hot':receded?'flow-symbol-call-dim':''}`}
             d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd={`url(#flow-symbol-arrow${on?'-hot':''})`}/>;
         })}

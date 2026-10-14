@@ -278,7 +278,7 @@
 .flow-part-symbols svg path{fill:none;stroke:#7b8aa0;stroke-width:1.5}
 .flow-part-symbols svg marker path{fill:#7b8aa0;stroke:none}
 .flow-part-symbols svg path.flow-symbol-call-hot{stroke:#243044;stroke-width:2.5}
-.flow-part-symbols svg path.flow-symbol-call-dim{opacity:.18}
+.flow-part-symbols svg path.flow-symbol-call-dim{opacity:.22}
 .flow-symbol-block{position:absolute;box-sizing:border-box;background:#fff;border:1px solid #9aa7b8;border-radius:6px;overflow:hidden}
 .flow-symbol-block.flow-symbol-type{border-color:#52647d;background:#f8fafc}
 .flow-part-symbols .flow-symbol-block a,.flow-part-symbols .flow-symbol-block span{box-sizing:border-box;display:block;padding:0 10px;color:#243044;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}

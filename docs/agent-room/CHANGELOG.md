@@ -16115,3 +16115,7 @@ frame of kinds), then the open set as the default after the owner tries it.
 - Checks: `npm test` 180/180, `go test`/`go vet` report+groupindex ok,
   `make ui-visual-test` 20 passed + the pre-existing failure; headless
   readings of LoggingStamp (Reads and writes) and NewScheduleEnvelope.
+- A part's tile links stand faint at rest; a declaration pointed at or chosen
+  draws its own (the tangle had covered the names). Routing (links crossing
+  tiles, a callee placed left of its caller when a column overflows) is
+  left for the owner's choice of an ELK layout of the tiles.
