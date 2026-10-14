@@ -152,9 +152,8 @@ export function briefCard(card){
     if(!entry.name)return;
     if(!into.has(part))into.set(part,new Map());
     const key=entry.at?`${entry.at.part}\0${entry.at.key}`:entry.input?entry.input.id:entry.name;
-    // A caller is read where it is declared, else its call opens: one the
-    // page names without its key is looked up by name in the part calling.
-    const caller=()=>({name:entry.caller,at:entry.callerAt||(entry.from?{part:entry.from,name:entry.caller}:null),href:entry.site||''});
+    // A caller is read where it is declared, else its call opens.
+    const caller=()=>({name:entry.caller,at:entry.callerAt,href:entry.site||''});
     if(!into.get(part).has(key)){into.get(part).set(key,{...entry,callers:entry.caller?[caller()]:[]});return;}
     // One callee called from several callers names each of them.
     const known=into.get(part).get(key);
@@ -168,7 +167,7 @@ export function briefCard(card){
       // acceptHandler"), not the socket call at its far end.
       if(row.sides?.length>1)add(pair.name,{name:`${row.sides[0].path[0]?.name||row.caller} ⇢ ${row.sides.at(-1).path[0]?.name||row.callee}`,href:row.site});
       else if(row.inputRefs)for(const ref of row.inputRefs)add(pair.name,{name:ref.name,input:ref});
-      else if(row.callee)add(pair.name,{name:row.callee,href:row.calleeHref,at:row.calleeAt,caller:row.caller,callerAt:row.callerAt,from:group.id,site:row.site});
+      else if(row.callee)add(pair.name,{name:row.callee,href:row.calleeHref,at:row.calleeAt,caller:row.caller,callerAt:row.callerAt,site:row.site});
       else if(row.other&&row.other!==pair.name&&row.other!==group.name)add(pair.name,{name:row.other,href:row.otherHref});
       else add(pair.name,{name:''});
     }

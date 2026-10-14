@@ -23,10 +23,7 @@ const modified=event=>event.metaKey||event.ctrlKey||event.shiftKey||event.altKey
 // callee to where it lands. Casdoor's "StartLdapServer (inline, 3) →
 // GetConfigString" had left ldap/server.go:57 nowhere on the page.
 function Name({at,href,title,choose,children}){
-  // An end named without its key is found by its name in its part (owner,
-  // 2026-10-14: a possible call's caller had stood as plain text).
-  const name=at?.name||(typeof children==='string'?children:'');
-  const key=at&&choose&&(at.key&&choose.can(at.part,at.key)?at.key:choose.find?.(at.part,name));
+  const key=at?.key;
   if(!choose||!at||!key||!choose.can(at.part,key))return <Link href={href} title={title}>{children}</Link>;
   children=dotted(children);
   const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,key);};

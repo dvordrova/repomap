@@ -386,14 +386,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // declarations written on one line share, only where it has none.
     return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:symbol.decl_key?[symbol.decl_key]:[symbol.href,symbol.open,symbolKey(symbol)].filter(Boolean)};
   }
-  // A declaration's key in its part by the name a call gives it ("worker",
-  // "RateEnvelopeQueue.worker"), for a call whose end the page names
-  // without its key (a possible call through an interface), or ''.
-  function keyByName(part,name){
-    const symbols=model.nodes.get(part)?.item?.symbols||[];
-    const symbol=name&&symbols.find(symbol=>symbol.kind!=='more'&&symbol.kind!=='skip'&&(symbol.full===name||symbol.name===name||symbol.owner&&`${symbols[symbol.owner-1]?.name}.${symbol.name}`===name));
-    return symbol?symbolKey(symbol):'';
-  }
   // A declaration clicked is read in its part, named; with a modifier its
   // code opens.
   function chooseMember(part,index,event){
@@ -764,7 +756,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const from=edge?(backward?edge.to:edge.from):'',into=edge?(backward?edge.from:edge.to):'';
     const card=useMemo(()=>callCard(ids.flatMap(id=>edgeByID(model).get(id)?.relations||[]),{nameOf,groupable:other=>model.nodes.get(other)?.kind!=='input'}),[edgeKey]);
     const choose={
-      find:keyByName,
       can:(part,key)=>(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbolKey(symbol)===key),
       go:(part,key)=>chooseMember(part,(model.nodes.get(part)?.item?.symbols||[]).findIndex(symbol=>symbolKey(symbol)===key)),
       input:id=>read(id),
@@ -943,7 +934,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(!groups.length)return false;
     for(const [element,mountedRoot] of mounted)if(!element.isConnected){mountedRoot.unmount();mounted.delete(element);}
     const target=mounted.get(container)||createRoot(container);mounted.set(container,target);
-    const chooser=choose&&{go:choose,find:keyByName,can:(part,key)=>!!key&&(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbolKey(symbol)===key),input:readInput};
+    const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbolKey(symbol)===key),input:readInput};
     flushSync(()=>target.render(<FrameConnections groups={groups} open={open} choose={chooser} single={model.nodes.get(id)?.kind==='part'}/>));
     return true;
   }

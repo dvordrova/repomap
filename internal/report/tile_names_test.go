@@ -108,10 +108,11 @@ func TestAnInlineCallableIsNamedInWordsOfThePagesLanguage(t *testing.T) {
 		return &programindex.Location{Path: "service/loop.go", Line: line, Column: 2}
 	}
 	closure := groupindex.Subject{ID: "n2", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "Main loop$1", Kind: programindex.ObjectFunction,
-		Inline: groupindex.InlineName{In: "Main loop", Of: 3}, Anonymous: true, Location: at(12)}}
+		Inline: groupindex.InlineName{Named: "n1", In: "Main loop", Of: 3}, Anonymous: true, Location: at(12)}}
+	holder := groupindex.Subject{ID: "n1", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "Main loop", Kind: programindex.ObjectFunction, Location: at(10)}}
 	callee := groupindex.Subject{ID: "n3", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "GetConfigString", Kind: programindex.ObjectFunction, Location: at(40)}}
 	for language, want := range map[DisplayLanguage]string{English: "Main loop", Russian: "Main loop"} {
-		builder := &pageBuilder{language: language, subjects: map[string]subjectRef{subjectKey("t1", "n2"): {subject: closure}, subjectKey("t1", "n3"): {subject: callee}},
+		builder := &pageBuilder{language: language, subjects: map[string]subjectRef{subjectKey("t1", "n1"): {subject: holder}, subjectKey("t1", "n2"): {subject: closure}, subjectKey("t1", "n3"): {subject: callee}},
 			byProgram: map[string]*pageSection{"t1": {ID: "t1", Language: "go"}}, links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}}
 		entry := groupindex.Operation{ID: "o1", SubjectID: "n2", Kind: "continuous", Name: closure.Object.Inline.String(), Source: "fact"}
 		if got := builder.operationDisplayName("t1", entry); got != want {
@@ -127,6 +128,11 @@ func TestAnInlineCallableIsNamedInWordsOfThePagesLanguage(t *testing.T) {
 		call := builder.connectionCall(connection)
 		if call == nil || call.CallerName != want || call.CalleeName != "GetConfigString" {
 			t.Fatalf("%s: the call reads %+v", language, call)
+		}
+		// Its caller is read as the function it is named by: the key is that
+		// function's, whose tile the card reads (owner, 2026-10-14).
+		if call.Caller != holder.Object.DeclarationKey() || call.Callee != callee.Object.DeclarationKey() {
+			t.Fatalf("%s: the call's keys %q → %q, want the holder's %q", language, call.Caller, call.Callee, holder.Object.DeclarationKey())
 		}
 		var row pageConnection
 		row.Summary = connection.Label

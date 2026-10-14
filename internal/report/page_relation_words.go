@@ -177,7 +177,9 @@ func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pa
 	if !between || !ends || strings.Contains(relation, "{") {
 		relation = said.Kind
 	}
-	call := &pageEdgeCall{Kind: strings.ReplaceAll(relation, " ", "_"), CallerName: said.FromName, CalleeName: said.ToName, Caller: said.FromKey(), Callee: said.ToKey()}
+	call := &pageEdgeCall{Kind: strings.ReplaceAll(relation, " ", "_"), CallerName: said.FromName, CalleeName: said.ToName,
+		Caller: builder.namedKey(connection.From.TargetID, connection.FromSubjectID, said.FromKey()),
+		Callee: builder.namedKey(connection.To.TargetID, connection.ToSubjectID, said.ToKey())}
 	if location := connection.FromLocation; location != nil {
 		from := builder.links.anchor(location.Path, location.Line, location.Column)
 		call.From, call.At = from.Href, from.Text
@@ -194,4 +196,22 @@ func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pa
 	}
 	builder.foldCall(call, connection)
 	return call
+}
+
+// namedKey is the key of the declaration an end is read as: a callable
+// written inline is named by the function holding it or the callable it
+// wraps (groupindex InlineName.Named), and its key is that declaration's,
+// whose tile the card reads; any other end keeps its own key (owner,
+// 2026-10-14: "RateEnvelopeQueue.worker" had carried the key of worker$1,
+// which has no tile, and stood as plain text).
+func (builder *pageBuilder) namedKey(targetID, subjectID, own string) string {
+	ref, known := builder.subject(targetID, subjectID)
+	if !known || ref.subject.Object == nil || ref.subject.Object.Inline.Named == "" {
+		return own
+	}
+	named, known := builder.subject(targetID, ref.subject.Object.Inline.Named)
+	if !known || named.subject.Object == nil || named.subject.Object.Location == nil {
+		return own
+	}
+	return named.subject.Object.DeclarationKey()
 }

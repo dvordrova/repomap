@@ -16048,9 +16048,13 @@ frame of kinds), then the open set as the default after the owner tries it.
 
 - Touching an arrow's half shows the dot and the card at its other end (the
   only head of a one-way arrow).
-- A caller in an arrow's card whose page key is missing or names no tile is
-  found by name in its part (RateEnvelopeQueue.worker, a possible call's
-  caller, had stood as plain text); else its call site opens.
+- A callable written inline carries the ID of the declaration it is named
+  by (`groupindex.InlineName.Named`: the holder, or the callable it wraps),
+  and an arrow's call carries that declaration's key (`namedKey`): the card
+  had said "RateEnvelopeQueue.worker" with the key of `worker$1`, which has
+  no tile, so it stood as plain text. A caller with no key opens its call
+  site. (A browser lookup by name, tried first, was removed: the page data
+  is fixed, the browser repairs nothing.)
 - A pinch over a card or a tip closes it (unless kept) and is prevented: it
   had zoomed the whole page, the card and the dot growing with it.
 - Checks: `npm test` 179/179, `make ui-visual-test` 20 passed + the
