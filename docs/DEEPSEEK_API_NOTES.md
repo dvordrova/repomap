@@ -16,6 +16,8 @@ REPOMAP_LLM_API_KEY       bearer credential
 REPOMAP_LLM_AUTH          bearer (default) or none
 REPOMAP_LLM_MAX_TOKENS    positive integer (default: 128000)
 REPOMAP_LLM_CONTEXT_TOKENS  provider context window in tokens (default: unset)
+REPOMAP_LLM_RPM           requests a minute the provider allows (default: 100)
+REPOMAP_LLM_BYTES_LIMIT   largest request body in bytes (default: 262144)
 REPOMAP_LLM_TIMEOUT       positive Go duration (default: 10m)
 REPOMAP_LLM_CHAT_TEMPLATE_KWARGS  JSON object overriding template options
 ```
@@ -30,6 +32,14 @@ When no generic variable is present, the legacy `DEEPSEEK_ENDPOINT`,
 `DEEPSEEK_TIMEOUT` and `DEEPSEEK_CHAT_TEMPLATE_KWARGS` names remain accepted. Their default endpoint is
 `https://api.deepseek.com/chat/completions`. There is no legacy max-token
 override; `REPOMAP_LLM_MAX_TOKENS` is the only one.
+
+`REPOMAP_LLM_RPM` and `REPOMAP_LLM_BYTES_LIMIT` are accepted with either
+family and change no request. The rate spaces the run's attempt starts to the
+provider evenly, one every minute/rate, so a declared limit is kept without the
+429 collapse; the size refuses a larger request locally, and its owner divides
+the window as for the context window. Both are the provider's, the same for
+every stage; Jev has its own `REPOMAP_JEV_RPM` (default 1200) and
+`REPOMAP_JEV_BYTES_LIMIT` (default 64000).
 
 `REPOMAP_LLM_CONTEXT_TOKENS` (or `DEEPSEEK_CONTEXT_TOKENS`, accepted with either
 family) declares the provider's context window, for example `524288` for a

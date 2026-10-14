@@ -18,6 +18,7 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -149,7 +150,16 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 	defer abort(nil)
 	output := newRunOutput(os.Stderr)
 	output.abort = abort
-	err := runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
+	// Every stage asks the text model through one gate, paced to the
+	// provider's declared rate.
+	llmController := &llm.BatchController{}
+	perMinute, err := deepseek.RequestsPerMinuteFromEnv()
+	if err != nil {
+		writeRunOutputError(output, err)
+		return err
+	}
+	llmController.Pace(perMinute)
+	err = runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
 		consoleClock:               output,
 		ctx:                        ctx,
 		stdout:                     os.Stdout,
@@ -161,7 +171,7 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		newCubeProvider:            defaultTargetPortfolioProviderFactory,
 		newCategorizer:             newJevCategorizer,
 		llmBatchConcurrency:        llm.DefaultBatchConcurrency,
-		llmBatchController:         &llm.BatchController{},
+		llmBatchController:         llmController,
 		collectTerminology:         true,
 		repositoryArgumentOmitted:  repositoryArgumentOmitted,
 	})
@@ -1196,11 +1206,15 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  REPOMAP_LLM_API_KEY (for bearer auth)\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_AUTH    bearer (default) or none\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_TIMEOUT (default 10m; an attempt that hits it is retried)\n")
+	fmt.Fprintf(writer, "  REPOMAP_LLM_RPM     requests a minute the provider allows (default 100)\n")
+	fmt.Fprintf(writer, "  REPOMAP_LLM_BYTES_LIMIT largest request in bytes; larger windows are split (default 262144)\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_API_KEY    quick setup; defaults to deepseek-v4-flash\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_*          compatibility configuration aliases\n")
 	fmt.Fprintf(writer, "  JEV_KEY             optional: Jev decides the closed questions; without it the model above answers them\n")
 	fmt.Fprintf(writer, "  REPOMAP_JEV_MODEL   (default jev-1.13.0)\n")
 	fmt.Fprintf(writer, "  REPOMAP_JEV_ENDPOINT\n")
+	fmt.Fprintf(writer, "  REPOMAP_JEV_RPM     requests a minute Jev allows (default 1200)\n")
+	fmt.Fprintf(writer, "  REPOMAP_JEV_BYTES_LIMIT largest Jev request in bytes (default 64000)\n")
 	fmt.Fprintf(writer, "\nExamples:\n")
 	fmt.Fprintf(writer, "  repomap\n")
 	fmt.Fprintf(writer, "  repomap ../etcd\n")

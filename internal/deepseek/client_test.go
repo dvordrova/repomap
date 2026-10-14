@@ -186,6 +186,7 @@ func clearLLMConfigEnv(t *testing.T) {
 		legacyEnvTimeout, legacyEnvAuth,
 		legacyEnvChatTemplateKwargs,
 		envContextTokens, legacyEnvContextTokens,
+		envRequestsPerMinute, envBytesLimit,
 	} {
 		value, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
@@ -225,5 +226,34 @@ func TestNewFromEnvReadsTheContextWindowUnderEitherName(t *testing.T) {
 	t.Setenv(envContextTokens, "1000")
 	if _, err = NewFromEnv(); err == nil || !strings.Contains(err.Error(), "must exceed the output-token limit") {
 		t.Fatalf("a context window below the output limit was accepted: %v", err)
+	}
+}
+
+func TestTheProviderRateAndRequestSizeHaveDefaultsAndRefuseNonsense(t *testing.T) {
+	clearLLMConfigEnv(t)
+	t.Setenv(legacyEnvAPIKey, "secret")
+	client, err := NewFromEnv()
+	if err != nil || client.RequestBytesLimit != DefaultRequestBytesLimit {
+		t.Fatalf("default request size: %+v / %v", client, err)
+	}
+	if perMinute, err := RequestsPerMinuteFromEnv(); err != nil || perMinute != DefaultRequestsPerMinute {
+		t.Fatalf("default rate = %d / %v", perMinute, err)
+	}
+	t.Setenv(envBytesLimit, "65536")
+	t.Setenv(envRequestsPerMinute, "20")
+	client, err = NewFromEnv()
+	perMinute, rateErr := RequestsPerMinuteFromEnv()
+	if err != nil || client.RequestBytesLimit != 65536 || rateErr != nil || perMinute != 20 {
+		t.Fatalf("declared limits: %+v / %v, rate %d / %v", client, err, perMinute, rateErr)
+	}
+	for _, bad := range []string{"0", "-3", "many"} {
+		t.Setenv(envRequestsPerMinute, bad)
+		if _, err := RequestsPerMinuteFromEnv(); err == nil {
+			t.Fatalf("rate %q accepted", bad)
+		}
+		t.Setenv(envBytesLimit, bad)
+		if _, err := NewFromEnv(); err == nil {
+			t.Fatalf("request size %q accepted", bad)
+		}
 	}
 }

@@ -51,6 +51,17 @@ const (
 	// only how early an oversized one is refused locally.
 	envContextTokens       = "REPOMAP_LLM_CONTEXT_TOKENS"
 	legacyEnvContextTokens = "DEEPSEEK_CONTEXT_TOKENS"
+	// envRequestsPerMinute and envBytesLimit declare the provider's request
+	// rate and request size, the same for every stage that asks it. Like the
+	// context window they are accepted with either configuration family and
+	// change no request: the rate paces the run's attempt starts, and a
+	// larger request is refused locally for its owner to partition.
+	envRequestsPerMinute = "REPOMAP_LLM_RPM"
+	envBytesLimit        = "REPOMAP_LLM_BYTES_LIMIT"
+	// DefaultRequestsPerMinute and DefaultRequestBytesLimit are the owner's
+	// defaults (2026-10-14).
+	DefaultRequestsPerMinute = 100
+	DefaultRequestBytesLimit = 256 * 1024
 
 	legacyEnvEndpoint           = "DEEPSEEK_ENDPOINT"
 	legacyEnvModel              = "DEEPSEEK_MODEL"
@@ -73,7 +84,11 @@ type Client struct {
 	// context resource refusal the provider would send; the owning stage
 	// partitions it as usual. Zero uses the known official model's window;
 	// an unknown model or custom endpoint leaves the check to the provider.
-	ContextTokens      int
+	ContextTokens int
+	// RequestBytesLimit is the largest request body Prepare accepts; a
+	// larger one gets the request-size refusal its owning stage partitions.
+	// Zero leaves only the record limit.
+	RequestBytesLimit  int
 	Endpoint           string
 	Auth               string
 	ChatTemplateKwargs map[string]json.RawMessage
@@ -176,6 +191,11 @@ func NewFromEnv() (*Client, error) {
 		contextTokens = n
 	}
 
+	bytesLimit, err := positiveEnv(envBytesLimit, DefaultRequestBytesLimit)
+	if err != nil {
+		return nil, err
+	}
+
 	timeout := defaultTimeout
 	if s := value(envTimeout, legacyEnvTimeout); s != "" {
 		parsed, err := time.ParseDuration(s)
@@ -225,11 +245,32 @@ func NewFromEnv() (*Client, error) {
 		HTTPClient: &http.Client{Timeout: timeout},
 		APIKey:     key,
 		Model:      model,
-		MaxTokens:  maxTokens, ContextTokens: contextTokens,
+		MaxTokens:  maxTokens, ContextTokens: contextTokens, RequestBytesLimit: bytesLimit,
 		Endpoint:           endpoint,
 		Auth:               auth,
 		ChatTemplateKwargs: chatTemplateKwargs,
 	}, nil
+}
+
+// RequestsPerMinuteFromEnv is the provider's declared request rate:
+// REPOMAP_LLM_RPM, or DefaultRequestsPerMinute when it is unset.
+func RequestsPerMinuteFromEnv() (int, error) {
+	return positiveEnv(envRequestsPerMinute, DefaultRequestsPerMinute)
+}
+
+func positiveEnv(name string, fallback int) (int, error) {
+	s := strings.TrimSpace(os.Getenv(name))
+	if s == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", name, err)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("%s must be positive", name)
+	}
+	return n, nil
 }
 
 func anyEnvSet(names ...string) bool {

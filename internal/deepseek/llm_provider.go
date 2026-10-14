@@ -123,6 +123,9 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 		}
 	}
 	requestLimit := min(limits.MaxRequestBytes, llmProviderRequestByteLimit)
+	if c.RequestBytesLimit > 0 {
+		requestLimit = min(requestLimit, c.RequestBytesLimit)
+	}
 	if len(body) > requestLimit {
 		return llm.Prepared{}, newResourceLimitError(ResourceLimitError{
 			Stage: llmProviderStage, Kind: ResourceLimitRequestBytes,

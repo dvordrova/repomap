@@ -3,6 +3,9 @@ package typesafe
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/llm"
 )
@@ -15,7 +18,12 @@ const (
 	QuestionTokenLimit = 32_000
 )
 
-func checkEnvelope(body map[string]json.RawMessage, exact []byte) error {
+// checkEnvelope refuses a request over limit bytes (RequestTokenLimit when
+// zero) or a question over QuestionTokenLimit or limit, whichever is less.
+func checkEnvelope(body map[string]json.RawMessage, exact []byte, limit int) error {
+	if limit <= 0 {
+		limit = RequestTokenLimit
+	}
 	refused := func(input, limit int, scope string) error {
 		if input+1 <= limit {
 			return nil
@@ -26,7 +34,7 @@ func checkEnvelope(body map[string]json.RawMessage, exact []byte) error {
 			ConfiguredMaxTokens: 1, FinishReason: "jev_" + scope + "_utf8_reservation",
 		})
 	}
-	if err := refused(len(exact), RequestTokenLimit, "request"); err != nil {
+	if err := refused(len(exact), limit, "request"); err != nil {
 		return err
 	}
 	var questions map[string]json.RawMessage
@@ -48,5 +56,20 @@ func checkEnvelope(body map[string]json.RawMessage, exact []byte) error {
 		}
 		longest = max(longest, len(encoded))
 	}
-	return refused(longest, QuestionTokenLimit, "question")
+	return refused(longest, min(QuestionTokenLimit, limit), "question")
+}
+
+func positiveEnv(name string, fallback int) (int, error) {
+	s := strings.TrimSpace(os.Getenv(name))
+	if s == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", name, err)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("%s must be positive", name)
+	}
+	return n, nil
 }

@@ -92,6 +92,7 @@ func newRunCategorizer(factory func() (llm.Categorizer, error), output *runOutpu
 		// all of them, and none of the text model's.
 		if client.Controller == nil {
 			client.Controller = llm.NewBatchController(table.ClassifierConcurrency)
+			client.Controller.Pace(client.RequestsPerMinute)
 		}
 		client.OnRetry = func(progress llm.RetryProgress) { printRetry(output, "categorizer request", progress) }
 	}

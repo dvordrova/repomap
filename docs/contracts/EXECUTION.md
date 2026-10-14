@@ -53,7 +53,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   concurrency from one, up to the configured twelve. A new 429 resets recovery, and older
   in-flight successes cannot shorten that new cooldown or restore concurrency.
   Cancellation interrupts the wait; other retryable failures retain their
-  short backoff. A provider whose rate limit is its account's rather than
+  short backoff. A gate may also be paced to its provider's declared request
+  rate (`BatchController.Pace`): attempt starts are spaced evenly, one every
+  minute/rate, whatever the free leases, so a declared limit is kept without
+  bursts or 429s, and the 429 collapse stays the fallback. The text model's
+  gate follows `REPOMAP_LLM_RPM` (default 100) and Jev's `REPOMAP_JEV_RPM`
+  (default 1,200), owner decision 2026-10-14. A provider whose rate limit is its account's rather than
   one batch's owns its gate (`llm.AttemptControllerOwner`): the run's one Jev
   client carries one controller of `table.ClassifierConcurrency` attempts,
   which every Jev batch of every reading, the glossary's term decisions and
@@ -357,8 +362,14 @@ The display-translation cube behind `--lang`
   table code. Provider envelope checks live in the Jev client's `Prepare`,
   covering direct Main-flow calls too. Table preparation asks that same local
   function; it makes no network call and carries no duplicate Jev limits.
-- Jev's envelope is 64k tokens per request and 32k for shared state plus
-  any one question. Preparation measures the encoded request, including
+- Jev's envelope is 64k tokens per request (`REPOMAP_JEV_BYTES_LIMIT`,
+  default 64,000) and 32k, or the request's envelope when smaller, for shared
+  state plus any one question. Without `JEV_KEY` the text model answers the
+  same questions inside its provider's request size
+  (`REPOMAP_LLM_BYTES_LIMIT`, default 262,144 bytes), not Jev's envelope, and
+  writes an option list several questions of a window share once, before the
+  questions, each of them naming it (owner decision 2026-10-14: the repeated
+  lists were ~90% of a request and held windows to 4–6 questions). Preparation measures the encoded request, including
   complete context, questions and choice criteria, before transport. Without
   the provider tokenizer it reserves one token per UTF-8 byte and the one
   output token, rather than extrapolating average densities from old answers.

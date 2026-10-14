@@ -50,7 +50,7 @@ func (m *TextModel) AttemptController() *llm.BatchController { return m.Controll
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{
-		"categorizer": json.RawMessage(`"text_model.lines.v4"`),
+		"categorizer": json.RawMessage(`"text_model.lines.v5"`),
 		"provider":    m.Provider.State(),
 	})
 	return state
@@ -71,6 +71,29 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 		}
 		text.WriteString("\nContext:\n" + string(encoded) + "\n")
 	}
+	// An option list several questions share is written once, before the
+	// questions, and each of them names it: the list with its meanings is
+	// most of a question, and a window's questions usually share one.
+	lists := make([]string, len(keys))
+	uses := map[string]int{}
+	for i, key := range keys {
+		var list strings.Builder
+		for _, option := range questions[key].Options {
+			fmt.Fprintf(&list, "- %s%s\n", option.Name, optionMeaning(option))
+		}
+		lists[i] = list.String()
+		uses[lists[i]]++
+	}
+	labels := map[string]string{}
+	for _, list := range lists {
+		if list != "" && uses[list] > 1 && labels[list] == "" {
+			labels[list] = listLabel(len(labels))
+			if len(labels) == 1 {
+				text.WriteString("\nOption lists:\n")
+			}
+			fmt.Fprintf(&text, "\nList %s:\n%s", labels[list], list)
+		}
+	}
 	text.WriteString("\nQuestions:\n")
 	asked := make([]askedQuestion, 0, len(keys))
 	for i, key := range keys {
@@ -85,19 +108,35 @@ func (m *TextModel) Prompt(task string, shared map[string]any, questions map[str
 		}
 		fmt.Fprintf(&text, "\n%d. %s\n   %s: %s\n", i+1, question.Ask, name, item)
 		one := askedQuestion{key: key}
-		if len(question.Options) == 0 {
+		for _, option := range question.Options {
+			one.options = append(one.options, option.Name)
+		}
+		switch {
+		case len(question.Options) == 0:
 			text.WriteString("   Answer yes or no.\n")
-		} else {
+		case labels[lists[i]] != "":
+			fmt.Fprintf(&text, "   Options: list %s\n", labels[lists[i]])
+		default:
 			text.WriteString("   Options:\n")
-			for _, option := range question.Options {
-				one.options = append(one.options, option.Name)
-				fmt.Fprintf(&text, "   - %s%s\n", option.Name, optionMeaning(option))
+			for _, line := range strings.SplitAfter(lists[i], "\n") {
+				if line != "" {
+					text.WriteString("   " + line)
+				}
 			}
 		}
 		asked = append(asked, one)
 	}
 	m.asked.Store(text.String(), asked)
 	return llm.Prompt{System: textModelSystem, User: text.String(), NoResponseAdjunct: true}, nil
+}
+
+// listLabel names the nth shared option list: A … Z, then AA, AB and on.
+func listLabel(n int) string {
+	label := ""
+	for n++; n > 0; n = (n - 1) / 26 {
+		label = string(rune('A'+(n-1)%26)) + label
+	}
+	return label
 }
 
 func optionMeaning(option llm.Option) string {
@@ -125,14 +164,9 @@ func (m *TextModel) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared,
 	if !ok {
 		return llm.Prepared{}, errors.New("typesafe: text model prompt was not built by Prompt")
 	}
-	// Keep Jev's request envelope, so windows pack as they do for Jev.
-	if len(prompt.User)+1 > RequestTokenLimit {
-		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{
-			Kind: llm.ResourceLimitContextTokens, Limit: RequestTokenLimit,
-			Observed: len(prompt.User) + 1, ObservedKnown: true,
-			ConfiguredMaxTokens: 1, FinishReason: "jev_request_utf8_reservation",
-		})
-	}
+	// The text model's request size is its provider's (REPOMAP_LLM_BYTES_LIMIT),
+	// not Jev's envelope: the provider refuses a larger window for its owner
+	// to partition.
 	// Owners size Jev's output as one token; a text model writes its lines.
 	limits.MaxOutputTokens = llm.DefaultMaxOutputTokens
 	prepared, err := m.Provider.Prepare(prompt, limits)

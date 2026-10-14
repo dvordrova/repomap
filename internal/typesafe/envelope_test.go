@@ -61,3 +61,20 @@ func TestEnvelopeIncludesModelAndExactFramingAtTheBoundary(t *testing.T) {
 		t.Fatal("one byte beyond question plus output allowance prepared")
 	}
 }
+
+// REPOMAP_JEV_BYTES_LIMIT moves Jev's request envelope; a question is
+// bounded by the smaller of its own limit and the request's.
+func TestJevEnvelopeFollowsTheDeclaredRequestSize(t *testing.T) {
+	calls := 0
+	client := handlerClient(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	client.RequestBytesLimit = 10_000
+	prompt, err := client.Prompt("task", map[string]any{"complete": "x"}, map[string]llm.Question{"q": {Ask: strings.Repeat("x", 12_000)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Prepare(prompt, llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 1})
+	var refused *llm.ResourceLimitError
+	if !errors.As(err, &refused) || refused.Kind != llm.ResourceLimitContextTokens || refused.Limit != 10_000 || calls != 0 {
+		t.Fatalf("declared envelope: calls=%d err=%v", calls, err)
+	}
+}

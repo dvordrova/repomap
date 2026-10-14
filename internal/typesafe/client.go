@@ -36,9 +36,14 @@ const (
 	// refused key or balance is named as Jev's, not the text model's.
 	providerName = "Jev"
 
-	envAPIKey   = "JEV_KEY"
-	envModel    = "REPOMAP_JEV_MODEL"
-	envEndpoint = "REPOMAP_JEV_ENDPOINT"
+	envAPIKey            = "JEV_KEY"
+	envModel             = "REPOMAP_JEV_MODEL"
+	envEndpoint          = "REPOMAP_JEV_ENDPOINT"
+	envRequestsPerMinute = "REPOMAP_JEV_RPM"
+	envBytesLimit        = "REPOMAP_JEV_BYTES_LIMIT"
+	// DefaultRequestsPerMinute is Jev's account rate the classifier
+	// concurrency was measured inside (table.ClassifierConcurrency).
+	DefaultRequestsPerMinute = 1200
 )
 
 // Client sends System One evaluations. Its zero value writes and reads
@@ -53,6 +58,12 @@ type Client struct {
 	// its account's, so a 429 on one stage's request cools down all of them
 	// (llm.AttemptControllerOwner). Nil leaves each batch its executor's.
 	Controller *llm.BatchController
+	// RequestsPerMinute is Jev's declared request rate; the run paces
+	// Controller's attempt starts with it. Zero leaves them unpaced.
+	RequestsPerMinute int
+	// RequestBytesLimit is the request envelope in bytes, each reserving one
+	// token; zero is System One's RequestTokenLimit.
+	RequestBytesLimit int
 	// OnRetry reports each transport retry: the failed attempt with its
 	// closed failure, status and the wait before the next one, then the
 	// retry's start once the shared gate lets it go. It never sees the
@@ -90,7 +101,15 @@ func NewFromEnv() (*Client, error) {
 	if key == "" {
 		return nil, fmt.Errorf("%s is required: keys, part roles and key declarations are decided by Jev; run with --no-model --target … to skip models", envAPIKey)
 	}
-	client := &Client{HTTPClient: &http.Client{Timeout: defaultTimeout, Transport: transport()}, Endpoint: defaultEndpoint, Model: defaultModel, APIKey: key}
+	client := &Client{HTTPClient: &http.Client{Timeout: defaultTimeout, Transport: transport()}, Endpoint: defaultEndpoint, Model: defaultModel, APIKey: key,
+		RequestsPerMinute: DefaultRequestsPerMinute, RequestBytesLimit: RequestTokenLimit}
+	var err error
+	if client.RequestsPerMinute, err = positiveEnv(envRequestsPerMinute, DefaultRequestsPerMinute); err != nil {
+		return nil, err
+	}
+	if client.RequestBytesLimit, err = positiveEnv(envBytesLimit, RequestTokenLimit); err != nil {
+		return nil, err
+	}
 	if value := strings.TrimSpace(os.Getenv(envModel)); value != "" {
 		client.Model = value
 	}
@@ -446,7 +465,7 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 			Kind: llm.ResourceLimitRequestBytes, Limit: limits.MaxRequestBytes, Observed: len(exact), ObservedKnown: true,
 		})
 	}
-	if err := checkEnvelope(body, exact); err != nil {
+	if err := checkEnvelope(body, exact, c.RequestBytesLimit); err != nil {
 		return llm.Prepared{}, err
 	}
 	return llm.NewPrepared(exact)

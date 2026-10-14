@@ -1135,3 +1135,23 @@ func TestKnownOfficialContextIsPreventiveWithoutEnvironmentOverride(t *testing.T
 		t.Fatal("custom endpoint inherited the official model's envelope")
 	}
 }
+
+// A window over the declared request size is refused before transport with
+// the request-size refusal its owner partitions.
+func TestLLMProviderRefusesARequestOverTheDeclaredSize(t *testing.T) {
+	client := &Client{
+		HTTPClient: &http.Client{Timeout: 7 * time.Second}, APIKey: "secret", Model: "test-model",
+		MaxTokens: 400, Endpoint: "https://provider.example/v1/chat/completions", Auth: authBearer,
+		RequestBytesLimit: 4096,
+	}
+	prompt := llm.Prompt{System: "system", User: strings.Repeat("x", 3000)}
+	if _, err := client.Prepare(prompt, llmProviderTestLimits(900)); err != nil {
+		t.Fatalf("a request under the size was refused: %v", err)
+	}
+	prompt.User = strings.Repeat("x", 5000)
+	_, err := client.Prepare(prompt, llmProviderTestLimits(900))
+	var refused *llm.ResourceLimitError
+	if !errors.As(err, &refused) || refused.Kind != llm.ResourceLimitRequestBytes || refused.Limit != 4096 {
+		t.Fatalf("over the declared size: %v", err)
+	}
+}

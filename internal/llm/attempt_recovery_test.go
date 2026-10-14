@@ -53,3 +53,40 @@ func TestRateLimitRecoveryRequiresCurrentEpochSuccessesAfterCooldown(t *testing.
 		}
 	})
 }
+
+// A paced gate starts attempts no closer than a minute over the rate, even
+// with free leases; a 429 still collapses it.
+func TestAPacedGateSpacesAttemptStartsEvenly(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		controller := NewBatchController(8)
+		controller.Pace(120)
+		gate := controller.bind(8)
+		var starts []time.Time
+		for range 4 {
+			release, err := gate.acquire(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			starts = append(starts, time.Now())
+			release()
+		}
+		for i := 1; i < len(starts); i++ {
+			if gap := starts[i].Sub(starts[i-1]); gap != 500*time.Millisecond {
+				t.Fatalf("start %d came %v after the previous one, want 500ms", i, gap)
+			}
+		}
+		unpaced := NewBatchController(8).bind(8)
+		before := time.Now()
+		for range 4 {
+			release, _ := unpaced.acquire(t.Context())
+			release()
+		}
+		if time.Since(before) != 0 {
+			t.Fatal("an unpaced gate waited")
+		}
+		gate.backoff(time.Minute)
+		if gate.currentLimit() != 1 {
+			t.Fatal("a 429 did not collapse the paced gate")
+		}
+	})
+}

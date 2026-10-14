@@ -1,3 +1,29 @@
+## 2026-10-14 — declared provider rate and request size; shared option lists
+
+Owner: `REPOMAP_LLM_RPM` (default 100) and `REPOMAP_LLM_BYTES_LIMIT` (default
+262,144) are the text-model provider's, the same for every stage;
+`REPOMAP_JEV_RPM` (default 1,200) and `REPOMAP_JEV_BYTES_LIMIT` (default
+64,000) are Jev's. The rate paces the provider's one attempt gate (starts
+spaced minute/rate; the 429 collapse stays the fallback); the size is a local
+request-size refusal the owners partition. Without `JEV_KEY` the text model no
+longer keeps Jev's 64 KB envelope and writes an option list a window's
+questions share once (`text_model.lines.v5`): in `atlas_api` the repeated
+lists were ~90% of a request.
+
+wild-workouts-go-ddd-example, no Jev, cold, ordinary run, exit 0:
+- direct DeepSeek: 382 → 279 requests, 1.93M → 0.85M input tokens,
+  125 s → 199 s wall (the default 100 RPM is now the bound; DeepSeek took
+  ~196 RPM unpaced); rejected lines 36 → 8.
+- local proxy at 20 RPM with `REPOMAP_LLM_RPM=20`: 804 s, 264 requests, no
+  429 (before: ~23 min, 22 429s, the gate cycling between a 20-request burst
+  and a one-minute collapse).
+Requests are now bound by stage structure, not size: `atlas_group_enough`
+asks one question per request (42), `atlas_role_helper` 1–7 (72), and
+`atlas_api` windows come per target and kind (52, 15 of one question).
+A proxy in front of DeepSeek also showed that a non-official endpoint gets
+`chat_template_kwargs.enable_thinking`, which DeepSeek ignores: thinking stays
+on (3,761 vs 55 output tokens a request).
+
 ## 2026-10-14 — a struct tag's separator is not a field name
 
 soft-serve (`pkg/config/config.go`, `envSeparator:"\n"`) failed every run

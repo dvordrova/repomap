@@ -37,6 +37,9 @@ type BatchController struct {
 	// limit, when set, is the gate's concurrency whatever the first bound
 	// batch asks for.
 	limit int
+	// perMinute, when set, spaces the gate's attempt starts evenly to at
+	// most that many a minute (Pace).
+	perMinute int
 }
 
 // NewBatchController returns a controller whose gate admits at most limit
@@ -44,6 +47,22 @@ type BatchController struct {
 // the order in which stages first call a provider does not set its limit.
 func NewBatchController(limit int) *BatchController {
 	return &BatchController{limit: max(limit, 1)}
+}
+
+// Pace spaces the starts of the attempts through this controller's gate
+// evenly, at most perMinute a minute, whatever their concurrency: the
+// provider's declared request rate. Zero or less leaves starts unpaced. A
+// 429 still collapses the gate as before.
+func (controller *BatchController) Pace(perMinute int) {
+	if controller == nil {
+		return
+	}
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	controller.perMinute = max(perMinute, 0)
+	if controller.gate != nil {
+		controller.gate.pace(controller.perMinute)
+	}
 }
 
 func (controller *BatchController) bind(configured int) *attemptGate {
@@ -60,6 +79,7 @@ func (controller *BatchController) bind(configured int) *attemptGate {
 			configured = controller.limit
 		}
 		controller.gate = newAttemptGate(configured)
+		controller.gate.pace(controller.perMinute)
 	}
 	return controller.gate
 }
@@ -103,6 +123,10 @@ type attemptGate struct {
 	configured int
 	epoch      uint64
 	successes  int
+	// interval is the least time between two attempt starts, and nextStart
+	// the earliest the next one may begin.
+	interval  time.Duration
+	nextStart time.Time
 }
 
 func newAttemptGate(limit int) *attemptGate {
@@ -110,6 +134,15 @@ func newAttemptGate(limit int) *attemptGate {
 		limit = 1
 	}
 	return &attemptGate{limit: limit, configured: limit, changed: make(chan struct{})}
+}
+
+func (gate *attemptGate) pace(perMinute int) {
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	gate.interval = 0
+	if perMinute > 0 {
+		gate.interval = time.Minute / time.Duration(perMinute)
+	}
 }
 
 func (gate *attemptGate) acquire(ctx context.Context) (func(), error) {
@@ -122,9 +155,13 @@ func (gate *attemptGate) acquire(ctx context.Context) (func(), error) {
 			gate.mu.Unlock()
 			return nil, err
 		}
-		remaining := time.Until(gate.retryAt)
+		now := time.Now()
+		remaining := max(gate.retryAt.Sub(now), gate.nextStart.Sub(now))
 		if gate.active < gate.limit && remaining <= 0 {
 			gate.active++
+			if gate.interval > 0 {
+				gate.nextStart = now.Add(gate.interval)
+			}
 			gate.mu.Unlock()
 			if err := ctx.Err(); err != nil {
 				gate.release()
