@@ -414,8 +414,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const view=memberView(model,geometry,part,index,size());
     if(!view)return;
     const scene=sceneOf(store.getState()),here=levelKey(store.getState().level);
-    const shown=view.dense?here===levelKey(view.level)&&inSight(geometry.boxes.get(part),0)
-      :here===levelKey(view.level)&&inSight(scene.members.find(member=>member.index===index&&member.part===part)?.rect||geometry.boxes.get(part),0);
+    const shown=here===levelKey(view.level)&&inSight(scene.members.find(member=>member.index===index&&member.part===part)?.rect||geometry.boxes.get(part),0);
     if(shown)return;
     store.dispatch({type:'enter',level:view.level});
     moveCamera(view.camera);

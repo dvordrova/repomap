@@ -367,23 +367,22 @@ export function levelAfterZoom(model,geometry,scene,level,zoom,aim,zoomingIn){
 // Where a declaration the reading names out of sight is shown (owner,
 // 2026-09-29): with its part at the zoom where the part's tiles are drawn
 // and read and the part stands whole across the canvas, framed whole when
-// it fits, else across with the tile centred down it, never deeper than
-// the part's own title fits; a part too dense for its tiles to read there
-// is shown as its card, closed at the scale its level reads a part at,
-// centred. {level, camera, dense}; null for a part with no tiles.
+// it fits, else across with the tile centred down it; a part too wide for
+// its tiles to read across the canvas is a window centred on the tile.
+// {level, camera}; null for a part with no tiles.
 export function memberView(model,geometry,part,index,canvas,pad=28){
   const rect=geometry.boxes.get(part),drawn=geometry.grids.get(part);
   if(!rect||!drawn)return null;
   const chain=chainOf(model,part),across=(canvas.width-2*pad)/rect.width,whole=Math.min(across,(canvas.height-2*pad)/rect.height);
-  const need=Math.max(11/13*drawn.grid.divisor*drawn.box.width/rect.width,(geometry.enterZoom.get(part)||0)*1.02);
+  const need=(geometry.enterZoom.get(part)||0)*1.02;
   const at=(zoom,x,y)=>({zoom,x:canvas.width/2-x*zoom,y:canvas.height/2-y*zoom});
-  if(across<need){
-    const level=chain.slice(0,-1),zoom=level.length?(geometry.enterZoom.get(level.at(-1))||0)*1.02:geometry.home.zoom;
-    return {level,dense:true,camera:at(zoom,rect.x+rect.width/2,rect.y+rect.height/2)};
-  }
-  if(whole>=need)return {level:chain,dense:false,camera:at(whole,rect.x+rect.width/2,rect.y+rect.height/2)};
-  const tile=sceneAt(model,geometry,chain,{}).members.find(member=>member.index===index)?.rect||rect;
-  return {level:chain,dense:false,camera:at(across,rect.x+rect.width/2,tile.y+tile.height/2)};
+  if(whole>=need)return {level:chain,camera:at(whole,rect.x+rect.width/2,rect.y+rect.height/2)};
+  const tile=sceneAt(model,geometry,chain,{}).members.find(member=>member.part===part&&member.index===index)?.rect||rect;
+  // A part wider than the canvas at that zoom is a window on it, the
+  // declaration in its middle (owner, 2026-10-14: closed, the part had shown
+  // the declaration alone in an empty card on a narrow canvas).
+  if(across<need)return {level:chain,camera:at(need,tile.x+tile.width/2,tile.y+tile.height/2)};
+  return {level:chain,camera:at(across,rect.x+rect.width/2,tile.y+tile.height/2)};
 }
 
 // The connection an arrow stands for, in the direction its head nearest

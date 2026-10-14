@@ -103,7 +103,9 @@ export function tileGrid(symbols,links,box,measure,{least=4,step=.5}={}){
     const columns=Math.max(1,Math.floor((inner.width-2*side+gap)/(nameWidth+gap)));
     const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*side-(columns-1)*gap)/columns));
     const grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
-    // Columns enough for a caller, what it calls and what that returns.
-    if(!roomy||grid.hidden===0&&(!links.length||columns>=3))return grid;
+    // Columns enough for a caller, what it calls and what that returns, or
+    // one for each tile when there are fewer (owner, 2026-10-14: chi's two
+    // tiles had been shrunk for a third column into a corner of their card).
+    if(!roomy||grid.hidden===0&&(!links.length||columns>=Math.min(3,shown.length)))return grid;
   }
 }

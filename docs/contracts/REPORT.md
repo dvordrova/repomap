@@ -588,11 +588,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   sight is shown with its part at the zoom where the part's tiles are drawn
   and the part stands whole across the canvas: framed whole when it fits,
   else across with the tile centred down it, never deeper than the part's
-  own title fits (owner, 2026-09-29). A part too dense for its tiles to be
-  read there is shown as its frame instead: its card closed at the scale a
-  part is read at, the chosen declaration alone in it as its tile, the
-  camera staying when that card is in sight (owner, 2026-09-29;
-  `scene.mjs` `memberView`). The page data gives each
+  own title fits (owner, 2026-09-29). A part too wide for its tiles to read
+  across the canvas is entered anyway, the canvas a window on it centred on
+  the tile (owner, 2026-10-14: closed, rate-envelope-queue's Queue
+  construction had filled a narrow canvas as an empty card holding the
+  declaration alone; `scene.mjs` `memberView`). A part is entered where its
+  tiles' names read, at its own tile scale, not at a fixed card width. The page data gives each
   tile its file and the same source link its reading uses, served or
   static.
 
@@ -1434,10 +1435,9 @@ post-layout edits are deleted.
   A declaration the reading names out of sight (`scene.mjs` `memberView`,
   owner, 2026-09-29) is shown with its part entered across the canvas at
   the zoom its tiles read at, framed whole when it fits, else with the
-  tile centred down it, never deeper than the part's title fits; a part
-  too dense for that is shown closed in its level at the zoom a part reads
-  at, its card centred holding the declaration alone as its tile under its
-  title. One in sight, or a restored visit, keeps the camera.
+  tile centred down it; a part too wide for that is entered as a window
+  centred on the tile (owner, 2026-10-14). One in sight, or a restored
+  visit, keeps the camera.
 - The whole map at rest (owner, 2026-10-01, on the skeptic's verdict):
   each program's Inputs into it, a program into each Outside frame it
   calls, and one arrow per two programs an operation joins (a program

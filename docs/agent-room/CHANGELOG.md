@@ -15988,3 +15988,20 @@ area → part: long tasks 4.7 s vs 6.9 s zooming in (worst frame 1.4 s vs
 threshold, 6.0 s vs 13.4 s zooming out; same picture drawn. Viable; next
 per the plan: geometry (part card in its grid's proportion, Inputs as a
 frame of kinds), then the open set as the default after the owner tries it.
+
+## 2026-10-14 — a part opens where its tiles read; a named declaration is never shown in an empty card
+
+- Owner clicked NewRateEnvelopeQueue in the column on a ~775 px canvas and
+  got Queue construction as a canvas-filling empty card holding the name
+  alone: a part entered at a fixed 860 screen pixels, and `memberView` kept a
+  part "too dense" for the canvas closed. Now a part is entered at
+  `reading.enter × divisor × card width / box width` (its tile names at
+  reading size), and a part wider than the canvas at that zoom is entered as
+  a window centred on the tile. The tile was looked up by index alone, so it
+  could centre on another part's member; it is looked up by part and index.
+- A part card's tile grid stops at as many columns as it has tiles (chi's two
+  tiles had been shrunk into a corner for a third column).
+- Checks: `npm test` 179/179; `make ui-visual-test` 20 passed, the
+  pre-existing layout-worker failure only; rate-envelope-queue at 1000×650
+  and 1440×900 in headless Chromium: the click enters Queue construction
+  with NewRateEnvelopeQueue in sight.

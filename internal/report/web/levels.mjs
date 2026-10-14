@@ -585,16 +585,20 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const enter=Math.min(readZoom.get(id),fills);
     enterZoom.set(id,enter);exitZoom.set(id,enter*reading.exit/reading.enter);
   }
-  for(const node of nodes.values())if(node.kind==='part'&&boxes.has(node.id)){
-    const box=boxes.get(node.id);
-    enterZoom.set(node.id,reading.deep/box.width);exitZoom.set(node.id,reading.deepExit/box.width);
-  }
   // A part entered draws its declarations as tiles in its card
   // (symbols.mjs tileGrid), laid out once here in the card's own units.
   const grids=new Map();
   for(const node of nodes.values())if(node.kind==='part'&&node.item?.symbols?.length){
     const box={width:units.part.width,height:partCardHeight(node,measure)};
     grids.set(node.id,{box,grid:tileGrid(node.item.symbols,node.item.symbolCalls||[],box,measure)});
+  }
+  // A part is entered where its tiles' names read, whatever the canvas
+  // (owner, 2026-10-14: at a fixed 860 screen pixels, rate-envelope-queue's
+  // Queue construction had filled a 775-pixel canvas as an empty card).
+  for(const node of nodes.values())if(node.kind==='part'&&boxes.has(node.id)){
+    const box=boxes.get(node.id),drawn=grids.get(node.id);
+    const enter=drawn?reading.enter*drawn.grid.divisor*drawn.box.width/box.width:reading.deep/box.width;
+    enterZoom.set(node.id,enter);exitZoom.set(node.id,enter*reading.exit/reading.enter);
   }
   // 6. The world's unit (owner, 2026-10-02: etcd's storage parts stood 1.2
   // world pixels tall, the browser sizes a box in steps of 1/64 of a

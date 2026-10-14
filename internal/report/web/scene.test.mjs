@@ -337,27 +337,21 @@ for(const [name,page] of pages){
     assert.deepEqual(found.slice(0,12),[],`${found.length} problems`);
   });
   // A declaration the reading names out of sight (owner, 2026-09-29): its
-  // part across the canvas at the zoom its tiles read at, the tile in
-  // sight, never deeper than the part's title fits; a part too dense for
-  // that closed in its level, its card in sight.
-  test(`${name}: a declaration named is shown across its part, or in its part's card when the part is too dense`,async()=>{
+  // part entered at the zoom its tiles read at, the tile in sight; across
+  // the canvas when the part fits there, else a window centred on the tile
+  // (owner, 2026-10-14).
+  test(`${name}: a declaration named is shown in its part entered, its tile in sight`,async()=>{
     const {model,geometry}=await prepare(name,page),pad=28;
     const parts=[...model.nodes.values()].filter(node=>node.kind==='part'&&geometry.grids.has(node.id)).slice(0,40);
     for(const part of parts){
       const index=Math.floor(part.item.symbols.length/2),view=memberView(model,geometry,part.id,index,canvas),r=geometry.boxes.get(part.id),z=view.camera.zoom;
       const screen=q=>({l:q.x*z+view.camera.x,t:q.y*z+view.camera.y,r:(q.x+q.width)*z+view.camera.x,b:(q.y+q.height)*z+view.camera.y});
-      const drawn=geometry.grids.get(part.id),need=Math.max(11/13*drawn.grid.divisor*drawn.box.width/r.width,(geometry.enterZoom.get(part.id)||0)*1.02);
-      if(view.dense){
-        assert.deepEqual(view.level,chainOf(model,part.id).slice(0,-1),`${part.id}: closed in its level`);
-        assert.ok((canvas.width-2*pad)/r.width<need,`${part.id}: closed though its tiles read across the canvas`);
-        const s=screen(r);assert.ok(s.l>=-.5&&s.t>=-.5&&s.r<=canvas.width+.5&&s.b<=canvas.height+.5,`${part.id}: its card in sight`);
-        continue;
-      }
+      const need=(geometry.enterZoom.get(part.id)||0)*1.02;
       assert.deepEqual(view.level,chainOf(model,part.id),`${part.id}: entered`);
       assert.ok(z>=need-1e-9,`${part.id}: its tiles read`);
-      const s=screen(r);assert.ok(s.l>=pad-.5&&s.r<=canvas.width-pad+.5,`${part.id}: across the canvas, its title whole`);
-      const tile=sceneAt(model,geometry,view.level,{}).members.find(member=>member.index===index);
-      if(tile){const t=screen(tile.rect);assert.ok(t.t>=-.5&&t.b<=canvas.height+.5,`${part.id}: the declaration in sight`);}
+      if((canvas.width-2*pad)/r.width>=need){const s=screen(r);assert.ok(s.l>=pad-.5&&s.r<=canvas.width-pad+.5,`${part.id}: across the canvas, its title whole`);}
+      const tile=sceneAt(model,geometry,view.level,{}).members.find(member=>member.part===part.id&&member.index===index);
+      if(tile){const t=screen(tile.rect);assert.ok(t.t>=-.5&&t.b<=canvas.height+.5&&t.l<=canvas.width&&t.r>=0,`${part.id}: the declaration in sight`);}
     }
   });
   test(`${name}: a pan changes no level, a zoom crosses with hysteresis`,async()=>{
