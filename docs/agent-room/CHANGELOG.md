@@ -16077,3 +16077,24 @@ frame of kinds), then the open set as the default after the owner tries it.
   pointer reaching the mark across its Inputs card kept the card pointed and
   lit no mark; a direct jump onto the mark had passed the first check.
   `same` compares group, part and index too (store test added).
+
+## 2026-10-14 — Inputs open on the map; the arrow's dot at the near end; names never both faded
+
+- An Inputs frame no larger than a program's card stands open on the whole
+  map at the systems' text (`levels.mjs` openInputs), its kinds and inputs
+  drawn and read by coming closer, no magnifier; Airflow's keeps its closed
+  card. A magnifier never takes the camera back: closer than its level's
+  framing, it enters where the camera is.
+- An arrow's dot stands at the end the pointer is near; a far end out of
+  sight brings the dot where the arrow leaves the canvas; the card stays
+  whole in the canvas's width.
+- A box's title and its big name change places at 10.5 px at once: fading
+  over the same half pixel, both had stood nearly unseen (owner's "cards
+  with no names" after zooming back and forth). A sweep of 24 zoom steps
+  over rate-envelope-queue's program kept every card's name at opacity 1.
+- The arrow casing stops 6 screen px short of its ends (it had cut a white
+  notch, then drawn a dot, on the Inputs frame's border); the hand cursor
+  stands over everything a click reads, the drag cursor over empty canvas.
+- Checks: `npm test` 180/180, `make ui-visual-test` 20 passed + the
+  pre-existing failure; screenshots of rate-envelope-queue, service-pkg and
+  airflow homes.

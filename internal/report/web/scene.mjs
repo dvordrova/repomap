@@ -61,11 +61,12 @@ export function sceneAt(model,geometry,level=[],selection={}){
           {contents:programContents(model,node),inventoryHeight:geometry.programInventoryHeights.get(id)});
         else if(node.kind==='inputs'){
           // Closed: its kinds' marks in a row under its title, each read alone.
-          if(!open.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
+          if(!open.has(id)&&!geometry.openInputs?.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
             rect:{x:rect.x+(16+i*22)*unit,y:rect.y+40*unit,width:18*unit,height:18*unit}}))});continue;}
-          // Open, its frame is its box: the map's arrows end on it.
-          const t=geometry.text.get(id);
-          box(id,'frame',rect,t,{title:node.name});
+          // Open, its frame is its box: the map's arrows end on it. One
+          // standing open on the whole map is no level to enter.
+          const t=geometry.text.get(id),always=geometry.openInputs?.has(id);
+          box(id,'frame',rect,t,{title:node.name,...(always?{enter:false,titleText:geometry.programText||unit}:{})});
           for(const group of node.children){
             box(group,'kindgroup',rectOf(group),t,{inputKind:model.nodes.get(group).inputKind});
             for(const input of model.nodes.get(group).children)box(input,'tile',rectOf(input),t,{inputKind:model.nodes.get(input).inputKind});

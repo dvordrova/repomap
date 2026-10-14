@@ -96,7 +96,10 @@
    title, a role and a description, from nine and a half (owner,
    2026-10-02); the pointer or the keyboard's focus names a box
    meanwhile (scene-canvas.jsx). */
-.scene-root .react-flow__node [data-box-title]{--word:17;--gone:10.5}
+/* A box's title and its big name (scene-big-name) change places at one
+   size, at once: fading over the same half pixel, both had stood nearly
+   unseen around it, a level of cards with no names (owner, 2026-10-14). */
+.scene-root .react-flow__node [data-box-title]{--word:17;--gone:10.5;--fade:50}
 .scene-root .react-flow__node .flow-chip-name{--word:12;--gone:9}
 /* A chip's or a bucket's name stands whole in its lines, its box as tall
    as they are (levels.mjs chipBox, bucketBox): never ellipsized. */
@@ -115,7 +118,7 @@
    2026-10-14: the canvas is a window on the map, its words no smaller or
    larger than their boxes; this replaces 2026-10-02's cap at 1.6 times). */
 .scene-root .react-flow__node :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role,.scene-tile>span,.scene-group-title>strong){
-  font-size:calc(var(--word) * 1px);opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
+  font-size:calc(var(--word) * 1px);opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * var(--fade,2)),1)}
 .scene-root .react-flow__node [data-box-title]{line-height:1.25em}
 .scene-root .react-flow__node .flow-chip-name{line-height:calc(17em / 12)}
 .scene-root .react-flow__node :is(.flow-description,.flow-component-role){line-height:calc(18em / 13)}
@@ -183,12 +186,12 @@
 .scene-program-inside::-webkit-scrollbar-track{background:#eef2f7}
 
 /* A part's or an area's name across its card while its title is too small
-   to read: it is gone before the title comes in (the title from 10.5 to 11
-   pixels, the name from 10.5 down to 10), so the two never stand together
-   (owner, 2026-10-14: they had stood doubled half-faded). */
-.scene-root .react-flow__node .scene-program-inside{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 2),1)}
+   to read: the two change places at 10.5 pixels at once, never standing
+   together (owner, 2026-10-14: they had stood doubled half-faded) nor both
+   nearly unseen (they had faded over the same half pixel). */
+.scene-root .react-flow__node .scene-program-inside{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 50),1)}
 .scene-root .react-flow__node .scene-big-name{position:absolute;inset:0;z-index:2;padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))));display:flex;align-items:center;justify-content:center;text-align:center;white-space:pre;font-family:system-ui;font-weight:700;line-height:1.15;color:#243044;pointer-events:none;
-  opacity:clamp(0,calc((10.5 - var(--flow-zoom,1) * var(--scene-text,1) * 17) * 2),1)}
+  opacity:clamp(0,calc((10.5 - var(--flow-zoom,1) * var(--scene-text,1) * 17) * 50),1)}
 /* The map moving is one composited layer (scene-canvas.jsx scene-moving). */
 .scene-root.scene-moving .react-flow__viewport{will-change:transform}
 /* An input's name stands in its measured lines (scene-canvas.jsx TileNode). */

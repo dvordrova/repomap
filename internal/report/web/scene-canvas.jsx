@@ -93,7 +93,10 @@ function FrameNode({data}){
     :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   const titleText=node.titleText||node.text,band=units.band(1)*titleText;
-  return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}>
+  // An Inputs frame standing open on the whole map is its collection's
+  // summary, as its closed card had been.
+  return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}
+    data-component-overview={kind==='inputs'&&node.enter===false?node.id:undefined}>
     <div className="scene-frame-title-place">
     <Scaled node={{...node,text:titleText,rect:{...node.rect,height:band}}} className="scene-frame-title" style={{'--scene-text':titleText}}>
       <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled></div>
@@ -163,6 +166,30 @@ function DeepNode({data}){
 const nodeTypes={card:CardNode,area:ProgramNode,deep:DeepNode,program:ProgramNode,frame:FrameNode,inputs:InputsNode,kindgroup:GroupNode,tile:TileNode,chip:ChipNode,bucket:BucketNode,note:NoteNode};
 
 const arrowHead=7;
+// The point nearest a path's end that stands in `room`: the end itself when
+// it does, else where the path last leaves `room`, or the end when the path
+// never enters it.
+function towardEnd(points,room){
+  const inside=p=>p.x>=room.left&&p.x<=room.right&&p.y>=room.top&&p.y<=room.bottom;
+  if(inside(points.at(-1)))return points.at(-1);
+  for(let i=points.length-1;i>0;i--){
+    const a=points[i-1],b=points[i];
+    // Liang-Barsky: the part of a→b inside the room, as t in [lo, hi].
+    let lo=0,hi=1;const dx=b.x-a.x,dy=b.y-a.y;
+    const clip=(p,q)=>{if(p===0)return q>=0;const t=q/p;if(p<0){if(t>hi)return false;if(t>lo)lo=t;}else{if(t<lo)return false;if(t<hi)hi=t;}return true;};
+    if(clip(-dx,a.x-room.left)&&clip(dx,room.right-a.x)&&clip(-dy,a.y-room.top)&&clip(dy,room.bottom-a.y)&&lo<=hi)return {x:a.x+hi*dx,y:a.y+hi*dy};
+  }
+  return points.at(-1);
+}
+// An arrow's casing stops six screen pixels short of each end: drawn to its
+// ends, it had cut a white notch into the border an arrow leaves (owner,
+// 2026-10-14: Inputs' arrow "рвет границу").
+function casingDashes(points){
+  let length=0;for(let i=1;i<points.length;i++)length+=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);
+  // One dash, shifted in: a zero-length first dash is drawn as a dot by a
+  // round cap.
+  return {strokeLinecap:'butt',strokeDasharray:`calc(${length}px - 12px / var(--flow-zoom, 1)) ${length}px`,strokeDashoffset:'calc(-6px / var(--flow-zoom, 1))'};
+}
 function SceneEdge({id,data}){
   const d=data.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
   const head=data.on?'url(#scene-arrow-active)':'url(#scene-arrow)';
@@ -170,7 +197,7 @@ function SceneEdge({id,data}){
   return <g className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''} ${data.faint?'flow-edge-faint':''}`} data-edge-id={id}
     data-edge-ends={`${data.from} ${data.to}`} data-edge-head={heads} data-edge-dark={data.on?'':undefined}>
     <path className="flow-edge-hit" d={d} data-edge-hit={id}/>
-    <path className="flow-edge-casing" d={d}/>
+    <path className="flow-edge-casing" d={d} style={casingDashes(data.points)}/>
     <path d={d} data-edge-line="" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined}
       markerEnd={data.heads.end?head:undefined} markerStart={data.heads.start?head:undefined}/>
   </g>;
@@ -424,7 +451,17 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       if(store.getState().pinned.length||look.key){look.end();store.dispatch({type:'look',key:''});store.dispatch({type:'unpin'});return;}
       return;
     }
-    if(target.type==='zoom'){const level=chainOf(model,target.id);enter(level);callbacks.follow?.(target.id,true);return;}
+    if(target.type==='zoom'){
+      // A magnifier never takes the camera back: closer than the level's
+      // own framing, it enters the level where the camera is, centred on
+      // what it opens (owner, 2026-10-14: "кнопка зума отдаляет кубик").
+      const level=chainOf(model,target.id),v=camera.get();
+      store.dispatch({type:'enter',level});
+      const framed=entryCamera(level);
+      if(framed.zoom>=v.zoom)moveCamera(framed,true);
+      else{const {width,height}=size(),c={x:(width/2-framed.x)/framed.zoom,y:(height/2-framed.y)/framed.zoom};moveCamera({zoom:v.zoom,x:width/2-c.x*v.zoom,y:height/2-c.y*v.zoom},true);}
+      callbacks.follow?.(target.id,true);return;
+    }
     if(target.type==='member'){chooseMember(target.part,target.index,event);return;}
     if(target.type==='marker'){
       const marker=target.item;
@@ -454,11 +491,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(node.kind==='bucket'){const bucket=model.nodes.get(node.id);if(bucket&&callbacks.readGroup){callbacks.readGroup(bucket.parent,bucket.part,bucket.children);return;}read(node.id.split('~').pop(),event);return;}
     read(node.id,event);
   }
-  // Whether a point on an arrow tells of its start's head: the head across
-  // the arrow from the half the pointer is on, or the only head (owner,
-  // 2026-10-14: touching an arrow's first half shows the dot and the card
-  // at its other end).
-  const nearStart=(edge,at)=>edge.heads.start&&(!edge.heads.end||Math.hypot(edge.points[0].x-at.x,edge.points[0].y-at.y)>Math.hypot(edge.points.at(-1).x-at.x,edge.points.at(-1).y-at.y));
+  // Whether a point on an arrow is nearer its start than its end, and
+  // whether it tells of its start's head: the head on the half the pointer
+  // is on, or the only head.
+  const closerToStart=(edge,at)=>Math.hypot(edge.points[0].x-at.x,edge.points[0].y-at.y)<Math.hypot(edge.points.at(-1).x-at.x,edge.points.at(-1).y-at.y);
+  const nearStart=(edge,at)=>edge.heads.start&&(!edge.heads.end||closerToStart(edge,at));
 
   // The arrows drawn now (an arrow drawn for a box pointed at counts while
   // it stands).
@@ -498,7 +535,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const scene=sceneOf(store.getState()),target=hitTest(scene,worldAt(event),camera.get().zoom,shownEdge);
     host.classList.toggle('scene-pointing-arrow',target?.type==='edge');
     host.classList.toggle('scene-pointing-zoom',target?.type==='zoom');
-    host.classList.toggle('scene-pointing-mark',target?.type==='marker'||target?.type==='port');
+    // Whatever the pointer is on reads on a click: the hand, not the
+    // drag's cursor, which stays for empty canvas (owner, 2026-10-14).
+    host.classList.toggle('scene-pointing-mark',!!target&&target.type!=='edge'&&target.type!=='zoom');
     // Keyboard focus owns its marker card until blur, selection or Escape.
     const focused=document.activeElement,focusCard=focused.closest?.('.scene-mark-tip'),focusHandle=focused.closest?.('.scene-mark');
     if(host.contains(focused)&&look.key&&(focusCard?.dataset.card===look.key||focusHandle&&`mark:${focusHandle.dataset.marker||focusHandle.dataset.port}`===look.key))return;
@@ -507,7 +546,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const reading=!!look.key||store.getState().pinned.length>0;
     if(!reading||target?.type==='edge')pointSoon(target?.type==='edge'?{...target,at:undefined}:target);
     if(target?.type==='edge'){
-      const key=`edge:${target.id}:${nearStart(target.edge,target.at)?'back':'on'}`;
+      // The dot stands at the end the pointer is near, left or right (owner,
+      // 2026-10-14); the card tells of the head on that half.
+      const key=`edge:${target.id}:${nearStart(target.edge,target.at)?'back':'on'}:${closerToStart(target.edge,target.at)?'start':'end'}`;
       handleRect={left:event.clientX-12,top:event.clientY-12,right:event.clientX+12,bottom:event.clientY+12,width:24,height:24};
       if(look.aim(key,performance.now()))pump();
     }else if(target?.type==='marker'||target?.type==='port'){
@@ -752,7 +793,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
         onClick={event=>{event.stopPropagation();look.end();store.dispatch({type:'look',key:''});read(row.id,event);}}>{row.name}</button>)}</div>;
   }
   function ArrowCard({edgeKey,scene}){
-    const [,id,way]=/^edge:(.*):(on|back)$/.exec(edgeKey)||[];
+    const [,id,way,near]=/^edge:(.*?):(on|back)(?::(start|end))?$/.exec(edgeKey)||[];
     const edge=scene.edges.find(edge=>edge.id===id);
     const ref=useRef(null);
     const state=useSyncExternalStore(store.subscribe,store.getState);
@@ -771,10 +812,18 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // The end the card tells of is marked with a dot, and the card stands
     // right of it, its top at the dot's: one place for every tip (owner,
     // 2026-10-14: an arrow's card had opened wherever the pointer was).
-    const end=backward?edge.points[0]:edge.points.at(-1),dot={x:end.x*v.zoom+v.x,y:end.y*v.zoom+v.y};
-    const at={x:dot.x+12,y:dot.y-12};
+    // A far end out of sight brings the dot to where the arrow leaves the
+    // canvas toward it (owner, 2026-10-14: an arrow pointed at near Inputs,
+    // its head past the canvas's edge, had shown nothing).
+    const toScreen=p=>({x:p.x*v.zoom+v.x,y:p.y*v.zoom+v.y});
+    const atStart=near?near==='start':backward;
+    const path=(atStart?[...edge.points].reverse():edge.points).map(toScreen);
+    const dot=towardEnd(path,{left:8,top:8,right:host.clientWidth-8,bottom:host.clientHeight-8});
+    // Right of the dot, kept whole in the canvas's width: a dot at its
+    // right edge would leave its card wholly out of sight.
+    const at={x:Math.max(8,Math.min(dot.x+12,host.clientWidth-428)),y:dot.y-12};
     const other=edge.heads.start&&edge.heads.end;
-    const swap=event=>{event.stopPropagation();const next=`edge:${id}:${backward?'on':'back'}`;store.dispatch({type:'unpin',key:edgeKey});look.enter(next);store.dispatch({type:'look',key:next});store.dispatch({type:'pin',key:next});};
+    const swap=event=>{event.stopPropagation();const next=`edge:${id}:${backward?'on':'back'}${near?`:${near}`:''}`;store.dispatch({type:'unpin',key:edgeKey});look.enter(next);store.dispatch({type:'look',key:next});store.dispatch({type:'pin',key:next});};
     return <><span className="scene-arrow-end" style={{left:dot.x,top:dot.y}}/><div ref={ref} data-card={edgeKey} className="flow-calls-place flow-floating-card scene-card nopan" style={{left:at.x,top:at.y}}
       onMouseEnter={()=>{look.enter(edgeKey);}} onMouseLeave={event=>{look.leave(edgeKey,performance.now());pump();}}
       onClick={event=>{event.stopPropagation();if(!pinned)store.dispatch({type:'pin',key:edgeKey});}}>

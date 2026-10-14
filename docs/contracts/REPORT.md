@@ -1361,7 +1361,9 @@ post-layout edits are deleted.
   inner drawing on entry) and loose parts, of both directions the one fitting
   the canvas larger, a link to another program ending on a port of the
   program's border (one port a way per box, naming its programs on hover);
-  the whole map its programs (cards of their name, role and complete named direct-child inventory), Inputs frames (their kinds' marks) and
+  the whole map its programs (cards of their name, role and complete named direct-child inventory), Inputs frames (open, their kinds' groups and inputs, when no larger than a
+  program's card, as an Outside frame is, with no magnifier; else closed, their kinds' marks; owner, 2026-10-14: a closed Inputs card
+  filling the canvas had shown nothing it holds, and its magnifier had taken the camera back to a smaller open frame) and
   Outside frames, of the arrangements tried (across or down, the Outside
   packed to four proportions) the one fitting the canvas best among those
   whose lanes stand at least four fifths of ELK's spacing apart, the one

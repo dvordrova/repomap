@@ -421,7 +421,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       // its kinds' groups are packed toward that card's proportion.
       const groups=node.children.map(id=>({id,width:local.get(id).width,height:local.get(id).height}));
       const closed=inputsCard(node);
-      const laid=pack(groups,{top:units.band(1),aspect:closed.width/closed.height,gap:24});
+      const laid=pack(groups,{top:units.band(1),aspect:1.6,gap:24});
       local.set(node.id,{width:laid.width,height:laid.height,closed,children:new Map(groups.map(group=>[group.id,{...laid.at.get(group.id),width:group.width,height:group.height}])),routes:new Map(),ports:[],text:1,kind:'inputs'});
     }
   }
@@ -448,7 +448,14 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // card, its kinds icons, and a loose box keep their own.
   let programText=1,systemText=1;
   const programInventoryHeights=new Map();
-  const systems=model.roots.some(id=>nodes.get(id)?.kind==='outside'&&nodes.get(id).children.length);
+  // An Inputs frame no larger than a program's card stands open on the whole
+  // map, drawn as an Outside frame is: its kinds and inputs where its card
+  // stands, read by coming closer, no magnifier (owner, 2026-10-14: a closed
+  // Inputs card filling the canvas had shown nothing of what it holds, and
+  // its magnifier had taken the camera back to a smaller open frame). A
+  // larger one (Airflow's routes) keeps its closed card.
+  const openInputs=new Set();
+  const systems=model.roots.some(id=>['outside','inputs'].includes(nodes.get(id)?.kind)&&nodes.get(id).children.length);
   const rootBox=id=>{
     const node=nodes.get(id),inside=local.get(id);
     // A program's card holds its summary; entered, its drawing stands
@@ -460,7 +467,12 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       programInventoryHeights.set(id,0);
       return {id,width:width*programText,height:height*programText};
     }
-    if(node.kind==='inputs')return {id,...inside.closed};
+    if(node.kind==='inputs'){
+      const most=units.programCard.width*programText;
+      if(inside.width*systemText<=most*1.5&&inside.height*systemText<=most){openInputs.add(id);return {id,width:inside.width*systemText,height:inside.height*systemText};}
+      openInputs.delete(id);
+      return {id,...inside.closed};
+    }
     if(node.kind==='outside')return {id,width:inside.width*systemText,height:inside.height*systemText};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
     if(node.kind==='system')return chipBox(node,measure);
@@ -635,7 +647,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // sight (its title wraps across it); an Outside frame only at its title's
   // corner.
   const closed=model.roots.filter(id=>['program','inputs','outside'].includes(nodes.get(id)?.kind)&&boxes.has(id)).map(id=>({...boxes.get(id),whole:nodes.get(id).kind!=='outside'}));
-  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,readZoom,bounds,grids,unit,programInventoryHeights,areaInventoryHeights,programText:programText*unit,
+  return {canvas,local,boxes,scales,routes,ports,text,enterZoom,exitZoom,readZoom,bounds,grids,unit,programInventoryHeights,areaInventoryHeights,programText:programText*unit,openInputs,
     home:homeView(bounds,canvas,unit,{program:17*programText*unit,system:systems?12*systemText*unit:Infinity},names,programs.length,16,closed),whole:homeCamera(bounds,canvas,16,1/unit)};
 }
 
