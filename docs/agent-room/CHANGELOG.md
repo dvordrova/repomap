@@ -15681,3 +15681,12 @@ gesture `--flow-zoom` steps by a seventh, settling on the exact zoom 120 ms
 after the camera rests. Saved Airflow render under 4× CPU throttling in
 headless Chromium: long tasks while pointing 7.4 s → 0.07 s, while zooming
 4.9 s → 0.13 s. `npm test` 178/178; visual 23/24 (same pre-existing spec).
+
+Second owner trace (same day): the GPU was busy 11.4 s of 16.3 s, every pan
+and zoom frame rasterizing every arrow again, the viewport's transform not a
+layer of its own. While the camera moves the viewport is now one composited
+layer (`will-change: transform`, the class `scene-moving` until 150 ms after
+the last move), drawn sharp again at rest. Saved Airflow render checked in
+headless Chromium mid-pan and at rest; `npm test` 178/178; visual 23/24 (same
+pre-existing spec). The trace's IntersectionObserver time (~11 ms a frame) is
+a browser extension's, not the report's.

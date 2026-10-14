@@ -213,6 +213,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   const camera=createCamera(geometry.home);
   const clearPointerCursor=()=>host.classList.remove('scene-pointing-arrow','scene-pointing-zoom','scene-pointing-mark');
   camera.subscribe(clearPointerCursor);
+  // While the camera moves the map is one layer the compositor moves and
+  // scales; at rest it is drawn again, sharp (owner's trace, 2026-10-14:
+  // every frame of a pan or a zoom had redrawn every arrow on the GPU).
+  let resting=0;
+  camera.subscribe(()=>{
+    host.classList.add('scene-moving');
+    clearTimeout(resting);
+    resting=setTimeout(()=>host.classList.remove('scene-moving'),150);
+  });
   let instance=null,initializing=true,overviewFit='rest';
   const look=createLook();
   let lookTimer,handleRect=null;
