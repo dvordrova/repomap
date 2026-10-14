@@ -15845,3 +15845,13 @@ service-pkg's map had an outside system "Go runtime" (kind db): its 42
 group or condition, an atomic, an in-process channel) with an example of a
 mutex locked inside a client's code. Ordinary service-pkg run, text model,
 warm: no "Go runtime"; destinations ClickHouse, PostgreSQL, Redis, Http.
+
+An entered program's links with other programs were ports stacked on its
+frame with dashed arrows fanning to its boxes (owner: no arrows from the
+frame of the box one is in). Each link is now a marker beside the box it
+reaches, left for a link in, right for one out, in the stack with the box's
+input and outside markers, its tip and click as a port's; only a link to no
+box keeps a port on the frame. A port beside a box is no kind of input or
+outside system and stands past the three a side. Saved service-pkg render:
+the library entered shows the markers beside Leader watchdog and the rest.
+`npm test` 178/178; visual 23/24 (same pre-existing spec).

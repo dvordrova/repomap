@@ -353,7 +353,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       // converging on one port had run on one line into it, and a port per
       // program and box had stood forty to a border (etcd's server).
       const way=fromInside?'out':'in',child=inner(fromInside?edge.from:edge.to),port=`port:${program.id}:${way}:${child||'-'}`;
-      if(!portMap.has(port))portMap.set(port,{id:port,side:way==='out'?'EAST':'WEST',way,programs:[],edges:[]});
+      if(!portMap.has(port))portMap.set(port,{id:port,side:way==='out'?'EAST':'WEST',way,child,programs:[],edges:[]});
       const entry=portMap.get(port);entry.edges.push(edge.id);if(!entry.programs.includes(other))entry.programs.push(other);
       if(!child)continue;
       const key=`${child}|${port}`;

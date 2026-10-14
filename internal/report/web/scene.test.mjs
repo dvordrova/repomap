@@ -174,7 +174,9 @@ function checkScene(name,model,geometry,scene,problems){
   }
   // Markers: at most three a side, one size at any zoom, beside their box.
   const perSide=new Map();
-  for(const marker of scene.markers){const key=`${marker.box}:${marker.side}`;perSide.set(key,(perSide.get(key)||0)+1);}
+  // A port beside a box is a link with another program, not a kind of
+  // input or outside system: it stands past the three.
+  for(const marker of scene.markers){if(marker.port)continue;const key=`${marker.box}:${marker.side}`;perSide.set(key,(perSide.get(key)||0)+1);}
   for(const [key,count] of perSide)if(count>markersPerSide)problems.push(['markers',`${where}: ${count} markers on ${key}`]);
   const runs=scene.edges.filter(edge=>edge.rest!==false).flatMap(edge=>segments(edge.points).map(s=>({...s,edge:edge.id})));
   for(let i=0;i<50;i++){

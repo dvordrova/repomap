@@ -52,7 +52,7 @@ function placeAt(scene,zoom){
     stacks.set(key,y+size+gap);
     const shown=readable(marker)&&y+size/2+inset<=r.y+r.height;
     const x=marker.side==='in'?r.x-size/2:r.x+r.width+size/2;
-    items.push({...marker,type:'marker',x,y,size,shown});
+    items.push({...marker,type:marker.port?'port':'marker',x,y,size,shown});
   }
   for(const port of scene.ports)items.push({...port,type:'port',x:port.point.x,y:port.point.y,size,shown:true});
   // A box that can be entered has its magnifier in its top right corner,

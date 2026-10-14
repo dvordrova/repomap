@@ -137,12 +137,19 @@ export function sceneAt(model,geometry,level=[],selection={}){
     }
     const lookedHere=new Set([...looked,...parent.children.filter(id=>open.has(id))]);
     if(container!==program)for(const child of parent.children)lookedHere.add(child);
-    for(const route of geometry.routes.get(container)||[])edges.push(edgeOf(route,model,lookedHere));
+    // A link with another program is a marker beside the box it reaches,
+    // as an input's or an outside system's (owner, 2026-10-14): no arrow
+    // runs from the frame of the program entered.
+    for(const route of geometry.routes.get(container)||[])if(!route.port)edges.push(edgeOf(route,model,lookedHere));
   }
   drawChildren(program);
 
-  for(const port of geometry.ports.get(program)||[])
-    ports.push({id:port.id,programs:port.programs,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
+  for(const port of geometry.ports.get(program)||[]){
+    const reached=port.child&&nodes.find(node=>node.id===port.child);
+    if(reached)markers.push({id:port.id,box:port.child,side:port.way==='out'?'out':'in',rect:reached.rect,text:reached.text,
+      port:true,kind:'program',programs:port.programs,way:port.way,edges:port.edges});
+    else ports.push({id:port.id,programs:port.programs,way:port.way,point:port.point,side:port.way==='out'?'east':'west',edges:port.edges});
+  }
   return finish();
 
   // A part entered: its declarations' tiles, each a member the pointer
@@ -299,7 +306,7 @@ export function emphasisOf(scene,model,pointer,view={},member=null){
   const lit=new Set();
   if(pointer?.type==='marker'){
     const at=pointer.item,keys=new Set(at.side==='out'?at.systems:at.members);
-    for(const marker of scene.markers)if(marker.side===at.side&&(marker.side==='out'?marker.systems:marker.members).some(id=>keys.has(id)))lit.add(marker.id);
+    for(const marker of scene.markers)if(!marker.port&&marker.side===at.side&&(marker.side==='out'?marker.systems:marker.members).some(id=>keys.has(id)))lit.add(marker.id);
   }
   return {state,nodeClass,edgeState,order,lit};
 }

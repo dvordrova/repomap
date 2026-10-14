@@ -261,6 +261,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the edge is cut there (owner, 2026-10-14). Every level draws the whole
   map around what is entered, closed and in place; entering a program opens
   it where its card stood.
+  An entered program's link with another program is a marker beside the box
+  it reaches (left in, right out), as an input's or an outside system's; no
+  arrow runs from the frame of the program entered.
 - Outside frames and their chips are amber, parts and area frames and cards neutral (an
   area's level laid out down or across, whichever is nearer its card's proportion); core parts are
   rose, entry parts green, inputs blue and external communications amber,
