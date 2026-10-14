@@ -285,17 +285,24 @@ export function inputsCard(node){
 export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const canvas={width:Math.max(320,width),height:Math.max(240,height)};
   const {nodes}=model;
-  const local=new Map(),areaInventoryHeights=new Map();
+  const local=new Map(),areaInventoryHeights=new Map(),headers=new Map();
   // A closed area's card has its drawing's proportion once its level is
   // laid out (owner, 2026-10-14: a card the shape of its words had held its
   // drawing in empty margins), its title and role in it; what it holds is
   // its drawing, entered. Before its level is laid out, and for one never
   // drawn open, the card is its words.
+  // A program's or an area's card is its header (title, role, summary) over
+  // its drawing's body in the drawing's proportion; opened, the drawing
+  // fills the body and the header keeps its place and size (owner,
+  // 2026-10-14: opened, service-pkg's program and areas had drawn their
+  // names at the inner level's size, 6.6 px, boxes with no name).
+  // `headers` is each such container's header, as a share of its card.
   const closedArea=node=>{
     const named={...node,contents:programContents(model,node)},width=units.part.width;
     const inside=local.get(node.id);
-    if(!inside){areaInventoryHeights.set(node.id,0);return {id:node.id,width,height:programCardHeight(named,width,measure,0)};}
-    const header=programCardHeight(named,width,measure,0),height=Math.max(header,width*inside.height/inside.width);
+    if(!inside){areaInventoryHeights.set(node.id,0);headers.delete(node.id);return {id:node.id,width,height:programCardHeight(named,width,measure,0)};}
+    const header=programCardHeight(named,width,measure,0),height=header+width*inside.height/inside.width;
+    headers.set(node.id,header/height);
     areaInventoryHeights.set(node.id,0);
     return {id:node.id,width,height};
   };
@@ -333,7 +340,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     const parts=area.children.map(id=>nodes.get(id)).filter(Boolean);
     const pairs=pairsOf(model,joinedIn(area.id),childOf(area.id));
     const boxes=parts.map(part=>part.kind==='area'?closedArea(part):partBox(part,measure));
-    const [down,across]=await Promise.all(['DOWN','RIGHT'].map(direction=>layered(area.id,boxes,pairs,{options:{...interior,'elk.direction':direction}})));
+    const [down,across]=await Promise.all(['DOWN','RIGHT'].map(direction=>layered(area.id,boxes,pairs,{band:units.pad,options:{...interior,'elk.direction':direction}})));
     const laid=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?across:down;
     return {...laid,text:1,pairs,kind:'area'};
   };
@@ -396,7 +403,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // program shows the part where its card stood (owner, 2026-10-14:
     // rate-envelope-queue had opened as a frame holding one card of its
     // own name).
-    const one=onlyPart(model,program.id)?{band:0,spacing:0}:{};
+    const one=onlyPart(model,program.id)?{band:0,spacing:0}:{band:units.pad};
     const at=direction=>layered(program.id,boxes,pairs,{...one,ports,portPairs:[...portPairs.values()],options:{...interior,'elk.direction':direction}});
     const [down,across]=await Promise.all([at('DOWN'),at('RIGHT')]);
     const direction=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?'RIGHT':'DOWN';
@@ -476,7 +483,9 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // A program's card has its drawing's proportion, its words in it.
     if(node.kind==='program'){
       const named={...node,contents:programContents(model,node)},width=units.programCard.width;
-      const header=programCardHeight(named,width,measure,0),height=inside?.width>0?Math.max(header,width*inside.height/inside.width):header;
+      const header=programCardHeight(named,width,measure,0),one=onlyPart(model,id);
+      const height=inside?.width>0?(one?Math.max(header,width*inside.height/inside.width):header+width*inside.height/inside.width):header;
+      if(inside?.width>0&&!one)headers.set(id,header/height);else headers.delete(id);
       programInventoryHeights.set(id,0);
       return {id,width:width*programText,height:height*programText};
     }
@@ -558,8 +567,10 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // level holds the level inside it at one scale (`scale`), centred.
   const boxes=new Map(),scales=new Map(),routes=new Map(),ports=new Map();
   const toWorld=(origin,scale)=>point=>({x:origin.x+point.x*scale,y:origin.y+point.y*scale});
-  function place(container,rect){
+  function place(container,whole){
     const inside=local.get(container);if(!inside||!(inside.width>0&&inside.height>0))return;
+    const head=(headers.get(container)||0)*whole.height;
+    const rect={...whole,y:whole.y+head,height:whole.height-head};
     const scale=Math.min(rect.width/inside.width,rect.height/inside.height);
     const origin={x:rect.x+(rect.width-inside.width*scale)/2,y:rect.y+(rect.height-inside.height*scale)/2};
     scales.set(container,{scale,origin,frame:{x:origin.x,y:origin.y,width:inside.width*scale,height:inside.height*scale}});

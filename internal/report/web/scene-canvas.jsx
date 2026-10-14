@@ -101,13 +101,20 @@ function FrameNode({data}){
     :node.lane==='core'?'flow-area-core':node.lane==='triggers'?'flow-area-entry':'';
   const title=kind==='outside'?t('Outside'):kind==='inputs'?t('Inputs'):node.title;
   const titleText=node.titleText||node.text,band=units.band(1)*titleText;
+  // An open program's or area's header is its closed card's: its title, role
+  // and purpose, at its card's size, in its place (levels.mjs headers).
+  const header=(node.program||node.area)&&kind!=='inputs'&&kind!=='outside'?
+    wordsOf({...node,display:'program',text:titleText},data.item):null;
   // An Inputs frame standing open on the whole map is its collection's
   // summary, as its closed card had been.
   return <>{handles}<div className={`flow-area ${tone} ${node.bucket?'scene-bucket-open':''}`} style={{width:node.rect.width,height:node.rect.height}}
     data-component-overview={kind==='inputs'&&node.enter===false?node.id:undefined}>
     <div className="scene-frame-title-place">
-    <Scaled node={{...node,text:titleText,rect:{...node.rect,height:band}}} className="scene-frame-title" style={{'--scene-text':titleText}}>
-      <strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong></Scaled></div>
+    <Scaled node={{...node,text:titleText,rect:{...node.rect,height:header?node.rect.height:band}}} className={`scene-frame-title ${header?'scene-frame-header':''}`} style={{'--scene-text':titleText}}>
+      {header?<div className="scene-words"><strong data-box-title={node.id} data-frame-title={node.id}>{header.title.join('\n')||title}</strong>{' '}
+        {header.role.length>0&&<div className="flow-component-role">{header.role.join('\n')}</div>}{' '}
+        {header.purpose.length>0&&<p className="flow-description flow-description-lines">{header.purpose.join('\n')}</p>}</div>
+      :<strong data-box-title={node.id} data-frame-title={node.id}>{title}</strong>}</Scaled></div>
   </div></>;
 }
 // An Inputs frame closed: its title over its kinds' marks, each named on
@@ -349,7 +356,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // 2026-10-14).
   function entryCamera(level,rect=null){
     const scene=sceneOf(store.getState()),content=contentOf(scene,level);
-    const drawing=!rect&&content&&['program','area'].includes(model.nodes.get(level.at(-1))?.kind)?content:null;
+    // The whole card, header and drawing (levels.mjs: a card is its header
+    // over its drawing's body): the drawing alone had left the name above
+    // the canvas.
+    const drawing=!rect&&content&&['program','area'].includes(model.nodes.get(level.at(-1))?.kind)?geometry.boxes.get(level.at(-1))||content:null;
     return frameCamera(rect||drawing||scene.focus,levelZoom(level),28,readCap(level),rect||drawing?null:content);
   }
   // What a level draws inside its frame: the bounds of its own boxes.
@@ -814,7 +824,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // on the map, and a tip past its edge is cut there (owner, 2026-10-14:
     // tips had changed side, width and height with the room left, and an
     // input's had stood across the canvas from it). A long list stands in
-    // two columns.
+    // two columns and scrolls inside the tip above the canvas's foot: cut
+    // there, its last names could not be reached.
     const shown=names,gap=6;
     const columns=shown.length>12?2:1;
     const top=item.top-item.px/2;
@@ -824,7 +835,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       onMouseLeave={event=>{if(event.currentTarget.contains(document.activeElement))return;look.leave(key,performance.now(),{x:event.clientX,y:event.clientY},ref.current?.getBoundingClientRect());pump();}}
       onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){look.leave(key,performance.now());pump();}}}
       onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()}
-      style={{top,left:item.left+item.px/2+gap}}>
+      style={{top,left:item.left+item.px/2+gap,maxHeight:Math.max(120,Math.min(520,size().height-top-8))}}>
       <b>{head}</b>{shown.map(row=><button type="button" className="flow-card-name" data-marker-member={row.id} key={row.id}
         onClick={event=>{event.stopPropagation();look.end();store.dispatch({type:'look',key:''});read(row.id,event);}}>{row.name}</button>)}</div>;
   }

@@ -125,7 +125,11 @@ export function sceneAt(model,geometry,level=[],selection={}){
   function drawProgram(program,open){
     const partText=geometry.scales.get(program)?.scale||1;
     const own=geometry.text.get(program)||partText;
-    if(!onlyPart(model,program))box(program,'frame',frameOf(program),own,{program:true});
+    // An open box's name stays at the size its closed card drew it, the
+    // text of the level holding it (owner, 2026-10-14: service-pkg's
+    // program and areas had dropped from 73.8 px to 6.6 px names when
+    // opened, boxes with no name).
+    if(!onlyPart(model,program))box(program,'frame',frameOf(program),own,{program:true,titleText:geometry.programText||unit});
     function drawChildren(container){
       const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;
       // A part entered opens its siblings with it: at one scale their tiles
@@ -137,7 +141,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
       for(const child of parent.children){
         const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
         if(node.kind==='area'&&open.has(child)){
-          box(child,'frame',frameOf(child),geometry.text.get(child)||localText,{area:true,lane:node.item?.lane||''});
+          box(child,'frame',frameOf(child),geometry.text.get(child)||localText,{area:true,lane:node.item?.lane||'',titleText:localText});
           drawChildren(child);
         }else if(node.kind==='area'){
           box(child,'area',rect,localText,{lane:node.item?.lane||'',contents:programContents(model,node),inventoryHeight:geometry.areaInventoryHeights.get(child)});

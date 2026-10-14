@@ -16175,3 +16175,19 @@ frame of kinds), then the open set as the default after the owner tries it.
   ui-visual-test` 21/21; headless: hovering NewSimpleDrainQueue() in the
   reading tints its tile and darkens its links, hovering NewSimpleStopQueue's
   tile tints its two lines in the reading.
+
+## 2026-10-15 — opening keeps the name: header over body
+
+- A program's and an area's card is header + body (`levels.mjs headers`):
+  height = header + width·h/w (was max), the inner level lays out with no
+  title band of its own, `place` puts the drawing in the body under the
+  header; the open frame draws the closed card's header (title, role,
+  purpose) at the card's text and padding; entering frames the whole card.
+  service-pkg's program title stood 73.8 px closed and 6.6 px (opacity 0)
+  open, and an area ("HTTP and gRPC servers") was a nameless box; now both
+  keep their names. Plan mechanism 4 (G1). The "fills" rule is untouched.
+- A marker's tip scrolls inside the canvas's height (its last names had
+  been cut off unreachable once the header moved the marker down); a visual
+  test's 12-px drag check allows a pixel of rounding.
+- Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
+  ui-visual-test` 21/21; screenshots of service-pkg entered, airflow home.

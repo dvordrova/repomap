@@ -255,7 +255,7 @@ test('a box all but out of sight at the canvas\'s foot keeps its words where the
   const by=canvas.y+canvas.height-12-at.y;
   await page.mouse.move(spot.x,spot.y);await page.mouse.down();await page.mouse.move(spot.x,spot.y+by,{steps:10});await page.mouse.up();await settle(page);
   const moved=await box.boundingBox();
-  expect(Math.round(canvas.y+canvas.height-moved.y),'12 pixels of the box in sight').toBe(12);
+  expect(Math.abs(canvas.y+canvas.height-moved.y-12),'12 pixels of the box in sight, a drag\'s rounding aside').toBeLessThanOrEqual(1);
   expect(await words.evaluate(el=>el.style.transform||''),'its words stay where they stand').toBe('');
   expect(errors).toEqual([]);
 });

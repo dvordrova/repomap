@@ -12,6 +12,11 @@
 .scene-program-card .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line;margin:0}
 .scene-frame-title{padding:10px 16px;pointer-events:none}
 .scene-frame-title-place{pointer-events:none}
+/* An open program's or area's header stands as its closed card's words do
+   (.scene-program-card): the same padding and lines, so opening moves
+   nothing. */
+.scene-frame-title.scene-frame-header{padding:14px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
+.scene-frame-header .flow-component-role{font:600 13px/18px system-ui;color:#52647d;white-space:pre-line;margin:0}
 /* A frame named at the canvas's top while its own top is out of sight. */
 .scene-frame-title>strong{font-size:17px;line-height:22px;white-space:nowrap}
 .flow-communication .scene-frame-title>strong{color:#77531c}
