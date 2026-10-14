@@ -16119,3 +16119,10 @@ frame of kinds), then the open set as the default after the owner tries it.
   draws its own (the tangle had covered the names). Routing (links crossing
   tiles, a callee placed left of its caller when a column overflows) is
   left for the owner's choice of an ELK layout of the tiles.
+
+## 2026-10-15 — the ?scene=open experiment removed
+
+- Owner: "можно удалить, особенно если это упрощает". `openAt`, the store's
+  `open` action, `sceneAt`'s open-set branch, `openFor`/`openMode` in the
+  canvas are gone; one level-driven drawing remains. `npm test` 180/180,
+  `make ui-visual-test` 20 passed + the pre-existing layout-worker failure.

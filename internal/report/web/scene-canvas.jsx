@@ -11,7 +11,7 @@ import {flushSync} from 'react-dom';
 import {ReactFlow,Handle,Position,useStore} from '@xyflow/react';
 import {buildModel,inputKindTitles} from './model.mjs';
 import {layoutLevels,homeCamera,units,cardWords,programWords} from './levels.mjs';
-import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit,memberView,openAt} from './scene.mjs';
+import {sceneAt,emphasisOf,hitTest,chainOf,levelKey,bands,edgeByID,frameGroups,connectionOf,levelAfterZoom,pinchLimit,memberView} from './scene.mjs';
 import {project,mark} from './overlay.mjs';
 import {bigName,wrapText} from './cards.mjs';
 import {createStore,sceneReducer,initialState,createCamera,zoomAction} from './store.mjs';
@@ -251,11 +251,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // The scene of the current level, kept until the level, the choice or
   // the geometry changes.
   let sceneCache={key:'',scene:null};
-  const openMode=new URLSearchParams(window.location.search).get('scene')==='open';
   const sceneOf=state=>{
     const key=`${levelKey(state.level)}|${state.view.scope}|${state.version}`;
-    const openKey=openMode&&state.open?[...state.open].sort().join(','):'';
-    if(sceneCache.key!==key+openKey)sceneCache={key:key+openKey,scene:sceneAt(model,geometry,state.level,{scope:state.view.scope,open:openMode?state.open||new Set():undefined})};
+    if(sceneCache.key!==key)sceneCache={key,scene:sceneAt(model,geometry,state.level,{scope:state.view.scope})};
     return sceneCache.scene;
   };
   const store=createStore(sceneReducer({model,geometry:()=>geometry,scene:()=>sceneOf(store.getState())}),initialState);
@@ -625,8 +623,6 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       event.stopPropagation();return;
     }
     if(!event.ctrlKey||!instance||initializing)return;
-    // The experiment leaves a pinch to React Flow: no level boundary holds it.
-    if(openMode)return;
     const now=performance.now(),v=camera.get(),box=host.getBoundingClientRect();
     const aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
     if(!gesture||now-gesture.at>300){
@@ -661,22 +657,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   function moved(event,viewport){
     camera.set(viewport);
     const previous=lastZoom;lastZoom=viewport.zoom;
-    if(openMode){openFor(viewport.zoom,false);return;}
     if(event)levelForZoom(previous,viewport);
-  }
-  // The experiment (?scene=open): what is open follows the zoom alone, a
-  // part's tiles opening only at rest; the store hears of it only when it
-  // changes.
-  let openZoom=0;
-  function openFor(zoom,rest){
-    // A pan opens nothing while it moves: what came in sight opens at rest.
-    if(!rest&&zoom===openZoom)return;
-    openZoom=zoom;
-    const v=camera.get(),{width,height}=size(),w=width/v.zoom,h=height/v.zoom;
-    const view={x:-v.x/v.zoom-w,y:-v.y/v.zoom-h,width:3*w,height:3*h};
-    const was=store.getState().open||new Set(),next=openAt(model,geometry,zoom,was,{parts:rest,view});
-    if(next.size===was.size&&[...next].every(id=>was.has(id)))return;
-    store.dispatch({type:'open',open:next});
   }
   // A zoom gesture's level, with hysteresis (store.mjs zoomAction); a
   // zoom that brings another level has the column read it.
@@ -937,7 +918,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       }));}}
       onMove={(event,viewport)=>moved(event,viewport)}
       onMoveStart={event=>{if(event)overviewFit=false;}}
-      onMoveEnd={(event,viewport)=>{camera.set(viewport);gestureAim=null;if(openMode)openFor(viewport.zoom,true);map.dispatchEvent(new Event('repomap:viewport'));}}>
+      onMoveEnd={(event,viewport)=>{camera.set(viewport);gestureAim=null;map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
         <marker id="scene-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowHead} markerHeight={arrowHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
         <marker id="scene-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowHead*1.5/2.5} markerHeight={arrowHead*1.5/2.5} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>

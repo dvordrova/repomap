@@ -102,16 +102,6 @@ export function sceneAt(model,geometry,level=[],selection={}){
         edges.push(edge);
       }
   }
-  // The experiment of a zoom-driven drawing (openAt, behind the canvas's
-  // ?scene=open flag): every program, area and part in `selection.open` is
-  // drawn open where it stands, the level kept as the reader's place.
-  if(selection.open){
-    const open=selection.open,opened=model.roots.filter(id=>open.has(id)&&model.nodes.get(id)?.kind==='program');
-    drawRoots(open,new Set(opened));
-    for(const id of opened)drawProgram(id,open);
-    text=unit;
-    return finish();
-  }
   if(!program){
     const open=new Set(level);
     text=inner?geometry.text.get(inner)||unit:unit;
@@ -142,7 +132,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
       // read as its do, and the map is one world the camera moves over
       // (owner, 2026-10-14: panning from a part entered had shown its
       // neighbours closed).
-      const deepHere=!selection.open&&parent.children.some(id=>open.has(id)&&model.nodes.get(id)?.kind==='part');
+      const deepHere=parent.children.some(id=>open.has(id)&&model.nodes.get(id)?.kind==='part');
       const isDeep=id=>open.has(id)&&geometry.grids.has(id)||deepHere&&geometry.grids.has(id);
       for(const child of parent.children){
         const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
@@ -439,34 +429,3 @@ export function pinchLimit(from,to,depthAt,gesture,steps=30){
 // A frame's connections as the reading column groups them (model.mjs).
 export const frameGroups=(model,id)=>model.frameGroups(id);
 
-// The experiment's open set (?scene=open): the programs, areas and parts
-// the zoom opens, each under an open one. A box opens at its entry zoom and
-// stays open down to its exit zoom (a band, so a trackpad's inertia at the
-// threshold does not open and close it); a part's tiles open only when
-// `parts` (the camera at rest).
-export function openAt(model,geometry,zoom,was=new Set(),{parts=true,view=null}={}){
-  const open=new Set();
-  // Only what stands in sight, with a screen's margin round it, opens: a
-  // box off the canvas stays closed, its insides not drawn.
-  const seen=id=>{
-    if(!view)return true;
-    const r=geometry.boxes.get(id)||geometry.scales.get(id)?.frame;if(!r)return true;
-    return r.x<view.x+view.width&&r.x+r.width>view.x&&r.y<view.y+view.height&&r.y+r.height>view.y;
-  };
-  // Moving, a part's tiles stay as they were: open ones close past their
-  // band, none opens until the camera rests.
-  const partOpens=id=>parts?opens(id):was.has(id)&&opens(id);
-  const opens=id=>zoom>=(was.has(id)?geometry.exitZoom.get(id)??Infinity:geometry.enterZoom.get(id)??Infinity);
-  const visit=id=>{
-    const node=model.nodes.get(id);if(!node)return;
-    if(node.kind==='part'){if(geometry.grids.has(id)&&partOpens(id)&&seen(id))open.add(id);return;}
-    if(!['program','area','inputs','bucket'].includes(node.kind))return;
-    if(!geometry.local.has(id)&&node.kind==='area')return;
-    if(!opens(id)||!seen(id))return;
-    open.add(id);
-    for(const child of node.children||[])visit(child);
-  };
-  for(const id of model.roots)visit(id);
-  for(const id of model.roots)if(model.nodes.get(id)?.kind==='outside')for(const child of model.nodes.get(id).children)if(model.nodes.get(child)?.kind==='bucket'&&opens(child))open.add(child);
-  return open;
-}
