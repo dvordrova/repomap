@@ -336,6 +336,9 @@
 .flow-part-symbols .flow-symbol-block.flow-symbol-block-chosen{border-color:#243044;box-shadow:0 0 0 1px #243044}
 .flow-part-symbols .flow-symbol-block .flow-symbol-chosen{font-weight:750}
 .flow-part-symbols .flow-symbol-block .flow-symbol-row.flow-symbol-chosen{background:#dfe6f0}
+/* A declaration pointed at, here or in the reading, has the tinted ground
+   its line in the reading has (43-map-reading.css .is-pointed). */
+.flow-part-symbols .flow-symbol-block .flow-symbol-hot{background:#dfe6f0}
 /* A dense part's closed card with its chosen tile alone, drawn as that tile. */
 .flow-part-has-chosen>.flow-description{min-height:0;-webkit-line-clamp:2!important;line-clamp:2}
 .flow-part>.flow-part-chosen{flex:none;margin-top:auto;align-self:flex-start;max-width:100%;box-sizing:border-box;padding:0 10px;border:1px solid #9aa7b8;border-radius:6px;background:#fff;box-shadow:inset 0 0 0 2px #243044;font:600 13px/28px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

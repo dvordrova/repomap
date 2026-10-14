@@ -533,6 +533,36 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // What the pointer rests on is emphasized once it rests there: a pointer
   // crossing the map re-emphasized every box and arrow it passed, each a
   // redraw of the whole level (owner's trace, 2026-10-14).
+  // What the reading column points at, as the canvas's own pointing: a
+  // declaration is its tile (member) in its part, a box itself.
+  let declIndex=null;
+  const declPlace=key=>{
+    if(!declIndex){
+      declIndex=new Map();
+      for(const node of model.nodes.values())if(node.kind==='part')(node.item?.symbols||[]).forEach((symbol,index)=>{const k=symbolKey(symbol);if(k&&!declIndex.has(k))declIndex.set(k,{part:node.id,index});});
+    }
+    return declIndex.get(key)||null;
+  };
+  const targetOf=ref=>{
+    if(ref.decl){const at=declPlace(ref.decl);return at?{type:'member',id:`${at.part}#${at.index}`,part:at.part,index:at.index}:null;}
+    if(ref.node&&model.nodes.has(model.shown(ref.node))){const id=model.shown(ref.node);return {type:'box',id,node:sceneOf(store.getState()).nodes.find(node=>node.id===id)};}
+    return null;
+  };
+  // And back: what the map points at is lit in the reading column, by the
+  // same keys (owner, 2026-10-14: hover had lit the map only from the map).
+  let columnLit=[];
+  store.subscribe(()=>{
+    const pointer=store.getState().pointer;
+    const keys=[];
+    if(pointer?.type==='member'){const symbol=model.nodes.get(pointer.part)?.item?.symbols?.[pointer.index];const k=symbolKey(symbol);if(k)keys.push(`[data-decl-key="${CSS.escape(k)}"]`);}
+    else if(pointer?.type==='box'&&pointer.id)keys.push(`[data-node-ref="${CSS.escape(pointer.id)}"]`);
+    const inspector=map.querySelector('.map-inspector');
+    const next=keys.length&&inspector?[...inspector.querySelectorAll(keys.join(','))]:[];
+    if(next.length===columnLit.length&&next.every((el,i)=>el===columnLit[i]))return;
+    for(const el of columnLit)el.classList.remove('is-pointed');
+    for(const el of next)el.classList.add('is-pointed');
+    columnLit=next;
+  });
   // A pointer moving on over the same box keeps its wait: restarted at every
   // move, the emphasis had come only once the mouse stopped (owner,
   // 2026-10-14: "не отзывчиво", Inputs lit "очень медленно").
@@ -1021,6 +1051,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     get layout(){return {nodes:[],edges:model.edges};},
     focus,showInput,capture,restore,
     clearHover(){store.dispatch({type:'point',target:null});},
+    // The reading column points at a declaration (its key) or a box (its
+    // id): the map lights it as if the pointer were on it.
+    point(ref){pointSoon(ref?targetOf(ref):null);},
     clearMember(){store.dispatch({type:'member',member:{chosen:null}});},
     mountConnections,frameConnections,
     light(ids){store.dispatch({type:'lit',ids});},

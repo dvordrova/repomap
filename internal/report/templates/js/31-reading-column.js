@@ -127,6 +127,7 @@ function rmNameIcon(name,code){return name;}
 function rmPartBox(ctx,href,title,counted){
   var node=href?ctx.nodeByHref(href):null,box=rmEl(node&&!counted?'button':'span','map-part-box',node?node.dataset.title:title);
   if(node){
+    box.dataset.nodeRef=node.id;
     if(node.dataset.lane==='core')box.classList.add('map-part-box-core');
     else if(node.dataset.lane==='triggers')box.classList.add('map-part-box-entry');
     if(node.dataset.activation||node.dataset.branch==='inputs')box.classList.add('map-part-box-input');

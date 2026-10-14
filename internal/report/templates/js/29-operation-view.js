@@ -1244,6 +1244,14 @@ function rmSavedScene(doc){
         connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
       });
       map.visibleEdges=surface.layout.edges;
+      // A name or a part's box pointed at in the reading points at it on the
+      // map (owner, 2026-10-14: hover had lit the map only from the map).
+      var inspectorRoot=map.querySelector('.map-inspector');
+      if(inspectorRoot){
+        var refOf=function(el){var named=el?.closest?.('[data-decl-key],[data-node-ref]');if(!named||!inspectorRoot.contains(named))return null;return named.dataset.declKey?{decl:named.dataset.declKey}:{node:named.dataset.nodeRef};};
+        inspectorRoot.addEventListener('pointerover',function(event){var ref=refOf(event.target);if(ref)surface.point(ref);});
+        inspectorRoot.addEventListener('pointerout',function(event){if(refOf(event.target)&&!refOf(event.relatedTarget))surface.point(null);});
+      }
       if(map.hasAttribute('data-system-map'))rmProgramsTable(map.readingContext(),map.querySelector('[data-programs-table]'),nodes.filter(function(n){return n.dataset.branch==='component';}),
         function(id){return surface.frameConnections(id).map(function(group){return {incoming:group.incoming,title:group.title,key:group.key,outside:group.outside};});});
       emphasize();

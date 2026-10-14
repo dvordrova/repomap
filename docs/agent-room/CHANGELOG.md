@@ -16161,3 +16161,17 @@ frame of kinds), then the open set as the default after the owner tries it.
   Metabase's open drops ~10 s; its first map barely moves (63.3 → 62.3 s at
   4×): the first map waits for every level's ELK layout and for parsing
   34 MB of HTML, which is the next thing to change.
+
+## 2026-10-15 — hover both ways between the reading and the map
+
+- A declaration name (`data-decl-key`) or a part's box (`data-node-ref`)
+  pointed at in the reading points at it on the map through the canvas's own
+  pointing (`surface.point`, one delegated listener in 29-operation-view.js);
+  what the map points at is lit in the reading by the same keys
+  (`.is-pointed`). A tile pointed at has the reading's tinted ground
+  (`flow-symbol-hot`). Audit finding (f); plan mechanism 4's first slice. The
+  separate `lit` channel is left for the unification step.
+- Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
+  ui-visual-test` 21/21; headless: hovering NewSimpleDrainQueue() in the
+  reading tints its tile and darkens its links, hovering NewSimpleStopQueue's
+  tile tints its two lines in the reading.

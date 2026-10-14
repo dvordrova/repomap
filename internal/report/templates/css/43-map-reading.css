@@ -639,3 +639,7 @@ details.map-connections-apart>summary{cursor:pointer;font:600 12px/1.4 system-ui
 .map-part-box-input::before{border-color:#356faa;background:#deedff}
 .map-part-box-external::before{border-color:#906014;background:#ffefcf}
 .flow-enabled .map-inspector button.map-part-box:hover{color:var(--link);text-decoration:underline}
+
+/* What the map points at, lit in the reading by the same key: the chosen
+   tile's ground (canvas.css .flow-symbol-chosen row). */
+.map-inspector .is-pointed{background:#dfe6f0;border-radius:3px}
