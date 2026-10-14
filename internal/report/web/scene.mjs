@@ -122,6 +122,12 @@ export function sceneAt(model,geometry,level=[],selection={}){
   if(!onlyPart(model,program))box(program,'frame',frameOf(program),own,{program:true});
   function drawChildren(container){
     const parent=model.nodes.get(container),localText=geometry.text.get(container)||own;
+    // A part entered opens its siblings with it: at one scale their tiles
+    // read as its do, and the map is one world the camera moves over
+    // (owner, 2026-10-14: panning from a part entered had shown its
+    // neighbours closed).
+    const deepHere=parent.children.some(id=>open.has(id)&&model.nodes.get(id)?.kind==='part');
+    const isDeep=id=>open.has(id)||deepHere&&geometry.grids.has(id);
     for(const child of parent.children){
       const node=model.nodes.get(child),rect=rectOf(child);if(!node||!rect)continue;
       if(node.kind==='area'&&open.has(child)){
@@ -132,8 +138,8 @@ export function sceneAt(model,geometry,level=[],selection={}){
         markersFor(child,localText);
       }else{
         // The part a program is takes the program's name.
-        box(child,open.has(child)?'deep':'card',rect,localText,{lane:node.item?.lane||'',...(onlyPart(model,container)===child?{title:model.nodes.get(container).name}:{})});
-        if(open.has(child))deepFor(child);else markersFor(child);
+        box(child,isDeep(child)?'deep':'card',rect,localText,{lane:node.item?.lane||'',...(onlyPart(model,container)===child?{title:model.nodes.get(container).name}:{})});
+        if(isDeep(child))deepFor(child);else markersFor(child);
       }
     }
     const lookedHere=new Set([...looked,...parent.children.filter(id=>open.has(id))]);
@@ -158,8 +164,8 @@ export function sceneAt(model,geometry,level=[],selection={}){
   // beside the tile), the rest on the part's edge.
   // A declaration's tile in its part's card, wherever that card stands.
   function tileRect(r,drawn,row){
-    const {grid,box:card}=drawn,s=r.width/card.width,{inset,columnGap:gap}=tileRoom;
-    return {x:r.x+s*(1+(inset+row.column*(grid.tileWidth+gap))/grid.divisor),
+    const {grid,box:card}=drawn,s=r.width/card.width,{inset,side,columnGap:gap}=tileRoom;
+    return {x:r.x+s*(1+(side+row.column*(grid.tileWidth+gap))/grid.divisor),
       y:r.y+s*(1+tileHeader(grid.divisor)+(inset+row.y)/grid.divisor),width:s*grid.tileWidth/grid.divisor,height:s*row.height/grid.divisor};
   }
   function deepFor(id){
@@ -174,7 +180,7 @@ export function sceneAt(model,geometry,level=[],selection={}){
     });
     const own=model.memberMarkersOf(id);
     for(const [index,sides] of own.members){
-      const member=members.find(m=>m.index===index);if(!member)continue;
+      const member=members.find(m=>m.part===id&&m.index===index);if(!member)continue;
       for(const side of ['in','out'])sides[side].forEach((marker,i)=>markers.push({
         id:`${id}#${index}:${side}:${marker.kind}`,box:`${id}#${index}`,part:id,member:index,side,index:i,count:sides[side].length,rect:member.rect,row:true,text:tileText,...marker}));
     }

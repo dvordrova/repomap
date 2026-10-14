@@ -20,9 +20,9 @@ export function partGrid(data,box){
 // at the frame.
 export const arrowHead=7,emphasisedHead=arrowHead*1.5/2.5;
 export function PartSymbols({symbols,calls,width,height,grid,member}){
-  const {divisor,inner,tileWidth,blocks,rows,hidden}=grid,{inset,columnGap:gap}=tileRoom;
+  const {divisor,inner,tileWidth,blocks,rows,hidden}=grid,{inset,side,columnGap:gap}=tileRoom;
   const links=calls||[],hot=member?.hot??-1,chosen=member?.chosen??-1;
-  const x=column=>inset+column*(tileWidth+gap);
+  const x=column=>side+column*(tileWidth+gap);
   // A method inside its type's tile needs no line to that type.
   const drawn=links.filter(([from,to])=>rows[from]&&rows[to]&&rows[from].block!==rows[to].block);
   // A declaration with those its links join. Pointing at one darkens its
@@ -75,7 +75,7 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
         {block.rows.map((i,k)=>row(i,'flow-symbol-row',k>0&&symbols[i].kind!=='field'&&symbols[i].kind!=='more'&&['field','more'].includes(symbols[block.rows[k-1]].kind)))}
         {block.more>0&&<span className="flow-symbol-row flow-symbol-rest">… +{block.more}</span>}
       </div>)}
-      {hidden>0&&<span className="flow-symbol-more" style={{right:inset,bottom:inset}}>+{hidden}</span>}
+      {hidden>0&&<span className="flow-symbol-more" style={{right:side,bottom:inset}}>+{hidden}</span>}
     </div>
   </div>;
 }

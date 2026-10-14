@@ -77,7 +77,10 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
 // so nothing is counted away: a large part is a larger map to pan when read.
 // Cut to 190px, Redis's names read "_dictStringCopyHTKe…", and at 1440x900
 // its Data structures drew 40 tiles and counted 63 away.
-export const tileRoom={header:20,inset:8,columnGap:36};
+// A tile column stands its gap from the card's sides as from its
+// neighbour's: a link within a column, or back, bows out to the right of
+// its rows, and in the last column it had run past the card's border.
+export const tileRoom={header:20,inset:8,columnGap:36,side:36};
 // The part's name stands in a band over its tiles, as large on screen as at
 // the quarter scale whatever the divisor: 20 card units at a quarter.
 export const tileHeader=divisor=>tileRoom.header*4/divisor;
@@ -89,7 +92,7 @@ export function tileGrid(symbols,links,box,measure,{least=4,step=.5}={}){
   const nameWidth=Math.ceil(Math.max(0,...shown.map(([symbol])=>measure(symbol.name||'',tileFont(symbol))+(symbol.owner?22:20)+2)));
   const files=new Map();for(const [symbol] of shown){const file=symbol.path||'';if(!files.has(file))files.set(file,files.size);}
   const rank=i=>(files.get(symbols[i].path||'')??files.size)*symbols.length+i;
-  const {inset,columnGap:gap}=tileRoom;
+  const {inset,side,columnGap:gap}=tileRoom;
   // The room grows with the divisor, so the search ends at the part's own
   // size, however many declarations it holds; a card with no room at all is
   // drawn once. Stopped at a fixed divisor, a part too large for it had its
@@ -97,8 +100,8 @@ export function tileGrid(symbols,links,box,measure,{least=4,step=.5}={}){
   const roomy=box.width>0&&box.height>0;
   for(let divisor=least;;divisor+=step){
     const inner={width:box.width*divisor,height:(box.height-tileHeader(divisor))*divisor};
-    const columns=Math.max(1,Math.floor((inner.width-2*inset+gap)/(nameWidth+gap)));
-    const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*inset-(columns-1)*gap)/columns));
+    const columns=Math.max(1,Math.floor((inner.width-2*side+gap)/(nameWidth+gap)));
+    const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*side-(columns-1)*gap)/columns));
     const grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
     // Columns enough for a caller, what it calls and what that returns.
     if(!roomy||grid.hidden===0&&(!links.length||columns>=3))return grid;

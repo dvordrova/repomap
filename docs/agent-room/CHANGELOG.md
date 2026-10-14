@@ -15907,3 +15907,13 @@ inventory walks) are deleted with it. An input kind's group is no narrower
 than its title ("Background work" had run past its frame), its title drawn
 in the font it is measured in. `npm test` 178/178; visual 20/21 (same
 pre-existing spec).
+
+Two from the owner on a part entered: arrows into its last column's tiles
+had run past the card's right border (a link within a column, or back, bows
+26 units right of its rows and the side inset was 8) — a tile column now
+stands its gap (36) from the card's sides (`tileRoom.side`); and panning from
+a part entered showed its neighbours closed — a part entered now opens its
+siblings with it (one scale, their tiles read as its do), each member found
+by its part and index. Saved rate-envelope-queue render: entered Envelope
+construction, panned, Queue contracts' tiles in sight.
+`npm test` 178/178; visual 20/21 (same pre-existing spec).
