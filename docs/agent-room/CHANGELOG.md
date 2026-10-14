@@ -16147,3 +16147,8 @@ frame of kinds), then the open set as the default after the owner tries it.
   workers with fallback retries, so failing the first message was recovered;
   it now fails every layout and checks the static map, no pending canvas and
   every failed worker terminated. `make ui-visual-test` 21/21.
+- Each model edge is filed once under the container joining its ends (their
+  nearest common ancestor); a container's pairs read only its own edges.
+  Every container had walked every edge up its ancestors (1,262 Metabase
+  areas × all edges). Metabase first map 98.4 → 68.7 s at 4×; scene tests
+  unchanged (the pairs are the same by construction).

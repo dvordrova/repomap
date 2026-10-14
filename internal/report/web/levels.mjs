@@ -303,6 +303,19 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     for(let at=id;at;at=model.parent(at))if(model.parent(at)===container)return at;
     return '';
   };
+  // Each edge under the one container joining its two ends (their nearest
+  // common ancestor): the only container whose children it joins. Every
+  // container had walked every edge of the model, and Metabase's 1,262
+  // areas had spent 25 seconds of its first map there on a slow machine
+  // (owner, 2026-10-15).
+  const edgesJoinedIn=new Map();
+  for(const edge of model.edges){
+    const above=new Set();for(let at=edge.from;at;at=model.parent(at))above.add(at);
+    let join='';for(let at=edge.to;at;at=model.parent(at))if(above.has(at)){join=at;break;}
+    if(!edgesJoinedIn.has(join))edgesJoinedIn.set(join,[]);
+    edgesJoinedIn.get(join).push(edge);
+  }
+  const joinedIn=id=>edgesJoinedIn.get(id)||[];
   const fitZoom=(w,h,pad=24)=>Math.min((canvas.width-2*pad)/w,(canvas.height-2*pad)/h);
 
   // 1. Areas: their parts, with the arrows between them.
@@ -318,7 +331,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   // a program's; its card then takes its proportion (closedArea).
   const layArea=async area=>{
     const parts=area.children.map(id=>nodes.get(id)).filter(Boolean);
-    const pairs=pairsOf(model,model.edges,childOf(area.id));
+    const pairs=pairsOf(model,joinedIn(area.id),childOf(area.id));
     const boxes=parts.map(part=>part.kind==='area'?closedArea(part):partBox(part,measure));
     const [down,across]=await Promise.all(['DOWN','RIGHT'].map(direction=>layered(area.id,boxes,pairs,{options:{...interior,'elk.direction':direction}})));
     const laid=fitZoom(across.width,across.height)>fitZoom(down.width,down.height)*1.05?across:down;
@@ -354,7 +367,7 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const programLevels=await Promise.all(programNodes.map(async program=>{
     const children=program.children.map(id=>nodes.get(id)).filter(Boolean);
     const inner=childOf(program.id);
-    const pairs=pairsOf(model,model.edges,inner);
+    const pairs=pairsOf(model,joinedIn(program.id),inner);
     const portMap=new Map(),portPairs=new Map();
     for(const edge of model.edges){
       const fromInside=!!inner(edge.from)||edge.from===program.id,toInside=!!inner(edge.to)||edge.to===program.id;
