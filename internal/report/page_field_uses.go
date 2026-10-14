@@ -91,6 +91,13 @@ func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts 
 			continue
 		}
 		object := ref.subject.Object
+		// A callable written inline reads for the declaration its name is
+		// (groupindex InlineName.Named): LoggingStamp's reads are made by
+		// the function it returns (owner, 2026-10-14).
+		reader := edge.FromSubjectID
+		if from, known := builder.subject(targetID, reader); known && from.subject.Object != nil && from.subject.Object.Inline.Named != "" {
+			reader = from.subject.Object.Inline.Named
+		}
 		label := edge.FieldPath
 		if label == "" {
 			owner, known := builder.subject(targetID, object.OwnerID)
@@ -99,12 +106,12 @@ func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts 
 				// and, of a module's variable, a read the reader's Reads
 				// line says (a local or a parameter is never listed).
 				if edge.RelationKind == programindex.RelationReads {
-					if facts.readsWhole[edge.FromSubjectID] == nil {
-						facts.readsWhole[edge.FromSubjectID] = map[string]bool{}
+					if facts.readsWhole[reader] == nil {
+						facts.readsWhole[reader] = map[string]bool{}
 					}
-					facts.readsWhole[edge.FromSubjectID][edge.ToSubjectID] = true
+					facts.readsWhole[reader][edge.ToSubjectID] = true
 					if builder.moduleVariable(targetID, object) {
-						whole := pageFieldAccess{from: edge.FromSubjectID, field: edge.ToSubjectID, label: object.Name}
+						whole := pageFieldAccess{from: reader, field: edge.ToSubjectID, label: object.Name}
 						if edge.Location != nil {
 							whole.path, whole.line, whole.column = edge.Location.Path, edge.Location.Line, edge.Location.Column
 						}
@@ -115,7 +122,7 @@ func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts 
 			}
 			label = owner.subject.Object.Name + "." + object.Name
 		}
-		access := pageFieldAccess{from: edge.FromSubjectID, field: edge.ToSubjectID, label: label, writes: edge.RelationKind == programindex.RelationWrites}
+		access := pageFieldAccess{from: reader, field: edge.ToSubjectID, label: label, writes: edge.RelationKind == programindex.RelationWrites}
 		if edge.Location != nil {
 			access.path, access.line, access.column = edge.Location.Path, edge.Location.Line, edge.Location.Column
 		}

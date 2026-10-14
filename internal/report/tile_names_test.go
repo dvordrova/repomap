@@ -108,8 +108,9 @@ func TestAnInlineCallableIsNamedInWordsOfThePagesLanguage(t *testing.T) {
 		return &programindex.Location{Path: "service/loop.go", Line: line, Column: 2}
 	}
 	closure := groupindex.Subject{ID: "n2", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "Main loop$1", Kind: programindex.ObjectFunction,
-		Inline: groupindex.InlineName{Named: "n1", In: "Main loop", Of: 3}, Anonymous: true, Location: at(12)}}
+		Anonymous: true, Location: at(12)}}
 	holder := groupindex.Subject{ID: "n1", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "Main loop", Kind: programindex.ObjectFunction, Location: at(10)}}
+	closure.Object.Inline = groupindex.InlineName{Named: "n1", NamedKey: holder.Object.DeclarationKey(), In: "Main loop", Of: 3}
 	callee := groupindex.Subject{ID: "n3", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "GetConfigString", Kind: programindex.ObjectFunction, Location: at(40)}}
 	for language, want := range map[DisplayLanguage]string{English: "Main loop", Russian: "Main loop"} {
 		builder := &pageBuilder{language: language, subjects: map[string]subjectRef{subjectKey("t1", "n1"): {subject: holder}, subjectKey("t1", "n2"): {subject: closure}, subjectKey("t1", "n3"): {subject: callee}},

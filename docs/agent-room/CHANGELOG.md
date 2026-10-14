@@ -16098,3 +16098,20 @@ frame of kinds), then the open set as the default after the owner tries it.
 - Checks: `npm test` 180/180, `make ui-visual-test` 20 passed + the
   pre-existing failure; screenshots of rate-envelope-queue, service-pkg and
   airflow homes.
+
+## 2026-10-14 — an inline callable is read as its named declaration everywhere
+
+- `groupindex.InlineName.NamedKey` carries the key of the declaration a
+  callable written inline is named by; `subjectDisplay` gives that key, so
+  every reading and card attributes the closure's calls to it, and
+  `fieldFacts` attributes its reads and writes (LoggingStamp read
+  Envelope.id and _type through the function it returns, and its reading
+  had shown nothing while its arrow stood). The connection-only `namedKey`
+  of the previous commit is folded into this.
+- Arrow card: the dot stands on the line 18 px short of the head; an Inputs
+  frame is named "Inputs" in its header; a name pointed at in the card is
+  pointed at on the map, the previous pointing given back on leave.
+- A long signature in the reading stands a parameter to a line.
+- Checks: `npm test` 180/180, `go test`/`go vet` report+groupindex ok,
+  `make ui-visual-test` 20 passed + the pre-existing failure; headless
+  readings of LoggingStamp (Reads and writes) and NewScheduleEnvelope.

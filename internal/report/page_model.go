@@ -1642,7 +1642,16 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 			// The declaration's identity, apart from its link (review,
 			// 2026-10-03: two functions written on one line had one key).
 			anchor.key = object.DeclarationKey()
-			builder.notePlace(anchor.key, object.Location)
+			// A callable written inline is read as the declaration its name is
+			// (groupindex InlineName.NamedKey): its calls and reads are that
+			// declaration's, whose tile and reading hold them (owner,
+			// 2026-10-14: LoggingStamp's reads, made by the function it
+			// returns, had reached no reading).
+			if object.Inline.NamedKey != "" {
+				anchor.key = object.Inline.NamedKey
+			} else {
+				builder.notePlace(anchor.key, object.Location)
+			}
 			anchor.words = object.Inline.Wraps == "" && object.Inline.In != ""
 			return cmp.Or(builder.inlineWords(object.Inline), object.Name), anchor
 		}

@@ -27,8 +27,9 @@ function Name({at,href,title,choose,children}){
   if(!choose||!at||!key||!choose.can(at.part,key))return <Link href={href} title={title}>{children}</Link>;
   children=dotted(children);
   const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,key);};
-  return href?<a href={href} className="flow-card-name rm-in" title={title||undefined} target="_blank" onClick={read}>{children}</a>
-    :<button type="button" className="flow-card-name" title={title||undefined} onClick={read}>{children}</button>;
+  const hover={onMouseEnter:()=>choose.point?.(at.part,key),onMouseLeave:()=>choose.unpoint?.()};
+  return href?<a href={href} className="flow-card-name rm-in" title={title||undefined} target="_blank" onClick={read} {...hover}>{children}</a>
+    :<button type="button" className="flow-card-name" title={title||undefined} onClick={read} {...hover}>{children}</button>;
 }
 // The inputs of a row, each a name reading that input in the reading
 // column (owner, 2026-09-29: "sync" and "slaveof" had been plain text).

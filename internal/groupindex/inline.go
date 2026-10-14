@@ -22,18 +22,20 @@ import (
 // (review, 2026-10-03: the page had parsed "StartLdapServer (inline, 3)").
 //
 // Named is the ID of the declaration the name is: the callable Wraps names,
-// or the function In names. A reader reading the callable reads that
+// or the function In names; NamedKey its declaration key, the one the
+// report reads the callable by, its calls and reads included. A reader reading the callable reads that
 // declaration (owner, 2026-10-14: an arrow's card had said
 // "RateEnvelopeQueue.worker" with the key of the closure inside it, which
 // has no tile, and stood as plain text).
 type InlineName struct {
-	Named string
-	Wraps string
-	In    string
-	For   string
-	Calls string
-	Reads string
-	Of    int
+	Named    string
+	NamedKey string
+	Wraps    string
+	In       string
+	For      string
+	Calls    string
+	Reads    string
+	Of       int
 }
 
 // IsZero says the callable is named by its own name: no reader's name was
@@ -137,7 +139,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName
 	for _, closure := range closures {
 		if called := callees[closure.ID]; wraps && len(called) == 1 {
 			if callee, known := byID[called[0]]; known && callee.Location != nil && callee.External == nil && callee.Kind.Callable() && !inline(callee) {
-				result[closure.ID] = InlineName{Named: callee.ID, Wraps: named(callee)}
+				result[closure.ID] = InlineName{Named: callee.ID, NamedKey: DeclarationKey(callee), Wraps: named(callee)}
 				continue
 			}
 		}
@@ -154,7 +156,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName
 			}
 		}
 		if holder != nil {
-			result[closure.ID] = InlineName{Named: holder.ID, In: named(*holder)}
+			result[closure.ID] = InlineName{Named: holder.ID, NamedKey: DeclarationKey(*holder), In: named(*holder)}
 			holderOf[closure.ID] = holder.ID
 		}
 	}
@@ -186,7 +188,7 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName
 		holder := named(byID[holderID])
 		if words := handedWords(program, ids); words != nil {
 			for position, id := range ids {
-				result[id] = InlineName{Named: holderID, In: holder, For: words[position]}
+				result[id] = InlineName{Named: holderID, NamedKey: DeclarationKey(byID[holderID]), In: holder, For: words[position]}
 			}
 			continue
 		}
@@ -194,11 +196,11 @@ func inlineNamesBy(program programindex.Index, wraps bool) map[string]InlineName
 		for position, id := range ids {
 			switch use := uses[position]; {
 			case use.Word == "":
-				result[id] = InlineName{Named: holderID, In: holder, Of: len(ids)}
+				result[id] = InlineName{Named: holderID, NamedKey: DeclarationKey(byID[holderID]), In: holder, Of: len(ids)}
 			case use.Reads:
-				result[id] = InlineName{Named: holderID, In: holder, Reads: use.Word}
+				result[id] = InlineName{Named: holderID, NamedKey: DeclarationKey(byID[holderID]), In: holder, Reads: use.Word}
 			default:
-				result[id] = InlineName{Named: holderID, In: holder, Calls: use.Word}
+				result[id] = InlineName{Named: holderID, NamedKey: DeclarationKey(byID[holderID]), In: holder, Calls: use.Word}
 			}
 		}
 	}

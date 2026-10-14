@@ -47,6 +47,28 @@ function rmModelText(tag,cls,text,ref){
 // then the one slot for opening its code (rmNameIcon): `code` names what it
 // opens, the declaration's code by default, a caller's call line on a
 // "Called by" row, null for none (the reading's own title).
+// A signature as the reading shows it: a short one on the name's line, a
+// longer one a parameter to a line, what it returns after them (owner,
+// 2026-10-14: NewScheduleEnvelope's four parameters and two results had run
+// on as one wrapped line). Only its layout: the text is the page's.
+function rmSignature(text){
+  var box=rmEl('span','map-decl-signature');
+  var open=text.indexOf('('),depth=0,close=-1,cuts=[];
+  if(open===0)for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if('([{'.indexOf(c)>=0)depth++;
+    else if(')]}'.indexOf(c)>=0){depth--;if(depth===0){close=i;break;}}
+    else if(c===','&&depth===1)cuts.push(i);
+  }
+  if(close<0||text.length<=40||!cuts.length){box.textContent=text;return box;}
+  box.classList.add('map-decl-signature-lines');
+  var params=[],from=1;
+  cuts.concat([close]).forEach(function(at){params.push(text.slice(from,at).trim());from=at+1;});
+  box.appendChild(document.createTextNode('('));
+  params.forEach(function(param,i){box.appendChild(rmEl('span','map-decl-param',param+(i<params.length-1?',':'')));});
+  box.appendChild(document.createTextNode(text.slice(close)));
+  return box;
+}
 function rmDeclName(decl,text,go,title,bold,code){
   var link=decl.href||decl.open||decl.no_source?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:text,NoSource:decl.no_source}):rmEl('span','',text);
   link.classList.add('map-reading-name');rmDotBreaks(link);link.rmDecl=decl;
@@ -600,7 +622,7 @@ function rmDeclView(ctx,node,data,concept){
   var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at,false,null);link.classList.add('map-decl-code');name.appendChild(link);
   symbols=rmPage.data(node,'symbols')||[];
   var symbol=symbols.find(function(s){return repomapMembers.symbolKey(s)===key&&s.kind!=='field';});
-  if(symbol&&symbol.text)name.appendChild(rmEl('span','map-decl-signature',symbol.text));
+  if(symbol&&symbol.text)name.appendChild(rmSignature(symbol.text));
   view.appendChild(name);
   var where=rmEl('p','map-decl-where');where.appendChild(rmEl('span','meta',decl.file||''));
   view.appendChild(where);

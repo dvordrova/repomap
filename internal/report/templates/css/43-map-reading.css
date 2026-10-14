@@ -428,6 +428,8 @@ details.map-reading-peer[open]>summary::before{content:'▼'}
    pointer. A name is its link: the page prints no separate code marks. */
 a.map-decl-code:hover{text-decoration:underline}
 .map-decl-signature{color:var(--muted);font-size:12.5px}
+.map-decl-signature-lines{display:block}
+.map-decl-signature-lines>.map-decl-param{display:block;padding-left:1.5em}
 .map-decl-where{display:flex;align-items:center;gap:12px;margin:0 0 10px}
 /* The author's comment above a declaration, quoted in its reading and marked as theirs. */
 .map-author-comment{margin:6px 0 10px;padding:4px 0 4px 10px;border-left:2px solid var(--line);color:var(--ink)}

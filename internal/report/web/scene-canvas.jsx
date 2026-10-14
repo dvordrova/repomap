@@ -181,6 +181,23 @@ function towardEnd(points,room){
   }
   return points.at(-1);
 }
+// The point `distance` pixels back along a path from `at`, a point on it,
+// toward its start.
+function backAlong(points,at,distance){
+  let k=points.length-1;
+  while(k>0&&Math.hypot(points[k].x-at.x,points[k].y-at.y)>1e-6&&!onSegment(points[k-1],points[k],at))k--;
+  let left=distance,here=at;
+  for(let i=k;i>0;i--){
+    const prev=points[i-1],d=Math.hypot(here.x-prev.x,here.y-prev.y);
+    if(d>=left)return {x:here.x+(prev.x-here.x)*left/d,y:here.y+(prev.y-here.y)*left/d};
+    left-=d;here=prev;
+  }
+  return here;
+}
+function onSegment(a,b,p){
+  const cross=(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+  return Math.abs(cross)<1e-3*Math.max(1,Math.hypot(b.x-a.x,b.y-a.y))&&Math.min(a.x,b.x)-1e-6<=p.x&&p.x<=Math.max(a.x,b.x)+1e-6&&Math.min(a.y,b.y)-1e-6<=p.y&&p.y<=Math.max(a.y,b.y)+1e-6;
+}
 // An arrow's casing stops six screen pixels short of each end: drawn to its
 // ends, it had cut a white notch into the border an arrow leaves (owner,
 // 2026-10-14: Inputs' arrow "рвет границу").
@@ -792,6 +809,11 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       <b>{head}</b>{shown.map(row=><button type="button" className="flow-card-name" data-marker-member={row.id} key={row.id}
         onClick={event=>{event.stopPropagation();look.end();store.dispatch({type:'look',key:''});read(row.id,event);}}>{row.name}</button>)}</div>;
   }
+  // An Inputs frame is named "Inputs" where the arrow it leaves already
+  // reaches its program (owner, 2026-10-14: "Inputs · rate-envelope-queue →
+  // rate-envelope-queue" had read as a riddle).
+  let cardPointerBefore;
+  const endName=id=>model.nodes.get(id)?.kind==='inputs'?t('Inputs'):nameOf(id);
   function ArrowCard({edgeKey,scene}){
     const [,id,way,near]=/^edge:(.*?):(on|back)(?::(start|end))?$/.exec(edgeKey)||[];
     const edge=scene.edges.find(edge=>edge.id===id);
@@ -807,6 +829,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       can:(part,key)=>(model.nodes.get(part)?.item?.symbols||[]).some(symbol=>symbolKey(symbol)===key),
       go:(part,key)=>chooseMember(part,(model.nodes.get(part)?.item?.symbols||[]).findIndex(symbol=>symbolKey(symbol)===key)),
       input:id=>read(id),
+      // A name pointed at in the card is pointed at on the map, as the
+      // reading column's names are (owner, 2026-10-14); leaving it gives
+      // the map back what was pointed at before.
+      point:(part,key)=>{
+        const index=(model.nodes.get(part)?.item?.symbols||[]).findIndex(symbol=>symbolKey(symbol)===key);if(index<0)return;
+        cardPointerBefore??=store.getState().pointer;
+        store.dispatch({type:'point',target:{type:'member',id:`${part}#${index}`,part,index}});
+      },
+      unpoint:()=>{store.dispatch({type:'point',target:cardPointerBefore??null});cardPointerBefore=undefined;},
     };
     if(!edge||!card.total)return null;
     // The end the card tells of is marked with a dot, and the card stands
@@ -818,7 +849,10 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const toScreen=p=>({x:p.x*v.zoom+v.x,y:p.y*v.zoom+v.y});
     const atStart=near?near==='start':backward;
     const path=(atStart?[...edge.points].reverse():edge.points).map(toScreen);
-    const dot=towardEnd(path,{left:8,top:8,right:host.clientWidth-8,bottom:host.clientHeight-8});
+    const room={left:8,top:8,right:host.clientWidth-8,bottom:host.clientHeight-8};
+    // On the line just short of the head, not over it (owner, 2026-10-14:
+    // the dot had hidden the arrowhead).
+    const dot=backAlong(path,towardEnd(path,room),18);
     // Right of the dot, kept whole in the canvas's width: a dot at its
     // right edge would leave its card wholly out of sight.
     const at={x:Math.max(8,Math.min(dot.x+12,host.clientWidth-428)),y:dot.y-12};
@@ -829,7 +863,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       onClick={event=>{event.stopPropagation();if(!pinned)store.dispatch({type:'pin',key:edgeKey});}}>
       <div className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`} style={{width:420,maxHeight:Math.max(160,Math.min(520,host.clientHeight-16))}}>
         {pinned&&<button type="button" className="flow-card-close" aria-label={t('Close')} title={t('Close')} onClick={event=>{event.stopPropagation();store.dispatch({type:'unpin',key:edgeKey});look.end();store.dispatch({type:'look',key:''});}}>✕</button>}
-        <header className="flow-card-head"><div className="flow-card-title"><span>{nameOf(from)}</span><i>→</i><span>{nameOf(into)}</span></div>
+        <header className="flow-card-head"><div className="flow-card-title"><span>{endName(from)}</span><i>→</i><span>{endName(into)}</span></div>
           {other&&<p className="flow-card-count"><button type="button" onClick={swap}>{t('Calls the other way')}</button></p>}</header>
         <div className="flow-card-body"><BriefRows card={card} into={nameOf(into)} choose={choose}/></div>
       </div></div></>;

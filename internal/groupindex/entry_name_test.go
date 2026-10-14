@@ -44,10 +44,10 @@ func TestAConnectionNamesAnInlineCallableByItsHolder(t *testing.T) {
 		{ID: "walk", Name: "FindSQLiteDatabases$1", Kind: programindex.ObjectFunction, Anonymous: true, Location: at("main.go", 1020), EndLine: 1030},
 		{ID: "check", Name: "IsSQLiteDatabase", Kind: programindex.ObjectFunction, Location: at("main.go", 1035), EndLine: 1050},
 	}, Relations: []programindex.Relation{{Kind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, FromID: "walk", ToIDs: []string{"check"}}}}
-	if got := inlineHolders(program); len(got) != 1 || got["walk"] != (InlineName{Named: "find", In: "FindSQLiteDatabases"}) {
+	if got := inlineHolders(program); len(got) != 1 || got["walk"] != (InlineName{Named: "find", NamedKey: DeclarationKey(program.Objects[0]), In: "FindSQLiteDatabases"}) {
 		t.Fatalf("holder names = %v", got)
 	}
-	if got := inlineNames(program); got["walk"] != (InlineName{Named: "check", Wraps: "IsSQLiteDatabase"}) {
+	if got := inlineNames(program); got["walk"] != (InlineName{Named: "check", NamedKey: DeclarationKey(program.Objects[2]), Wraps: "IsSQLiteDatabase"}) {
 		t.Fatalf("a reader still names a wrapper by what it wraps: %v", got)
 	}
 }
