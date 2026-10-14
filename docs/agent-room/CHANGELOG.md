@@ -16070,3 +16070,6 @@ frame of kinds), then the open set as the default after the owner tries it.
   continuous move at 4× CPU throttling in headless Chromium.
 - A program card pointed at had no emphasis style; the box pointed at (and
   one read or lit) has a 2px inward border, one only connected 1px.
+- A kind's mark in a closed Inputs card, pointed at in the reading or on the
+  map, darkens its ground (no ring); the map's pointer had skipped the mark
+  as if it were a card, so pointing at it there lit nothing.

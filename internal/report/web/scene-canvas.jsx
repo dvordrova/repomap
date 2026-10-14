@@ -483,7 +483,9 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     aimed=target;clearTimeout(pointing);
     pointing=setTimeout(()=>{aimed=null;store.dispatch({type:'point',target});},30);
   };
-  const onCard=event=>!!event.target.closest?.('.flow-floating-card,.scene-program-inside,[data-input-group-kind]');
+  // A kind's mark is no card: pointing at it lights it as the reading's
+  // pointing does (owner, 2026-10-14).
+  const onCard=event=>!!event.target.closest?.('.flow-floating-card,.scene-program-inside');
   // A press that moves the pointer or the camera is a drag: the click
   // ending it acts on nothing.
   // A press ends a look not yet opened: an arrow's card does not open under
@@ -812,7 +814,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     // 60 ms a move (owner's trace, 2026-10-14).
     const nodes=useMemo(()=>scene.nodes.map(node=>{
       const item=model.nodes.get(node.id)?.item;
-      const groups=node.display==='inputs'?model.nodes.get(node.id).children.map(id=>({kind:model.nodes.get(id).inputKind,lit:model.nodes.get(id).children.some(input=>lit.has(input))})):undefined;
+      const groups=node.display==='inputs'?model.nodes.get(node.id).children.map(id=>({kind:model.nodes.get(id).inputKind,lit:state.pointer?.group===id||model.nodes.get(id).children.some(input=>lit.has(input))})):undefined;
       const className=`scene-node scene-is-${node.display} ${emphasis.nodeClass.get(node.id)||''}`;
       const tile=node.display==='card'&&state.member.chosen?.part===node.id?item?.symbols?.[state.member.chosen.index]||null:null;
       const member=node.display==='deep'?{hot:pointed?.part===node.id?pointed.index:-1,chosen:chosen?.part===node.id?chosen.index:-1}:undefined;

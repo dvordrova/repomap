@@ -64,12 +64,15 @@
 .scene-words>strong{font-size:17px;line-height:21.25px;white-space:pre-line}
 .scene-root .flow-part.scene-deep{position:absolute;left:0;top:0;transform-origin:0 0;padding:0;display:block;overflow:visible}
 .scene-kind-marks{display:flex;gap:6px;align-items:center;color:#204a7b}
-.scene-kind-marks .flow-lit{outline:2px solid #243044;border-radius:4px}
+/* A kind's mark pointed at, on the map or in the reading, darkens its
+   ground; no ring (owner, 2026-10-14: the ring around Background work had
+   looked crude, and pointing at the mark on the map had done nothing). */
+.scene-kind-marks .flow-lit,.scene-kind-mark.flow-lit{outline:0;background:#c5d9f1;color:#163a63;border-radius:4px}
 .scene-program-card>strong{font-size:17px;line-height:21.25px}
 .scene-kind-mark{position:absolute;display:flex;align-items:center;justify-content:center;color:#204a7b;border-radius:4px;border:0;padding:0;background:transparent;pointer-events:auto;cursor:pointer}
 .scene-kind-mark>.flow-kind-mark{margin:0;display:block}
 .scene-kind-mark:focus-visible{outline:2px solid #204a7b;outline-offset:2px}
-.scene-kind-mark.flow-lit{outline:2px solid #243044}
+
 /* An arrow takes no pointer event: the canvas hit-tests the pointer itself
    (scene.mjs hitTest), so a drag from an arrow pans the map as one from
    empty canvas does. React Flow marks its edges as no pan: a press on an
