@@ -15895,3 +15895,15 @@ the policies a caller chooses among and the engine that runs them (example:
 an HTTP client library's request options, retry policies and connection
 pool). Ordinary runs: rate-envelope-queue divided into 5 boxes with Jev and
 with the text model; service-pkg unchanged (10 top boxes).
+
+Owner on rate-envelope-queue's cards: "why do we change the font size too"
+and "the list isn't needed any more". A word is now drawn at its own size in
+the world, growing with its box (only its fading follows the zoom), replacing
+2026-10-02's 1.6× cap; chips' marks likewise. A closed card names its title
+and role only, its inventory list gone (it had shown one row and a scrollbar
+in a card of its drawing's proportion); the inventory specs (named child
+rows, overflowing inventories, closed areas' children, and the real-SQLite
+inventory walks) are deleted with it. An input kind's group is no narrower
+than its title ("Background work" had run past its frame), its title drawn
+in the font it is measured in. `npm test` 178/178; visual 20/21 (same
+pre-existing spec).

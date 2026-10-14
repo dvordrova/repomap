@@ -288,15 +288,15 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
   const local=new Map(),areaInventoryHeights=new Map();
   // A closed area's card has its drawing's proportion once its level is
   // laid out (owner, 2026-10-14: a card the shape of its words had held its
-  // drawing in empty margins): its words stand in it, its inventory in the
-  // room under its title, the rest of the list left to scroll. Before its
-  // level is laid out, and for one never drawn open, the card is its words.
+  // drawing in empty margins), its title and role in it; what it holds is
+  // its drawing, entered. Before its level is laid out, and for one never
+  // drawn open, the card is its words.
   const closedArea=node=>{
-    const named={...node,contents:programContents(model,node)},cap=canvas.height/2,width=units.part.width;
-    const words=programInventoryHeight(programWords(named,width,measure),cap),inside=local.get(node.id);
-    if(!inside){areaInventoryHeights.set(node.id,words);return areaCard(named,inside,measure,1,cap);}
+    const named={...node,contents:programContents(model,node)},width=units.part.width;
+    const inside=local.get(node.id);
+    if(!inside){areaInventoryHeights.set(node.id,0);return {id:node.id,width,height:programCardHeight(named,width,measure,0)};}
     const header=programCardHeight(named,width,measure,0),height=Math.max(header,width*inside.height/inside.width);
-    areaInventoryHeights.set(node.id,Math.max(0,Math.min(words,height-header)));
+    areaInventoryHeights.set(node.id,0);
     return {id:node.id,width,height};
   };
   const childOf=container=>id=>{
@@ -399,7 +399,10 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     if(node.kind==='kind'){
       const tiles=node.children.map(id=>inputBox(nodes.get(id),measure));
       const laid=pack(tiles,{top:units.band(.8),aspect:2.2});
-      local.set(node.id,{width:laid.width,height:laid.height,children:new Map(tiles.map(tile=>[tile.id,{...laid.at.get(tile.id),width:tile.width,height:tile.height}])),routes:new Map(),ports:[],text:1,kind:'kind'});
+      // A group is no narrower than its title: its kind's mark and name
+      // (scene.css .scene-group-title).
+      const titled=Math.ceil(measure(node.name||'','700 13.6px system-ui'))+12*2+16+6;
+      local.set(node.id,{width:Math.max(laid.width,titled),height:laid.height,children:new Map(tiles.map(tile=>[tile.id,{...laid.at.get(tile.id),width:tile.width,height:tile.height}])),routes:new Map(),ports:[],text:1,kind:'kind'});
     }
     if(node.kind==='bucket'){
       const chips=node.children.map(id=>chipBox(nodes.get(id),measure));
@@ -452,10 +455,9 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // inside the card at the scale that fits it.
     // A program's card has its drawing's proportion, its words in it.
     if(node.kind==='program'){
-      const named={...node,contents:programContents(model,node)},maxInventoryHeight=canvas.height/2,width=units.programCard.width;
-      const words=programInventoryHeight(programWords(named,width,measure),maxInventoryHeight);
-      const header=programCardHeight(named,width,measure,0),height=inside?.width>0?Math.max(header,width*inside.height/inside.width):programCardHeight(named,width,measure,maxInventoryHeight);
-      programInventoryHeights.set(id,Math.max(0,Math.min(words,height-header)));
+      const named={...node,contents:programContents(model,node)},width=units.programCard.width;
+      const header=programCardHeight(named,width,measure,0),height=inside?.width>0?Math.max(header,width*inside.height/inside.width):header;
+      programInventoryHeights.set(id,0);
       return {id,width:width*programText,height:height*programText};
     }
     if(node.kind==='inputs')return {id,...inside.closed};

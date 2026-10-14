@@ -261,9 +261,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the edge is cut there (owner, 2026-10-14). Every level draws the whole
   map around what is entered, closed and in place; entering a program opens
   it where its card stood.
-  A program's or an area's closed card has its drawing's proportion, its
-  words in it and its inventory in the room under its title (the rest
-  scrolls), so entering it shows its drawing where its card stood; an area's
+  A program's or an area's closed card has its drawing's proportion and
+  names its title and role (no inventory list), so entering it shows its
+  drawing where its card stood; a word is drawn at its own size in the
+  world and grows with its box, only its fading following the zoom; an area's
   level is laid out down or across, whichever shows it larger in the canvas.
   The repository's root package is titled by its last segment. A program
   that is one part is that part: drawn where its card stood with the

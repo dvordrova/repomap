@@ -22,7 +22,7 @@
 .scene-inputs-card .flow-input-types li{display:flex;gap:6px;align-items:center}
 .scene-group{box-sizing:border-box;border-radius:calc(8px / var(--flow-zoom,1));box-shadow:inset 0 0 0 calc(1px / var(--flow-zoom,1)) #356faa;background:#edf5ff}
 .scene-group-title{display:flex;gap:6px;align-items:center;padding:8px 12px;color:#204a7b}
-.scene-group-title>strong{font-size:13.6px;line-height:18px;white-space:nowrap}
+.scene-group-title>strong{font:700 13.6px/18px system-ui;white-space:nowrap}
 .scene-tile{display:flex;gap:6px;align-items:center;padding:0 10px;border-radius:6px;background:#deedff;border:1.25px solid #356faa;color:#204a7b;font:600 13px/17px system-ui;overflow:hidden}
 .scene-tile>span{overflow-wrap:anywhere}
 .scene-chip{gap:6px;padding:0 12px;font:600 13px/17px system-ui}
@@ -105,12 +105,16 @@
    lines as spaced (owner via the coordinator, 2026-10-02: casdoor's
    buckets beside an opened one read in 50-pixel letters). The camera
    framing a box stops under it (scene-canvas.jsx readCap). */
+/* A word is drawn at its own size in the map's world and grows with its box
+   as the camera comes closer; only its fading follows the zoom (owner,
+   2026-10-14: the canvas is a window on the map, its words no smaller or
+   larger than their boxes; this replaces 2026-10-02's cap at 1.6 times). */
 .scene-root .react-flow__node :is([data-box-title],.flow-chip-name,.flow-description,.flow-component-role,.scene-tile>span,.scene-group-title>strong){
-  font-size:min(calc(var(--word) * 1px),calc(var(--word) * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))));opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
+  font-size:calc(var(--word) * 1px);opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--word) - var(--gone)) * 2),1)}
 .scene-root .react-flow__node [data-box-title]{line-height:1.25em}
 .scene-root .react-flow__node .flow-chip-name{line-height:calc(17em / 12)}
 .scene-root .react-flow__node :is(.flow-description,.flow-component-role){line-height:calc(18em / 13)}
-.scene-root .react-flow__node :is(.scene-chip,.scene-bucket-marks)>.flow-kind-mark{width:min(14px,calc(14 * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))));height:min(14px,calc(14 * 1.6px / (var(--flow-zoom,1) * var(--scene-text,1))))}
+.scene-root .react-flow__node :is(.scene-chip,.scene-bucket-marks)>.flow-kind-mark{width:14px;height:14px}
 .scene-root .scene-chip:focus-visible,.scene-root .scene-bucket:focus-visible{outline:2px solid #243044;outline-offset:2px}
 .scene-tip.scene-tip-name{white-space:nowrap;max-width:none}
 .scene-root .react-flow__node .scene-deep [data-box-title]{opacity:1}

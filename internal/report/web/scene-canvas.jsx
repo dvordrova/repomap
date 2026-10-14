@@ -80,10 +80,7 @@ function ProgramNode({data}){
     <div className="scene-words"><strong data-box-title={node.id}>{words.title.join('\n')}</strong>{' '}
     {words.role.length>0&&<div className="flow-component-role">{words.role.join('\n')}</div>}{' '}
     {words.purpose.length>0&&<p className="flow-description flow-description-lines">{words.purpose.join('\n')}</p>}
-    {words.contents.length>0&&<ul className="scene-program-inside nodrag" onPointerDownCapture={event=>event.stopPropagation()} onMouseDownCapture={event=>event.stopPropagation()} style={{height:node.inventoryHeight}} aria-label={t('Parts')}>
-      {words.contents.map(child=><li key={child.id}><button type="button" data-program-child={child.id}
-        onClick={event=>{event.stopPropagation();data.open(child.id,event);}}>{child.lines.join('\n')}</button></li>)}
-    </ul>}</div>
+    {/* A card names its title and role; what it holds is its drawing, entered. */}</div>
     {node.display==='area'&&<BigName node={node}/>}
   </Scaled>
     {node.display==='area'&&['core','triggers'].includes(node.lane)&&<Scaled node={node} className="scene-role-layer" style={{width:0,height:0}}>

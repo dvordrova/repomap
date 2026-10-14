@@ -210,13 +210,9 @@ toolbar's breadcrumb up from a part at 1440×900 and 1280×800; without it
 that spec is skipped.
 
 On the completed recursive SQLite run, `visual/program-overview.spec.mjs`
-walks the exact saved area/part forest through ordinary inventory and zoom
-controls. Its ledger records every original ID, closed child inventory,
-opened chain, leaf reading, full original declaration inventory, one original
-declaration's reading/source coordinates, return, and non-vacuous checks of
-all drawn arrow IDs/endpoints. This exhaustive keyboard activation receipt
-does not establish mouse/Tab reachability at every camera or visual inspection
-of every saved screenshot. Those remain separate browser journeys and review.
+checks that keyboard entry keeps screen markers on the world camera. The
+closed cards' child inventories it once walked are gone (owner, 2026-10-14:
+a card names its title and role; what it holds is its drawing, entered).
 Nested fault-check runners use their own temporary browser output directory
 and port; cleaning their artifacts must not remove a sibling test's traces.
 
