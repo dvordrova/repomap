@@ -193,10 +193,11 @@
 /* A part's or an area's name across its card while its title is too small
    to read: the two change places at 10.5 pixels at once, never standing
    together (owner, 2026-10-14: they had stood doubled half-faded) nor both
-   nearly unseen (they had faded over the same half pixel). */
+   nearly unseen (they had faded over the same half pixel). The big name
+   itself stands while it reads, from 11 pixels, as any title. */
 .scene-root .react-flow__node .scene-program-inside{opacity:clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * 17 - 10.5) * 50),1)}
 .scene-root .react-flow__node .scene-big-name{position:absolute;inset:0;z-index:2;padding:max(0px,calc(14px - 1.4px / (var(--flow-zoom,1) * var(--scene-text,1))));display:flex;align-items:center;justify-content:center;text-align:center;white-space:pre;font-family:system-ui;font-weight:700;line-height:1.15;color:#243044;pointer-events:none;
-  opacity:clamp(0,calc((10.5 - var(--flow-zoom,1) * var(--scene-text,1) * 17) * 50),1)}
+  opacity:min(clamp(0,calc((10.5 - var(--flow-zoom,1) * var(--scene-text,1) * 17) * 50),1),clamp(0,calc((var(--flow-zoom,1) * var(--scene-text,1) * var(--big,40) - 11) * 2),1))}
 /* The map moving is one composited layer (scene-canvas.jsx scene-moving). */
 .scene-root.scene-moving .react-flow__viewport{will-change:transform}
 /* An input's name stands in its measured lines (scene-canvas.jsx TileNode). */

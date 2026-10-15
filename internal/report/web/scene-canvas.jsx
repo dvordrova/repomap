@@ -53,7 +53,7 @@ function Mark({icon,className='',label='',kind=''}){
 function BigName({node}){
   const name=useMemo(()=>bigName(node.title||'',(node.rect.width/node.text-28)*.92,(node.rect.height/node.text-28)*.92,measure),[node.title,node.rect.width,node.rect.height,node.text]);
   if(name.size<17*1.2)return null;
-  return <div className="scene-big-name" aria-hidden="true" style={{fontSize:name.size}}>{name.lines.join('\n')}</div>;
+  return <div className="scene-big-name" aria-hidden="true" style={{fontSize:name.size,'--big':name.size}}>{name.lines.join('\n')}</div>;
 }
 const laneClass=lane=>lane==='core'?'flow-core':lane==='triggers'?'flow-entry':'';
 // A box drawn at its level's text size: its world rectangle holds its

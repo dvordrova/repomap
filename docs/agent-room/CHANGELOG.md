@@ -16265,3 +16265,18 @@ frame of kinds), then the open set as the default after the owner tries it.
 - The invariants' `marker-size` row follows the world-sized markers: one
   size over the zoom at every camera, shown from 12 px (it had kept the old
   20–28 screen px rule).
+
+## 2026-10-15 — the invariants table on tonight's reports; a big name stands while it reads
+
+- `invariants.spec` on rate-envelope-queue, service-pkg, template (12 pans,
+  20 pointer moves a level): pan, pointing, arrow shape, markers, titles,
+  cards, labels, home names, whole fit and page errors pass. Red cells:
+  `in-frame`/`off-canvas` at program levels (the whole map's arrows drawn
+  around an entered program, owner's 10-14 "window" decision; the rows
+  predate it), `step1-gap` 6.5–6.8 px inside programs (the drawing is
+  smaller under the header; owner question 9 in the plan), `tip-whole` 8 px
+  past the canvas (tips are cut at the edge by rule; owner question 8),
+  `pan-fixed` once in template's cmd/inmemory_badger (to look into), and
+  `text`: big names drawn at 8.8–10.7 px.
+- A big name stands while it reads (from 11 px, as a title) and fades below,
+  as words do.
