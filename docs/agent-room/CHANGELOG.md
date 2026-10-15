@@ -16191,3 +16191,19 @@ frame of kinds), then the open set as the default after the owner tries it.
   test's 12-px drag check allows a pixel of rounding.
 - Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
   ui-visual-test` 21/21; screenshots of service-pkg entered, airflow home.
+
+## 2026-10-15 — a part's tiles ordered as a layered graph in Go
+
+- `layTiles` (page_tile_layout.go) runs once per part as the page is built:
+  blocks as symbolBlocks makes them, cycles condensed (Tarjan), a block's
+  column the longest chain to it, each column ordered as listed then by
+  barycentres (4 sweeps down and up); the head carries `col`/`ord`.
+  symbols.mjs places blocks by them when present (old pages keep the
+  browser's chain order). Owner: "a precomputation on the back end, like
+  graph theory". Envelope construction now reads left to right (callers →
+  callees → Envelope); no ELK per part. Pixels stay in the browser.
+- Checks: Go test TestTilesAreOrderedAsALayeredGraph (callee never left of
+  caller, a cycle in one column, members carry no place, no crossing in the
+  two-column case); `npm test` 180/180; `go test`/`go vet ./internal/report/`
+  ok; `make ui-visual-test` 21/21; screenshots of Envelope and Queue
+  construction.

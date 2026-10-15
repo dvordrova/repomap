@@ -2089,6 +2089,10 @@ type pageNodeSymbol struct {
 	// by file. Open is its source in a served report, as Href is in a static
 	// one: the reading names a declaration by the same source.
 	Path string `json:"path,omitempty"`
+	// Col and Ord are the column and the place in it of a block's head, as
+	// layTiles orders the part's tiles (page_tile_layout.go).
+	Col int `json:"col,omitempty"`
+	Ord int `json:"ord,omitempty"`
 	// Line is the declaration's line in Path: with Path, the declaration's
 	// place whatever links the page has, as the scene names a handler and a
 	// caller (SceneSource).
@@ -2302,10 +2306,6 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 			symbols = append(symbols, pageNodeSymbol{Kind: "more", Owner: owner, Name: fmt.Sprintf("… +%d", count-maxTileFields)})
 		}
 	}
-	raw, err := json.Marshal(symbols)
-	if err != nil {
-		return "", ""
-	}
 	// How the part's own declarations hang together, each pair and kind once:
 	// a call, a type a callable returns, a type it takes, an interface a
 	// type implements (owner, 2026-10-14: Retry decisions' DefaultDecision
@@ -2346,6 +2346,16 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		for _, parameter := range object.Parameters {
 			add(parameter.TypeID, item.id, "takes")
 		}
+	}
+	// The tiles' order, from those links, before the symbols are written.
+	tileLinks := make([][2]int, len(calls))
+	for i, item := range calls {
+		tileLinks[i] = [2]int{item.from, item.to}
+	}
+	layTiles(symbols, tileLinks)
+	raw, err := json.Marshal(symbols)
+	if err != nil {
+		return "", ""
 	}
 	if len(calls) == 0 {
 		return string(raw), ""

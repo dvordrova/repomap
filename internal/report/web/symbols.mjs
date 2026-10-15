@@ -37,7 +37,12 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
     visiting.delete(i);
     return depth[i]=d;
   };
-  const column=i=>Math.min(columns-1,chain(i));
+  // A page built by Go orders the blocks as a layered graph (Go's layTiles:
+  // cycles one node, a callee never left of its caller, the columns'
+  // order by barycentres): each head carries its column and its place.
+  const laid=symbols.some(symbol=>symbol.col!==undefined||symbol.ord!==undefined);
+  const layoutColumn=i=>symbols[blocks[i].head].col||0;
+  const column=i=>Math.min(columns-1,laid?layoutColumn(i):chain(i));
   // A type taller than the card shows the rows that fit and counts the rest.
   const most=Math.max(1,Math.floor((height-symbolRow.header-symbolRow.pad)/symbolRow.row)-1);
   // A block stands where its first declaration is listed: a type holding a
@@ -48,7 +53,7 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
   const key=blocks.map(block=>[block.head,...block.rows].some(i=>symbols[i].key));
   for(const block of blocks)if(block.rows.length>most+1){block.more=block.rows.length-most;block.rows=block.rows.slice(0,most);}
   const tall=block=>symbolRow.header+(block.rows.length?(block.rows.length+(block.more?1:0))*symbolRow.row+symbolRow.pad:0);
-  const order=blocks.map((_,i)=>i).sort((a,b)=>listed[a]-listed[b]);
+  const order=blocks.map((_,i)=>i).sort(laid?(a,b)=>layoutColumn(a)-layoutColumn(b)||(symbols[blocks[a].head].ord||0)-(symbols[blocks[b].head].ord||0)||listed[a]-listed[b]:(a,b)=>listed[a]-listed[b]);
   const filled=new Array(columns).fill(0),placed=new Map();
   let hidden=0,keyLeft=false;
   for(const i of order){
@@ -68,7 +73,7 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
     block.rows.forEach((symbol,k)=>{rows[symbol]={block:i,column:at.column,y:at.y+symbolRow.header+k*symbolRow.row,height:symbolRow.row};});
   }
   // The columns its longest chain of links stands across.
-  const across=1+Math.max(0,...blocks.map((_,i)=>chain(i)));
+  const across=1+Math.max(0,...blocks.map((_,i)=>laid?layoutColumn(i):chain(i)));
   return {blocks:[...placed].map(([i,at])=>({...blocks[i],...at})),rows,hidden,across};
 }
 
