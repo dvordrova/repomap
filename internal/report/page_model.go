@@ -1630,6 +1630,20 @@ func packagedIn(module string, packages []string) bool {
 // (inlineWords, from GroupsIndex ObjectFacts.Inline's fields: "anonymous
 // function in ReplicateCommand.Run"), never by its number (owner,
 // 2026-09-29: no Run$1 anywhere).
+// readKey is the declaration key a subject is read by: a callable written
+// inline is read as the declaration its name is (InlineName.NamedKey), any
+// other declaration by its own key; "" for one with no place.
+func (builder *pageBuilder) readKey(targetID, subjectID string) string {
+	ref, known := builder.subject(targetID, subjectID)
+	if !known || ref.subject.Object == nil {
+		return ""
+	}
+	if key := ref.subject.Object.Inline.NamedKey; key != "" {
+		return key
+	}
+	return ref.subject.Object.DeclarationKey()
+}
+
 func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, *pageAnchor) {
 	switch {
 	case subject.Object != nil:

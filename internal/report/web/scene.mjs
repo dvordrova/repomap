@@ -382,7 +382,9 @@ export function memberView(model,geometry,part,index,canvas,pad=28){
   const need=(geometry.enterZoom.get(part)||0)*1.02;
   const at=(zoom,x,y)=>({zoom,x:canvas.width/2-x*zoom,y:canvas.height/2-y*zoom});
   if(whole>=need)return {level:chain,camera:at(whole,rect.x+rect.width/2,rect.y+rect.height/2)};
-  const tile=sceneAt(model,geometry,chain,{}).members.find(member=>member.part===part&&member.index===index)?.rect||rect;
+  // A declaration its type's card cuts stands in that type's "… +N" row.
+  const members=sceneAt(model,geometry,chain,{}).members,owner=(model.nodes.get(part)?.item?.symbols?.[index]?.owner||0)-1;
+  const tile=(members.find(member=>member.part===part&&member.index===index)||(owner>=0?members.findLast(member=>member.part===part&&member.index===owner):null))?.rect||rect;
   // A part wider than the canvas at that zoom is a window on it, the
   // declaration in its middle (owner, 2026-10-14: closed, the part had shown
   // the declaration alone in an empty card on a narrow canvas).

@@ -1215,3 +1215,34 @@ func mustFlowStepJSON(t *testing.T, step pageFlowStep) string {
 	}
 	return string(raw)
 }
+
+// A callable written inline is read as the declaration its name is
+// (InlineName.Named): its calls are that declaration's flow, and the call
+// to it is no call of itself (owner, 2026-10-15: rate-envelope-queue's
+// worker had read "calls itself" and none of the hooks its inline function
+// calls).
+func TestAnInlineFunctionsCallsAreItsHoldersFlow(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "queue.go", Line: line, Column: 2}
+	}
+	worker := groupindex.Subject{ID: "worker", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "worker", Kind: programindex.ObjectMethod, Location: at(164)}}
+	inline := groupindex.Subject{ID: "worker$1", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "worker$1", Kind: programindex.ObjectFunction, Location: at(183), Anonymous: true,
+		Inline: groupindex.InlineName{Named: "worker", NamedKey: worker.Object.DeclarationKey(), In: "worker"}}}
+	dec := groupindex.Subject{ID: "dec", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "dec", Kind: programindex.ObjectMethod, Location: at(300)}}
+	edge := func(id, from, to string, line int) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{Role: groupindex.EdgeRelationTarget, RelationID: id, RelationKind: programindex.RelationCalls, FromSubjectID: from, ToSubjectID: to,
+			Resolution: programindex.ResolutionExact, Location: at(line)}
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g1", Title: "Queue", MemberSubjectIDs: []string{"worker", "worker$1", "dec"}}},
+		StructuralEdges: []groupindex.StructuralEdge{edge("r1", "worker", "worker$1", 183), edge("r2", "worker$1", "dec", 184)}}
+	b := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "t1"}}}}},
+		subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://example.test/q", blobPrefix: "/blob/", revision: "r"}}
+	for _, subject := range []groupindex.Subject{worker, inline, dec} {
+		b.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject}
+	}
+	positions := map[string]int{"worker": 0, "worker$1": 0, "dec": 1}
+	calls := b.flowOf(&index, "worker", func(id string) int { return positions[id] }, nil)
+	if len(calls) != 1 || calls[0].Decl == nil || *calls[0].Decl != 1 {
+		t.Fatalf("worker's flow = %+v, want its inline function's call to dec alone", calls)
+	}
+}

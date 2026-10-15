@@ -500,6 +500,13 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if from < 0 || to < 0 {
 			continue
 		}
+		// Two subjects read as one declaration (a callable written inline is
+		// read as the one it is named by): no relation between two
+		// declarations. worker's call to the function written inside it had
+		// read "worker calls itself" (owner, 2026-10-15).
+		if from == to && row.fromSubject != row.toSubject {
+			continue
+		}
 		kind := row.Kind
 		if row.Arrow != "" {
 			// Every input registered at this part is one neighbour, Inputs,

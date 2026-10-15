@@ -55,6 +55,8 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
   // A drag anywhere over the declarations pans, as it does over the part: at
   // their reading scale they fill the canvas, and a drag that moved is no
   // click on the tile it started on.
+  // Whether the declaration chosen is one of a block's rows its card cuts.
+  const chosenCut=block=>chosen>=0&&!rows[chosen]&&symbols[chosen]?.owner-1===block.head;
   const header=tileHeader(divisor);
   return <div className="flow-part-symbols" style={{top:header,width,height:height-header}}>
     <div style={{width:inner.width,height:inner.height,transform:`scale(${1/divisor})`,transformOrigin:'top left'}} onMouseLeave={()=>member?.point(-1)}>
@@ -79,7 +81,12 @@ export function PartSymbols({symbols,calls,width,height,grid,member}){
         style={{left:x(block.column),top:inset+block.y,width:tileWidth,height:block.height}}>
         {row(block.head,'flow-symbol-head')}
         {block.rows.map((i,k)=>row(i,'flow-symbol-row',k>0&&symbols[i].kind!=='field'&&symbols[i].kind!=='more'&&['field','more'].includes(symbols[block.rows[k-1]].kind)))}
-        {block.more>0&&<span className="flow-symbol-row flow-symbol-rest">… +{block.more}</span>}
+        {block.more>0&&(chosenCut(block)
+          // The declaration chosen among those the card cuts stands in the
+          // "… +N" row, named (owner, 2026-10-14: a chosen worker() had been
+          // nowhere on the map); the rest are still counted.
+          ?<span className="flow-symbol-row flow-symbol-rest flow-symbol-chosen">{symbols[chosen].name}{symbols[chosen].text&&<em>{symbols[chosen].text}</em>}{block.more>1?` · +${block.more-1}`:''}</span>
+          :<span className="flow-symbol-row flow-symbol-rest">… +{block.more}</span>)}
       </div>)}
       {hidden>0&&<span className="flow-symbol-more" style={{right:side,bottom:inset}}>+{hidden}</span>}
     </div>

@@ -16238,3 +16238,20 @@ frame of kinds), then the open set as the default after the owner tries it.
 - Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
   ui-visual-test` 22/22; headless: "Background work" in the reading frames
   the worker tile, the tile tints its line in the reading.
+
+## 2026-10-15 — the chosen declaration always drawn; an inline function's calls are its holder's
+
+- A declaration chosen among the rows its type's card cuts stands named in
+  the type's "… +N" row ("worker(ctx: context.Context) · +9", chosen), and
+  `memberView` centres that row; the card's size and layout do not change.
+- `flowIndex` files a callable written inline under the declaration it is
+  read as (`InlineName.Named`), and `flowOf` drops a call whose callee reads
+  as the caller (`readKey`); the part reading drops a relation whose two
+  different subjects read as one declaration. rate-envelope-queue's worker
+  had read "calls itself" / "Called by worker" and none of the calls its
+  inline function makes (dec, withHookTimeout, buildInvokerChain, …); now its
+  Calls list them and no self relation stands. Genuine recursion (one
+  subject) still reads "calls itself".
+- Checks: Go test TestAnInlineFunctionsCallsAreItsHoldersFlow; `npm test`
+  180/180; `go test`/`go vet ./internal/report/` ok; `make ui-visual-test`
+  22/22; headless reading of worker chosen from Find.

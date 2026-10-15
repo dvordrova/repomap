@@ -191,7 +191,14 @@ func (builder *pageBuilder) flowIndex(index *groupindex.Index) *pageFlowIndex {
 		if edge.Role != groupindex.EdgeRelationTarget || !flowKinds[edge.RelationKind] || edge.Resolution == programindex.ResolutionUnresolved {
 			continue
 		}
-		flow.byCaller[edge.FromSubjectID] = append(flow.byCaller[edge.FromSubjectID], position)
+		// A callable written inline calls for the declaration it is read as
+		// (InlineName.Named): worker's calls made inside the function written
+		// in it are worker's flow, in the order they are written.
+		caller := edge.FromSubjectID
+		if ref, known := builder.subject(index.Target.ID, caller); known && ref.subject.Object != nil && ref.subject.Object.Inline.Named != "" {
+			caller = ref.subject.Object.Inline.Named
+		}
+		flow.byCaller[caller] = append(flow.byCaller[caller], position)
 		from, to := groupOf[edge.FromSubjectID], groupOf[edge.ToSubjectID]
 		if from != "" && to != "" && from != to {
 			if callers[to] == nil {
@@ -253,9 +260,15 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 	into := map[int][]int{}
 	dispatched := map[int]bool{}
 	first := map[int]string{}
+	callerKey := builder.readKey(index.Target.ID, callerID)
 	for _, position := range flow.byCaller[callerID] {
 		edge := index.StructuralEdges[position]
 		if within != nil && (edge.Location == nil || edge.Location.Line < within.Line || edge.Location.Line > within.EndLine) {
+			continue
+		}
+		// A call to a callable written inside the caller and read as it is
+		// no call of itself (page_model.go readKey).
+		if edge.ToSubjectID != callerID && callerKey != "" && builder.readKey(index.Target.ID, edge.ToSubjectID) == callerKey {
 			continue
 		}
 		var site *pageReadingSite
