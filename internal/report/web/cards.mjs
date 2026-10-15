@@ -102,11 +102,16 @@ export function fitTitle(title,width,font,measure){
 // at the largest size whose lines, words whole, fit `width` by `height`
 // (owner, 2026-10-14: an entered program's boxes had stood as tiny
 // inventories). Returns {size, lines}.
+// Its text is measured at one size and scaled: a width grows with the type
+// size, and the search tries a new fractional size each step, so measuring
+// at each size missed the measure cache every time (a second's
+// measureText when a zoom entered Airflow's program, 2026-10-15).
 export function bigName(title,width,height,measure,weight=700){
   let low=0,high=Math.max(0,height),best={size:0,lines:[]};
+  const reference=`${weight} 100px system-ui`;
   for(let i=0;i<18&&high-low>.25;i++){
-    const size=(low+high)/2,font=`${weight} ${size}px system-ui`;
-    const lines=widestPiece(title,font,measure)<=width?wrapText(title,width,font,measure):null;
+    const size=(low+high)/2,font=`${weight} ${size}px system-ui`,scaled=text=>measure(text,reference)*size/100;
+    const lines=widestPiece(title,font,scaled)<=width?wrapText(title,width,font,scaled):null;
     if(lines&&lines.length*size*1.15<=height){best={size,lines};low=size;}else high=size;
   }
   return best;

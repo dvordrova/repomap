@@ -16380,3 +16380,16 @@ The tiles' layered order gets a property test (400 random parts with types,
 members, skipped rows and cycles): no link right to left outside a cycle, a
 column's places 0..k-1 once each, the same order twice; a broken layering
 fails it. `REPOMAP_INTENTS_VIEWPORT` reads the intents in another window.
+
+## 2026-10-15 — a pinch that seemed not to work
+
+Owner: "sometimes a pinch does nothing, the next one works". Measured on
+Airflow at 4× CPU: the pinch that brought another level held the page 2.4 s,
+its ticks waiting (k6: 98 ms). The one-boundary pinch rule was not it (a
+re-pinch after 120 ms zooms on). Two causes: `bigName` searched its type size
+over fractional sizes, each a new font for the measure cache (1 s of
+measureText); it now measures at 100 px and scales. And the column read the
+new level inside the gesture (`map.showNode`, 1.4 s for Airflow's program);
+it now reads it 300 ms after the gesture's last tick. During a pinch the
+longest tick-to-frame is 214 ms (was 2,231). The column's own reading of a
+large program still takes 1.5 s at 4× once the pinch pauses.

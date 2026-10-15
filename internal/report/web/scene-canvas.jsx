@@ -649,7 +649,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   });
 
   // A zoom gesture may change the level; a pan never does.
-  let lastZoom=geometry.home.zoom,gestureAim=null;
+  let lastZoom=geometry.home.zoom,gestureAim=null,following=0,pendingFollow=null;
   // One pinch (ctrl+wheel, a trackpad's pinch) crosses at most one level
   // boundary and stops short of the next; a pause ends it. The zoom a tick
   // asks for is React Flow's own; only a tick that would cross a second
@@ -674,6 +674,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
       event.stopPropagation();return;
     }
     if(!event.ctrlKey||!instance||initializing)return;
+    if(pendingFollow)follow();
     const now=performance.now(),v=camera.get(),box=host.getBoundingClientRect();
     const aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
     if(!gesture||now-gesture.at>300){
@@ -711,7 +712,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     if(event)levelForZoom(previous,viewport);
   }
   // A zoom gesture's level, with hysteresis (store.mjs zoomAction); a
-  // zoom that brings another level has the column read it.
+  // zoom that brings another level has the column read it once the gesture
+  // pauses, as a pinch ends: read during it, Airflow's program reading had
+  // held the pinch for 1.4 s on a 4× slower CPU, the zoom seeming not to
+  // work (owner, 2026-10-15).
+  // Each tick of the gesture puts the reading off again.
+  function follow(){
+    clearTimeout(following);if(!pendingFollow)return;
+    following=setTimeout(()=>{const level=pendingFollow;pendingFollow=null;if(levelKey(store.getState().level)===levelKey(level))callbacks.follow?.(level.at(-1));},300);
+  }
   function levelForZoom(previous,viewport){
     const box=host.getBoundingClientRect(),aimScreen=gestureAim||{x:box.left+box.width/2,y:box.top+box.height/2};
     const action=zoomAction(previous,viewport,{x:(aimScreen.x-box.left-viewport.x)/viewport.zoom,y:(aimScreen.y-box.top-viewport.y)/viewport.zoom});
@@ -719,7 +728,8 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const before=levelKey(store.getState().level);
     store.dispatch(action);
     const level=store.getState().level;
-    if(levelKey(level)!==before&&level.length)callbacks.follow?.(level.at(-1));
+    if(levelKey(level)===before)return;
+    pendingFollow=level.length?level:null;follow();
   }
 
   // The keyboard on a chip or a bucket: focus points at it, Enter reads it.
