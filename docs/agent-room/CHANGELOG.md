@@ -16315,3 +16315,19 @@ frame of kinds), then the open set as the default after the owner tries it.
   (`map:…`) drawn around an entered program are the world's (owner, 10-14),
   their ends checked by `own-ends`. Their red cells had flagged the decision.
 - README links the examples' index page (dvordrova.github.io/repomap/).
+
+## 2026-10-15 — the reader-intents check on real reports; a closed Inputs card reads
+
+- `visual/intents.spec.mjs` (REPOMAP_INVARIANT_REPORTS, as the invariants):
+  one snapshot of the screen (boxes in sight, their names' screen size and
+  opacity, floating cards) checked against REPORT.md's intents — OVERVIEW
+  (every box in sight large enough names itself, no two boxes' names
+  overlap), PEEK (pointing keeps the camera and every box), OPEN (a program
+  opened keeps its name's size in world units — exactly as a frame, within a
+  tenth as a program that is one part — reads, and opening never zooms out).
+  rate-envelope-queue, service-pkg, template, redis, k6 pass.
+- It found k6's closed Inputs cards unnamed on the whole map: drawn at the
+  world's unit, their "Inputs" stood below reading size. A closed Inputs
+  card is drawn at the programs' text, its title as large as theirs.
+- Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
+  ui-visual-test` 22/22, intents 5/5.

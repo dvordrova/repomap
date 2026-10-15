@@ -61,8 +61,9 @@ export function sceneAt(model,geometry,level=[],selection={}){
           {contents:programContents(model,node),inventoryHeight:geometry.programInventoryHeights.get(id)});
         else if(node.kind==='inputs'){
           // Closed: its kinds' marks in a row under its title, each read alone.
-          if(!open.has(id)&&!geometry.openInputs?.has(id)){box(id,'inputs',rect,unit,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
-            rect:{x:rect.x+(16+i*22)*unit,y:rect.y+40*unit,width:18*unit,height:18*unit}}))});continue;}
+          const closedText=geometry.programText||unit;
+          if(!open.has(id)&&!geometry.openInputs?.has(id)){box(id,'inputs',rect,closedText,{kinds:node.children.map((group,i)=>({kind:model.nodes.get(group).inputKind,group,
+            rect:{x:rect.x+(16+i*22)*closedText,y:rect.y+40*closedText,width:18*closedText,height:18*closedText}}))});continue;}
           // Open, its frame is its box: the map's arrows end on it. One
           // standing open on the whole map is no level to enter.
           const t=geometry.text.get(id),always=geometry.openInputs?.has(id);

@@ -493,7 +493,10 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
       const most=units.programCard.width*programText;
       if(inside.width*systemText<=most*1.5&&inside.height*systemText<=most){openInputs.add(id);return {id,width:inside.width*systemText,height:inside.height*systemText};}
       openInputs.delete(id);
-      return {id,...inside.closed};
+      // Closed, at the programs' text, its title as large as theirs (an
+      // Outside frame's title is): at the world's unit its "Inputs" had stood
+      // unread on the whole map (k6).
+      return {id,width:inside.closed.width*programText,height:inside.closed.height*programText};
     }
     if(node.kind==='outside')return {id,width:inside.width*systemText,height:inside.height*systemText};
     if(node.kind==='note')return {id,width:260,height:Math.max(80,(node.item?.height||80))};
