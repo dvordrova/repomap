@@ -11,6 +11,7 @@ claim on the page can be checked in seconds.
 ## Examples
 
 Explore the English reports below, hosted on GitHub Pages.
+All examples are listed on [one page](https://dvordrova.github.io/repomap/).
 Each link opens the repository's interactive map, with its explanations and
 source links beside it. Projects are grouped by language and what they do;
 mixed projects can appear under more than one language.

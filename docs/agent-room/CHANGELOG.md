@@ -16308,3 +16308,10 @@ frame of kinds), then the open set as the default after the owner tries it.
   (focusin/focusout); the removed per-element listeners had answered focus.
 - Checks: `go test`/`go vet ./internal/report/` ok, `npm test` 180/180, `make
   ui-visual-test` 22/22.
+
+## 2026-10-15 — invariant rows follow the "window" decision; README links the index
+
+- `in-frame`/`off-canvas` check a level's own arrows; the whole map's arrows
+  (`map:…`) drawn around an entered program are the world's (owner, 10-14),
+  their ends checked by `own-ends`. Their red cells had flagged the decision.
+- README links the examples' index page (dvordrova.github.io/repomap/).

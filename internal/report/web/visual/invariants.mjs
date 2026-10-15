@@ -48,8 +48,8 @@ export const invariants=[
   ['own-ends','each arrow starts on its own source and ends on its own target (border, port or marker)',{...arrows,none:'no arrow drawn in sight'}],
   ['head-in','each arrow has its head at its target, its last segment pointing in',{...arrows,none:'no arrow drawn in sight'}],
   ['shared-run','no two arrows share over 6 px unless they are the two directions of one pair',{...arrows,none:'fewer than two arrows in sight'}],
-  ['in-frame','every arrow end lies in the level frame or on a port or marker',{...arrows,none:'no arrow drawn in sight'}],
-  ['off-canvas','no arrow end out of the canvas while the level frame fits it',{...arrows,none:'no arrow in sight, or the level frame larger than the canvas'}],
+  ['in-frame','every arrow of the level ends in the level frame or on a port or marker (the whole map\'s arrows around it are the world\'s)',{...arrows,none:'no arrow drawn in sight'}],
+  ['off-canvas','no end of the level\'s arrows out of the canvas while the level frame fits it',{...arrows,none:'no arrow in sight, or the level frame larger than the canvas'}],
   ['crosses','no arrow runs through a box it does not join',{...arrows,none:'no arrow drawn in sight'}],
   ['step1-gap','parallel lanes stand at least 7.5 screen px apart, as in the approved Step 1 drawing',{...arrows,none:'fewer than two parallel runs in sight'}],
   ['tip-whole','a marker\'s or a port\'s tip names each of what it stands for whole, never cut, and stands wholly in the canvas',{phase:'arrows',none:'no port or marker in sight to point at'}],
@@ -207,10 +207,16 @@ export function invariantKit(){
           if(!inward||!outside){headOk=false;why=`last segment ${outside?'runs along':'comes from inside'} the ${side} side`;}
         }
         add('head-in',headOk,`${name}: ${why}`);
-        // Ends in the level frame, or on a port or marker.
-        const endsOk=[[first,fromEnds],[last,toEnds]].every(([p,own])=>own.some(e=>within(p,e))||!!frameRect&&within(p,frameRect));
-        add('in-frame',endsOk,`${name}: an end outside ${frame||'the canvas'}`);
-        if(fits)add('off-canvas',[first,last].every(p=>within(p,c,1)),`${name}: an end beyond the canvas`);
+        // Ends in the level frame, or on a port or marker. The whole map's
+        // arrows drawn around an entered level are the world's, not the
+        // level's (owner, 2026-10-14: the canvas is a window on one map); their
+        // ends stand on their own boxes (own-ends).
+        const world=!!frame&&id.startsWith('map:');
+        if(!world){
+          const endsOk=[[first,fromEnds],[last,toEnds]].every(([p,own])=>own.some(e=>within(p,e))||!!frameRect&&within(p,frameRect));
+          add('in-frame',endsOk,`${name}: an end outside ${frame||'the canvas'}`);
+          if(fits)add('off-canvas',[first,last].every(p=>within(p,c,1)),`${name}: an end beyond the canvas`);
+        }
         // No box it does not join lies across it.
         const own=new Set([...ancestors(from),...ancestors(to)]);
         const holds=(outer,id)=>ancestors(id).has(outer);
