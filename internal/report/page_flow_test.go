@@ -1246,3 +1246,26 @@ func TestAnInlineFunctionsCallsAreItsHoldersFlow(t *testing.T) {
 		t.Fatalf("worker's flow = %+v, want its inline function's call to dec alone", calls)
 	}
 }
+
+// A callable that only wraps another (go func(){ s.run() }() in G) is named
+// by the one it wraps; its call stays its own: run never reads as calling
+// itself.
+func TestAWrappingInlineFunctionsCallIsNoSelfCall(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "g.go", Line: line, Column: 2}
+	}
+	run := groupindex.Subject{ID: "run", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "run", Kind: programindex.ObjectMethod, Location: at(40)}}
+	wrap := groupindex.Subject{ID: "g$1", Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: "g$1", Kind: programindex.ObjectFunction, Location: at(10), Anonymous: true,
+		Inline: groupindex.InlineName{Named: "run", NamedKey: run.Object.DeclarationKey(), Wraps: "run"}}}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g1", Title: "G", MemberSubjectIDs: []string{"run", "g$1"}}},
+		StructuralEdges: []groupindex.StructuralEdge{{Role: groupindex.EdgeRelationTarget, RelationID: "r1", RelationKind: programindex.RelationCalls, FromSubjectID: "g$1", ToSubjectID: "run",
+			Resolution: programindex.ResolutionExact, Location: at(10)}}}
+	b := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Target: programindex.Target{ID: "t1"}}}}},
+		subjects: map[string]subjectRef{}, links: pageLinks{repositoryURL: "https://example.test/g", blobPrefix: "/blob/", revision: "r"}}
+	for _, subject := range []groupindex.Subject{run, wrap} {
+		b.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject}
+	}
+	if calls := b.flowOf(&index, "run", func(id string) int { return 0 }, nil); len(calls) != 0 {
+		t.Fatalf("run's flow = %+v, want no call of itself", calls)
+	}
+}

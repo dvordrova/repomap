@@ -1258,6 +1258,10 @@ function rmSavedScene(doc){
         };
         inspectorRoot.addEventListener('pointerover',function(event){var ref=refOf(event.target);if(ref)surface.point(ref);});
         inspectorRoot.addEventListener('pointerout',function(event){if(refOf(event.target)&&!refOf(event.relatedTarget))surface.point(null);});
+        // The keyboard's focus points as the pointer does (desktop mouse and
+        // keyboard acceptance).
+        inspectorRoot.addEventListener('focusin',function(event){var ref=refOf(event.target);if(ref)surface.point(ref);});
+        inspectorRoot.addEventListener('focusout',function(event){if(refOf(event.target)&&!refOf(event.relatedTarget))surface.point(null);});
       }
       if(map.hasAttribute('data-system-map'))rmProgramsTable(map.readingContext(),map.querySelector('[data-programs-table]'),nodes.filter(function(n){return n.dataset.branch==='component';}),
         function(id){return surface.frameConnections(id).map(function(group){return {incoming:group.incoming,title:group.title,key:group.key,outside:group.outside};});});

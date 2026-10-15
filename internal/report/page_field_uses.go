@@ -95,7 +95,7 @@ func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts 
 		// (groupindex InlineName.Named): LoggingStamp's reads are made by
 		// the function it returns (owner, 2026-10-14).
 		reader := edge.FromSubjectID
-		if from, known := builder.subject(targetID, reader); known && from.subject.Object != nil && from.subject.Object.Inline.Named != "" {
+		if from, known := builder.subject(targetID, reader); known && from.subject.Object != nil && from.subject.Object.Inline.Named != "" && from.subject.Object.Inline.Wraps == "" {
 			reader = from.subject.Object.Inline.Named
 		}
 		label := edge.FieldPath

@@ -16296,3 +16296,15 @@ frame of kinds), then the open set as the default after the owner tries it.
   34.4 → 27.8 MB, first map 62.3 → 60.8 s at 4× (DOMContentLoaded 14.3 →
   13.5 s). The first map still waits for every level's layout and for the
   hidden map nodes (8,576 anchors), the next two things to change.
+
+## 2026-10-15 — sanity checker #3: a wrapper's call, keyboard focus
+
+- A callable that only wraps another (InlineName.Wraps) is named by the
+  callable it wraps, not written in it: its calls and reads stay its own
+  (page_flow.go flowIndex, page_field_uses.go), or the wrapped callable read
+  as calling itself (`go func(){ s.run() }()` → run → run). Go test
+  TestAWrappingInlineFunctionsCallIsNoSelfCall.
+- The reading's one listener points on keyboard focus as on the pointer
+  (focusin/focusout); the removed per-element listeners had answered focus.
+- Checks: `go test`/`go vet ./internal/report/` ok, `npm test` 180/180, `make
+  ui-visual-test` 22/22.

@@ -191,11 +191,13 @@ func (builder *pageBuilder) flowIndex(index *groupindex.Index) *pageFlowIndex {
 		if edge.Role != groupindex.EdgeRelationTarget || !flowKinds[edge.RelationKind] || edge.Resolution == programindex.ResolutionUnresolved {
 			continue
 		}
-		// A callable written inline calls for the declaration it is read as
-		// (InlineName.Named): worker's calls made inside the function written
-		// in it are worker's flow, in the order they are written.
+		// A callable written inline calls for the function it is written in
+		// (InlineName.Named with In): worker's calls made inside the function
+		// written in it are worker's flow, in the order they are written.
+		// One that only wraps a callable is named by it, not written in it:
+		// its call stays its own, or the wrapped callable would call itself.
 		caller := edge.FromSubjectID
-		if ref, known := builder.subject(index.Target.ID, caller); known && ref.subject.Object != nil && ref.subject.Object.Inline.Named != "" {
+		if ref, known := builder.subject(index.Target.ID, caller); known && ref.subject.Object != nil && ref.subject.Object.Inline.Named != "" && ref.subject.Object.Inline.Wraps == "" {
 			caller = ref.subject.Object.Inline.Named
 		}
 		flow.byCaller[caller] = append(flow.byCaller[caller], position)
