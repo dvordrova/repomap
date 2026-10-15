@@ -165,9 +165,11 @@
    pixel, since a border's width rounds to whole pixels (1.78 to 1) and the
    padding does not: redis's program name stood 0.8 of its pixels off where
    its open frame's header stands (2026-10-15). The box keeps its border
-   colour, and every state's, for the line to take. */
+   colour and style, and every state's, for the line to take (a dashed
+   chip or note stays dashed); the line stands over the words, as the
+   border once clipped them. */
 .scene-root .scene-scaled:is(.flow-part:not(.scene-deep),.flow-chip:not(.scene-bucket-stack),.scene-tile,.scene-program-card){border-width:0}
-.scene-root .scene-scaled:is(.flow-part:not(.scene-deep),.flow-chip:not(.scene-bucket-stack),.scene-tile,.scene-program-card)::before{content:'';position:absolute;inset:0;border:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1))) solid;border-color:inherit;border-radius:inherit;pointer-events:none}
+.scene-root .scene-scaled:is(.flow-part:not(.scene-deep),.flow-chip:not(.scene-bucket-stack),.scene-tile,.scene-program-card)::before{content:'';position:absolute;inset:0;z-index:2;border-width:calc(1.4px / (var(--flow-zoom,1) * var(--scene-text,1)));border-style:inherit;border-color:inherit;border-radius:inherit;pointer-events:none}
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:14px}
 .scene-root .scene-scaled.scene-tile{padding:0 10px}
 .scene-root .scene-scaled.scene-chip{padding:0 12px}

@@ -16348,3 +16348,13 @@ missing program, finds the opened header by its text and checks it within 2%
 of its world size and two screen pixels of its world place. Passed on
 rate-envelope-queue, service-pkg, template, redis, k6; npm 180, visual 22,
 go test ./internal/report.
+
+Sanity check #5 on that commit: the `::before` line had set `solid`, losing
+the dashes of unestablished chips and notes (now `border-style:inherit`,
+checked in the page's computed style); program cards reserved 32 px for the
+magnifier and part cards 24, so a long one-part name could rewrap when opened
+(now one `units.magnifier`, the magnifier's inset + size + gap past the
+padding, 17); the line stands over the words as the border once clipped them.
+intents.spec now opens up to four programs per report from a fresh page,
+checks the name's lines, and holds its place within half a screen pixel
+(1/1, 3/3, 3/3, 4/4, 4/4 programs checked on the five reports, all passing).

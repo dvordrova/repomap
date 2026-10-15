@@ -272,7 +272,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The repository's root package is titled by its last segment. A program
   that is one part is that part: drawn where its card stood with the
   program's name, no frame and no inventory; its closed card is as wide as a
-  part's, so the name keeps its size when it opens. A card's, a tile's and a
+  part's and every card leaves its magnifier the same room (`units.magnifier`,
+  from the magnifier's own size), so the name keeps its size and its lines
+  when it opens. A card's, a tile's and a
   chip's line is drawn over its edge and takes no room, so its words stand at
   the same padding at every zoom and an opened box's name exactly where its
   card drew it.
@@ -1520,7 +1522,7 @@ gesture's mechanics.
 | READ (a plain click) | the reading names the target; the same target chosen and drawn on the map, in sight (a member its card cuts stands named in its type's "… +N" row) | the camera moving when the target was already in sight | scene.test "a declaration named is shown in its part entered"; visual reading journeys |
 | LOCATE (aim the map, no reading change) | the target in sight, its name ≥ 10.5 px, not covered | the reading or its scroll changing | — (the ⛶ action awaits the owner's decision on the action trio) |
 | SOURCE (open the code) | one new tab with the code | any change of the page | — (awaits the action trio) |
-| OPEN (zoom or magnifier into a box) | the box's header at its closed card's place and size, its drawing in the body; a magnifier never zooms out | a nameless box, a name dropping in size, a layout jump | scene.test "closed components name every direct area…" (open frame names it at its card's text, children below the header); `pan-fixed`; visual/intents.spec.mjs OPEN (the first program opened by its magnifier: its name found by text, within 2% of its world size and two screen pixels of its world place, readable; never zooming out) |
+| OPEN (zoom or magnifier into a box) | the box's header at its closed card's place and size, its drawing in the body; a magnifier never zooms out | a nameless box, a name dropping in size, a layout jump | scene.test "closed components name every direct area…" (open frame names it at its card's text, children below the header); `pan-fixed`; visual/intents.spec.mjs OPEN (up to four programs, each opened by its magnifier from a fresh home view: its name found by text, in the same lines, within 2% of its world size and half a screen pixel of its world place, readable; never zooming out) |
 | PAN / ZOOM (moving the window) | every drawn box at its world place, words growing with their boxes, markers at their box's world size | anything rearranging, rewrapping or disappearing in sight; a page zoom from a pinch over a card | invariants `pan-level`, `pan-keeps`, `pan-fixed`, `word-anchor`, `marker-size` |
 | WALK (follow a flow step by step) | each step located as LOCATE, the step lit in the reading | the reading leaving the flow | — (awaits the action trio) |
 

@@ -12,6 +12,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {wrapText} from './cards.mjs';
 import {tileGrid} from './symbols.mjs';
 import {programContents,onlyPart} from './model.mjs';
+import {mark} from './overlay.mjs';
 
 // Layout engines, one worker each in the browser: the levels of the areas
 // are independent of one another (a closed area's card is its words, never
@@ -97,6 +98,11 @@ export const units={
   // An input's name in its kind's group.
   input:{font:'600 13px system-ui',pad:10,mark:22,min:72,max:320,height:30},
   gap:12,
+  // The width a card's words leave its magnifier in its top right corner
+  // (overlay.mjs): the magnifier and its inset, past the card's padding, and
+  // a marker's gap. One for every card, so a program that is one part wraps
+  // its name as the part opened in its place does.
+  magnifier:mark.inset+mark.size+mark.gap-14,
 };
 // A program is entered where its boxes' titles read at 12.75 pixels, an
 // area where its parts' do, or where its card stands at four fifths of the
@@ -198,7 +204,7 @@ async function layered(id,boxes,pairs,{band=units.band(1),spacing=1,ports=[],por
 // a tile's room under it where it holds declarations (the one chosen
 // stands there while it is closed, scene-canvas.jsx CardNode).
 export function partCardHeight(node,measure){
-  const pad=14,tiles=!!node.item?.symbols?.length,room=tiles?24:0,inner=units.part.width-2*pad-room;
+  const pad=14,tiles=!!node.item?.symbols?.length,room=tiles?units.magnifier:0,inner=units.part.width-2*pad-room;
   const lines=wholeLines(node.item?.summary,inner,'13px system-ui',measure,4).length;
   if(lines&&node.item?.height)return node.item.height;
   const title=wrapText(node.name??node.title??'',inner,'700 17px system-ui',measure).length;
@@ -220,9 +226,9 @@ export function wholeLines(text,width,font,measure,most=Infinity){
 // Inventory rows wrap whole and share the same measurement with the renderer.
 export function programWords(node,width,measure){
   const card=units.programCard,inner=width-2*card.pad;
-  return {title:wrapText(node.name??node.title,inner-32,card.font,measure),role:wholeLines(node.item?.role,inner,card.role,measure,2),
+  return {title:wrapText(node.name??node.title,inner-units.magnifier,card.font,measure),role:wholeLines(node.item?.role,inner,card.role,measure,2),
     purpose:wholeLines(node.item?.summary,inner,card.text,measure,2),
-    contents:(node.contents||[]).map(child=>({...child,lines:wrapText(child.title,inner-32,card.text,measure)}))};
+    contents:(node.contents||[]).map(child=>({...child,lines:wrapText(child.title,inner-units.magnifier,card.text,measure)}))};
 }
 export function programInventoryHeight(words,maxHeight=Infinity){
   return Math.min(maxHeight,words.contents.reduce((height,child)=>height+child.lines.length*units.programCard.textLine+8,0));

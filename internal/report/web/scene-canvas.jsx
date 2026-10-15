@@ -41,7 +41,7 @@ const sameSet=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
 // The words a box shows at its level's text size, each of its title, role
 // and description whole or not at all (levels.mjs cardWords, programWords).
 const wordsOf=(node,item)=>['program','area'].includes(node.display)?programWords({...node,item},node.rect.width/node.text,measure)
-  :cardWords(node,item?.summary||'',measure,{room:node.enter?24:0});
+  :cardWords(node,item?.summary||'',measure,{room:node.enter?units.magnifier:0});
 function Mark({icon,className='',label='',kind=''}){
   if(!icon)return <span className={`scene-dot ${className}`} aria-hidden={label?undefined:'true'}/>;
   return <svg className={`flow-kind-mark ${className}`} data-kind-mark={kind||undefined} viewBox="0 0 16 16" width="14" height="14" aria-hidden={label?undefined:'true'} role={label?'img':undefined} aria-label={label||undefined}>
