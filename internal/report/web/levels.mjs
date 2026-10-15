@@ -482,8 +482,11 @@ export async function layoutLevels(model,{width=1200,height=700,measure}={}){
     // inside the card at the scale that fits it.
     // A program's card has its drawing's proportion, its words in it.
     if(node.kind==='program'){
-      const named={...node,contents:programContents(model,node)},width=units.programCard.width;
-      const header=programCardHeight(named,width,measure,0),one=onlyPart(model,id);
+      // A program that is one part is drawn as wide as a part's card, so
+      // the part opened in its place keeps the program's name at the size
+      // its card drew it.
+      const one=onlyPart(model,id),named={...node,contents:programContents(model,node)},width=one?units.part.width:units.programCard.width;
+      const header=programCardHeight(named,width,measure,0);
       const height=inside?.width>0?(one?Math.max(header,width*inside.height/inside.width):header+width*inside.height/inside.width):header;
       if(inside?.width>0&&!one)headers.set(id,header/height);else headers.delete(id);
       programInventoryHeights.set(id,0);

@@ -32,9 +32,11 @@ function screenState(){
 }
 const meets=(a,b)=>a.l<b.r&&a.r>b.l&&a.t<b.b&&a.b>b.t;
 const inside=(a,b)=>a.l>=b.l-1&&a.r<=b.r+1&&a.t>=b.t-1&&a.b<=b.b+1;
-// A name reads from 10.5 screen pixels, an outside system's from 9.5, whole
-// in its box's sight and unfaded.
-const reads=(name,display)=>name.opacity>.5&&name.px>=(['chip','bucket','tile','kindgroup'].includes(display)?9.5:10.5);
+// A name reads unfaded from 11 screen pixels; an outside system's, an
+// input's and a tile's from 9.5 (REPORT.md OVERVIEW, invariants home-names).
+const reads=(name,display)=>name.opacity>=.99&&name.px>=(['chip','bucket','tile','kindgroup','input'].includes(display)?9.5:11)-.05;
+// A screen rectangle in world units, under a camera.
+const world=(r,canvas,camera)=>({l:(r.l-canvas.l-camera.x)/camera.zoom,t:(r.t-canvas.t-camera.y)/camera.zoom,r:(r.r-canvas.l-camera.x)/camera.zoom,b:(r.b-canvas.t-camera.y)/camera.zoom});
 
 async function open(page,url){
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -52,10 +54,11 @@ for(const [index,file] of reports.entries()){
     test.setTimeout(600000);
     const errors=await open(page,`/invariant-${index}.html`);
 
-    // OVERVIEW: every box in sight large enough to hold a name names itself;
+    // OVERVIEW: the canvas shows boxes, every box in sight names itself;
     // two boxes' names do not overlap.
     const home=await snapshot(page);
-    const seen=home.boxes.filter(box=>inside(box.rect,home.canvas)&&box.rect.r-box.rect.l>=48&&box.rect.b-box.rect.t>=24);
+    const seen=home.boxes.filter(box=>inside(box.rect,home.canvas));
+    expect(seen.length,`OVERVIEW ${repo}: boxes in sight`).toBeGreaterThan(0);
     for(const box of seen)expect.soft(box.names.some(name=>reads(name,box.display)),`OVERVIEW ${repo}: ${box.id} (${box.display}) names itself`).toBe(true);
     const named=seen.flatMap(box=>box.names.filter(name=>reads(name,box.display)).map(name=>({box:box.id,rect:name.rect})));
     for(let i=0;i<named.length;i++)for(let j=i+1;j<named.length;j++)
@@ -74,8 +77,9 @@ for(const [index,file] of reports.entries()){
 
     // OPEN: a program opened keeps its name where and as large as its card
     // drew it (in world units), and its drawing stands below its header.
-    const program=await page.locator('.scene-zoom[data-zoom-into^="system-component-"]').first();
-    if(await program.count()){
+    const program=page.locator('.scene-zoom[data-zoom-into^="system-component-"]').first();
+    expect(await program.count(),`OPEN ${repo}: a program to open`).toBeGreaterThan(0);
+    {
       const id=await program.getAttribute('data-zoom-into');
       const closed=home.boxes.find(box=>box.id===id),title=closed?.names.find(name=>name.opacity>.5);
       // The canvas hit-tests its marks itself: a click at the magnifier.
@@ -84,15 +88,18 @@ for(const [index,file] of reports.entries()){
       // A program that is one part opens as that part, named by the program
       // (REPORT.md); any other as its frame.
       expect.soft(['frame','card','deep'].includes(frame?.display),`OPEN ${repo}: ${id} opens in its place (${frame?.display})`).toBe(true);
-      const header=frame?.names[0];
+      // The opened box's header is the name its card showed, found by its
+      // text: as large in world units (within 2%) and where it stood (within
+      // two screen pixels of the opened camera).
+      const header=frame?.names.find(name=>title&&name.text===title.text);
+      expect.soft(!!title&&!!header,`OPEN ${repo}: ${id} opened shows its name "${title?.text}"`).toBe(true);
       if(title&&header){
-        const world=(px,zoom)=>px/zoom;
-        // A frame keeps its card's header exactly; a program that is one
-        // part opens as that part's card, drawn at its own level, its name
-        // within a tenth of its card's.
-        const share=frame.display==='frame'?.02:.1;
-        expect.soft(Math.abs(world(header.px,opened.camera.zoom)-world(title.px,home.camera.zoom))<=share*world(title.px,home.camera.zoom),
+        const size=(name,camera)=>name.px/camera.zoom,was=size(title,home.camera),now=size(header,opened.camera);
+        expect.soft(Math.abs(now-was)<=.02*was,
           `OPEN ${repo}: ${id}'s name keeps its size (${title.px.toFixed(1)} px at ${home.camera.zoom.toFixed(3)} → ${header.px.toFixed(1)} px at ${opened.camera.zoom.toFixed(3)})`).toBe(true);
+        const a=world(title.rect,home.canvas,home.camera),b=world(header.rect,opened.canvas,opened.camera),slack=2/opened.camera.zoom;
+        expect.soft(Math.max(Math.abs(a.l-b.l),Math.abs(a.t-b.t))<=slack,
+          `OPEN ${repo}: ${id}'s name stays in place (world ${a.l.toFixed(1)},${a.t.toFixed(1)} → ${b.l.toFixed(1)},${b.t.toFixed(1)})`).toBe(true);
         expect.soft(reads(header,'frame'),`OPEN ${repo}: ${id}'s name reads when opened`).toBe(true);
       }
       expect.soft(opened.camera.zoom>=home.camera.zoom-1e-9,`OPEN ${repo}: opening never zooms out`).toBe(true);

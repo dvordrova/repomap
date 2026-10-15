@@ -16331,3 +16331,20 @@ frame of kinds), then the open set as the default after the owner tries it.
   card is drawn at the programs' text, its title as large as theirs.
 - Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
   ui-visual-test` 22/22, intents 5/5.
+
+## 2026-10-15 — an opened program's name keeps its size and place exactly
+
+Sanity check #4 found the reader-intents OPEN check let a one-part program's
+name shrink by up to a tenth and never checked the header's place. Both were
+real: a one-part program's closed card was 240 wide and the part that opens
+in its place 260 (name 8% smaller), and a card's border took its room from
+its padding while Chrome rounds the border's width to whole pixels (1.78 → 1),
+so redis's program name stood 0.8 card pixels off its open frame's header.
+The one-part card is now a part's width; a card's, a tile's and a chip's line
+is a `::before` border over the edge taking no room, the states' inset
+shadows widened by the line so a lit box looks as before. intents.spec now
+reads names at the contract's 11 / 9.5 px, fails on an empty canvas or a
+missing program, finds the opened header by its text and checks it within 2%
+of its world size and two screen pixels of its world place. Passed on
+rate-envelope-queue, service-pkg, template, redis, k6; npm 180, visual 22,
+go test ./internal/report.
