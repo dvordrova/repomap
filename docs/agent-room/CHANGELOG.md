@@ -16292,3 +16292,7 @@ frame of kinds), then the open set as the default after the owner tries it.
   7.6 MB with data-* attributes) are next.
 - Checks: `go test ./internal/report/` ok, `npm test`, `make ui-visual-test`
   22/22; rate-envelope-queue arrows and their cards read from the page data.
+- Metabase measured after it: page 63.1 → 57.1 MB, HTML outside scripts
+  34.4 → 27.8 MB, first map 62.3 → 60.8 s at 4× (DOMContentLoaded 14.3 →
+  13.5 s). The first map still waits for every level's layout and for the
+  hidden map nodes (8,576 anchors), the next two things to change.
