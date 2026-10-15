@@ -131,6 +131,8 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
     flow.mountConnections(holder,id,key,(part,declaration)=>{map.dataset.chosen=`${part} ${declaration}`;});
   },
 });
+// The canvas's surface, for tests that point at the map as the reading does.
+window.__flow=flow;
 map.showWholeMap=()=>{operation='';flow.update({});showReading('');return flow.overview();};
 map.captureViewport=()=>flow.capture();
 // Choosing an input as the report does: the reading is on the input and the

@@ -141,7 +141,7 @@ test('an arrow keeps its screen width while the camera zooms',async({page})=>{
 // Layout failing before the first drawing, every worker and every fallback
 // (levels.mjs native: a pool of workers, each graph retried with fallback
 // options), leaves the page's static map and no pending canvas; each failed
-// worker is terminated. One worker failing alone is retried on another.
+// worker is terminated.
 test('a layout failing before the first drawing leaves no pending map',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>{
@@ -366,5 +366,26 @@ test('complete role badges straddle area borders outside the clipped card conten
     return {kind:e.className,clipped,straddles:b.top<card.top&&b.bottom>card.top};
   }));
   expect(roles).toHaveLength(2);expect(roles.map(r=>r.kind).sort()).toEqual(['flow-role-symbol flow-role-core','flow-role-symbol flow-role-triggers']);for(const role of roles){expect(role.clipped,role.kind).toBe(false);expect(role.straddles).toBe(true);}
+  expect(errors).toEqual([]);
+});
+
+// Pointing reads the same thing on the map and in the reading (owner,
+// 2026-10-14): a declaration's tile pointed at lights its name in the
+// reading by its key, and a name pointed at in the reading lights its tile.
+test('a declaration pointed at is lit on the map and in the reading alike',async({page})=>{
+  const errors=await open(page,'symbols&described');
+  await page.evaluate(()=>document.querySelector('[data-map]').sceneEnter('worker'));await settle(page);
+  await page.evaluate(()=>{const name=document.createElement('a');name.dataset.declKey='#worker.go-3';name.textContent='processJob';name.id='reading-name';document.querySelector('.map-inspector-content').appendChild(name);});
+  const tile=page.locator('[data-symbol="0"]').first();
+  await expect(tile).toBeVisible();
+  const at=await middle(tile);await page.mouse.move(at.x,at.y);
+  await expect(page.locator('#reading-name'),'the map points: the reading lights the name').toHaveClass(/is-pointed/);
+  await expect(tile).toHaveClass(/flow-symbol-hot/);
+  const canvas=await page.locator('.flow-root').boundingBox();await page.mouse.move(canvas.x+2,canvas.y+2);
+  await expect(page.locator('#reading-name')).not.toHaveClass(/is-pointed/);
+  await page.evaluate(()=>window.__flow.point({decl:'#worker.go-3'}));
+  await expect(tile,'the reading points: the map lights the tile').toHaveClass(/flow-symbol-hot/);
+  await page.evaluate(()=>window.__flow.point(null));
+  await expect(tile).not.toHaveClass(/flow-symbol-hot/);
   expect(errors).toEqual([]);
 });

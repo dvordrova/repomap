@@ -16207,3 +16207,19 @@ frame of kinds), then the open set as the default after the owner tries it.
   two-column case); `npm test` 180/180; `go test`/`go vet ./internal/report/`
   ok; `make ui-visual-test` 21/21; screenshots of Envelope and Queue
   construction.
+
+## 2026-10-15 — outcome checks for hover both ways and opening; a stuck highlight
+
+- Visual test: a tile pointed at lights its name in the reading by its key,
+  leaving clears it, and the reading pointing at a key lights the tile and
+  clears it (fixture exposes `window.__flow`). It caught a real bug: the
+  pointer's wait took "no target" for "nothing awaited", so a name left in
+  the reading kept its tile lit; fixed in `pointSoon`.
+- scene.test: the card-height formula pin is replaced by the outcome — the
+  open frame names the program at its closed card's text, in its place, its
+  children below the header.
+- Sanity checker (read-only agent) findings acted on; open owner question
+  recorded: a marker tip's height is capped by the canvas's foot (its last
+  names were unreachable), which bends "tips at a fixed size".
+- Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
+  ui-visual-test` 22/22.

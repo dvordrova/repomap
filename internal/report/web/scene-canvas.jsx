@@ -576,12 +576,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // A pointer moving on over the same box keeps its wait: restarted at every
   // move, the emphasis had come only once the mouse stopped (owner,
   // 2026-10-14: "не отзывчиво", Inputs lit "очень медленно").
-  let pointing=0,aimed=null;
+  let pointing=0,aimed;
   const sameTarget=(a,b)=>a===b||!!a&&!!b&&a.type===b.type&&a.id===b.id&&a.part===b.part&&a.index===b.index&&a.group===b.group;
   const pointSoon=target=>{
-    if(sameTarget(target,aimed)||sameTarget(target,store.getState().pointer))return;
+    // Back on what is pointed at: nothing to wait for. On what is already
+    // awaited: keep waiting. Nothing awaited is no target (null) awaited.
+    if(sameTarget(target,store.getState().pointer)){clearTimeout(pointing);aimed=undefined;return;}
+    if(aimed!==undefined&&sameTarget(target,aimed))return;
     aimed=target;clearTimeout(pointing);
-    pointing=setTimeout(()=>{aimed=null;store.dispatch({type:'point',target});},30);
+    pointing=setTimeout(()=>{aimed=undefined;store.dispatch({type:'point',target});},30);
   };
   // A kind's mark is no card: pointing at it lights it as the reading's
   // pointing does (owner, 2026-10-14).
@@ -632,7 +635,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   host.addEventListener('pointerdown',()=>{pressed=true;},true);
   window.addEventListener('pointerup',()=>{pressed=false;},true);
   window.addEventListener('pointercancel',()=>{pressed=false;},true);
-  host.addEventListener('pointerleave',event=>{clearPointerCursor();clearTimeout(pointing);aimed=null;if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
+  host.addEventListener('pointerleave',event=>{clearPointerCursor();clearTimeout(pointing);aimed=undefined;if(pressed||event.buttons)return;store.dispatch({type:'point',target:null});});
   host.addEventListener('click',event=>{
     if(initializing||onCard(event))return;
     const v=camera.get(),press=down;down=null;

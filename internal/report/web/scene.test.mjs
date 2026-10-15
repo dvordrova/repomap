@@ -392,11 +392,15 @@ test('closed components name every direct area and part without ghost boxes',asy
   assert.equal(node.ghosts,undefined,'no unlabeled rectangles behind the words');
   const words=programWords({...node,item:model.nodes.get(node.id).item},node.rect.width/node.text,measure);
   for(const child of words.contents)assert.equal(child.lines.join(' ').replace(/\s+/g,''),title.replace(/\s+/g,''));
-  // The card is its header over its drawing's body in the drawing's
-  // proportion (owner, 2026-10-14): opened, the drawing fills the body and
-  // the header keeps its place and size.
-  const drawing=geometry.local.get(program.id),header=programCardHeight({...node,item:model.nodes.get(node.id).item},units.programCard.width,measure,0);
-  assert.ok(Math.abs(node.rect.height/node.text-(header+units.programCard.width*drawing.height/drawing.width))<.5,'the card is its header over its drawing');
+  // Opened, the box keeps its name where and as large as its closed card
+  // drew it (owner, 2026-10-14: service-pkg's program title had dropped
+  // from 73.8 px to 6.6 px), and its drawing stands below its header.
+  const opened=sceneAt(model,geometry,[program.id]).nodes.find(other=>other.id===program.id);
+  assert.equal(opened.display,'frame');
+  assert.ok(Math.abs((opened.titleText||opened.text)-node.text)<1e-9,'the open frame names it at its closed card\'s size');
+  assert.deepEqual(opened.rect,node.rect,'in its card\'s place');
+  const header=programCardHeight({...node,item:model.nodes.get(node.id).item},units.programCard.width,measure,0)*node.text;
+  for(const child of program.children){const r=geometry.boxes.get(child);if(r)assert.ok(r.y>=node.rect.y+header-1e-6,`${child} below the header`);}
   assert.ok(node.inventoryHeight<=programInventoryHeight(words,canvas.height/2)+1e-9);
   const before=JSON.stringify([...geometry.boxes]);
   const inside=sceneAt(model,geometry,chainOf(model,program.children[0]));
