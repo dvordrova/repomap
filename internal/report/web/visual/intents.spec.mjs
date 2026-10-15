@@ -10,7 +10,10 @@ import {basename} from 'node:path';
 // A mobile version binds other gestures to the same intents; these checks
 // stay.
 const reports=(process.env.REPOMAP_INVARIANT_REPORTS||'').split(',').filter(Boolean);
-test.use({trace:'off',screenshot:'off',video:'off'});
+// REPOMAP_INTENTS_VIEWPORT=1000x650 reads the same intents in another window
+// (the acceptance window is 1440×900, DEVELOPMENT.md).
+const [width,height]=(process.env.REPOMAP_INTENTS_VIEWPORT||'1440x900').split('x').map(Number);
+test.use({trace:'off',screenshot:'off',video:'off',viewport:{width,height}});
 
 // What the reader sees: the camera, the canvas, every box in sight with its
 // rectangle and its name as drawn (screen size, opacity, rectangle), and the

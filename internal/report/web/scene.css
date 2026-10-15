@@ -173,7 +173,7 @@
 .scene-root .scene-scaled.flow-part,.scene-root .scene-scaled.scene-program-card{padding:14px}
 .scene-root .scene-scaled.scene-tile{padding:0 10px}
 .scene-root .scene-scaled.scene-chip{padding:0 12px}
-/* Closed programs and areas list every saved direct child by name. */
+/* A closed program's or area's words: its title, role and purpose (no inventory list, owner 2026-10-14). */
 .scene-program-card>.scene-words{background:transparent;width:100%}
 /* Role badges straddle the border outside the clipped words/inventory. */
 .scene-role-layer{z-index:1;pointer-events:none;overflow:visible}

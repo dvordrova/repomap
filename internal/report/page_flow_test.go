@@ -484,7 +484,7 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 		html := out.String()
 		at := strings.Index(html, "flow-passed")
 		if at < 0 || !strings.Contains(html[at:], ">tryResizeHashTables</code>") || !strings.Contains(html[at:], "data-step-code=") ||
-			!strings.Contains(html[at:], words) || !strings.Contains(html[at:], "redis.c:377") {
+			!strings.Contains(html[at:], words) || !strings.Contains(html[at:], "redis.c#L377") {
 			t.Fatalf("%v: the passed call is not one step from its declaration and condition: %s", language, html)
 		}
 	}
@@ -508,8 +508,8 @@ func TestADecidedSplitsPassedCallsReadFoldedUnderAlsoCalls(t *testing.T) {
 		}
 		html := out.String()
 		at, name := strings.Index(html, `<span class="flow-via flow-back">`+words[0]+` <code class="flow-chain-name"`), strings.Index(html, `<span class="flow-what"><code>tryResizeHashTables</code>`)
-		if at < 0 || name < at || !strings.Contains(html[at:name], ">serverCron</code>, "+words[1]+" (") || !strings.Contains(html[at:name], "redis.c:377") ||
-			!strings.Contains(html[at:name], "):</span>") || strings.Contains(html, "flow-guard") || strings.Contains(html[name:], `<span class="flow-via">`) {
+		if at < 0 || name < at || !strings.Contains(html[at:name], ">serverCron</code>, <a class=\"anchor\"") || !strings.Contains(html[at:name], "redis.c#L377") ||
+			!strings.Contains(html[at:name], ">"+words[1]+"</a>:</span>") || strings.Contains(html, "flow-guard") || strings.Contains(html[name:], `<span class="flow-via">`) {
 			t.Fatalf("%v: the step back in its caller does not read before its name: %s", language, html)
 		}
 	}
@@ -1004,8 +1004,11 @@ func TestAMainFlowStepSaysWhatItRunsUnderAndWhyThePathStops(t *testing.T) {
 				t.Fatalf("%v: the step does not say %q: %s", language, word, html)
 			}
 		}
-		if !strings.Contains(html, "lvm.c:223") || !strings.Contains(html, "lvm.c:1180") || !strings.Contains(html, "lvm.c:462") {
-			t.Fatalf("%v: a guard or loop lost its place: %s", language, html)
+		// A guard's and a loop's place is the link its words are, never
+		// a name file:line (owner, 2026-10-14).
+		if !strings.Contains(html, "lvm.c#L223") || !strings.Contains(html, "lvm.c#L1180") || !strings.Contains(html, "lvm.c#L462") ||
+			strings.Contains(html, ">lvm.c:223<") || strings.Contains(html, ">lvm.c:462<") {
+			t.Fatalf("%v: a guard or loop lost its place, or names it file:line: %s", language, html)
 		}
 	}
 }
@@ -1040,7 +1043,7 @@ func TestAMainFlowConditionReadsItsCodeAndArm(t *testing.T) {
 					words = row.russian
 				}
 				want := words + " <code>" + template.HTMLEscapeString(row.code) + "</code>"
-				if !strings.Contains(html, want) || !strings.Contains(html, "lua.c:361") {
+				if !strings.Contains(html, want) || !strings.Contains(html, "lua.c#L361") || strings.Contains(html, ">lua.c:361<") {
 					t.Fatalf("condition %q or its source missing: %s", want, html)
 				}
 				if row.resumes != "" && (strings.Count(html, "<code>ready</code>") != 1 || strings.Contains(html, "flow-guard")) {
@@ -1086,7 +1089,7 @@ func TestAStepsPassedHandOverReadsAsHanded(t *testing.T) {
 			}
 		}
 		calls, _, _ := strings.Cut(html[strings.Index(html, "flow-passed"):], "</details>")
-		if strings.Contains(calls, "setCommand") || !strings.Contains(html, "redisLog") || !strings.Contains(html, "lua.c:249") {
+		if strings.Contains(calls, "setCommand") || !strings.Contains(html, "redisLog") || !strings.Contains(html, "lua.c#L249") {
 			t.Fatalf("%v: the hand-over reads as a call, or lost its helper or guard: %s", language, html)
 		}
 	}
@@ -1157,7 +1160,7 @@ func TestAMainFlowWaySaysEveryWayItGoesOnAs(t *testing.T) {
 				t.Fatalf("%v: the joins do not say %q: %s", language, word, html)
 			}
 		}
-		if !strings.Contains(html, "ldo.c:377") || strings.Count(html, ">"+ended.Joins[1].Name+"<") < 1 {
+		if !strings.Contains(html, "ldo.c#L377") || strings.Count(html, ">"+ended.Joins[1].Name+"<") < 1 {
 			t.Fatalf("%v: a join lost its place or its name: %s", language, html)
 		}
 	}

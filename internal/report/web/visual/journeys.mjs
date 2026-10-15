@@ -12,7 +12,10 @@
 // `check` returns [passed, what it found].
 const helperInternals=/^(list|listNode|listIter|dict|dictEntry|dictht|dictIterator|sds|sdshdr|robj|redisObject|zskiplist|zskiplistNode|intset|sharedObjectsStruct|aeEventLoop)$/;
 export const journeys=[
-  {repo:/^othello/i,input:'key-pressed',says:'each key with the command it maps to (n new game, u undo, h, 1, 2)',
+  // The key input is named by its handler, registered as :key-pressed
+  // (2026-10-15; it had been named key-pressed); each key is also an input
+  // of its own.
+  {repo:/^othello/i,input:'othello.ui.host/on-key',says:'each key with the command it maps to (n new game, u undo, h, 1, 2)',
     check:page=>page.evaluate(()=>{
       const want={n:/new|restart/i,u:/undo/i,h:/\p{L}{3}/u,1:/\p{L}{3}/u,2:/\p{L}{3}/u};
       const lines=window.__journey.lines(),pairs=[],bare=[];
@@ -114,11 +117,14 @@ export function lintLevel(level){
     const words=own(el);if(!words||!shown(el))continue;
     const at=window.__fileLine?window.__fileLine(words):(/\S+\.\w+:\d+/.exec(words)||[''])[0];if(at)add('file:line',`"${at}" in "${words}"`);
   }
-  // No entry repeated within one list: a list's items, or a card's rows.
+  // No entry repeated within one list: a list's items, or a card's rows. A
+  // Main flow's part head is where the path enters a part, and the path may
+  // come back (redis: Client I/O and dispatch reads the query, then sends the
+  // reply), so it is no entry.
   for(const root of readings)for(const list of root.querySelectorAll('ul,ol,.flow-card-rows')){
     if(!shown(list))continue;
     const seen=new Set();
-    for(const row of [...list.children].filter(shown)){
+    for(const row of [...list.children].filter(shown).filter(row=>!row.classList.contains('flow-part-head'))){
       const item=text(row);if(!item)continue;
       if(seen.has(item)){add('repeated',`"${item}" twice in one list (${where(list)})`);break;}
       seen.add(item);

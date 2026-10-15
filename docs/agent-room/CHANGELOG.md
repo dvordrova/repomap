@@ -16358,3 +16358,25 @@ padding, 17); the line stands over the words as the border once clipped them.
 intents.spec now opens up to four programs per report from a fresh page,
 checks the name's lines, and holds its place within half a screen pixel
 (1/1, 3/3, 3/3, 4/4, 4/4 programs checked on the five reports, all passing).
+
+## 2026-10-15 — CJM journeys run again; a condition's place is its words
+
+The frozen journeys (`visual/journeys.spec.mjs`), not run for a while, on
+othello, redis and freqtrade: every newcomer answer passes (othello's key
+input is now named by its handler, `othello.ui.host/on-key`, registered as
+`:key-pressed`; the journey had looked for `key-pressed`). Their lints found
+a Main flow condition, loop, return and "calls through a value" printing
+its place as `ae.c:324` (owner, 2026-10-14: no name file:line): the words
+themselves are now the link to the line, in the JS display and the template
+alike. A Main flow's part head may repeat where the path comes back into
+the part (redis: Client I/O reads the query, then sends the reply); the
+lint no longer counts it. Left: "Redis Server" in redis-server's Outside
+is the master a replica connects to (`anet.c:158` from `syncWithMaster`),
+correct; closed cards' bodies under the "empty box" lint (owner question:
+the inventory was dropped 2026-10-14); 66 long folds in redis's Command
+implementations; freqtrade's lints exceed 15 minutes.
+
+The tiles' layered order gets a property test (400 random parts with types,
+members, skipped rows and cycles): no link right to left outside a cycle, a
+column's places 0..k-1 once each, the same order twice; a broken layering
+fails it. `REPOMAP_INTENTS_VIEWPORT` reads the intents in another window.

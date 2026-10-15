@@ -267,7 +267,7 @@ Its frozen journeys print PASS or FAIL per repository and never fail the
 run. Each tests the answer a newcomer came for in the rendered column
 (dotted names whole across their line breaks) after the clicks it allows,
 choosing the input and opening its State changes, never a name merely
-listed: othello's `key-pressed` shows each key with its command (n with a
+listed: othello's key input (`othello.ui.host/on-key`, registered as `:key-pressed`) shows each key with its command (n with a
 new game, u with undo, h, 1, 2); litestream's `replicate` is handled by
 `ReplicateCommand.Run`, not a bare `Run`, and changes the replica, WAL or
 snapshots; freqtrade's `trade` reaches `FreqtradeBot.process` and changes

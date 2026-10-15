@@ -937,8 +937,8 @@ function rmComponentFiles(ctx,data){
 // decide paths. Sources, native conditions and model display refs stay intact.
 var rmFlowDisplay=(function(){
   function text(into,value){into.appendChild(document.createTextNode(value));}
-  function anchor(a){
-    var node=rmEl(a.Href||a.Open?'a':'span','anchor',a.Text);
+  function anchor(a,label){
+    var node=rmEl(a.Href||a.Open?'a':'span','anchor',label===undefined?a.Text:label);
     if(a.Href){node.href=a.Href;node.target='_blank';}
     else if(a.Open){node.href='#';node.dataset.open=a.Open;}
     else if(a.NoSource){node.dataset.noSource='true';node.title=rmT('No source');}
@@ -958,13 +958,16 @@ var rmFlowDisplay=(function(){
     else text(into,rmT(otherwise));
   }
   function through(into,rows){if(!(rows||[]).length)return;text(into,' '+rmT('through')+' ');rows.forEach(function(row,i){if(i)text(into,', ');into.appendChild(name(row));});}
+  // Words that open the code they are about (owner, 2026-10-14: a link is
+  // never named file:line): a condition's or a loop's place is its words.
+  function linked(into,a,draw){if(!a){draw(into);return;}var node=anchor(a,'');draw(node);into.appendChild(node);}
   function guardWords(into,g){
     if(g.Key)text(into,rmT(g.Key));
     if(g.Condition){if(g.Key)text(into,', ');text(into,rmT(g.ConditionKey)+' ');into.appendChild(rmEl('code','',g.Condition));}
   }
   function guard(into,row){
-    if(row.Guard){var g=rmEl('span','meta flow-guard');text(into,' ');text(g,'(');guardWords(g,row.Guard);if(row.Guard.At){text(g,', ');g.appendChild(anchor(row.Guard.At));}text(g,')');into.appendChild(g);}
-    if(row.Loop){var loop=rmEl('span','meta flow-loop');text(into,' ');text(loop,'('+rmT('in a loop')+', ');loop.appendChild(anchor(row.Loop));text(loop,')');into.appendChild(loop);}
+    if(row.Guard){var g=rmEl('span','meta flow-guard');text(into,' ');text(g,'(');linked(g,row.Guard.At,function(node){guardWords(node,row.Guard);});text(g,')');into.appendChild(g);}
+    if(row.Loop){var loop=rmEl('span','meta flow-loop');text(into,' ');text(loop,'(');loop.appendChild(anchor(row.Loop,rmT('in a loop')));text(loop,')');into.appendChild(loop);}
   }
   function chain(into,rows){(rows||[]).forEach(function(row,i){if(i)text(into,row.Possible?' '+rmT('may call')+' ':row.Handed?' '+rmT('hands over')+' ':' → ');into.appendChild(name(row));});}
   function registration(row){
@@ -996,7 +999,7 @@ var rmFlowDisplay=(function(){
   function step(row,into){
     if(row.PartHead){var head=rmEl('li','flow-part-head');head.dataset.flowPart=row.PartHead;into.appendChild(head);}
     var item=rmEl('li','flow-step');attrs(item,row);into.appendChild(item);
-    if(row.Back){var back=rmEl('span','flow-via flow-back');text(back,rmT('then, back in')+' ');back.appendChild(name(row.Back));if(row.BackIf){text(back,', ');guardWords(back,row.BackIf);text(back,' (');if(row.BackIf.At)back.appendChild(anchor(row.BackIf.At));text(back,')');}text(back,':');item.appendChild(back);text(item,' ');}
+    if(row.Back){var back=rmEl('span','flow-via flow-back');text(back,rmT('then, back in')+' ');back.appendChild(name(row.Back));if(row.BackIf){text(back,', ');linked(back,row.BackIf.At,function(node){guardWords(node,row.BackIf);});}text(back,':');item.appendChild(back);text(item,' ');}
     var what=rmEl('span','flow-what');if(row.Label)what.appendChild(rmEl('code','',row.Label));if(row.Target){text(what,' ');what.appendChild(rmEl('span','flow-where',row.Target));}item.appendChild(what);
     if(row.Anchor){text(item,' ');item.appendChild(anchor(row.Anchor));}
     var reached=how(row,false);if(reached)item.appendChild(reached);
@@ -1016,7 +1019,7 @@ var rmFlowDisplay=(function(){
     if(row.Stop){var stop=rmEl('span','meta flow-stop');
       if((row.Joins||[]).length)around(stop,row.Stop,function(){row.Joins.forEach(function(row,i){if(i)text(stop,' '+rmT('or')+' ');stop.appendChild(name(row));through(stop,row.Through);if(row.Implemented)stop.appendChild(rmEl('span','meta',' ('+rmT('by method set')+')'));guard(stop,row);});});
       else text(stop,rmT(row.Stop));
-      if(row.OpenAt){text(stop,' ('+rmT('it calls through a value whose target is not established')+', ');stop.appendChild(anchor(row.OpenAt));text(stop,')');}item.appendChild(stop);
+      if(row.OpenAt){text(stop,' (');stop.appendChild(anchor(row.OpenAt,rmT('it calls through a value whose target is not established')));text(stop,')');}item.appendChild(stop);
     }
     if(row.Fork){var fold=rmEl('details','flow-fork'),head=rmEl('summary');if(row.Fork.OneOf)oneOf(head,row.Fork.From,'one of the calls it may make');else {text(head,row.Fork.Label);if(row.Fork.From){text(head,' '+rmT('from')+' ');head.appendChild(name(row.Fork.From));}}fold.appendChild(head);candidates(fold,row.Fork.Names,false);item.appendChild(fold);}
     return item;
