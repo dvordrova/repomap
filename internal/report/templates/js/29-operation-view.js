@@ -904,7 +904,6 @@ function rmSavedScene(doc){
     goDecl:function(decl){var part=nodeByHref(decl.part);return part&&!part.dataset.activation&&decl.key?function(){readDeclaration(part,decl.key);}:null;},
     readDeclIn:readDeclaration,
     readNode:function(n){surface?.clearMember?.();select(n,true,null,true);},
-    light:function(ids){surface?.light?.(ids);},
     openConnection:function(id,key){return openConnection(id,key);},
     inputPart:function(id){return inputPart(id)?.id||'';}
   };};
@@ -1248,7 +1247,11 @@ function rmSavedScene(doc){
       // map (owner, 2026-10-14: hover had lit the map only from the map).
       var inspectorRoot=map.querySelector('.map-inspector');
       if(inspectorRoot){
-        var refOf=function(el){var named=el?.closest?.('[data-decl-key],[data-node-ref]');if(!named||!inspectorRoot.contains(named))return null;return named.dataset.declKey?{decl:named.dataset.declKey}:{node:named.dataset.nodeRef};};
+        var refOf=function(el){
+          var named=el?.closest?.('[data-decl-key],[data-node-ref]');if(!named||!inspectorRoot.contains(named))return null;
+          if(named.dataset.declKey)return {decl:named.dataset.declKey};
+          var ids=named.dataset.nodeRef.split(/\s+/).filter(Boolean);return ids.length===1?{node:ids[0]}:{nodes:ids};
+        };
         inspectorRoot.addEventListener('pointerover',function(event){var ref=refOf(event.target);if(ref)surface.point(ref);});
         inspectorRoot.addEventListener('pointerout',function(event){if(refOf(event.target)&&!refOf(event.relatedTarget))surface.point(null);});
       }

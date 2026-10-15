@@ -773,7 +773,7 @@ function rmCollectionView(ctx,node,collection){
         // (owner via the coordinator, 2026-10-02: etcd's link had covered
         // "POST" alone).
         var of=ofWhich(input,id);if(of)button.append(' ',of);
-        button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);
+        button.addEventListener('click',function(){ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);
         list.appendChild(item);
       });
       return list;
@@ -814,9 +814,12 @@ function rmCollectionView(ctx,node,collection){
 function rmProse(text){return /\S\s+\S+\s+\S/.test(text||'')&&!/[\/{}._$\\]/.test(text);}
 // Pointing at inputs in the column lights their tiles on the canvas, and
 // nothing recedes.
+// What a line of the reading stands for on the map, by node: pointing at it
+// lights them there through the one listener the map keeps on the reading
+// (29-operation-view.js), as a name's key does (owner, 2026-10-14: one
+// pointing, lit alike on the map and in the reading).
 function rmLights(ctx,element,ids){
-  function on(){ctx.light(ids);}function off(){ctx.light([]);}
-  element.addEventListener('mouseenter',on);element.addEventListener('focus',on);element.addEventListener('mouseleave',off);element.addEventListener('blur',off);
+  if(ids&&ids.length)element.dataset.nodeRef=ids.join(' ');
 }
 // Where a catalogue's inputs are declared and read, one line each: "listed
 // in cmdTable", "looked up in lookupCommand ← cliSendCommand, main", "uses
@@ -1078,7 +1081,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
       var item=rmEl('li'),choice=rmEl('button','',rmT(rmInputKindTitles[kind.kind]||'Inputs'));choice.type='button';
       var choiceMark=globalThis.rmKindMark?.(kind.kind);if(choiceMark)choice.prepend(choiceMark);
       rmLights(ctx,choice,kind.inputs);
-      choice.addEventListener('click',function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collectionNode);});
+      choice.addEventListener('click',function(){rmPendingKind=kind.kind;ctx.readNode(collectionNode);});
       item.appendChild(choice);kinds.appendChild(item);
     });
     inputs.appendChild(kinds);place(inputs);
@@ -1112,7 +1115,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     steps.querySelectorAll('code.flow-input[data-input]').forEach(function(code){
       var input=ctx.nodeById(code.dataset.input);if(!input)return;
       var name=rmEl('button','system-catalogue-member flow-input',input.dataset.title||code.textContent);name.type='button';
-      name.addEventListener('click',function(event){event.stopPropagation();ctx.light([]);ctx.readNode(input);});
+      name.addEventListener('click',function(event){event.stopPropagation();ctx.readNode(input);});
       rmLights(ctx,name,[code.dataset.input]);code.replaceWith(name);
     });
     // Each step opens in place to its code flow (32-flow.js), the model's
@@ -1261,7 +1264,7 @@ function rmProgramsTable(ctx,holder,components,connections){
       var kindList=rmEl('dd');
       kinds.forEach(function(kind,i){
         if(i)kindList.append(' · ');
-        var b=button(rmT(rmInputKindTitles[kind.kind]||'Inputs'),function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collection);});
+        var b=button(rmT(rmInputKindTitles[kind.kind]||'Inputs'),function(){rmPendingKind=kind.kind;ctx.readNode(collection);});
         var mark=globalThis.rmKindMark?.(kind.kind);if(mark)b.prepend(mark);
         rmLights(ctx,b,kind.inputs||[]);kindList.append(b);
       });

@@ -55,7 +55,7 @@ function rmFlowName(ctx,decl,call){
   if(!decl.part){var plain=rmDotBreaks(rmEl('span','map-reading-name map-flow-plain',text));plain.title=[plain.title,title].filter(Boolean).join('\n');return plain;}
   var name=rmDeclName(decl,text,ctx.goDecl(decl),title);
   var part=rmFlowPart(ctx,decl.part);
-  if(part){name.addEventListener('mouseenter',function(){ctx.light([part.id]);});name.addEventListener('mouseleave',function(){ctx.light([]);});}
+  if(part)name.dataset.nodeRef=part.id;
   return name;
 }
 // One call of a flow: a row that opens to its callee's flow when it has one.

@@ -565,7 +565,7 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     const pointer=store.getState().pointer;
     const keys=[];
     if(pointer?.type==='member'){const symbol=model.nodes.get(pointer.part)?.item?.symbols?.[pointer.index];const k=symbolKey(symbol);if(k)keys.push(`[data-decl-key="${CSS.escape(k)}"]`);}
-    else if(pointer?.type==='box'&&pointer.id)keys.push(`[data-node-ref="${CSS.escape(pointer.id)}"]`);
+    else if(pointer?.type==='box'&&pointer.id)keys.push(`[data-node-ref~="${CSS.escape(pointer.id)}"]`);
     const inspector=map.querySelector('.map-inspector');
     const next=keys.length&&inspector?[...inspector.querySelectorAll(keys.join(','))]:[];
     if(next.length===columnLit.length&&next.every((el,i)=>el===columnLit[i]))return;
@@ -1067,10 +1067,15 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
     clearHover(){store.dispatch({type:'point',target:null});},
     // The reading column points at a declaration (its key) or a box (its
     // id): the map lights it as if the pointer were on it.
-    point(ref){pointSoon(ref?targetOf(ref):null);},
+    point(ref){
+      // A line standing for several nodes (a kind's inputs) lights them
+      // all; any other pointing is the canvas's own.
+      if(ref?.nodes){clearTimeout(pointing);aimed=undefined;store.dispatch({type:'point',target:null});store.dispatch({type:'lit',ids:ref.nodes});return;}
+      if(store.getState().lit.length)store.dispatch({type:'lit',ids:[]});
+      pointSoon(ref?targetOf(ref):null);
+    },
     clearMember(){store.dispatch({type:'member',member:{chosen:null}});},
     mountConnections,frameConnections,
-    light(ids){store.dispatch({type:'lit',ids});},
     overview:()=>fitOverview(420,'whole'),
     update(next){
       const chosen=store.getState().member.chosen;

@@ -16223,3 +16223,18 @@ frame of kinds), then the open set as the default after the owner tries it.
   names were unreachable), which bends "tips at a fixed size".
 - Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
   ui-visual-test` 22/22.
+
+## 2026-10-15 — one pointing channel between the reading and the map
+
+- The reading's per-element `rmLights` listeners and `ctx.light`/`surface
+  .light` are gone: a line says what it stands for on the map as attributes
+  (`data-decl-key`, `data-node-ref` with one or several node ids), and the one
+  delegated listener points at it through `surface.point` — one id as the
+  canvas's own pointing, several (a kind's inputs) as the lit set. The map
+  lights the reading by the same attributes (`[data-node-ref~=id]`). Input
+  tiles take the boxes' emphasis style (they had none: a tile pointed at from
+  the reading changed nothing visible). Sanity checker's demand before any
+  further slice of plan mechanism 4.
+- Checks: `npm test` 180/180, `go test ./internal/report/` ok, `make
+  ui-visual-test` 22/22; headless: "Background work" in the reading frames
+  the worker tile, the tile tints its line in the reading.
