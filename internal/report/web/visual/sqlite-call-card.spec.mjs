@@ -20,8 +20,7 @@ test('SQLite native callees open through brief and complete connection reading',
     const byID=new Map(records.map(n=>[n.id,n])),parents=new Map();
     for(const node of records)for(const child of node.children)parents.set(child,node.id);
     const chain=id=>{const result=[];for(let at=id;at;at=parents.get(at))result.unshift(at);return result;};
-    const edges=[...map.querySelectorAll('svg .map-edge')].map(e=>({from:e.dataset.from,to:e.dataset.to,
-      calls:rmPage.data(e,'calls')||[]}));
+    const edges=(rmPage.data(map.querySelector('svg'),'edges')||[]).map(e=>({from:e.from,to:e.to,calls:e.calls||[]}));
     for(const program of records.filter(n=>n.branch==='component')){
       const parts=records.filter(n=>!n.branch&&chain(n.id).includes(program.id));
       const chosen=[];

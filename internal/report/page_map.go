@@ -2039,6 +2039,55 @@ func (edge pageMapEdge) Relation() string {
 	return ""
 }
 
+// EdgesJSON is the map's arrows for the page's script, one value of the
+// page data: each arrow's ends, scope, words and calls, as the hidden
+// drawing's <path> elements had carried them in attributes (owner,
+// 2026-10-15: a big report should open without waiting; Metabase's 45,366
+// empty paths had weighed 6.3 MB of the page's HTML).
+func (view *pageMap) EdgesJSON() string {
+	if view == nil || len(view.Edges) == 0 {
+		return ""
+	}
+	edges := make([]map[string]any, 0, len(view.Edges))
+	for _, edge := range view.Edges {
+		item := map[string]any{"from": edge.From, "to": edge.To, "scope": edge.Scope}
+		if edge.Operations != "" {
+			item["operations"] = edge.Operations
+		}
+		if edge.Possible {
+			item["possible"] = true
+		}
+		if edge.Init {
+			item["init"] = true
+		}
+		if calls := edgeCalls(edge); len(calls) > 0 {
+			item["calls"] = calls
+			if relation := edge.Relation(); relation != "" {
+				item["label"] = relation
+			}
+		} else {
+			for key, value := range map[string]string{"labelRef": edge.LabelRef, "label": edge.Label, "summary": edge.Summary, "summaryRef": edge.SummaryRef,
+				"fromSource": edge.FromSource.Href, "fromText": edge.FromSource.Text, "toSource": edge.ToSource.Href, "toText": edge.ToSource.Text} {
+				if value != "" {
+					item[key] = value
+				}
+			}
+			if edge.FromSource.NoSource {
+				item["fromNoSource"] = true
+			}
+			if edge.ToSource.NoSource {
+				item["toNoSource"] = true
+			}
+		}
+		edges = append(edges, item)
+	}
+	raw, err := json.Marshal(edges)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
 // CallsJSON is the arrow's relations for the page's script.
 func (edge pageMapEdge) CallsJSON() string {
 	calls := edgeCalls(edge)

@@ -620,7 +620,11 @@ function rmSavedScene(doc){
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
   nodes.forEach(function(n){byID[n.id]=n;});
   map.querySelectorAll('[data-map-alias]').forEach(function(n){aliases[n.id]=n.dataset.mapAlias;});
-  var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(rmPage.data(e,'calls')||[]).map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;}),label:e.dataset.label||''};});
+  // The map's arrows, from the page data (render's EdgesJSON): no hidden
+  // path element carries them.
+  var rawEdges=(rmPage.data(svg,'edges')||[]).map(function(e){return {from:e.from,to:e.to,scope:e.scope,summary:e.summary,summaryRef:e.summaryRef,labelRef:e.labelRef,fromSource:e.fromSource,fromText:e.fromText,fromNoSource:!!e.fromNoSource,
+    toSource:e.toSource,toText:e.toText,toNoSource:!!e.toNoSource,operations:(e.operations||'').split(/\s+/).filter(Boolean),possible:!!e.possible,init:!!e.init,
+    calls:(e.calls||[]).map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;}),label:e.label||''};});
   var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation};});
   var projection=rmSystemProjection(model,rawEdges),scene=rmSavedScene(document),scope='',operation=null,surface=null,ready=null;
   // Whether the camera may stand away from the pinned input's own tile: on its

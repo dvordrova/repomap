@@ -125,6 +125,7 @@ var rmPage = (function () {
       var value=expand(load().values[Number(ref)]);
       if(name==='calls'&&Array.isArray(value))value.forEach(function(item){if(item&&typeof item==='object')call(item);});
       if(name==='symbols'&&Array.isArray(value))value.forEach(function(item){if(item&&typeof item==='object')symbol(item);});
+      if(name==='edges'&&Array.isArray(value))value.forEach(function(edge){(edge&&Array.isArray(edge.calls)?edge.calls:[]).forEach(function(item){if(item&&typeof item==='object')call(item);});});
       if(name==='reading')kinds(value);
       if(named[name]&&value&&Array.isArray(value.decls))value.decls=value.decls.map(function(index){return typeof index==='number'?decl(index):index;});
       values.set(key,value);

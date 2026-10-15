@@ -276,6 +276,20 @@ func (compact pageDataCompaction) byName(name string, value any) any {
 				}
 			}
 		}
+	case "edges":
+		if list, isList := value.([]any); isList {
+			for _, item := range list {
+				if edge, isEdge := item.(map[string]any); isEdge {
+					if calls, listed := edge["calls"].([]any); listed {
+						for _, entry := range calls {
+							if call, isCall := entry.(map[string]any); isCall {
+								compact.call(call)
+							}
+						}
+					}
+				}
+			}
+		}
 	case "symbols":
 		if list, isList := value.([]any); isList {
 			for _, item := range list {

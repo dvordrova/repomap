@@ -16280,3 +16280,15 @@ frame of kinds), then the open set as the default after the owner tries it.
   `text`: big names drawn at 8.8–10.7 px.
 - A big name stands while it reads (from 11 px, as a title) and fades below,
   as words do.
+
+## 2026-10-15 — the map's arrows in the page data, not in hidden paths
+
+- `pageMap.EdgesJSON` writes the map's arrows as one page-data value
+  (`data-edges` on the map's svg; calls compacted inside as "calls" values
+  are), and 29-operation-view.js reads them from it; the hidden `<path
+  class="map-edge">` elements (no geometry, attributes only) are no longer
+  written. Metabase had carried 45,366 of them, 6.3 MB of its HTML. Plan
+  slice "one data carrier", first step; the hidden map nodes (8,576 anchors,
+  7.6 MB with data-* attributes) are next.
+- Checks: `go test ./internal/report/` ok, `npm test`, `make ui-visual-test`
+  22/22; rate-envelope-queue arrows and their cards read from the page data.
