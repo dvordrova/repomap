@@ -278,12 +278,18 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   // While the camera moves the map is one layer the compositor moves and
   // scales; at rest it is drawn again, sharp (owner's trace, 2026-10-14:
   // every frame of a pan or a zoom had redrawn every arrow on the GPU).
+  // Rest is one moment, 300 ms after the last move: the exact zoom the words
+  // fade by is set as the layer is let go, so the map is rasterized once
+  // (owner's trace, 2026-10-15: the zoom settling at 120 ms and the layer let
+  // go at 150 ms had rasterized Redis's tiles twice, 840 tiles on the GPU
+  // for a second after each pinch, and a quick pinch back fell into it).
   let resting=0;
-  camera.subscribe(()=>{
+  const rest=()=>{
     host.classList.add('scene-moving');
     clearTimeout(resting);
-    resting=setTimeout(()=>host.classList.remove('scene-moving'),150);
-  });
+    resting=setTimeout(()=>{const zoom=camera.get().zoom;if(appliedZoom&&zoom!==appliedZoom)applyZoom(zoom);host.classList.remove('scene-moving');},300);
+  };
+  camera.subscribe(rest);
   let instance=null,initializing=true,overviewFit='rest';
   // Hover answers at once (owner, 2026-10-14: the delays were felt).
   const look=createLook({dwell:50});
@@ -740,18 +746,20 @@ export async function createSceneFlow(map,stage,records,relations,areas,inputOwn
   }
   // The zoom words fade by (scene.css) is the one React Flow draws at,
   // whatever moved the camera: a gesture, a button, an entry, a resize.
-  // Every word, border and dash restyles when it changes, so during a
-  // gesture it follows in steps of a seventh and settles on the exact zoom
-  // once the camera rests (owner's trace, 2026-10-14: each zoom tick had
-  // restyled and repainted all of Airflow's core).
-  let appliedZoom=0,settle=0;
+  // Every word, border and dash restyles when it changes, and the map's
+  // layer is rasterized again, so during a gesture it follows in steps of a
+  // doubling and settles on the exact zoom at rest (owner's traces: each
+  // zoom tick had restyled and repainted all of Airflow's core, 2026-10-14;
+  // steps of a seventh had rasterized ~100 of Redis's tiles each, several
+  // times a pinch, 2026-10-15); a border is at most twice or half its width
+  // until the camera rests.
+  let appliedZoom=0;
   const applyZoom=zoom=>{appliedZoom=zoom;host.style.setProperty('--flow-zoom',String(zoom));};
   function ZoomVar(){
     const zoom=useStore(state=>state.transform[2]);
     useLayoutEffect(()=>{
-      clearTimeout(settle);
-      if(!appliedZoom||Math.abs(Math.log(zoom/appliedZoom))>Math.log(1.15))applyZoom(zoom);
-      else if(zoom!==appliedZoom)settle=setTimeout(()=>applyZoom(zoom),120);
+      if(!appliedZoom||Math.abs(Math.log(zoom/appliedZoom))>Math.log(2))applyZoom(zoom);
+      else if(zoom!==appliedZoom)rest();
     },[zoom]);
     return null;
   }

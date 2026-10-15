@@ -16393,3 +16393,17 @@ new level inside the gesture (`map.showNode`, 1.4 s for Airflow's program);
 it now reads it 300 ms after the gesture's last tick. During a pinch the
 longest tick-to-frame is 214 ms (was 2,231). The column's own reading of a
 large program still takes 1.5 s at 4× once the pinch pauses.
+
+## 2026-10-15 — Redis lagging near the code: the owner's own trace
+
+Owner's Chrome trace (15 s of pinching Redis near its tiles, 2019 MacBook):
+the main thread was not the problem (2.9 s busy in 15 s, one long task, the
+profiler's); the GPU was (1.9 s of GPUTask, 70–80% for a second around a
+pinch). One layer, the map, was rasterized again and again: ~100 tiles at
+each 15% step of `--flow-zoom` during a gesture (every border and fade
+restyles), then once when the zoom settled at 120 ms and again when the
+layer was let go at 150 ms. Now the steps are doublings (a border at most
+twice or half its width until rest), and rest is one moment 300 ms after the
+last move, setting the exact zoom as the layer is let go. Headless Chrome
+rasterizes on the CPU and showed no difference (674 → 672 tiles), so the
+owner's next trace is the measurement.
