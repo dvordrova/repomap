@@ -190,7 +190,7 @@ for(const target of targets)for(const path of paths){
         finish('arrows');
         // Ports and markers by camera.
         const sizes=new Map();
-        const measure=async where=>{for(const p of await page.evaluate(()=>window.__inv.ports())){if(!sizes.has(p.id))sizes.set(p.id,[]);sizes.get(p.id).push([p.w,where]);}};
+        const measure=async where=>{const zoom=(await page.evaluate(()=>window.__inv.camera())).zoom;for(const p of await page.evaluate(()=>window.__inv.ports())){if(!sizes.has(p.id))sizes.set(p.id,[]);sizes.get(p.id).push([p.w,where,zoom]);}};
         await measure('at rest');
         // Random pans, in pairs that come back, each from an empty spot.
         let vector={dx:0,dy:0};
@@ -261,7 +261,10 @@ for(const target of targets)for(const path of paths){
         }
         for(const [id,seen] of sizes){
           const sorted=[...seen].sort((a,b)=>a[0]-b[0]),[lo,low]=sorted[0],[hi,high]=sorted.at(-1);
-          add('marker-size',lo>=19.5&&hi<=28.5&&hi-lo<=1.01,`${id}: ${lo.toFixed(1)} px ${low}, ${hi.toFixed(1)} px ${high} (${seen.length} cameras)`);
+          // Drawn in its box's world (overlay.mjs): its size on screen over the
+          // zoom is one number, and it is shown from 12 px.
+          const world=seen.map(([px,,zoom])=>px/zoom),least=Math.min(...world),most=Math.max(...world);
+          add('marker-size',lo>=11.5&&most-least<=.02*most+1e-9,`${id}: ${lo.toFixed(1)} px ${low}, ${hi.toFixed(1)} px ${high}, world ${least.toFixed(2)}–${most.toFixed(2)} (${seen.length} cameras)`);
         }
         finish('sizes');
       }catch(error){

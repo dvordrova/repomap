@@ -1499,6 +1499,32 @@ post-layout edits are deleted.
   `map.sceneState()` and `map.sceneEnter(id)` and the DOM contract of
   `visual/invariants.mjs`.
 
+## Reader intents and expected screens
+
+The owner's one language for what the report must do (2026-10-15): each
+reader intent says what the screen must show and must never show. The
+intents are platform-neutral; gestures bind to them per platform (desktop
+now; a mobile version will rebind them: the header out of the way, the
+reading column sliding in and out, taps instead of hover) and the checks stay
+the same. A check states an intent's assertions about the screen, never a
+gesture's mechanics.
+
+| Intent | Must show | Must not | Checked by today |
+|---|---|---|---|
+| OVERVIEW (the whole map at rest) | every box of the level in sight, every program's name ≥ 11 px, every outside name ≥ 9.5 px | overlapping names, a box with no name, an empty canvas | invariants `home-names`, `whole-fit`, `titles`, `text`; scene.test titles/words rules |
+| PEEK ("what is this", pointing) | a tip or card beside its element (a marker's right of it, an arrow's beside a dot on the end near the pointer), whole and readable; the same thing lit on the map and in the reading | the camera, level, layout or reading changing; a native tooltip repeating visible text | invariants `point-keeps`, `point-style`, `cards`, `tip-whole`; visual "a declaration pointed at is lit on the map and in the reading alike" |
+| READ (a plain click) | the reading names the target; the same target chosen and drawn on the map, in sight (a member its card cuts stands named in its type's "… +N" row) | the camera moving when the target was already in sight | scene.test "a declaration named is shown in its part entered"; visual reading journeys |
+| LOCATE (aim the map, no reading change) | the target in sight, its name ≥ 10.5 px, not covered | the reading or its scroll changing | — (the ⛶ action awaits the owner's decision on the action trio) |
+| SOURCE (open the code) | one new tab with the code | any change of the page | — (awaits the action trio) |
+| OPEN (zoom or magnifier into a box) | the box's header at its closed card's place and size, its drawing in the body; a magnifier never zooms out | a nameless box, a name dropping in size, a layout jump | scene.test "closed components name every direct area…" (open frame names it at its card's text, children below the header); `pan-fixed` |
+| PAN / ZOOM (moving the window) | every drawn box at its world place, words growing with their boxes, markers at their box's world size | anything rearranging, rewrapping or disappearing in sight; a page zoom from a pinch over a card | invariants `pan-level`, `pan-keeps`, `pan-fixed`, `word-anchor`, `marker-size` |
+| WALK (follow a flow step by step) | each step located as LOCATE, the step lit in the reading | the reading leaving the flow | — (awaits the action trio) |
+
+Speed is a kind wish for every intent (owner, 2026-10-15: "I am kind to the
+reader"): a big report opens without waiting even on a 2019 MacBook
+(measured at 4× CPU throttle), and every change keeps or improves the
+measurement (CHANGELOG keeps the measurements).
+
 ## Reader context
 
 The complete component/input catalogue stays available beside the same map,

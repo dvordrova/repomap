@@ -16255,3 +16255,13 @@ frame of kinds), then the open set as the default after the owner tries it.
 - Checks: Go test TestAnInlineFunctionsCallsAreItsHoldersFlow; `npm test`
   180/180; `go test`/`go vet ./internal/report/` ok; `make ui-visual-test`
   22/22; headless reading of worker chosen from Find.
+
+## 2026-10-15 — the reader-intents table in the report contract
+
+- REPORT.md "Reader intents and expected screens": OVERVIEW, PEEK, READ,
+  LOCATE, SOURCE, OPEN, PAN/ZOOM, WALK — what each must and must not show,
+  platform-neutral, with the checks that cover each today and the gaps
+  (LOCATE, SOURCE, WALK await the owner's decision on the action trio).
+- The invariants' `marker-size` row follows the world-sized markers: one
+  size over the zoom at every camera, shown from 12 px (it had kept the old
+  20–28 screen px rule).

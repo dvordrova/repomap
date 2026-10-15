@@ -53,7 +53,7 @@ export const invariants=[
   ['crosses','no arrow runs through a box it does not join',{...arrows,none:'no arrow drawn in sight'}],
   ['step1-gap','parallel lanes stand at least 7.5 screen px apart, as in the approved Step 1 drawing',{...arrows,none:'fewer than two parallel runs in sight'}],
   ['tip-whole','a marker\'s or a port\'s tip names each of what it stands for whole, never cut, and stands wholly in the canvas',{phase:'arrows',none:'no port or marker in sight to point at'}],
-  ['marker-size','ports and markers are 20-28 px at every camera, one size per level',{phase:'sizes',none:'no port or marker in sight'}],
+  ['marker-size','ports and markers are drawn in their box\'s world: one size over the zoom at every camera, shown from 12 px',{phase:'sizes',none:'no port or marker in sight'}],
   ['markers','at most 3 markers per side and 6 per box, the stack no taller than the box',{phase:'markers',none:'no marker in sight'}],
   ['titles','titles at one level within ±10% of their median',{phase:'titles',none:'fewer than two titles in sight'}],
   ['word-anchor','card words and frame titles stay anchored to their own box during pan',{phase:'titles',none:'no words drawn'}],
