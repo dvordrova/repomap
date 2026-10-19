@@ -1,3 +1,16 @@
+## 2026-10-20 — test waits are sized by the test's deadline, not a wall-clock guess
+
+Under load (load average 400 while another agent ran), thirteen subtests
+that start a controlled interpreter failed at exactly 10 s with
+"context deadline exceeded", and three packages hit the five-minute budget:
+a process slow to start is not a hung process. `internal/testbudget.Until`
+gives a wait the time left to the test's deadline, so a real hang still
+fails inside the test with its message, and the ready-marker synchronization
+stays. Applied to the parser-process tests of both Python packages, the JS
+helper cancellation test, the lane tests, the report server, translation,
+facts and the adaptive executor. Two barrier timers inside fake providers
+keep their two seconds: they are not waits for a process.
+
 ## 2026-10-20 — CI's test job installs Node 24 and TypeScript 7.0.2
 
 The `test` job ran on ubuntu without Node, so every JS/TS helper test

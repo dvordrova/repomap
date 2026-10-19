@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dvordrova/repomap/internal/testbudget"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +24,7 @@ func TestTargetParserProcessFailureKeepsCauseAndBoundedStderr(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			executable := controlledTargetParserExecutable(t, fmt.Sprintf("printf '%%s' %s >&2\nexit 23\n", targetParserShellLiteral(test.diagnostic)))
 
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), testbudget.Until(t))
 			defer cancel()
 			_, err := runPythonParser(ctx, executable, []inputFile{{Path: "source.py", Kind: "python", Content: ""}})
 			var processErr *exec.ExitError
@@ -60,7 +61,7 @@ func TestTargetParserProcessCancellationKeepsContextCause(t *testing.T) {
 	// startup (which can be delayed by host launch checks).
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	startup := time.NewTimer(10 * time.Second)
+	startup := time.NewTimer(testbudget.Until(t))
 	defer startup.Stop()
 	for {
 		if _, err := os.Stat(ready); err == nil {
@@ -84,7 +85,7 @@ func TestTargetParserProcessCancellationKeepsContextCause(t *testing.T) {
 		if errors.As(err, &processErr) {
 			t.Fatalf("cancellation became a process failure: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testbudget.Until(t)):
 		t.Fatal("canceled parser did not exit")
 	}
 }
@@ -101,7 +102,7 @@ func TestTargetParserProcessRequiresSingleJSONDocument(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			executable := controlledTargetParserExecutable(t, "printf '%s' "+targetParserShellLiteral(test.output)+"\n")
 
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), testbudget.Until(t))
 			defer cancel()
 			response, err := runPythonParser(ctx, executable, []inputFile{{Path: "source.py", Kind: "python", Content: ""}})
 			if test.errorText != "" {

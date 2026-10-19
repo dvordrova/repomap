@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
+	"github.com/dvordrova/repomap/internal/testbudget"
 )
 
 // A method that calls itself on a field of its own receiver (`n.next.walk()`)
@@ -45,7 +46,7 @@ func TestRouteValuesStopAtRecursiveReceiverFields(t *testing.T) {
 		if len(got) != 0 {
 			t.Fatalf("recursive field read produced %v, want unknown", got)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testbudget.Until(t)):
 		t.Fatal("recursive field read did not stop")
 	}
 }
@@ -78,7 +79,7 @@ func routeTestRead(t *testing.T, read func() []routeLiteral) []routeLiteral {
 	select {
 	case got := <-done:
 		return got
-	case <-time.After(30 * time.Second):
+	case <-time.After(testbudget.Until(t)):
 		t.Fatal("the read did not finish")
 		return nil
 	}

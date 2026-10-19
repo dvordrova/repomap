@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/testbudget"
 )
 
 type parallelTranslationProvider struct {
@@ -38,7 +39,7 @@ func TestTranslatePlansEightPartitionsWithFourWorkersAndReusesTheirCache(t *test
 	catalog := testCatalog(t, entries)
 	provider := &parallelTranslationProvider{testProvider: &testProvider{}, started: make(chan struct{}, 4), release: make(chan struct{})}
 	executor := llm.Executor{RootDir: t.TempDir(), Enabled: true, BatchConcurrency: 4}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testbudget.Until(t))
 	defer cancel()
 	type result struct {
 		value report.DisplayTranslations

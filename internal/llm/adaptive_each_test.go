@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dvordrova/repomap/internal/testbudget"
 	"reflect"
 	"strings"
 	"sync"
@@ -167,7 +168,7 @@ func TestAdaptiveOwnersPartitionKnownEnvelopeBeforeAnyTransport(t *testing.T) {
 
 func TestAdaptiveEachKeepsRunningSiblingAndSplitsEveryFailureWithoutCache(t *testing.T) {
 	p := &adaptiveEachProvider{started: make(chan struct{}), failed: make(chan struct{}, 2), release: make(chan struct{}), canceled: make(chan struct{})}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testbudget.Until(t))
 	defer cancel()
 	var notices []int
 	built := make(map[string]int)

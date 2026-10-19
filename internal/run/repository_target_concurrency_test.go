@@ -20,6 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
+	"github.com/dvordrova/repomap/internal/testbudget"
 )
 
 // The documentation reduction runs beside the first target's native
@@ -111,7 +112,7 @@ func TestTargetPageLanesRunAdaptersSideBySideAndOneAdapterInPlanOrder(t *testing
 			// The first Go page finishes only once a JSTS page has started.
 			select {
 			case <-jstsStarted:
-			case <-time.After(10 * time.Second):
+			case <-time.After(testbudget.Until(t)):
 				t.Error("the JSTS lane did not start beside the Go lane")
 			}
 		case 1:
@@ -184,7 +185,7 @@ func TestTargetPageLanesReportTheFailureNotTheCancellationItCaused(t *testing.T)
 			select {
 			case <-ctx.Done():
 				slot.stop, slot.stopCanceled = ctx.Err(), true
-			case <-time.After(10 * time.Second):
+			case <-time.After(testbudget.Until(t)):
 				t.Error("the Go lane was not canceled by its sibling's failure")
 				analyzedLaneSlot(slot)
 			}

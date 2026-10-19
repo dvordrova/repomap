@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dvordrova/repomap/internal/testbudget"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +24,7 @@ func TestIndexParserProcessFailureKeepsCauseAndBoundedStderr(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			executable := controlledIndexParserExecutable(t, fmt.Sprintf("printf '%%s' %s >&2\nexit 23\n", indexParserShellLiteral(test.diagnostic)))
 			t.Setenv("PATH", filepath.Dir(executable))
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), testbudget.Until(t))
 			defer cancel()
 			_, err := runParser(ctx, parserRequest{})
 			var processErr *exec.ExitError
@@ -57,7 +58,7 @@ func TestIndexParserProcessCancellationKeepsContextCause(t *testing.T) {
 	// startup (which can be delayed by host launch checks).
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	startup := time.NewTimer(10 * time.Second)
+	startup := time.NewTimer(testbudget.Until(t))
 	defer startup.Stop()
 	for {
 		if _, err := os.Stat(ready); err == nil {
@@ -81,7 +82,7 @@ func TestIndexParserProcessCancellationKeepsContextCause(t *testing.T) {
 		if errors.As(err, &processErr) {
 			t.Fatalf("cancellation became a process failure: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testbudget.Until(t)):
 		t.Fatal("canceled parser did not exit")
 	}
 }
@@ -98,7 +99,7 @@ func TestIndexParserProcessRequiresSingleJSONDocument(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			executable := controlledIndexParserExecutable(t, "printf '%s' "+indexParserShellLiteral(test.output)+"\n")
 			t.Setenv("PATH", filepath.Dir(executable))
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), testbudget.Until(t))
 			defer cancel()
 			response, err := runParser(ctx, parserRequest{})
 			if test.errorText != "" {

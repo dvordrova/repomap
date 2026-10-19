@@ -16,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
+	"github.com/dvordrova/repomap/internal/testbudget"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -359,7 +360,7 @@ func TestServeUsesLoopbackCapabilityURLAndStopsWithContext(t *testing.T) {
 	var serverURL string
 	select {
 	case serverURL = <-ready:
-	case <-time.After(5 * time.Second):
+	case <-time.After(testbudget.Until(t)):
 		t.Fatal("server did not become ready")
 	}
 	parsed, err := url.Parse(serverURL)
@@ -383,7 +384,7 @@ func TestServeUsesLoopbackCapabilityURLAndStopsWithContext(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testbudget.Until(t)):
 		t.Fatal("server did not stop after cancellation")
 	}
 }

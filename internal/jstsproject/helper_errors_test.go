@@ -14,6 +14,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gitfiles"
+	"github.com/dvordrova/repomap/internal/testbudget"
 )
 
 func discoverFailureProject(t *testing.T, root string) error {
@@ -147,7 +148,7 @@ func TestHelperRunningCancellationPrecedesFailureClassification(t *testing.T) {
 	}()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	timeout := time.NewTimer(5 * time.Second)
+	timeout := time.NewTimer(testbudget.Until(t))
 	defer timeout.Stop()
 	for {
 		select {
