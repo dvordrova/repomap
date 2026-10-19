@@ -1,3 +1,15 @@
+## 2026-10-20 — CURRENT.md is again the decisions in force, not a journal
+
+The living ADR had grown to 1,337 lines of run ids, seconds and bytes since
+the 2026-09-10 split. It is now 116 lines: the reader outcomes, one dated
+line per decision in force with the contract section that owns it, the
+format versions read from code, an acceptance table of one row per
+repository and the open work. The former page is kept whole in
+`docs/archive/2026-10-20/CURRENT-2026-10-20.md`. Measurements and receipts
+stay here in CHANGELOG. The pass also lists the contract drift it found
+(EXECUTION and READING still say `JEV_KEY` is required; two removed stages
+are still named).
+
 ## 2026-10-20 — `internal/dependencydeclaration` is removed
 
 No package imported it (`go list -deps ./cmd/repomap` and a module-wide
