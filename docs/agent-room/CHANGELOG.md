@@ -1,3 +1,9 @@
+## 2026-10-20 — `internal/dependencydeclaration` is removed
+
+No package imported it (`go list -deps ./cmd/repomap` and a module-wide
+search agree); its 1,062 lines and one test described a declaration ledger
+nothing produced or read. The historical test audit no longer lists it.
+
 ## 2026-10-20 — test waits are sized by the test's deadline, not a wall-clock guess
 
 Under load (load average 400 while another agent ran), thirteen subtests
