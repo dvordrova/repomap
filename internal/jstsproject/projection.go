@@ -352,6 +352,17 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			})
 			relation.WitnessesObserved = len(relation.Witnesses)
 		}
+		if value.Basis != "" {
+			relation := &relations[relationIndex]
+			relation.Dispatch, relation.Basis = programindex.DispatchInterface, value.Basis
+		}
+		if value.Basis == programindex.BasisMembers {
+			// The members the code uses on the value, which every target's
+			// class has: how the targets are known, at no other site.
+			relation := &relations[relationIndex]
+			relation.Witnesses = append(relation.Witnesses, programindex.Witness{Kind: "members_used", Detail: value.MembersUsed})
+			relation.WitnessesObserved = len(relation.Witnesses)
+		}
 		relations[relationIndex].Patterns = programCallPatterns(value)
 		if first := value.SameValueAs; first != "" && value.Pattern != nil && len(relations[relationIndex].Patterns) == 1 && spelling[first] == spelling[value.Ref] {
 			relations[relationIndex].Patterns[0].SameValueAs = &programindex.PatternRefInput{RelationSourceRef: "program:" + first, PatternSourceRef: "pattern:" + first}

@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 31
+const CONTRACT_VERSION = 33
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -58,7 +58,13 @@ const root = requestedProjectDir ? path.join(repositoryRoot, ...requestedProject
 const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
 // Type text without host paths: the repository prefix goes, a node_modules
 // path becomes its package name.
-const cleanTypeText = (value) => value.split(slash(rootPrefix)).join("")
+// The compiler writes a string literal type's \r, \n, \t and \0 escaped but
+// leaves DEL and the C1 controls raw (orca's `\u007f` in a template
+// literal); the index takes no control character in text, so each is
+// written escaped the compiler's way.
+const escapeControls = (value) => value.replace(/[\u0000-\u001f\u007f-\u009f]/g,
+  (character) => "\\u" + character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0"))
+const cleanTypeText = (value) => escapeControls(value.split(slash(rootPrefix)).join(""))
   .replace(/node_modules\/(?:@types\/)?(@[^/]+\/[^/]+|[^/]+)(?:\/[^"']*)?/g, "$1")
 const absolute = (relative) => path.join(root, ...relative.split("/"))
 // Every node asks for its file's path; each file name is resolved once.
@@ -587,6 +593,17 @@ for (const filePath of additionalFiles) {
 }
 const sourceFiles = [...sourceByPath.values()].sort((left, right) => compareText(left.path, right.path))
 if (sourceFiles.length === 0) fail("configuration selects no tracked JavaScript or TypeScript files")
+// A file is read only through the first program that holds it. A program
+// holding no file first is never read again; its options stay for the path
+// aliases and resolution summary above, and its program and checker are let
+// go (orca's tsconfig.relay.json, every file of which tsconfig.node.json
+// holds: 1,570 files, ~250 MB).
+if (compilerFlavor === "legacy") {
+  const reading = new Set(sourceFiles.map(({ project }) => project))
+  for (const project of compilerProjects) {
+    if (!reading.has(project)) project.program = project.checker = undefined
+  }
+}
 const projectForNode = (node) => sourceByPath.get(relative(node.getSourceFile().fileName))?.project
 const checkerForNode = (node) => projectForNode(node)?.checker
 const optionsForNode = (node) => projectForNode(node)?.options || {}
@@ -803,22 +820,54 @@ const declarationNodeByRef = new Map()
 // never its comment trivia (JSDoc included) or blank lines. A token spanning
 // lines, such as a template literal, holds each of them.
 const codeLineSets = new Map()
+// The lines a file's tokens cover. The AST is walked with forEachChild, which
+// creates nothing, and only the gaps between a node's children are scanned:
+// they hold punctuation, keywords and trivia, never a literal, template,
+// regular expression or JSX text, which are nodes covering their own span.
+// node.getChildren() gave the same lines, but kept every file's whole token
+// tree alive with its SourceFile (3 GB on orca's 15k files; the same
+// 17,656 line sets, 2026-10-19).
+const codeLineLeafKinds = new Set([
+  ts.SyntaxKind.Identifier, ts.SyntaxKind.PrivateIdentifier, ts.SyntaxKind.StringLiteral, ts.SyntaxKind.NumericLiteral,
+  ts.SyntaxKind.BigIntLiteral, ts.SyntaxKind.RegularExpressionLiteral, ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+  ts.SyntaxKind.TemplateHead, ts.SyntaxKind.TemplateMiddle, ts.SyntaxKind.TemplateTail, ts.SyntaxKind.JsxText,
+  ts.SyntaxKind.JsxTextAllWhiteSpaces,
+])
 function codeLineSet(sourceFile) {
   let lines = codeLineSets.get(sourceFile)
   if (lines) return lines
   lines = new Set()
+  const text = sourceFile.text
   const lineOf = (position) => sourceFile.getLineAndCharacterOfPosition(position).line + 1
+  const cover = (start, end) => { for (let line = lineOf(start), last = lineOf(end - 1); line <= last; line++) lines.add(line) }
+  const scanner = ts.createScanner(sourceFile.languageVersion, true, sourceFile.languageVariant, text)
+  const scan = (start, end) => {
+    if (end <= start) return
+    scanner.setText(text, start, end - start)
+    for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
+      const tokenStart = scanner.getTokenStart ? scanner.getTokenStart() : scanner.getTokenPos()
+      const tokenEnd = scanner.getTokenEnd ? scanner.getTokenEnd() : scanner.getTextPos()
+      if (tokenEnd > tokenStart) cover(tokenStart, tokenEnd)
+    }
+  }
   const visit = (node) => {
     if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) return
-    const children = node.getChildren(sourceFile)
-    if (children.length === 0) {
-      if (node.kind === ts.SyntaxKind.EndOfFileToken) return
+    if (node.kind === ts.SyntaxKind.EndOfFileToken) return
+    const children = []
+    ts.forEachChild(node, (child) => { children.push(child) }, (array) => { for (const child of array) children.push(child) })
+    if (children.length === 0 && (codeLineLeafKinds.has(node.kind) || ts.isToken(node))) {
       const start = node.getStart(sourceFile)
-      if (node.end <= start) return
-      for (let line = lineOf(start), last = lineOf(node.end - 1); line <= last; line++) lines.add(line)
+      if (node.end > start) cover(start, node.end)
       return
     }
-    for (const child of children) visit(child)
+    let at = node.kind === ts.SyntaxKind.SourceFile ? node.pos : node.getStart(sourceFile)
+    for (const child of children) {
+      if (child.kind >= ts.SyntaxKind.FirstJSDocNode && child.kind <= ts.SyntaxKind.LastJSDocNode) continue
+      scan(at, child.pos)
+      visit(child)
+      at = Math.max(at, child.end)
+    }
+    scan(at, node.end)
   }
   visit(sourceFile)
   codeLineSets.set(sourceFile, lines)
@@ -890,7 +939,7 @@ function namedParent(node) {
 
 function signatureOf(node) {
   const safeTypeText = (value) => {
-    value = value.split(slash(rootPrefix)).join("")
+    value = escapeControls(value.split(slash(rootPrefix)).join(""))
     value = value.replace(/node_modules\/(?:@types\/)?(@[^/]+\/[^/]+|[^/]+)(?:\/[^"']*)?/g, "$1")
     return value
   }
@@ -2041,6 +2090,7 @@ for (const declaration of declarations) {
 }
 
 const calls = []
+const memberCallSites = []
 const contracts = []
 const surfaces = []
 const contractByDeclaration = new Map()
@@ -2398,6 +2448,7 @@ for (const { sourceFile } of sourceFiles) {
           const parameter = parameters[index]
           const key = formalParameterKey(parameter)
           recordIncomingActual(key, {
+            actual: actual && !ts.isSpreadElement(actual) ? actual : undefined,
             exact: Boolean(actual) && exactTarget && calleeRef === resolvedRef && positionMappingExact && !parameter.dotDotDotToken,
             value: actual && !ts.isSpreadElement(actual) ? staticPatternValue(actual) : undefined,
             source_call_ref: callRef,
@@ -2992,6 +3043,8 @@ for (const { sourceFile } of sourceFiles) {
         if (parameter > 0) call.callee_parameter = parameter
       }
       calls.push(call)
+      if (resolution === "unresolved" && !externalPackage && localRefs.length === 0 && !stored?.refs?.length &&
+          ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) memberCallSites.push({ call, node })
 
       if (ts.isCallExpression(node)) {
       const name = propertyName(node.expression)
@@ -3028,6 +3081,264 @@ for (const { sourceFile } of sourceFiles) {
 // JSX attributes supply values; they do not call those values. Preserve every
 // compiler-observed callable attribute, including renderers and internal props,
 // so the semantic reader can distinguish user actions from ordinary callbacks.
+// A method call on a field (this.client) or a parameter whose value no store,
+// type or flow gives (the compiler's type there is `any`) calls the method of
+// each repository class having every member the code uses on that value,
+// another member than the one called among them: the duck-typed counterpart
+// of Go's interface implementations (basis members, PROGRAM_INDEX, JSTS).
+// bee-queue's Queue._finishJob calling job.computeDelay() on its parameter
+// calls Job.computeDelay. A field's uses are those its reading class and that
+// class's bases make, never a subclass's; a parameter's those its function
+// makes. No targets when a store or a caller gives an observed value (a
+// literal, an outside call, a typed value other than a repository instance),
+// when the code tests the value's shape (`"x" in v`, `typeof v.x`), or when a
+// candidate's member of that name is no method of the repository.
+function memberSlot(node, typed = true) {
+  // typed: the compiler's type of the value there must be `any`; a use of a
+  // slot an unresolved call already named needs only its identity.
+  const value = unwrapReceiverExpression(node)
+  if (!value) return undefined
+  const checker = checkerForNode(value)
+  if (!checker) return undefined
+  const untyped = () => {
+    if (!typed) return true
+    let type
+    try { type = checker.getTypeAtLocation(value) } catch {}
+    return Boolean(type) && Boolean(type.flags & ts.TypeFlags.Any)
+  }
+  if (ts.isIdentifier(value)) {
+    let symbol
+    try { symbol = checker.getSymbolAtLocation(value) } catch {}
+    const declarations = symbolDeclarations(symbol)
+    if (declarations.length !== 1 || !ts.isParameter(declarations[0]) || declarations[0].type || !ts.isIdentifier(declarations[0].name)) return undefined
+    const key = formalParameterKey(declarations[0])
+    if (!key || reassignedFormalParameters.has(key) || !untyped()) return undefined
+    return { key: declarations[0], kind: "parameter", formal: key, reader: undefined }
+  }
+  if (ts.isPropertyAccessExpression(value) && value.expression.kind === ts.SyntaxKind.ThisKeyword) {
+    let symbol
+    try { symbol = checker.getSymbolAtLocation(value.name) } catch {}
+    const declarations = symbolDeclarations(symbol)
+    if (declarations.length === 0 || !declarations.every((declaration) => fileRefByPath.has(relative(declaration.getSourceFile().fileName)))) return undefined
+    let reader
+    for (let current = value.parent; current && !ts.isSourceFile(current); current = current.parent) {
+      if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) { reader = current; break }
+      if ((ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)) && !ts.isClassLike(current.parent)) return undefined
+    }
+    if (!reader || !untyped()) return undefined
+    return { key: symbol, kind: "field", reader }
+  }
+  return undefined
+}
+
+function classChain(node) {
+  // The class and the classes it extends, as the compiler resolves them.
+  const chain = [], checker = checkerForNode(node)
+  let current = node
+  while (current && !chain.includes(current)) {
+    chain.push(current)
+    const heritage = (current.heritageClauses || []).find((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
+    const base = heritage?.types?.[0]?.expression
+    let symbol
+    try { symbol = base && checker.getSymbolAtLocation(base) } catch {}
+    try { if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol) } catch {}
+    current = symbolDeclarations(symbol).find((declaration) => ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration))
+  }
+  return chain
+}
+
+function memberValueObserved(node) {
+  // Whether a stored or handed value is one the code shows: a literal, an
+  // object, array or function, a construction, an outside call's result or a
+  // value the compiler types (a repository instance when instances is set).
+  const value = unwrapReceiverExpression(node)
+  if (!value || value.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(value) && value.text === "undefined") || ts.isVoidExpression(value)) return false
+  if (ts.isAwaitExpression(value)) return memberValueObserved(value.expression)
+  if (ts.isConditionalExpression(value)) return memberValueObserved(value.whenTrue) || memberValueObserved(value.whenFalse)
+  if (ts.isBinaryExpression(value) && [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(value.operatorToken.kind)) {
+    return memberValueObserved(value.left) || memberValueObserved(value.right)
+  }
+  if (ts.isCallExpression(value) || ts.isNewExpression(value)) {
+    if (externalInvocation(value).package) return true
+  }
+  const checker = checkerForNode(value)
+  let type
+  try { type = checker?.getTypeAtLocation(value) } catch {}
+  return Boolean(type) && !(type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Unknown))
+}
+
+function repositoryInstance(node) {
+  const value = unwrapReceiverExpression(node)
+  const checker = value && checkerForNode(value)
+  let type
+  try { type = checker?.getTypeAtLocation(value) } catch {}
+  return symbolDeclarations(type?.getSymbol?.()).some((declaration) =>
+    (ts.isClassDeclaration(declaration) || ts.isClassExpression(declaration)) && fileRefByPath.has(relative(declaration.getSourceFile().fileName)))
+}
+
+// The slots the unresolved calls' receivers name, each by its key, and the
+// names a use of one can be written with; only those accesses are resolved.
+const testFileRefs = new Set(files.filter((file) => file.test).map((file) => file.file_ref))
+const memberSlots = new Map(), memberSlotNames = new Set()
+for (const site of memberCallSites) {
+  site.slot = memberSlot(site.node.expression.expression)
+  if (!site.slot) continue
+  memberSlots.set(site.slot.key, site.slot)
+  const value = unwrapReceiverExpression(site.node.expression.expression)
+  memberSlotNames.add(ts.isIdentifier(value) ? value.text : "this." + value.name.text)
+}
+function usedSlot(node) {
+  const value = unwrapReceiverExpression(node)
+  if (!value) return undefined
+  const text = ts.isIdentifier(value) ? value.text
+    : ts.isPropertyAccessExpression(value) && value.expression.kind === ts.SyntaxKind.ThisKeyword ? "this." + value.name.text : ""
+  if (!text || !memberSlotNames.has(text)) return undefined
+  const slot = memberSlot(value, false)
+  return slot && memberSlots.has(slot.key) ? slot : undefined
+}
+const memberUses = new Map(), memberShapeTested = new Set()
+if (memberSlots.size > 0) for (const { sourceFile } of sourceFiles) {
+  const visitMemberUses = (node) => {
+    if (ts.isPropertyAccessExpression(node) && !(ts.isBinaryExpression(node.parent) && node.parent.left === node &&
+        node.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment)) {
+      const slot = usedSlot(node.expression)
+      if (slot) {
+        const rows = memberUses.get(slot.key) || []
+        rows.push({ reader: slot.reader, name: node.name.text })
+        memberUses.set(slot.key, rows)
+        if (ts.isTypeOfExpression(node.parent)) memberShapeTested.add(slot.key)
+      }
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InKeyword) {
+      const slot = usedSlot(node.right)
+      if (slot) memberShapeTested.add(slot.key)
+    }
+    ts.forEachChild(node, visitMemberUses)
+  }
+  visitMemberUses(sourceFile)
+}
+
+const repositoryClasses = declarations.map(({ ref }) => ({ ref, node: declarationNodeByRef.get(ref) }))
+  .filter(({ node }) => node && ts.isClassDeclaration(node) && node.name)
+  .sort((left, right) => compareText(left.ref, right.ref))
+function classMember(classNode, name) {
+  // The member's declarations of this name the class's instances have, its
+  // own or inherited, by the compiler.
+  const checker = checkerForNode(classNode)
+  let symbol
+  try {
+    const classSymbol = checker.getSymbolAtLocation(classNode.name)
+    symbol = checker.getPropertyOfType(checker.getDeclaredTypeOfSymbol(classSymbol), name)
+  } catch {}
+  return symbolDeclarations(symbol)
+}
+
+for (const { call, node, slot } of memberCallSites) {
+  if (!slot || memberShapeTested.has(slot.key)) continue
+  const method = node.expression.name.text
+  if (slot.kind === "field") {
+    if (symbolDeclarations(slot.key).some((declaration) => {
+      const store = ts.isBinaryExpression(declaration.parent) && declaration.parent.left === declaration ? declaration.parent.right
+        : ts.isPropertyDeclaration(declaration) ? declaration.initializer : undefined
+      return store !== undefined && memberValueObserved(store)
+    })) continue
+  } else if ((incomingActualsByFormal.get(slot.formal) || []).some((row) => row.actual && memberValueObserved(row.actual) && !repositoryInstance(row.actual))) {
+    continue
+  }
+  const chain = slot.kind === "field" ? new Set(classChain(slot.reader)) : undefined
+  const used = new Set([method])
+  for (const row of memberUses.get(slot.key) || []) if (!chain || chain.has(row.reader)) used.add(row.name)
+  if (used.size < 2) continue
+  const callTest = testFileRefs.has(call.location.file_ref)
+  const targets = []
+  let open = false
+  for (const { node: classNode } of repositoryClasses) {
+    if (!callTest && declaredTests.has(relative(classNode.getSourceFile().fileName))) continue
+    if (![...used].every((name) => classMember(classNode, name).length > 0)) continue
+    const found = classMember(classNode, method).map((declaration) => declarationRefByNode.get(declaration) || "")
+    const ref = found.length === 1 ? found[0] : ""
+    if (!ref || !["function", "method"].includes(declarationKindByRef.get(ref))) { open = true; break }
+    if (!targets.includes(ref)) targets.push(ref)
+  }
+  if (open || targets.length === 0) continue
+  call.callee_refs = targets.sort()
+  call.resolution = targets.length === 1 ? "exact" : "alternatives"
+  call.dispatch = "interface"
+  call.basis = "members"
+  call.members_used = [...used].sort(compareText).join(", ") + " used on " + expressionText(node.expression.expression)
+}
+
+// A method call through a value of an interface this repository declares,
+// whose call the compiler resolves only to the interface's own signature,
+// calls the method of each repository class whose instances are assignable
+// to that interface: Go's rule for an interface call no observed flow gives
+// (basis implements, GO "A value no observed flow gives"). TypeScript is
+// structural, so a class need not say `implements`. An abstract class is
+// never the value (its subclasses are, keeping the methods they inherit), a
+// generic class is not enumerated, as Go enumerates none, and a test's class
+// is no candidate for the program's call. A candidate whose member of that
+// name is no repository method with a body leaves the call unresolved, as an
+// interface no class implements does.
+function repositoryInterfaceType(node) {
+  const value = unwrapReceiverExpression(node)
+  const checker = value && checkerForNode(value)
+  let type
+  try { type = checker?.getTypeAtLocation(value) } catch {}
+  const declarations = symbolDeclarations(type?.getSymbol?.())
+  if (declarations.length === 0 || !declarations.every((declaration) =>
+    ts.isInterfaceDeclaration(declaration) && fileRefByPath.has(relative(declaration.getSourceFile().fileName)))) return undefined
+  return type
+}
+
+function assignableTo(checker, source, target) {
+  if (typeof checker.isTypeAssignableTo === "function") {
+    try { return checker.isTypeAssignableTo(source, target) } catch { return false }
+  }
+  // A compiler without the public check: every member the interface
+  // declares is a member of the class's instances.
+  const members = checker.getPropertiesOfType(target)
+  return members.length > 0 && members.every((member) => Boolean(checker.getPropertyOfType(source, member.getName())))
+}
+
+// The classes assignable to each interface type, once per type.
+const implementingClasses = new Map()
+function implementationsOf(checker, type) {
+  if (implementingClasses.has(type)) return implementingClasses.get(type)
+  const found = []
+  for (const { node: classNode } of repositoryClasses) {
+    if (classNode.typeParameters?.length || (ts.getCombinedModifierFlags(classNode) & ts.ModifierFlags.Abstract)) continue
+    let instance
+    try { instance = checker.getDeclaredTypeOfSymbol(checker.getSymbolAtLocation(classNode.name)) } catch {}
+    if (instance && assignableTo(checker, instance, type)) found.push(classNode)
+  }
+  implementingClasses.set(type, found)
+  return found
+}
+
+for (const { call, node } of memberCallSites) {
+  if (call.basis) continue
+  const receiver = node.expression.expression, method = node.expression.name.text
+  const type = repositoryInterfaceType(receiver)
+  const checker = checkerForNode(node)
+  if (!type || !checker || !checker.getPropertyOfType(type, method)) continue
+  const callTest = testFileRefs.has(call.location.file_ref)
+  const targets = []
+  let open = false
+  for (const classNode of implementationsOf(checker, type)) {
+    if (!callTest && declaredTests.has(relative(classNode.getSourceFile().fileName))) continue
+    const found = classMember(classNode, method).filter((declaration) => !ts.isMethodSignature(declaration))
+      .map((declaration) => ts.isMethodDeclaration(declaration) && declaration.body ? declarationRefByNode.get(declaration) || "" : "")
+    const ref = found.length === 1 ? found[0] : ""
+    if (!ref) { open = true; break }
+    if (!targets.includes(ref)) targets.push(ref)
+  }
+  if (open || targets.length === 0) continue
+  call.callee_refs = targets.sort()
+  call.resolution = targets.length === 1 ? "exact" : "alternatives"
+  call.dispatch = "interface"
+  call.basis = "implements"
+}
+
 const bindings = []
 for (const { sourceFile, path: filePath } of sourceFiles) {
   const visitJSXBindings = (node) => {

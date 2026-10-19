@@ -24,7 +24,7 @@ import (
 
 const (
 	Version       = 22
-	HelperVersion = 31
+	HelperVersion = 33
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -210,6 +210,15 @@ type Call struct {
 	// reaching stores put several functions there, CalleeRefs its
 	// alternatives (C.md's conditional callee; owner, 2026-09-30).
 	Dispatch string `json:"dispatch,omitempty"`
+	// Basis is "members" for a call on a field or parameter whose value
+	// the compiler types `any` and no store or caller shows, CalleeRefs the
+	// methods of the repository classes having every member the code uses
+	// on it, or "implements" for a call through a value of an interface the
+	// repository declares, CalleeRefs the methods of the classes assignable
+	// to it (dispatch "interface", PROGRAM_INDEX Relation.Basis);
+	// MembersUsed names those members and the value, for its witness.
+	Basis       string `json:"basis,omitempty"`
+	MembersUsed string `json:"members_used,omitempty"`
 	// Stores are, for a call through the variable StoredIn, the function
 	// each store puts there: the reaching ones of a call they resolve to
 	// alternatives and those a callback may find only later, every one of an
@@ -805,7 +814,14 @@ func (result Result) Validate() error {
 			(value.ExternalExport == "" || value.ExternalName == "") && value.Resolution != "unresolved" {
 			return fmt.Errorf("jsts project: resolved external call lacks package export authority")
 		}
-		if value.Dispatch != "" && (value.Dispatch != "function_value" || (value.Invocation != "call" && value.Invocation != "construct") ||
+		if value.Basis != "" && (value.Basis != programindex.BasisMembers && value.Basis != programindex.BasisImplements || value.Dispatch != programindex.DispatchInterface ||
+			value.Invocation != "call" || value.Resolution == "unresolved" || len(value.CalleeRefs) == 0 || value.ExternalPackage != "") {
+			return fmt.Errorf("jsts project: implements or members basis without the classes it names")
+		}
+		if (value.MembersUsed != "") != (value.Basis == programindex.BasisMembers) {
+			return fmt.Errorf("jsts project: members used without a members basis")
+		}
+		if value.Dispatch != "" && value.Basis == "" && (value.Dispatch != "function_value" || (value.Invocation != "call" && value.Invocation != "construct") ||
 			value.Resolution != "alternatives" || len(value.CalleeRefs) < 2 || value.ExternalPackage != "") {
 			return fmt.Errorf("jsts project: call dispatch without alternatives a condition chooses")
 		}
