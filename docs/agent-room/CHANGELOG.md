@@ -1,3 +1,16 @@
+## 2026-10-20 — the text model's lines decide only what they state
+
+Without `JEV_KEY` the closed questions go to the text model as numbered
+lines. The reader guessed: `not sure` was `no`, `request or background` was
+`background` (the longest option found inside the text), `1. yes` then
+`1. no` was `no`, `99. yes` under one question answered question 1, and an
+unnumbered explanation became the next question's answer (Codex R1). Now a
+line without a valid number answers nothing and shifts nothing; yes/no and
+options match whole, with quotes, case, bold and a trailing dot aside; the
+same answer twice is one, two different answers are written both and
+Verdicts reads the conflict. The contract is `text_model.lines.v7`, so cached
+answers normalized by the old reader are not reused.
+
 ## 2026-10-20 — `read --through zones --prompt FILE` replaces the proposal prompt
 
 The flag loaded the file into `Options.Prompt`, but the box proposals of the

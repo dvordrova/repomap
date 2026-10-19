@@ -1,12 +1,14 @@
 package typesafe
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,7 +52,7 @@ func (m *TextModel) AttemptController() *llm.BatchController { return m.Controll
 
 func (m *TextModel) State() []byte {
 	state, _ := json.Marshal(map[string]json.RawMessage{
-		"categorizer": json.RawMessage(`"text_model.lines.v6"`),
+		"categorizer": json.RawMessage(`"text_model.lines.v7"`),
 		"provider":    m.Provider.State(),
 	})
 	return state
@@ -235,91 +237,103 @@ func (m *TextModel) Verdicts(response []byte) (map[string]llm.Verdict, error) {
 	return m.reader.Verdicts(response)
 }
 
-// answersFromLines reads the model's lines softly into Jev's answers object:
-// a numbered line answers its number, an unnumbered or out-of-range one the
-// next question in order; bullets, quotes and a trailing dot are dropped,
-// and an option named inside a longer answer is that option. A question
+// answersFromLines reads the model's lines into Jev's answers object, taking
+// only what the format defines: a line is "N. answer" with N a question's
+// number; any other line, and a number outside the questions, is no answer
+// and shifts nothing. The answer is yes or no, or one option written as
+// listed (case, quotes, backticks, bold and a trailing dot aside); any other
+// text is written as the choice for its owner to refuse. A question answered
+// twice the same way is answered once; two different answers are both
+// written under the key, which Verdicts reads as a conflict. A question
 // without a readable line stays unanswered for its owner to refuse.
 func answersFromLines(asked []askedQuestion, response []byte) ([]byte, error) {
-	answers := map[string]any{}
-	next := 0
+	given := make([][]string, len(asked))
 	for _, line := range strings.Split(string(response), "\n") {
 		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "-*•>#"))
-		if line == "" {
-			continue
-		}
 		digits := 0
 		for digits < len(line) && line[digits] >= '0' && line[digits] <= '9' {
 			digits++
 		}
-		at := next
-		if digits > 0 && digits < len(line) && strings.ContainsRune(".:)", rune(line[digits])) {
-			if n, _ := strconv.Atoi(line[:digits]); n >= 1 && n <= len(asked) {
-				at = n - 1
-			}
-			line = line[digits+1:]
+		if digits == 0 || digits >= len(line) || !strings.ContainsRune(".:)", rune(line[digits])) {
+			continue
 		}
+		n, err := strconv.Atoi(line[:digits])
+		if err != nil || n < 1 || n > len(asked) {
+			continue
+		}
+		rest := strings.TrimSpace(line[digits+1:])
 		// A line may repeat the question's bracketed key; it is no answer.
-		if rest := strings.TrimSpace(line); strings.HasPrefix(rest, "[") {
+		if strings.HasPrefix(rest, "[") {
 			if end := strings.Index(rest, "]"); end > 0 {
-				line = rest[end+1:]
+				rest = strings.TrimSpace(rest[end+1:])
 			}
 		}
-		if at >= len(asked) {
-			continue
-		}
-		next = at + 1
-		answer := strings.TrimSpace(line)
-		question := asked[at]
+		question := asked[n-1]
+		var value map[string]any
 		if len(question.options) == 0 {
-			switch word := strings.ToLower(strings.Trim(answer, "`\"'*")); {
-			case strings.HasPrefix(word, "yes"):
-				answers[question.key] = map[string]any{"type": "noul", "noul": 1}
-			case strings.HasPrefix(word, "no"):
-				answers[question.key] = map[string]any{"type": "noul", "noul": 0}
+			switch strings.ToLower(bareAnswer(rest)) {
+			case "yes":
+				value = map[string]any{"type": "noul", "noul": 1}
+			case "no":
+				value = map[string]any{"type": "noul", "noul": 0}
+			default:
+				continue
 			}
-			continue
-		}
-		answer = matchOption(question.options, answer)
-		probabilities := make(map[string]float64, len(question.options))
-		for _, option := range question.options {
-			probabilities[option] = 0
-			if option == answer {
-				probabilities[option] = 1
+		} else {
+			choice := matchOption(question.options, rest)
+			probabilities := make(map[string]float64, len(question.options))
+			for _, option := range question.options {
+				probabilities[option] = 0
+				if option == choice {
+					probabilities[option] = 1
+				}
 			}
+			value = map[string]any{"type": "choice", "choice": choice, "probabilities": probabilities}
 		}
-		answers[question.key] = map[string]any{"type": "choice", "choice": answer, "probabilities": probabilities}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(given[n-1], string(encoded)) {
+			given[n-1] = append(given[n-1], string(encoded))
+		}
 	}
-	return json.Marshal(map[string]any{"answers": answers})
+	var answers bytes.Buffer
+	answers.WriteString(`{"answers":{`)
+	first := true
+	for i, question := range asked {
+		key, err := json.Marshal(question.key)
+		if err != nil {
+			return nil, err
+		}
+		for _, value := range given[i] {
+			if !first {
+				answers.WriteByte(',')
+			}
+			first = false
+			answers.Write(key)
+			answers.WriteByte(':')
+			answers.WriteString(value)
+		}
+	}
+	answers.WriteString("}}")
+	return answers.Bytes(), nil
 }
 
-// matchOption is the option the answer names: the same text in any case,
-// as written or without quotes, backticks, bold and a trailing dot; else the
-// longest option the answer contains; else the answer as written.
+// bareAnswer is the answer without surrounding quotes, backticks, bold
+// marks, spaces and a trailing dot.
+func bareAnswer(answer string) string {
+	return strings.Trim(answer, " `\"'*.")
+}
+
+// matchOption is the option the answer names, as written or bare, in any
+// letter case; else the bare answer as written, for its owner to refuse.
 func matchOption(options []string, answer string) string {
-	bare := strings.TrimRight(strings.Trim(answer, "`\"'*"), ".")
+	bare := bareAnswer(answer)
 	for _, option := range options {
-		if strings.EqualFold(option, answer) {
+		if strings.EqualFold(option, answer) || strings.EqualFold(option, bare) {
 			return option
 		}
 	}
-	for _, option := range options {
-		if strings.EqualFold(option, bare) {
-			return option
-		}
-	}
-	folded := strings.ToLower(answer)
-	best := ""
-	for _, option := range options {
-		if strings.EqualFold(option, answer) {
-			return option
-		}
-		if option != "" && strings.Contains(folded, strings.ToLower(option)) && len(option) > len(best) {
-			best = option
-		}
-	}
-	if best != "" {
-		return best
-	}
-	return answer
+	return bare
 }

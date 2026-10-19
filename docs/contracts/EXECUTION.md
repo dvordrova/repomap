@@ -389,7 +389,13 @@ The display-translation cube behind `--lang`
   help; architectural gate/naming, parts, core/keys catalogues and orientation
   preparation do so in READING.
   Key-declaration packing retains every line and call: equal bindings list all
-  lines, and calls of one callee share a header plus one complete row per site.
+  lines, and calls of one callee share a header plus one complete row per site. The text model's lines decide only what they state
+  (`text_model.lines.v7`): a line is a question's number, a dot and the
+  answer; any other line, or a number outside the questions, answers
+  nothing and shifts nothing. The answer is `yes`, `no` or one option as
+  listed (case, quotes, backticks, bold and a trailing dot aside); other text
+  is written as the choice for the owner to refuse. The same answer twice is
+  one answer; two different answers are a conflict the owner refuses.
 - Official DeepSeek V4 preparation uses its known context even without an
   environment override. It reserves one input token per complete encoded UTF-8
   request byte, including framing, plus the output allowance (owner decision,

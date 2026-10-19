@@ -90,3 +90,85 @@ func TestTwoWindowsOfTheSameItemsKeepTheirOwnKeys(t *testing.T) {
 		}
 	}
 }
+
+// The lines carry only what the format defines; everything else stays
+// unknown for the owner to refuse rather than becoming a guessed decision.
+func TestTextModelLinesDecideOnlyWhatTheyState(t *testing.T) {
+	ask := func(t *testing.T, lines string) map[string]llm.Verdict {
+		t.Helper()
+		model := &TextModel{Provider: linesProvider{lines: lines}}
+		prompt, err := model.Prompt("task", nil, map[string]llm.Question{
+			"a|split": {Item: map[string]any{"id": "a"}, Ask: "Several?"},
+			"b|kind":  {Item: map[string]any{"id": "b"}, Ask: "Which?", Options: []llm.Option{{Name: "request"}, {Name: "background"}}},
+			"c|split": {Item: map[string]any{"id": "c"}, Ask: "Several?"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		prepared, err := model.Prepare(prompt, llm.Limits{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		completion, err := model.Complete(t.Context(), prepared)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verdicts, err := model.Verdicts(completion.Response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return verdicts
+	}
+	yes := func(v llm.Verdict) bool { return v.Yes != nil && *v.Yes == 1 }
+	no := func(v llm.Verdict) bool { return v.Yes != nil && *v.Yes == 0 }
+
+	// Questions are numbered 1 a|split, 2 b|kind, 3 c|split (keys sorted).
+	t.Run("two different answers are a conflict, the neighbour survives", func(t *testing.T) {
+		v := ask(t, "1. yes\n1. no\n3. no")
+		if !v["a|split"].Conflict {
+			t.Fatalf("yes then no decided %+v", v["a|split"])
+		}
+		if !no(v["c|split"]) {
+			t.Fatalf("the neighbour lost its answer: %+v", v["c|split"])
+		}
+	})
+	t.Run("the same answer twice is one answer", func(t *testing.T) {
+		v := ask(t, "1. yes\n1. Yes.")
+		if !yes(v["a|split"]) || v["a|split"].Conflict {
+			t.Fatalf("a repeated yes became %+v", v["a|split"])
+		}
+	})
+	t.Run("not sure is no answer, not no", func(t *testing.T) {
+		if v, ok := ask(t, "1. not sure")["a|split"]; ok {
+			t.Fatalf("not sure decided %+v", v)
+		}
+	})
+	t.Run("a number outside the questions answers nothing", func(t *testing.T) {
+		if v := ask(t, "99. yes"); len(v) != 0 {
+			t.Fatalf("99. yes decided %+v", v)
+		}
+	})
+	t.Run("an unnumbered line shifts nothing", func(t *testing.T) {
+		v := ask(t, "1. yes\nbecause the item splits\n2. request\n3. no")
+		if !yes(v["a|split"]) || v["b|kind"].Choice != "request" || !no(v["c|split"]) {
+			t.Fatalf("an explanation shifted the answers: %+v", v)
+		}
+	})
+	t.Run("an answer naming two options is not the longer one", func(t *testing.T) {
+		v := ask(t, "2. request or background")
+		if v["b|kind"].Choice == "request" || v["b|kind"].Choice == "background" {
+			t.Fatalf("two named options became one: %+v", v["b|kind"])
+		}
+		for option, p := range v["b|kind"].Probabilities {
+			if p != 0 {
+				t.Fatalf("%s at %v for an answer outside the options", option, p)
+			}
+		}
+	})
+	t.Run("form around the answer is not the answer", func(t *testing.T) {
+		v := ask(t, "1. `YES`\n2. \"Background\".\n3. **no**")
+		if !yes(v["a|split"]) || v["b|kind"].Choice != "background" || !no(v["c|split"]) {
+			t.Fatalf("quotes, case, bold or a trailing dot refused an answer: %+v", v)
+		}
+	})
+}
