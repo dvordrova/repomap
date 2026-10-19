@@ -146,19 +146,13 @@ func linkLatest(debugDir, runDir string, stderr io.Writer) {
 func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	ctx, abort := context.WithCancelCause(ctx)
-	defer abort(nil)
 	output := newRunOutput(os.Stderr)
-	output.abort = abort
-	// Every stage asks the text model through one gate, paced to the
-	// provider's declared rate.
-	llmController := &llm.BatchController{}
-	perMinute, err := deepseek.RequestsPerMinuteFromEnv()
+	ctx, abort, llmController, err := runControls(ctx, output)
 	if err != nil {
 		writeRunOutputError(output, err)
 		return err
 	}
-	llmController.Pace(perMinute)
+	defer abort(nil)
 	err = runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
 		consoleClock:               output,
 		ctx:                        ctx,
@@ -176,12 +170,34 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		repositoryArgumentOmitted:  repositoryArgumentOmitted,
 	})
 	if err != nil {
-		// A run stopped for a provider access or balance refusal reports that
-		// cause, not the cancellation every stage saw afterwards.
-		if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) && errors.Is(err, context.Canceled) {
-			err = cause
-		}
+		err = stoppedFor(ctx, err)
 		writeRunOutputError(output, err)
+	}
+	return err
+}
+
+// runControls is what every command that asks a model shares: a run-owned
+// cancellation with a cause, which an access or balance refusal fires from
+// the executing call, and one gate for the text model paced to the
+// provider's declared rate.
+func runControls(parent context.Context, output *runOutput) (context.Context, context.CancelCauseFunc, *llm.BatchController, error) {
+	perMinute, err := deepseek.RequestsPerMinuteFromEnv()
+	if err != nil {
+		return parent, nil, nil, err
+	}
+	ctx, abort := context.WithCancelCause(parent)
+	output.abort = abort
+	controller := &llm.BatchController{}
+	controller.Pace(perMinute)
+	return ctx, abort, controller, nil
+}
+
+// stoppedFor is the cause a run stopped for, when it stopped for one: a
+// provider access or balance refusal, not the cancellation every stage saw
+// afterwards.
+func stoppedFor(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) && errors.Is(err, context.Canceled) {
+		return cause
 	}
 	return err
 }
@@ -583,11 +599,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	if deps.preselectedTarget == nil && !deps.siblingTargetRun {
 		firstLayer := debugdump.NewSemanticObserver(nil)
-		selectionExecutor := llm.Executor{
+		selectionExecutor := humanOutput.stopOnAccessRefusal(llm.Executor{
 			RootDir: dDir, Enabled: !*noCache, Observer: timed(humanOutput, firstLayer),
 			BatchConcurrency: deps.llmBatchConcurrency,
 			BatchController:  deps.llmBatchController,
-		}
+		})
 		// The guidance scout needs only the repository's name, which the
 		// corpus and go.mod already give: it asks while the Go planning
 		// snapshot is built.

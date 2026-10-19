@@ -37,15 +37,25 @@ type runOutput struct {
 	wallTime     map[string]time.Duration
 	lastProgress map[string]runOutputProgress
 	// abort cancels the whole run with a cause. It is set on the root console
-	// only; child consoles reach it through consoleClock.
-	abort func(cause error)
+	// only; child consoles reach it through consoleClock. stopped remembers
+	// the first cause: later ones change nothing and are not announced again.
+	abort   func(cause error)
+	stopped bool
 }
 
 // abortRun stops the run for a cause no retry or partition can cure. Child
-// consoles share the root's cancellation through their console clock.
+// consoles share the root's cancellation through their console clock. It is
+// true once, for the cause that stopped the run.
 func (output *runOutput) abortRun(cause error) bool {
 	for current := output; current != nil; current = current.consoleClock {
 		if current.abort != nil {
+			current.mu.Lock()
+			stopped := current.stopped
+			current.stopped = true
+			current.mu.Unlock()
+			if stopped {
+				return false
+			}
 			current.abort(cause)
 			return true
 		}
@@ -56,6 +66,26 @@ func (output *runOutput) abortRun(cause error) bool {
 	return false
 }
 
+// stopOnAccessRefusal makes an executor stop the run the moment a provider
+// refuses the credentials or the balance: from the executing call, before
+// the next queued call starts, and whether or not the exchange reaches the
+// journal (the observer's notice stops it too, later, with the stage named).
+func (output *runOutput) stopOnAccessRefusal(executor llm.Executor) llm.Executor {
+	if output == nil {
+		return executor
+	}
+	executor.AccessRefused = func(failure llm.ProviderFailure, response *llm.HTTPResponse) {
+		provider := ""
+		if response != nil {
+			provider = response.Provider
+		}
+		if cause, refused := accessRefusalCause(provider, failure.HTTPStatus, ""); refused && output.abortRun(cause) {
+			output.Warn("Stopping the run", cause.Error())
+		}
+	}
+	return executor
+}
+
 // accessRefusal names a provider answer that no retry, split or later stage
 // can change: the credentials are refused or the balance is exhausted.
 // A response whose client names its service (Jev) names it, since a run asks
@@ -64,15 +94,25 @@ func accessRefusal(receipt debugdump.SemanticFailureReceipt) (error, bool) {
 	if receipt.HTTPResponse == nil {
 		return nil, false
 	}
+	return accessRefusalCause(receipt.HTTPResponse.Provider, receipt.HTTPResponse.StatusCode, receipt.Stage)
+}
+
+// accessRefusalCause names the refusal for the reader; the stage is named
+// when the caller knows it.
+func accessRefusalCause(name string, status int, stage string) (error, bool) {
 	provider, key, account := "the provider", "the API key", "the account"
-	if name := receipt.HTTPResponse.Provider; name != "" {
+	if name != "" {
 		provider, key, account = name, name+"'s API key", name+"'s account"
 	}
-	switch receipt.HTTPResponse.StatusCode {
+	at := ""
+	if stage != "" {
+		at = " at stage " + stage
+	}
+	switch status {
 	case 401, 403:
-		return fmt.Errorf("%s refused the credentials: HTTP %d at stage %s; check %s and model access, then rerun (accepted work is cached)", provider, receipt.HTTPResponse.StatusCode, receipt.Stage, key), true
+		return fmt.Errorf("%s refused the credentials: HTTP %d%s; check %s and model access, then rerun (accepted work is cached)", provider, status, at, key), true
 	case 402:
-		return fmt.Errorf("%s refused for balance: HTTP 402 at stage %s; top up %s, then rerun (accepted work is cached)", provider, receipt.Stage, account), true
+		return fmt.Errorf("%s refused for balance: HTTP 402%s; top up %s, then rerun (accepted work is cached)", provider, at, account), true
 	}
 	return nil, false
 }

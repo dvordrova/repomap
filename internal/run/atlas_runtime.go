@@ -179,12 +179,12 @@ func readRepositoryAtlas(
 		return atlasOutcome{}, fmt.Errorf("atlas: open artifact writer: %w", err)
 	}
 	defer writer.Close()
-	executor := llm.Executor{
+	executor := options.Output.stopOnAccessRefusal(llm.Executor{
 		RootDir: options.DebugDir, Enabled: !options.NoCache,
 		Observer:         timed(options.Output, debugdump.NewSemanticObserver(writer)),
 		BatchConcurrency: options.Deps.llmBatchConcurrency,
 		BatchController:  options.Deps.llmBatchController,
-	}
+	})
 	questions := options.Questions
 	if !options.Learn {
 		questions = nil

@@ -64,10 +64,10 @@ func reduceReportGlossaryNames(ctx context.Context, options repositoryTargetDisp
 		return err
 	}
 	defer writer.Close()
-	executor := debugdump.BindStage(llm.Executor{RootDir: options.DebugDir, Enabled: !options.NoCache,
+	executor := debugdump.BindStage(options.Output.stopOnAccessRefusal(llm.Executor{RootDir: options.DebugDir, Enabled: !options.NoCache,
 		Observer:         timed(options.Output, debugdump.NewSemanticObserver(writer)),
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
-	}, debugdump.SemanticStageGlossary)
+	}), debugdump.SemanticStageGlossary)
 	options.Output.Stage("Glossary", "explaining unfamiliar names from accepted prose")
 	progress := func(state, detail string) { options.Output.State("Glossary", state, detail) }
 	collector.Progress = progress

@@ -65,7 +65,7 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 	}
 	defer writer.Close()
 	translationRound := 0
-	executor := debugdump.BindStage(llm.Executor{
+	executor := debugdump.BindStage(options.Output.stopOnAccessRefusal(llm.Executor{
 		RootDir: options.DebugDir, Enabled: !options.NoCache,
 		Observer:         timed(options.Output, debugdump.NewSemanticObserver(writer)),
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
@@ -77,7 +77,7 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 			}
 			translationRound++
 		},
-	}, debugdump.SemanticStageReportTranslation)
+	}), debugdump.SemanticStageReportTranslation)
 	options.Output.Stage("Report translation", fmt.Sprintf("translating %d display texts into %s", len(catalog.Entries), language))
 	options.Output.Stage("", fmt.Sprintf("up to %d parallel requests; HTTP 500 or a 4m attempt timeout splits complete texts into smaller requests", max(1, options.Deps.llmBatchConcurrency)))
 	started := time.Now()

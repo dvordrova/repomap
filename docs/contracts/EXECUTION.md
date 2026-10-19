@@ -74,7 +74,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   returns a typed failure (class, status, attempts, exhausted) with the last
   attempt's diagnostic headers and body and `HTTPResponse.Provider` "Jev", so
   its receipt and the run's stop on HTTP 401, 403 or 402 name Jev's key or
-  account; a body that echoes the key is not kept. A Jev HTTP 200 whose
+  account; a body that echoes the key is not kept. That stop fires from the
+  executing call (`Executor.AccessRefused`, `ProviderFailure.AccessRefused`)
+  the moment the provider answers, before the next queued call starts and
+  whether or not the exchange reaches the journal; the observer's notice
+  names the stage later and stops nothing a second time. The ordinary run
+  and `read` share this cancellation, its cause and the paced text-model
+  gate (`runControls`). A Jev HTTP 200 whose
   `answers` are absent, null or empty gets the empty-answer retry below, the
   same one transport retry through its gate (owner, 2026-10-03); answers the
   decoder refuses, wholly or in part, and an unreadable envelope get none.

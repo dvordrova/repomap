@@ -135,7 +135,11 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 	if err != nil {
 		return err
 	}
-	controller := &llm.BatchController{}
+	ctx, abort, controller, err := runControls(ctx, output)
+	if err != nil {
+		return err
+	}
+	defer abort(nil)
 	if model, ok := categorizer.(*typesafe.TextModel); ok && model.Controller == nil {
 		model.Controller = controller
 	}
@@ -170,12 +174,12 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 	}
 	defer writer.Close()
 	opts.OwnerRunDir, opts.Provider, opts.Categorizer = absolute, provider, categorizer
-	opts.Executor = llm.Executor{RootDir: *cacheRoot, Enabled: !*noCache, BatchConcurrency: llm.DefaultBatchConcurrency, BatchController: controller, Observer: timed(output, debugdump.NewSemanticObserver(writer))}
+	opts.Executor = output.stopOnAccessRefusal(llm.Executor{RootDir: *cacheRoot, Enabled: !*noCache, BatchConcurrency: llm.DefaultBatchConcurrency, BatchController: controller, Observer: timed(output, debugdump.NewSemanticObserver(writer))})
 	opts.Stage, opts.State = output.Stage, output.State
 	started := time.Now()
 	result, err := reading.Read(ctx, opts)
 	if err != nil {
-		return err
+		return stoppedFor(ctx, err)
 	}
 	if err := modeldiag.Append(absolute, result.Rejected); err != nil {
 		return err

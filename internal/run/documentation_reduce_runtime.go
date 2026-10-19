@@ -60,13 +60,13 @@ func reduceRepositoryDocumentationForRun(
 		output.Stage("Documentation", "reducing repository guidance")
 	}
 	started := time.Now()
-	executor := debugdump.BindStage(llm.Executor{
+	executor := debugdump.BindStage(output.stopOnAccessRefusal(llm.Executor{
 		RootDir:          cacheRoot,
 		Enabled:          !noCache,
 		Observer:         timed(output, observer),
 		BatchConcurrency: batchConcurrency,
 		BatchController:  batchController,
-	}, debugdump.SemanticStageDocumentationReduce)
+	}), debugdump.SemanticStageDocumentationReduce)
 	result, err := runner(ctx, executor, provider, ownedGuidance)
 	if err != nil {
 		return documentationreduce.Result{}, fmt.Errorf("repository documentation: reduce guidance: %w", err)

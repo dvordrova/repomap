@@ -213,10 +213,10 @@ func runRepositoryOrientation(
 	}
 	defer writer.Close()
 	observer := debugdump.NewSemanticObserver(writer)
-	executor := debugdump.BindStage(llm.Executor{
+	executor := debugdump.BindStage(options.Output.stopOnAccessRefusal(llm.Executor{
 		RootDir: options.CacheRoot, Enabled: !options.NoCache, Observer: timed(options.Output, observer),
 		BatchConcurrency: options.BatchConcurrency, BatchController: options.BatchController,
-	}, debugdump.SemanticStageOrientation)
+	}), debugdump.SemanticStageOrientation)
 
 	if options.Output != nil {
 		options.Output.Stage("Orientation", "asking for roles, a run recipe and the main flow")

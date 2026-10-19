@@ -41,11 +41,14 @@ There is no separate `serve` subcommand. Report serving remains part of the
 ordinary run and is controlled by `--no-serve` and `--port`. `--no-model`
 walks the atlas without a provider, every cell on its fallback line and no
 orientation, and needs `--target` because no target is selected without the
-model. A model run and `read` need the model key and `JEV_KEY` (Jev decides
-the key declarations, part roles and keys); without `JEV_KEY` they stop
-before any artifact, corpus or model call. `replay` needs only the model
-key, and `--no-model`, `conf`, `render` and `cache clear` need neither. Do
-not add script entrypoints or sidecar tools.
+model. A model run and `read` need the model key; with `JEV_KEY` Jev decides
+the closed questions (key declarations, part roles and keys), without it the
+text model answers them (owner decision 2026-10-13). Both share one run-owned
+cancellation with a cause and one paced text-model gate (`runControls`): a
+provider's HTTP 401, 403 or 402 stops them from the executing call, before
+the next queued request, and the command reports that refusal. `replay` needs
+only the model key, and `--no-model`, `conf`, `render` and `cache clear` need
+neither. Do not add script entrypoints or sidecar tools.
 
 ## One computation and publication path
 

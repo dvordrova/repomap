@@ -1,6 +1,7 @@
 package run
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -35,5 +36,33 @@ func TestAccessRefusalStopsTheRunThroughTheConsoleClock(t *testing.T) {
 	}
 	if newRunOutput(nil).abortRun(credentials) {
 		t.Fatal("a console without a root abort claimed to stop the run")
+	}
+}
+
+// The executor's hook stops the run from the executing call, names the
+// provider and the status, and announces the stop once: the observer's later
+// notice for the same refusal changes nothing.
+func TestAnExecutorsAccessRefusalStopsTheRunOnce(t *testing.T) {
+	var console bytes.Buffer
+	root := newRunOutput(&console)
+	var causes []error
+	root.abort = func(err error) { causes = append(causes, err) }
+	executor := root.stopOnAccessRefusal(llm.Executor{})
+	if executor.AccessRefused == nil {
+		t.Fatal("the executor has no access refusal hook")
+	}
+	executor.AccessRefused(llm.ProviderFailure{HTTPStatus: 402}, &llm.HTTPResponse{StatusCode: 402, Provider: "DeepSeek"})
+	if len(causes) != 1 || !strings.Contains(causes[0].Error(), "DeepSeek refused for balance: HTTP 402;") {
+		t.Fatalf("causes %v", causes)
+	}
+	later, _ := accessRefusal(debugdump.SemanticFailureReceipt{Stage: "atlas_symbols", HTTPResponse: &llm.HTTPResponse{StatusCode: 402}})
+	if root.abortRun(later) || len(causes) != 1 {
+		t.Fatalf("a second refusal stopped the run again: %v", causes)
+	}
+	if strings.Count(console.String(), "Stopping the run") != 1 {
+		t.Fatalf("the stop was announced %d times:\n%s", strings.Count(console.String(), "Stopping the run"), console.String())
+	}
+	if nilSafe := (*runOutput)(nil).stopOnAccessRefusal(llm.Executor{}); nilSafe.AccessRefused != nil {
+		t.Fatal("a nil console installed a hook")
 	}
 }

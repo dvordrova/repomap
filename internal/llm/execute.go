@@ -479,6 +479,9 @@ func executeLive[T any](
 		if answer != nil {
 			answer.err = providerErr
 		}
+		if failure := providerErr.ProviderFailure(); executor.AccessRefused != nil && failure.AccessRefused() {
+			executor.AccessRefused(failure, outcome.HTTPResponse)
+		}
 		outcome.ResponseRejections = []ResponseRejection{{Kind: "provider_failed", Count: 1, Reason: providerErr.Error()}}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureProvider, outcome.Issues)
 		return outcome, providerErr

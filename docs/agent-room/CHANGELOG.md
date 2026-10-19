@@ -1,3 +1,16 @@
+## 2026-10-20 — a refused key or balance stops the run from the executing call
+
+The stop on HTTP 401, 403 or 402 lived in the observer's failure notice, so
+it fired only after a journal record was written, and `ExecuteJSONEach`
+buffered its events until every window of the stage had run: with six
+windows and one worker, all six were paid before the first refusal stopped
+anything (Codex R2). `Executor.AccessRefused` now fires from the executing
+call the moment the provider answers, before the next queued call starts and
+with or without a journal; the observer's notice still names the stage and
+stops nothing twice. `read` had none of this and no pacing; it now shares
+the ordinary run's cancellation, cause and paced gate (`runControls`,
+Codex R3). SURFACE no longer claims a run stops without `JEV_KEY`.
+
 ## 2026-10-20 — the text model's lines decide only what they state
 
 Without `JEV_KEY` the closed questions go to the text model as numbered

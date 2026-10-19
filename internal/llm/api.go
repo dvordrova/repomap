@@ -416,6 +416,17 @@ type ProviderFailure struct {
 	ResourceKind   ResourceLimitKind
 }
 
+// AccessRefused says whether the provider's answer is one no retry, split or
+// later stage can change: the credentials are refused (401, 403) or the
+// balance is exhausted (402).
+func (failure ProviderFailure) AccessRefused() bool {
+	switch failure.HTTPStatus {
+	case 401, 402, 403:
+		return true
+	}
+	return false
+}
+
 // ProviderFailureSource lets a provider expose closed transport facts without
 // granting its arbitrary error text authority in shared diagnostics.
 type ProviderFailureSource interface {
@@ -596,6 +607,12 @@ type Executor struct {
 	// repository whose analysis needs hundreds of calls should say so while
 	// the reader can still stop it, not after the bill.
 	PlanNotice func(requests int)
+	// AccessRefused, when set, is called from the executing call the moment
+	// a provider refuses the credentials or the balance
+	// (ProviderFailure.AccessRefused), with the provider's diagnostic
+	// response when there is one: before any queued call starts, and whether
+	// or not the exchange reaches a journal. A run cancels itself on it.
+	AccessRefused func(failure ProviderFailure, response *HTTPResponse)
 }
 
 func cloneBytes(value []byte) []byte {
