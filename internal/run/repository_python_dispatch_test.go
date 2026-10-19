@@ -61,7 +61,9 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	counter := filepath.Join(dir, "parser-calls")
 	astCounter := filepath.Join(dir, "ast-calls")
 	probe := fmt.Sprintf("import ast\n_real_ast_parse = ast.parse\ndef _record_ast_parse(*args, **kwargs):\n with open(%q, 'a') as log: log.write(kwargs.get('filename', '') + '\\n')\n return _real_ast_parse(*args, **kwargs)\nast.parse = _record_ast_parse\n", astCounter)
-	wrapper := fmt.Sprintf("#!%s\nimport os, sys\nwith open(%q, 'a') as log: log.write('parse\\n')\nargs = sys.argv[1:]\nargs[args.index('-c') + 1] = %q + args[args.index('-c') + 1]\nos.execv(%q, [%q] + args)\n", python, counter, probe, python, python)
+	// The parser's source is the last argument, a file written for the one
+	// call; the probe is prepended to it so every ast.parse is recorded.
+	wrapper := fmt.Sprintf("#!%s\nimport os, sys\nwith open(%q, 'a') as log: log.write('parse\\n')\nargs = sys.argv[1:]\nwith open(args[-1]) as source: body = source.read()\nwith open(args[-1], 'w') as source: source.write(%q + body)\nos.execv(%q, [%q] + args)\n", python, counter, probe, python, python)
 	if err := os.WriteFile(filepath.Join(dir, "python3"), []byte(wrapper), 0o700); err != nil {
 		t.Fatal(err)
 	}
