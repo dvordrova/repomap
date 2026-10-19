@@ -61,11 +61,11 @@ func runReadConfigured(ctx context.Context, args []string, stdout io.Writer, fac
 func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.Writer, factory targetPortfolioProviderFactory, newCategorizer func() (llm.Categorizer, error), collectTerms bool, output *runOutput) error {
 	fs := flag.NewFlagSet("repomap read", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	through := fs.String("through", "", "stop after directories, files, symbols, api, operations, boundaries, zones, arrows, targets, joints, learn, question or answer")
+	through := fs.String("through", "", "stop after directories, files, symbols, api, boundaries, zones, arrows, targets, joints, learn, question or answer")
 	var questions []string
 	fs.Func("question", "answer from code and documentation with a reading route; repeat for several questions", func(value string) error { return appendQuestion(&questions, value) })
 	outputDir := fs.String("output", "", "new directory for the reading; default: a new directory under debug-dir")
-	promptFile := fs.String("prompt", "", "system prompt for --through's stage, and Jev's task for its closed tables; predecessors use bundled prompts")
+	promptFile := fs.String("prompt", "", "system prompt for --through's stage (for zones: the box-proposal prompt), and Jev's task for its closed tables; predecessors use bundled prompts")
 	windowRows := fs.Int("window-rows", 0, "row budget for --through's text-model tables (all stages when omitted); Jev's tables keep their own packing; 0 keeps defaults")
 	inputBytes := fs.Int("input-bytes", 0, "system + user UTF-8 byte budget for those text-model tables; 0 keeps defaults")
 	cacheRoot := fs.String("debug-dir", defaultDebugDir(), "shared run and model cache directory")

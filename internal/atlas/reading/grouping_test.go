@@ -603,3 +603,44 @@ func TestTheMapOfPartsStagesAreJournaled(t *testing.T) {
 		}
 	}
 }
+
+// read --through zones --prompt FILE replaces the proposal's system prompt;
+// without it the bundled text goes out, so the two readings differ in bytes.
+func TestTheZonesPromptOverrideReachesTheProposal(t *testing.T) {
+	systems := func(override string) []string {
+		provider, jev := &tableProvider{groupFor: serviceBoxes}, newGroupJev()
+		jev.helper["format"] = typesafetest.Choose(lines.RoleHelperHelper)
+		opts := serviceOptions(t, unitGraph(t, serviceFiles()), provider, jev)
+		opts.Through, opts.Prompt = lines.StageZones, override
+		if _, err := Read(t.Context(), opts); err != nil {
+			t.Fatal(err)
+		}
+		var seen []string
+		for _, body := range provider.proposed {
+			var request struct {
+				System string `json:"_system"`
+			}
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Fatal(err)
+			}
+			seen = append(seen, request.System)
+		}
+		if len(seen) == 0 {
+			t.Fatal("no proposal request was prepared")
+		}
+		return seen
+	}
+	const marker = "OVERRIDE MARKER: propose boxes as this file says."
+	// The provider's Prepare wraps the system prompt in the shared language and
+	// format adjuncts, so the override is looked for inside it.
+	for _, system := range systems(marker) {
+		if !strings.Contains(system, marker) || strings.Contains(system, groupProposePrompt) {
+			t.Fatalf("a proposal ignored the --prompt override: %.120q", system)
+		}
+	}
+	for _, system := range systems("") {
+		if strings.Contains(system, marker) || !strings.Contains(system, groupProposePrompt) {
+			t.Fatalf("without an override a proposal lost the bundled prompt: %.120q", system)
+		}
+	}
+}

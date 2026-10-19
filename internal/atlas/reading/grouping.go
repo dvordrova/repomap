@@ -277,14 +277,24 @@ func proposeInput(node *groupNode, names bool) groupProposeInput {
 	return input
 }
 
-func groupProposeCall(input groupProposeInput) (llm.Call[boxesAnswer], error) {
+// proposeSystem is the proposal's system prompt: the bundled text, or the
+// --prompt file when the reading stops at this stage. The stage's closed
+// tables and the gather and describe requests keep their own prompts.
+func (r *reader) proposeSystem() string {
+	if r.opts.Through == lines.StageZones && r.opts.Prompt != "" {
+		return r.opts.Prompt
+	}
+	return lines.RoleMap + groupProposePrompt
+}
+
+func groupProposeCall(system string, input groupProposeInput) (llm.Call[boxesAnswer], error) {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return llm.Call[boxesAnswer]{}, err
 	}
 	return llm.Call[boxesAnswer]{
 		State: []byte(groupProposeTask),
-		Prompt: llm.Prompt{System: lines.RoleMap + groupProposePrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
+		Prompt: llm.Prompt{System: system, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
 			ResponseExample: `{"boxes":[{"name":"Move search","holds":"The search over candidate moves and its scoring."},{"name":"Board state","holds":"The board, its pieces and applying a move to it."}]}`},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputFloor},
 		DecodeValidate: decodeBoxes,
@@ -316,7 +326,7 @@ func (r *reader) proposeGroups(ctx context.Context, round, level int, nodes []*g
 	var calls []llm.Call[boxesAnswer]
 	var asked []int
 	for i, node := range nodes {
-		call, err := groupProposeCall(proposeInput(node, true))
+		call, err := groupProposeCall(r.proposeSystem(), proposeInput(node, true))
 		if err != nil {
 			return nil, err
 		}
@@ -326,7 +336,7 @@ func (r *reader) proposeGroups(ctx context.Context, round, level int, nodes []*g
 		}
 		if !ok {
 			fmt.Fprintf(&r.tables, "%s: %d declaration names do not fit one proposal; files with their counts by directory sent instead\n", node.name, len(node.elements))
-			if call, err = groupProposeCall(proposeInput(node, false)); err != nil {
+			if call, err = groupProposeCall(r.proposeSystem(), proposeInput(node, false)); err != nil {
 				return nil, err
 			}
 			if ok, err = r.fits(call); err != nil {

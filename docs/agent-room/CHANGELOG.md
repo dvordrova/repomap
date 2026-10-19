@@ -1,3 +1,13 @@
+## 2026-10-20 — `read --through zones --prompt FILE` replaces the proposal prompt
+
+The flag loaded the file into `Options.Prompt`, but the box proposals of the
+zones stage always sent the bundled `role_map.md` + `group_propose.md`
+(Codex R8): two "experiments" with different files had identical bytes. The
+proposal now takes the override, as the table stages, answer and learn do; the
+stage's closed tables and its gather and describe requests keep their own
+prompts. `--through operations` named a stage that no longer exists and is
+removed from the accepted names.
+
 ## 2026-10-20 — native helpers read their source from a file, not argv
 
 CI on `main` had been red since 2026-09-27: on Linux `MAX_ARG_STRLEN` caps one
