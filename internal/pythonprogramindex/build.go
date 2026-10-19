@@ -137,6 +137,7 @@ type parsedRelation struct {
 	Resolution        string                    `json:"resolution"`
 	Invocation        string                    `json:"invocation,omitempty"`
 	Dispatch          string                    `json:"dispatch,omitempty"`
+	Basis             string                    `json:"basis,omitempty"`
 	Location          *programindex.Location    `json:"location,omitempty"`
 	TargetsObserved   int                       `json:"targets_observed"`
 	Witnesses         []parsedWitness           `json:"witnesses"`
@@ -915,7 +916,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		relations = append(relations, programindex.RelationInput{
 			SourceRef: value.SourceRef, Kind: programindex.RelationKind(value.Kind), FromRef: value.FromRef,
 			ToRefs: append([]string(nil), value.ToRefs...), Resolution: programindex.Resolution(value.Resolution),
-			Invocation: value.Invocation, Dispatch: value.Dispatch, Location: cloneLocation(value.Location),
+			Invocation: value.Invocation, Dispatch: value.Dispatch, Basis: value.Basis, Location: cloneLocation(value.Location),
 			TargetsObserved: value.TargetsObserved, Witnesses: witnesses,
 			WitnessesObserved: value.WitnessesObserved,
 			Patterns:          patterns, PatternsObserved: value.PatternsObserved,

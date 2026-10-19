@@ -338,9 +338,10 @@ func validThrough(through []string) bool {
 }
 
 // validBasis checks how a flow step or branch is known: observed (empty)
-// or by the implementations of the interface called.
+// or by the implementations of the interface called, the classes having
+// every member the code uses on the value, or the subclasses overriding it.
 func validBasis(basis string) bool {
-	return basis == "" || basis == programindex.BasisImplements
+	return basis == "" || programindex.KnownBasis(basis)
 }
 
 // validFlowSteps checks a flow's steps and, on a step that parts, each of

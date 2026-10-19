@@ -1343,6 +1343,27 @@ func WeakestGuard(guards []*Guard) *Guard {
 // absent basis is an observed one.
 const BasisImplements = "implements"
 
+// BasisMembers is, on a call through a field or parameter whose value no
+// observed flow or declared type gives (Python, JS/TS), how its targets are
+// known: they are the methods of the repository's classes that have every
+// member the code uses on that value, another member than the one called
+// among them, the duck-typed counterpart of BasisImplements (PYTHON, JSTS).
+// The classes have the members the code uses; that the value is one of
+// them is not traced.
+const BasisMembers = "members"
+
+// BasisOverrides is, on a call of a method a subclass may override (an
+// abstract one, or a concrete one a repository subclass of the receiver's
+// class overrides; Python), how its targets are known: the methods each
+// repository class that the receiver's class is or derives into would run,
+// by subclassing, never a traced binding of the value (PYTHON).
+const BasisOverrides = "overrides"
+
+// KnownBasis says whether a word is one of the closed bases.
+func KnownBasis(basis string) bool {
+	return basis == BasisImplements || basis == BasisMembers || basis == BasisOverrides
+}
+
 // RelationInput cites ObjectInput.SourceRef values. TargetsObserved and
 // WitnessesObserved are mandatory adapter measurements; the core never derives
 // them from retained rows.
@@ -1405,7 +1426,10 @@ type Relation struct {
 	FieldPath string `json:"field_path,omitempty"`
 	// Basis is, on a call through a repository interface whose value no
 	// observed flow gives, BasisImplements: its targets are the
-	// implementations of the interface's method in the repository (GO).
+	// implementations of the interface's method in the repository (GO);
+	// on a call through an untyped value, BasisMembers: the methods of the
+	// classes having every member the code uses on it (PYTHON, JSTS); on a
+	// call a subclass may override, BasisOverrides (PYTHON).
 	Basis string `json:"basis,omitempty"`
 	// Guard is, on a calls, invokes_external or passes_callback relation,
 	// the construct every site of it runs under (Guard).
@@ -2815,8 +2839,8 @@ func validateRelationShape(value Relation) error {
 	if value.Value != nil && (value.Kind != RelationWrites || value.FieldPath == "" || sourcevalue.Validate(value.Value) != nil) {
 		return fmt.Errorf("program index: a written value belongs to a write of one field")
 	}
-	if value.Basis != "" && (value.Basis != BasisImplements || value.Kind != RelationCalls || value.Dispatch != DispatchInterface || value.Resolution == ResolutionUnresolved) {
-		return fmt.Errorf("program index: an implements basis belongs to a resolved interface call")
+	if value.Basis != "" && (!KnownBasis(value.Basis) || value.Kind != RelationCalls || value.Dispatch != DispatchInterface || value.Resolution == ResolutionUnresolved) {
+		return fmt.Errorf("program index: a basis belongs to a resolved interface call")
 	}
 	if guard := value.Guard; guard != nil && (guard.Kind != GuardBranch && guard.Kind != GuardError && guard.Kind != GuardNoReturn ||
 		!validOptionalLocation(guard.Location) || !validGuardCondition(guard) ||

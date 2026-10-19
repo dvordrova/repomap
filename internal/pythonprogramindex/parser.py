@@ -13,6 +13,42 @@ import tokenize
 BUILTIN_NAMES = frozenset(vars(builtins))
 
 
+# The member names of every class the builtins module defines: an untyped
+# value may always hold one of the language's own values, so a value whose
+# used members one of them has may be that value (member_receivers).
+BUILTIN_MEMBER_SETS = tuple(
+    frozenset(dir(value)) for value in vars(builtins).values() if isinstance(value, type)
+)
+
+
+# The standard library's declarations that a method is abstract, and the
+# bases that bring a class no members (only a declaration of what it is):
+# resolved symbols, as typing.overload is (PYTHON "Calls a subclass runs").
+ABSTRACT_DECORATORS = frozenset((
+    "abc.abstractmethod", "abc.abstractclassmethod", "abc.abstractstaticmethod", "abc.abstractproperty",
+))
+PROTOCOL_BASES = frozenset(("typing.Protocol", "typing_extensions.Protocol"))
+MEMBERLESS_BASES = PROTOCOL_BASES | frozenset(("abc.ABC", "typing.Generic", "typing_extensions.Generic"))
+
+
+def raises_not_implemented(node):
+    # A def whose only statement after its docstring raises the builtin
+    # NotImplementedError declares a method it leaves to a subclass.
+    body = list(node.body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+        body = body[1:]
+    if len(body) != 1 or not isinstance(body[0], ast.Raise) or body[0].exc is None:
+        return False
+    raised = body[0].exc.func if isinstance(body[0].exc, ast.Call) else body[0].exc
+    return isinstance(raised, ast.Name) and raised.id == "NotImplementedError"
+
+
+def member_slot_key(slot):
+    # The identity a slot's uses gather under: the field object, or the
+    # def and the parameter's name.
+    return slot[:2] if slot[0] == "field" else (slot[0], slot[1], slot[3])
+
+
 def stable_ref(domain, *parts):
     wire = json.dumps([domain, *parts], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return "python-source-" + hashlib.sha256(wire).hexdigest()[:32]
@@ -488,6 +524,22 @@ class Analyzer:
         # store names (type_field_parameters).
         self.stored_parameters = {}
         self.field_parameter_calls = []
+        # Each unresolved method call on an untyped field or parameter, the
+        # members the code uses on each such slot by the class reading it,
+        # the slots whose shape the code tests (hasattr, a defaulted
+        # getattr), and whether a field's stores give an observed value
+        # (member_receivers).
+        self.member_calls = []
+        # Each exact call of a method on a receiver whose class is known,
+        # and the defs whose body only raises NotImplementedError
+        # (subclass_dispatch).
+        self.override_calls = []
+        self.raising_stubs = set()
+        self.member_uses = {}
+        self.member_shape_tested = set()
+        self.field_values_observed = {}
+        self.abstract_decorated = None
+        self.members_by_owner = {}
         # Each class's written bases with the scope and module that define
         # it, and the repository classes they resolve to there (class_bases);
         # the classes naming each class as a base, and every class deriving
@@ -750,6 +802,8 @@ class Analyzer:
         self.attach_table_keys()
         self.hand_parameter_calls()
         self.type_field_parameters()
+        self.member_receivers()
+        self.subclass_dispatch()
         self.fold_overloads(decoded)
         for ref, rows in self.table_rows.items():
             value = self.objects_by_ref.get(ref)
@@ -1212,17 +1266,262 @@ class Analyzer:
             relation["witnesses"].extend(witnesses)
             relation["witnesses_observed"] += len(witnesses)
 
+    def member_receivers(self):
+        # A method call on a field (self.storage) or a parameter whose value
+        # no store, annotation or flow gives calls the method of each
+        # repository class having every member the code uses on that value,
+        # another member than the one called among them: the duck-typed
+        # counterpart of Go's interface implementations (basis members,
+        # PROGRAM_INDEX, PYTHON). huey's Huey.enqueue calling
+        # self.storage.enqueue, whose storage create_storage returns, calls
+        # each storage class's enqueue as alternatives. A field's uses are
+        # those the reading class and its chain of single repository bases
+        # make, never a subclass's; a parameter's those its def makes. No
+        # targets when a builtin type has every used member (the value may be
+        # the language's own), when the code tests the value's shape
+        # (hasattr, a defaulted getattr), when a store or a caller gives an
+        # observed value (an outside call, a literal, an annotation), or when
+        # a candidate's member of that name is no def. A class whose member
+        # lookup leaves the chain of single repository bases before it
+        # decides is not enumerated, as Go enumerates no generic type.
+        if not self.member_calls:
+            return
+        self.index_members_by_owner()
+        abstract_classes = {}
+
+        def tested(ref):
+            location = (self.objects_by_ref.get(ref) or {}).get("location") or {}
+            return location.get("path", "") in self.test_paths
+
+        relations = {relation["source_ref"]: relation for relation in self.relations}
+        classes = sorted(
+            (value["source_ref"] for value in self.objects if value["kind"] == "type"),
+            key=lambda ref: (location_key(self.objects_by_ref[ref].get("location")), ref),
+        )
+        entering = {}
+        for call in self.calls_into:
+            entering.setdefault(call["callee"], []).append(call)
+
+        def lookup(class_ref, name):
+            # The member the class declares or inherits along its chain of
+            # single repository bases (a written `object` base is none); a
+            # chain leaving the repository before it is found names none.
+            current, seen = class_ref, set()
+            while current and current not in seen:
+                seen.add(current)
+                ref = self.objects_by_qname.get(self.object_qname(current) + "." + name, "")
+                if ref:
+                    return ref
+                bases = self.member_bases(current)
+                if len(bases) != 1:
+                    return ""
+                authority, base_ref = bases[0]
+                base = self.objects_by_ref.get(base_ref) if base_ref else None
+                if authority != "local" or base is None or base["kind"] != "type":
+                    return ""
+                current = base_ref
+            return ""
+
+        def observed_caller(slot):
+            # Whether a call into the parameter's def hands it an observed
+            # value other than a repository instance.
+            _, def_ref, position, name, positional = slot
+            for call in entering.get(def_ref, ()):
+                value = call["observed"].get(("keyword", name))
+                if value is None and positional and position < call["positional"]:
+                    value = call["observed"].get(("position", position))
+                if value:
+                    return True
+            return False
+
+        for relation_ref, slot, method, reader, test_call, observed, expression in self.member_calls:
+            relation = relations.get(relation_ref)
+            if relation is None or relation["resolution"] != "unresolved" or relation["to_refs"]:
+                continue
+            if observed or member_slot_key(slot) in self.member_shape_tested:
+                continue
+            if slot[0] == "parameter" and observed_caller(slot):
+                continue
+            chain = set(self.base_chain(reader)) if slot[0] == "field" else set()
+            used = {name for owner, name in self.member_uses.get(member_slot_key(slot), ())
+                    if slot[0] != "field" or owner in chain}
+            used.add(method)
+            if len(used) < 2 or any(used <= members for members in BUILTIN_MEMBER_SETS):
+                continue
+            targets, open_member = [], False
+            for class_ref in classes:
+                if tested(class_ref) and not test_call:
+                    continue
+                if not all(lookup(class_ref, name) for name in sorted(used)):
+                    continue
+                # An abstract class is never the value (subclass_dispatch).
+                if class_ref not in abstract_classes:
+                    abstract_classes[class_ref] = self.is_abstract_class(class_ref)
+                if abstract_classes[class_ref]:
+                    continue
+                target = lookup(class_ref, method)
+                if self.objects_by_ref[target]["kind"] not in ("function", "method"):
+                    open_member = True
+                    break
+                if target not in targets:
+                    targets.append(target)
+            if open_member or not targets:
+                continue
+            relation["to_refs"] = sorted(targets)
+            relation["resolution"] = "exact" if len(targets) == 1 else "alternatives"
+            relation["targets_observed"] = len(targets)
+            relation["dispatch"] = "interface"
+            relation["basis"] = "members"
+            relation["witnesses"].append({
+                "kind": "members_used",
+                "detail": bounded_text(", ".join(sorted(used)) + " used on " + expression),
+            })
+            relation["witnesses_observed"] += 1
+
     def object_qname(self, ref):
         return self.qnames_by_ref.get(ref, "")
+
+    def member_bases(self, class_ref):
+        # A class's resolved bases that bring it members: a written
+        # `object`, abc.ABC, typing.Protocol and typing.Generic bring none.
+        definition = self.class_definitions.get(class_ref)
+        written = definition[0] if definition else []
+        bases = []
+        for base, node in zip(self.class_base_refs.get(class_ref) or [], written):
+            if isinstance(node, ast.Name) and node.id == "object" and not base[1]:
+                continue
+            value = self.objects_by_ref.get(base[1]) if base[1] else None
+            if value is not None and value["kind"] == "external_symbol" and value["name"] in MEMBERLESS_BASES:
+                continue
+            bases.append(base)
+        return bases
+
+    def is_protocol(self, class_ref):
+        # A class written with typing.Protocol among its bases.
+        for _, base_ref in self.class_base_refs.get(class_ref) or []:
+            value = self.objects_by_ref.get(base_ref) if base_ref else None
+            if value is not None and value["kind"] == "external_symbol" and value["name"] in PROTOCOL_BASES:
+                return True
+        return False
+
+    def chain_member(self, class_ref, name):
+        # The member a class declares or inherits along its chain of single
+        # repository bases; "" when the chain ends first.
+        for member in self.base_chain(class_ref):
+            ref = self.objects_by_qname.get(self.object_qname(member) + "." + name, "")
+            if ref:
+                return ref
+        return ""
+
+    def is_abstract(self, ref):
+        # A method a subclass is left to give a body: decorated as abstract,
+        # its body only raising NotImplementedError, or declared in a
+        # protocol.
+        value = self.objects_by_ref.get(ref) or {}
+        return ref in self.abstract_methods() or ref in self.raising_stubs or \
+            value.get("kind") == "method" and self.is_protocol(value.get("owner_ref", ""))
+
+    def abstract_methods(self):
+        if self.abstract_decorated is None:
+            self.abstract_decorated = set()
+            for relation in self.relations:
+                if relation["kind"] != "decorates" or relation["resolution"] != "exact":
+                    continue
+                decorator = self.objects_by_ref.get(relation["to_refs"][0]) if relation["to_refs"] else None
+                if decorator is not None and decorator["kind"] == "external_symbol" and decorator["name"] in ABSTRACT_DECORATORS:
+                    self.abstract_decorated.add(relation["from_ref"])
+        return self.abstract_decorated
+
+    def is_abstract_class(self, class_ref):
+        # A protocol, or a class a member of which, its own or inherited, is
+        # still abstract there: never the value a call runs on.
+        if self.is_protocol(class_ref):
+            return True
+        for member in self.base_chain(class_ref):
+            for ref in self.members_by_owner.get(member, ()):
+                if self.is_abstract(ref) and self.is_abstract(self.chain_member(class_ref, self.objects_by_ref[ref]["name"])):
+                    return True
+        return False
+
+    def index_members_by_owner(self):
+        self.members_by_owner = {}
+        for value in self.objects:
+            if value.get("owner_ref"):
+                self.members_by_owner.setdefault(value["owner_ref"], []).append(value["source_ref"])
+
+    def subclass_dispatch(self):
+        # A call of a method on a receiver whose class the index knows runs
+        # the method of whichever repository class the value is: the
+        # receiver's class or one deriving from it. When a subclass
+        # overrides it, or the method is abstract (its body never runs),
+        # the targets are each such class's method, abstract classes never
+        # being the value, one exact, several alternatives (basis
+        # overrides, PROGRAM_INDEX, PYTHON "Calls a subclass runs"). A
+        # protocol's method is each repository class's that has every
+        # member the protocol declares (basis implements, as Go's and
+        # TypeScript's interfaces). A test's class is no candidate for the
+        # program's call; a class whose lookup leaves its chain of single
+        # repository bases first is not enumerated. No implementation
+        # leaves the call as written: to the method the receiver's class
+        # has. A call naming the class (Store.put(self)) or super() runs
+        # that very body and is never recorded here.
+        if not self.override_calls:
+            return
+        self.index_members_by_owner()
+
+        def tested(ref):
+            location = (self.objects_by_ref.get(ref) or {}).get("location") or {}
+            return location.get("path", "") in self.test_paths
+
+        classes = sorted(
+            (value["source_ref"] for value in self.objects if value["kind"] == "type"),
+            key=lambda ref: (location_key(self.objects_by_ref[ref].get("location")), ref),
+        )
+        relations = {relation["source_ref"]: relation for relation in self.relations}
+        concrete = {}
+        for relation_ref, receiver, method, called, test_call in self.override_calls:
+            relation = relations.get(relation_ref)
+            if relation is None or relation["resolution"] != "exact" or relation["to_refs"] != [called]:
+                continue
+            protocol = self.is_protocol(receiver)
+            if protocol:
+                declared = sorted({self.objects_by_ref[ref]["name"] for member in self.base_chain(receiver)
+                                   for ref in self.members_by_owner.get(member, ())})
+                candidates = [ref for ref in classes if ref not in self.base_chain(receiver) and
+                              all(self.chain_member(ref, name) for name in declared)]
+            else:
+                candidates = [receiver] + self.derived_classes(receiver)
+            targets = []
+            for class_ref in candidates:
+                if tested(class_ref) and not test_call:
+                    continue
+                if class_ref not in concrete:
+                    concrete[class_ref] = not self.is_abstract_class(class_ref)
+                if not concrete[class_ref]:
+                    continue
+                target = self.chain_member(class_ref, method)
+                value = self.objects_by_ref.get(target) or {}
+                if value.get("kind") not in ("function", "method") or self.is_abstract(target):
+                    continue
+                if target not in targets:
+                    targets.append(target)
+            if not targets or targets == [called]:
+                continue
+            relation["to_refs"] = sorted(targets)
+            relation["resolution"] = "exact" if len(targets) == 1 else "alternatives"
+            relation["targets_observed"] = len(targets)
+            relation["dispatch"] = "interface"
+            relation["basis"] = "implements" if protocol else "overrides"
 
     def base_chain(self, class_ref):
         # The class, then its chain of single repository bases, as a member
         # lookup walks it: several bases, or a base outside the repository
-        # or unknown, ends the chain.
+        # or unknown, ends the chain; a base bringing no members does not
+        # count (member_bases).
         chain, current = [], class_ref
         while current and current not in chain:
             chain.append(current)
-            bases = self.class_base_refs.get(current) or []
+            bases = self.member_bases(current)
             if len(bases) != 1:
                 break
             authority, base_ref = bases[0]
@@ -1519,6 +1818,8 @@ class Collector(ast.NodeVisitor):
         self.analyzer.node_refs[id(node)] = ref
         if isinstance(node, ast.AsyncFunctionDef):
             self.analyzer.suspended_callables.add(ref)
+        if kind == "method" and raises_not_implemented(node):
+            self.analyzer.raising_stubs.add(ref)
         if node.returns is not None:
             self.analyzer.return_annotations[ref] = (node.returns, parent)
         arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
@@ -1844,6 +2145,7 @@ class Collector(ast.NodeVisitor):
 
 class RelationVisitor(ast.NodeVisitor):
     def __init__(self, analyzer, module, scope):
+        self.receiver_class = ""
         self.analyzer = analyzer
         self.module = module
         self.scope = scope
@@ -2311,6 +2613,8 @@ class RelationVisitor(ast.NodeVisitor):
             if isinstance(current, ast.Name) and current.id == "self" and self.scope.class_qname:
                 qname = self.scope.class_qname + "." + ".".join(parts)
                 ref = self.analyzer.objects_by_qname.get(qname, "")
+                if len(parts) == 1:
+                    self.receiver_class = self.scope.class_ref
                 if not ref and len(parts) == 1:
                     # self.helper() is the method the class declares or
                     # inherits along its chain of single repository bases.
@@ -2322,6 +2626,10 @@ class RelationVisitor(ast.NodeVisitor):
                     if owner_ref:
                         owner_name = self.analyzer.object_qname(owner_ref)
                         ref = self.analyzer.objects_by_qname.get(owner_name + "." + ".".join(parts[1:]), "")
+                        if not ref and len(parts) == 2:
+                            ref = self.class_member(owner_ref, parts[1])
+                        if len(parts) == 2:
+                            self.receiver_class = owner_ref
                     else:
                         # self.parser.add_subparsers is the outside call's
                         # own member when the field holds one call's result.
@@ -2346,6 +2654,7 @@ class RelationVisitor(ast.NodeVisitor):
                         qname = self.analyzer.object_qname(owner_ref)
                         # A method the class inherits is its member too.
                         if len(parts) == 1:
+                            self.receiver_class = owner_ref
                             target = self.class_member(owner_ref, parts[0])
                         else:
                             target = self.analyzer.objects_by_qname.get(qname + "." + ".".join(parts), "")
@@ -2376,6 +2685,8 @@ class RelationVisitor(ast.NodeVisitor):
             owner_ref = self.produced_class(ref)
             if owner_ref:
                 target = self.class_member(owner_ref, parts[0]) if len(parts) == 1 else ""
+                if target:
+                    self.receiver_class = owner_ref
                 return ("local", target) if target else ("unknown", "")
         origin = self.produced_external(authority, ref)
         if origin:
@@ -2647,7 +2958,8 @@ class RelationVisitor(ast.NodeVisitor):
             if ref:
                 member = self.object(ref)
                 return ref if member and (kinds is None or member["kind"] in kinds) else ""
-            bases = self.class_bases(class_ref)
+            self.class_bases(class_ref)
+            bases = self.analyzer.member_bases(class_ref)
             if len(bases) != 1:
                 return ""
             authority, base_ref = bases[0]
@@ -3623,6 +3935,9 @@ class RelationVisitor(ast.NodeVisitor):
 
     def visit_Attribute(self, node):
         if isinstance(node.ctx, ast.Load):
+            slot = self.member_slot(node.value)
+            if slot is not None:
+                self.analyzer.member_uses.setdefault(member_slot_key(slot), []).append((self.scope.class_ref, node.attr))
             root = node
             while isinstance(root, ast.Attribute):
                 root = root.value
@@ -3735,6 +4050,10 @@ class RelationVisitor(ast.NodeVisitor):
         name = self.expression_name(node.func)
         source_expression = safe_expression_name(node.func)
         dynamic_only = False
+        if (name in ("hasattr", "builtins.hasattr") or name in ("getattr", "builtins.getattr") and len(node.args) > 2) and node.args:
+            slot = self.member_slot(node.args[0])
+            if slot is not None:
+                self.analyzer.member_shape_tested.add(member_slot_key(slot))
         if name in ("getattr", "builtins.getattr") or name.endswith(".getattr"):
             self.analyzer.add_relation(
                 "reads", self.scope.ref, [], "unresolved", node, "dynamic_getattr",
@@ -3761,7 +4080,11 @@ class RelationVisitor(ast.NodeVisitor):
                     name, targets_observed=1,
                 )
 
+        self.receiver_class = ""
         resolved = self.resolved_call_target(node.func)
+        # The class the receiver's value is known to be (resolve), whose
+        # subclasses may run another body (Analyzer.subclass_dispatch).
+        receiver_class = self.receiver_class
         # A callee chosen by a condition whose every branch names a callable
         # calls one of them, the condition deciding which (C.md's conditional
         # callee). One callable, a constant condition or both branches the
@@ -3839,6 +4162,19 @@ class RelationVisitor(ast.NodeVisitor):
                 stored = self.field_parameter_store(node.func) if not resolved[1] else None
                 if stored is not None and call_relation_ref:
                     self.analyzer.field_parameter_calls.append((call_relation_ref,) + stored)
+                if resolved[0] == "local" and called is not None and called["kind"] == "method" and kind == "calls" and \
+                        not constructed and isinstance(node.func, ast.Attribute) and receiver_class and call_relation_ref:
+                    self.analyzer.override_calls.append((
+                        call_relation_ref, receiver_class, node.func.attr, resolved[1],
+                        self.module["path"] in self.analyzer.test_paths,
+                    ))
+                slot = self.member_slot(node.func.value) if not resolved[1] and kind == "calls" and isinstance(node.func, ast.Attribute) else None
+                if slot is not None and call_relation_ref:
+                    observed = slot[0] == "field" and self.field_values_observed(self.scope.class_ref, slot[2])
+                    self.analyzer.member_calls.append((
+                        call_relation_ref, slot, node.func.attr, self.scope.class_ref,
+                        self.module["path"] in self.analyzer.test_paths, observed, safe_expression_name(node.func.value),
+                    ))
             initializer = self.class_member(resolved[1], "__init__", ("method",)) if constructed else ""
             if initializer:
                 initializer_ref = self.analyzer.add_relation(
@@ -3868,7 +4204,7 @@ class RelationVisitor(ast.NodeVisitor):
             entered = (resolved[1], call_relation_ref)
         elif not dynamic_only and initializer:
             entered = (initializer, initializer_ref)
-        hands, instances = {}, {}
+        hands, instances, observed = {}, {}, {}
         for argument, position, keyword in arguments:
             authority, ref = self.partial_callable(argument) or self.resolve(argument)
             value = self.object(ref) if ref else None
@@ -3877,6 +4213,7 @@ class RelationVisitor(ast.NodeVisitor):
                 key = ("keyword", keyword) if keyword else ("position", position)
                 hands[key] = (ref if handed else "", source_location(self.module["path"], argument))
                 instances[key] = (self.instance_handed(argument), source_location(self.module["path"], argument))
+                observed[key] = self.value_observed(argument, instances=False)
             if handed:
                 source_argument = None
                 if pattern is not None and call_relation_ref and (position > 0 or keyword):
@@ -3908,7 +4245,7 @@ class RelationVisitor(ast.NodeVisitor):
             self.analyzer.calls_into.append({
                 "callee": entered[0], "relation": entered[1], "path": self.module["path"],
                 "positional": positional, "spread": any(value.arg is None for value in node.keywords),
-                "hands": hands, "instances": instances,
+                "hands": hands, "instances": instances, "observed": observed,
             })
         self.visit(node.func)
 
@@ -3939,6 +4276,87 @@ class RelationVisitor(ast.NodeVisitor):
             owner = self.produced_class(ref) if authority == "local" else ""
             return ("class", owner) if owner else None
         return None
+
+    def member_slot(self, expression):
+        # The untyped value a method call's receiver names
+        # (Analyzer.member_receivers): ("field", the field object, its name)
+        # for self.<field> in a class's code, the field the class stores or
+        # inherits; ("parameter", the def, position, name, positional) for a
+        # parameter of this def it never rebinds and no annotation types.
+        if isinstance(expression, ast.Attribute) and isinstance(expression.value, ast.Name) and \
+                expression.value.id == "self" and self.scope.class_ref and "self" not in self.read_shadows:
+            field = self.class_member(self.scope.class_ref, expression.attr, ("variable",))
+            return ("field", field, expression.attr) if field else None
+        parameter = self.called_parameter(expression)
+        if parameter is None:
+            return None
+        definition = self.scope.node
+        arguments = definition.args if isinstance(definition, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) else None
+        written = [argument for argument in (list(arguments.posonlyargs) + list(arguments.args) + list(arguments.kwonlyargs) if arguments else [])
+                   if argument.arg == expression.id]
+        if not written or getattr(written[0], "annotation", None) is not None:
+            return None
+        return ("parameter", self.scope.ref) + parameter
+
+    def value_observed(self, value, instances=True):
+        # Whether a stored or handed value is one the code shows: a literal
+        # or display, an outside call's result, a repository class's
+        # construction or a factory declared to return one (unless
+        # instances is False), a name an annotation or a known origin types,
+        # a callable or class itself. A call the index does not resolve, a
+        # repository function returning nothing known, an untyped parameter
+        # and an attribute or subscript of another value show none.
+        if value is None or isinstance(value, ast.Constant) and value.value is None:
+            return False
+        if isinstance(value, (ast.Attribute, ast.Subscript, ast.Starred)):
+            return False
+        if isinstance(value, ast.IfExp):
+            return self.value_observed(value.body, instances) or self.value_observed(value.orelse, instances)
+        if isinstance(value, ast.BoolOp):
+            return any(self.value_observed(part, instances) for part in value.values)
+        if isinstance(value, (ast.Await, ast.NamedExpr)):
+            return self.value_observed(value.value, instances)
+        if isinstance(value, ast.Call):
+            authority, ref = self.resolved_call_target(value.func)
+            if authority == "external" and ref:
+                return True
+            if authority == "local" and ref:
+                if self.produced_class(ref):
+                    return instances
+                return bool(self.produced_external(authority, ref))
+            return False
+        if isinstance(value, ast.Name):
+            if value.id == "self" and self.scope.class_ref:
+                return instances
+            binding = self.pattern_binding(value.id)
+            if binding and (binding.get("annotation_origin") or binding.get("origin_refs")):
+                origins = binding.get("origin_refs", [])
+                return instances or not (len(origins) == 1 and self.produced_class(origins[0]))
+            authority, ref = self.resolve(value)
+            candidate = self.object(ref) if ref else None
+            return bool(candidate) and candidate["kind"] != "variable"
+        return True
+
+    def field_values_observed(self, class_ref, name):
+        # Whether a store of the field a read in this class may see gives an
+        # observed value, each store's value resolved where it is written.
+        key = (class_ref, name)
+        cache = self.analyzer.field_values_observed
+        if key in cache:
+            return cache[key]
+        cache[key] = True
+        observed = False
+        for value, scope in self.field_stores_seen(class_ref, name):
+            previous = self.scope, self.module
+            self.scope, self.module = scope, self.scope_module(scope)
+            try:
+                observed = self.value_observed(value)
+            finally:
+                self.scope, self.module = previous
+            if observed:
+                break
+        cache[key] = observed
+        return observed
 
     def field_parameter_store(self, func):
         # A call of a method on self.<field> whose one store it may see is a

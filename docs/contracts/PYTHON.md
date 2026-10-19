@@ -392,6 +392,105 @@ Native equivalents:
 - Clojure keeps no fields and dispatches protocol calls unresolved; C has
   no classes: no equivalent.
 
+## Calls on values nothing types
+
+A method call on a field (`self.storage.enqueue(task)`) or on a parameter
+of the calling def that it never rebinds and no annotation types, whose
+call no rule above resolves, calls the method of each repository class
+having every member the code uses on that value: `dispatch: interface`,
+`basis: members` (PROGRAM_INDEX), one class exact, several alternatives
+(2026-10-19, the pattern lens: huey's walks dead-ended before the
+storage). The members are every attribute the code reads or calls on the
+value (a write `value.x = v` constrains nothing): a field's those of the
+reading class and its chain of single repository bases, never a
+subclass's or a sibling's, so a subclass's use narrows only its own calls;
+a parameter's those its def makes. A class has a member when it declares
+or inherits it along its chain of single repository bases, a field it
+stores included; a class whose lookup leaves that chain first (several
+bases, a base outside the repository) is not enumerated, as Go enumerates
+no generic type. Abstract bases stay alternatives (huey's
+`BaseStorage.enqueue` only raises: an abstract class is never the value,
+as in "Calls a subclass runs" below); a test's class is no candidate for
+the program's call. One `members_used` witness names the members and the
+value.
+
+The call stays unresolved, as before, when:
+
+- the code uses no other member on the value than the one it calls: the
+  rule would be a method's name alone (`self.sink.write(text)`);
+- a class of the `builtins` module has every member used, so the value may
+  be the language's own (`counts.get(...)`, `counts.items()`);
+- the code tests the value's shape, `hasattr(value, "x")` or
+  `getattr(value, "x", default)`;
+- a store of the field the reading class may see, or a caller of the def,
+  gives an observed value: a literal or display, an outside call's result,
+  a repository construction (for a field; a caller handing a repository
+  instance does not count), an annotated or otherwise typed name, a
+  callable or a class (`self.conn = conn or sqlite3.connect(...)`). A
+  store of None and a store whose value nothing follows (an unresolved
+  call, a repository function returning nothing known, an untyped
+  parameter, an attribute) show none;
+- a candidate's member of the called name is no def (`Counter.tick = 0`).
+
+huey: `Huey.enqueue`'s `self.storage.enqueue` calls the ten storage
+classes' `enqueue` (storage is what `create_storage` returns, the class
+`storage_class` names); `Worker.loop`'s `self.huey.dequeue` and
+`self.huey.execute` call `Huey.dequeue` and `Huey.execute` exactly (the
+consumer builds its worker through `self.worker_class(huey=self.huey)`).
+The cumulative fixture's `src/fixture_app/duck_receivers.py` checks each
+case (`TestCumulativePythonCallsOnUntypedValuesGoToTheClassesHavingTheirMembers`).
+Native equivalents: JS/TS for a value the compiler types `any` (JSTS);
+Go's typed values take `implements` (GO); Clojure's protocol dispatch and
+C have none. Recorded missing: a call on a local name bound to an
+unresolved call's result (`task = self.huey.dequeue(); task.execute()`)
+is no slot yet, nor is a class attribute's value read in the class body.
+
+## Calls a subclass runs
+
+A method call on a receiver whose class the index knows (an annotated
+parameter or field, `self` in a method, a name bound to a construction, a
+factory's declared class) runs the method of whichever repository class
+the value is: the receiver's class or one deriving from it. When that
+method is abstract, or a repository subclass of the receiver's class
+overrides it, the call's targets are the method each such concrete class
+runs, along its chain of single repository bases: `dispatch: interface`,
+`basis: overrides`, one exact, several alternatives (2026-10-19, the owner's
+rule that a call follows its implementations; a skeptic's review). A
+method is abstract when a decorator resolving to `abc.abstractmethod` (or
+the deprecated `abstractclassmethod`, `abstractstaticmethod`,
+`abstractproperty`) marks it, when its only statement after a docstring
+raises the builtin `NotImplementedError`, or when a protocol declares it. A
+class is abstract, and never the value, when a member it declares or
+inherits is still abstract there, or when it is a protocol. A call through
+a value of a `typing.Protocol` class goes to each repository class, not
+itself a protocol, having every member the protocol declares
+(`basis: implements`, as Go's and TypeScript's interfaces). `abc.ABC`,
+`typing.Protocol` and `typing.Generic` bring a class no members, so they do
+not count among its bases: freqtrade's `IPairList(LoggingMixin, ABC)`
+inherits along `LoggingMixin`. A test's class is no candidate for the
+program's call (a test's own call may reach it); a class whose lookup leaves
+its chain of single repository bases first is not enumerated. A call naming
+the class (`CsvExporter.export(exporter, rows)`) runs that very body and
+keeps it; `super()` calls are resolved by no rule yet. A method nothing
+implements keeps its call to itself (`Archive.store`), as Go's and
+TypeScript's interfaces no type fills. A method no subclass overrides keeps
+its exact call: `self.helper()` stays the method its class declares or
+inherits when no class deriving from it overrides it.
+
+The cumulative fixture's `src/fixture_app/subclass_calls.py` and
+`tests/test_exporters.py` check each case
+(`TestCumulativePythonCallsASubclassRunsGoToItsMethods`): an ABC's template
+method and an annotated parameter reach the four concrete exporters, an
+intermediate abstract class only its one subclass, a NotImplementedError
+base its implementation, a mixin-and-ABC filter both its own and its
+subclass's `filter`, a protocol its structural and explicit
+implementations. Native equivalents: Go has no subclassing, and an
+interface call takes `implements` (GO); TypeScript's interface calls take
+`implements` (JSTS), but a call through a class-typed value stays the
+compiler's declared method, its subclasses' overrides not joined (JSTS, a
+recorded missing equivalent); Clojure's protocol calls stay the protocol's
+own (CLOJURE); C has no classes.
+
 ## What a call produces
 
 A call on a call's result is a member of what that call produces, as a

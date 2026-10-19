@@ -2088,11 +2088,13 @@ goes on to lua_pcallk through docall 5 of 5, 0.68-0.74;
 `TestAStepsWorkPassesThroughItsHelpers`). A step or candidate the step
 before calls as a method of a repository type implementing the interface it
 calls, no observed flow giving the value, keeps that basis
-(`FlowStep.Basis`, `FlowBranch.Basis`: `implements`, GO), a traced call of
-the same callee winning; the page reads it as known by method set, never a
-traced call, as it reads such a call in a declaration's Calls ("implemented
-in this repository by these"), among an entry's own calls and in an input's
-flow (`TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis`,
+(`FlowStep.Basis`, `FlowBranch.Basis`: `implements`, GO; also `members`
+and `overrides`, PYTHON, JSTS), a traced call of the same callee winning;
+the page reads it as known by method set (`implements`), by the members
+used (`members`) or by subclassing (`overrides`), never a traced call, as
+it reads such a call in a declaration's Calls ("implemented in this
+repository by these", "overridden in this repository by these"), among an
+entry's own calls and in an input's flow (`TestAStepKnownByItsInterfacesImplementationsKeepsItsBasis`,
 `TestACallKnownByItsInterfacesImplementationsSaysSo`). Each edge keeps what
 the call runs under (ProgramIndex `guard`, the loop of its patterns'
 control contexts), duplicate edges the weakest guard and any loop, and a

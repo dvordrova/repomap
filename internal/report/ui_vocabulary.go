@@ -989,6 +989,21 @@ var russianUI = map[string]string{
 	"by method set, not a traced call":                                       "по набору методов, а не прослеженный вызов",
 	"an implementation in this repository, by method set, not a traced call": "реализация в этом репозитории, по набору методов, а не прослеженный вызов",
 	"by method set": "по набору методов",
+	// Basis "members" (PYTHON, JSTS): classes having every member the code
+	// uses on an untyped value.
+	// Basis "overrides" (PYTHON): the subclasses overriding the method.
+	"by subclassing":                                                                             "по наследованию",
+	"by subclassing, not a traced call":                                                          "по наследованию, а не прослеженный вызов",
+	"overridden in this repository by":                                                           "в этом репозитории переопределяют",
+	"overridden in this repository by these":                                                     "в этом репозитории переопределяют эти",
+	"the one override of {0} in this repository":                                                 "единственное переопределение {0} в этом репозитории",
+	"an override in this repository, by subclassing, not a traced call":                          "переопределение в этом репозитории, по наследованию, а не прослеженный вызов",
+	"by the members used":                                                                        "по используемым методам и полям",
+	"by the members used, not a traced call":                                                     "по используемым методам и полям, а не прослеженный вызов",
+	"every member the code uses on the value is in":                                              "всё, что код берёт у значения, есть в",
+	"every member the code uses on it is in these":                                               "всё, что код берёт у значения, есть в этих",
+	"the one class in this repository with every member the code uses on the receiver of {0}":    "единственный класс этого репозитория, где есть всё, что код берёт у получателя {0}",
+	"a class in this repository with every member the code uses on the value, not a traced call": "класс этого репозитория, где есть всё, что код берёт у значения, а не прослеженный вызов",
 	// What a walked call runs under, and why a Main flow's path ends
 	// (partials.html: guard, flow-step).
 	"never returns":          "не возвращает управление",

@@ -1155,6 +1155,25 @@ site's condition. This changes display evidence, not model decisions or
 requests. The Lua 5.1.5 ordinary run and source/return/Home walk are recorded
 in CHANGELOG; JS/TS and Clojure's missing guards remain explicit.
 
+Calls on untyped values have targets (2026-10-19). In Python and JS/TS, a
+method call on a field or parameter whose value nothing types goes to the
+repository classes that have every member the code uses on that value
+(`basis: members`), the duck-typed counterpart of Go's `implements`. The
+call stays unresolved when:
+
+- the method is the only member used;
+- a builtin type could be the value;
+- the code tests the value's shape;
+- a store or a caller shows the value.
+
+This is checked without the model on huey and bee-queue. No ordinary online
+run has been made yet.
+
+TypeScript calls through a repository interface follow the classes
+assignable to it (`basis: implements`). Python calls of an abstract or
+overridden method follow the classes the receiver may be (`basis:
+overrides`), and a `Protocol`'s calls follow its structural implementations.
+
 Commands/orchestration: [Surface](../contracts/SURFACE.md). Corpus, author scope
 and targets: [Discovery](../contracts/DISCOVERY.md). Native materialization and
 source expressions: [ProgramIndex](../contracts/PROGRAM_INDEX.md), with native

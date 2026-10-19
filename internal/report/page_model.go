@@ -1147,7 +1147,8 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		}
 	}
 	row.Through = builder.flowThrough(step.TargetID, step.Through)
-	row.Implemented = step.Basis == programindex.BasisImplements
+	row.Implemented = programindex.KnownBasis(step.Basis)
+	row.Basis = step.Basis
 	row.Guard, row.Loop = builder.flowGuard(step.Guard), builder.flowLoop(step.Loop)
 	// A step the path is back in its caller for reads before its name, its
 	// condition's place with it: "then, back in luaD_call, only if
@@ -1506,7 +1507,8 @@ func (builder *pageBuilder) flowBranchNames(targetID string, branches []orientat
 			}
 		}
 		name.Through = builder.flowThrough(targetID, branch.Through)
-		name.Implemented = branch.Basis == programindex.BasisImplements
+		name.Implemented = programindex.KnownBasis(branch.Basis)
+		name.Basis = branch.Basis
 		name.Guard, name.Loop = builder.flowGuard(branch.Guard), builder.flowLoop(branch.Loop)
 		result = append(result, name)
 		names, spellings = append(names, name.Name), append(spellings, groupindex.Where(name.Name, file, part))

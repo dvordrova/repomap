@@ -439,6 +439,9 @@ type pageFlowStep struct {
 	// flow giving the value (orientation FlowStep.Basis), that it is known
 	// by method set, never a traced call.
 	Implemented bool
+	// Basis is how an Implemented step is known (orientation
+	// FlowStep.Basis): "implements", "members" or "overrides".
+	Basis string
 	// Guard and Loop are what the step before's call of it runs under
 	// (orientation FlowStep.Guard, Loop), each with its construct's place.
 	Guard *pageGuard
@@ -1810,6 +1813,9 @@ type pageOwnCall struct {
 	// it declare (Relation.Basis "implements"): the call reads as the
 	// interface's method, implemented by them, never a traced call.
 	Implementers []string
+	// Basis is how the Implementers are known (Relation.Basis):
+	// "implements", "members" or "overrides", never a traced call.
+	Basis string
 }
 
 // ownCalls are the calls an entry makes itself, in written order, each name
@@ -1847,9 +1853,10 @@ func (builder *pageBuilder) ownCalls(programTargetID, objectID string) ([]pageOw
 			add(calledName(relation), relation, relation.Resolution == programindex.ResolutionUnresolved)
 			continue
 		}
-		if relation.Basis == programindex.BasisImplements {
+		if programindex.KnownBasis(relation.Basis) {
 			if name := calledName(relation); name != "" && !seen[name] {
 				add(name, relation, false)
+				calls[len(calls)-1].Basis = relation.Basis
 				for _, to := range relation.ToIDs {
 					calls[len(calls)-1].Implementers = append(calls[len(calls)-1].Implementers, builder.typedName(programTargetID, to))
 				}

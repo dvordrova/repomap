@@ -65,6 +65,12 @@ type pageFlowCall struct {
 	// method set, never a traced call (etcd's server.Campaign:
 	// electionServer, electionProxy and UnimplementedElectionServer).
 	Implements string `json:"implements,omitempty"`
+	// Basis is how an Implements call's targets are known (ProgramIndex
+	// Relation.Basis): "implements", by method set; "members", the classes
+	// having every member the code uses on the value (huey's
+	// self.storage.enqueue: the storage classes' enqueue); "overrides", the
+	// subclasses overriding the method. Never a traced call.
+	Basis string `json:"basis,omitempty"`
 	// Launch marks a call starting a program the code does not name
 	// (unnamedLaunch): its function's reading says so, where no outside
 	// system stands for it.
@@ -342,8 +348,9 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			continue
 		}
 		call := pageFlowCall{Kind: kind, Possible: possible, Launch: launch, Arity: arity}
-		if edge.Basis == programindex.BasisImplements {
+		if programindex.KnownBasis(edge.Basis) {
 			call.Implements = builder.implementedName(index.Target.ID, callerID, edge.RelationID)
+			call.Basis = edge.Basis
 		}
 		if site != nil {
 			call.Sites = []pageReadingSite{*site}

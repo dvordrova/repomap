@@ -1876,8 +1876,9 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			}
 			for _, witness := range relation.Witnesses {
 				// A receiver assignment supports this call; it is not another
-				// call at the constructor's source line.
-				if witness.Kind == "interface_field_assignment" {
+				// call at the constructor's source line. Nor are the members
+				// a members-basis call's value is used with (PROGRAM_INDEX).
+				if witness.Kind == "interface_field_assignment" || witness.Kind == "members_used" {
 					continue
 				}
 				call := atlas.SymbolCall{Kind: string(relation.Kind), Invocation: relation.Invocation, Dispatch: relation.Dispatch, Resolution: string(relation.Resolution), Detail: witness.Detail, Evidence: evidence}

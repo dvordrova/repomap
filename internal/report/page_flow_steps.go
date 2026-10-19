@@ -31,6 +31,9 @@ type pageStepName struct {
 	// repository type implementing the interface called, known by method
 	// set (orientation FlowBranch.Basis).
 	Implemented bool
+	// Basis is how an Implemented candidate is known (orientation
+	// FlowBranch.Basis): "implements", "members" or "overrides".
+	Basis string
 	// Guard and Loop are, for a split's candidate, what the call reaching
 	// it runs under (orientation FlowBranch.Guard, Loop): a failing path's
 	// candidate is never a way on, and says so.

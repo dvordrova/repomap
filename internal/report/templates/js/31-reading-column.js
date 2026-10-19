@@ -986,7 +986,7 @@ var rmFlowDisplay=(function(){
   function candidates(into,rows,handed){
     var names=rmEl('span','flow-fork-names');(rows||[]).forEach(function(row){var item=rmEl('span','flow-fork-name');item.appendChild(name(row));
       if(handed&&row.HandedTo)text(item,' '+rmT('to {0}',row.HandedTo));through(item,row.Through);
-      if(!handed&&row.Implemented)item.appendChild(rmEl('span','meta',' ('+rmT('by method set')+')'));
+      if(!handed&&row.Implemented)item.appendChild(rmEl('span','meta',' ('+rmT((row.Basis==='members'?'by the members used':row.Basis==='overrides'?'by subclassing':'by method set'))+')'));
       guard(item,row);names.appendChild(item);});into.appendChild(names);
   }
   function fork(row,cls,label,handed){var node=rmEl('details',cls),head=rmEl('summary');text(head,rmT(label));node.appendChild(head);candidates(node,row.Names,handed);return node;}
@@ -1009,7 +1009,7 @@ var rmFlowDisplay=(function(){
         if((row.ViaKey||row.Via)&&row.ViaFrom){text(via,' '+rmT('from')+' ');via.appendChild(name(row.ViaFrom));}through(via,row.Through);}
       item.appendChild(via);
     }
-    if(row.Implemented)item.appendChild(rmEl('span','meta flow-implemented',' ('+rmT('an implementation in this repository, by method set, not a traced call')+')'));
+    if(row.Implemented)item.appendChild(rmEl('span','meta flow-implemented',' ('+rmT((row.Basis==='members'?'a class in this repository with every member the code uses on the value, not a traced call':row.Basis==='overrides'?'an override in this repository, by subclassing, not a traced call':'an implementation in this repository, by method set, not a traced call'))+')'));
     guard(item,row);(row.Handles||[]).forEach(function(row){item.appendChild(handles(row));});
     if(row.Explanation){var why=rmEl('span','model flow-why'),words=rmEl('span','',row.Explanation);words.dataset.displayRef=row.ExplanationRef||'';why.appendChild(words);item.appendChild(why);}
     if(row.TypeLine){var type=rmEl('span','model flow-type');type.appendChild(rmEl('code','',row.TypeName));text(type,' — ');var words=rmEl('span','',row.TypeLine);words.dataset.displayRef=row.TypeLineRef||'';type.appendChild(words);item.appendChild(type);}
@@ -1017,7 +1017,7 @@ var rmFlowDisplay=(function(){
     if(row.Passed)item.appendChild(fork(row.Passed,'flow-fork flow-passed','also calls:',false));
     if(row.Handed)item.appendChild(fork(row.Handed,'flow-fork flow-passed flow-handed','also hands over:',true));
     if(row.Stop){var stop=rmEl('span','meta flow-stop');
-      if((row.Joins||[]).length)around(stop,row.Stop,function(){row.Joins.forEach(function(row,i){if(i)text(stop,' '+rmT('or')+' ');stop.appendChild(name(row));through(stop,row.Through);if(row.Implemented)stop.appendChild(rmEl('span','meta',' ('+rmT('by method set')+')'));guard(stop,row);});});
+      if((row.Joins||[]).length)around(stop,row.Stop,function(){row.Joins.forEach(function(row,i){if(i)text(stop,' '+rmT('or')+' ');stop.appendChild(name(row));through(stop,row.Through);if(row.Implemented)stop.appendChild(rmEl('span','meta',' ('+rmT((row.Basis==='members'?'by the members used':row.Basis==='overrides'?'by subclassing':'by method set'))+')'));guard(stop,row);});});
       else text(stop,rmT(row.Stop));
       if(row.OpenAt){text(stop,' (');stop.appendChild(anchor(row.OpenAt,rmT('it calls through a value whose target is not established')));text(stop,')');}item.appendChild(stop);
     }
@@ -1030,7 +1030,7 @@ var rmFlowDisplay=(function(){
     if(row.Anchor){text(item,' ');item.appendChild(anchor(row.Anchor));}
     if((row.Reaches||[]).length){var reach=rmEl('span','flow-why flow-reaches');row.Reaches.forEach(function(row){var line=rmEl('span','flow-reach');text(line,row.Label+' ');var link=rmEl('a','',row.Title);link.href=row.Href;line.appendChild(link);reach.appendChild(line);});item.appendChild(reach);}
     else if(row.Silent)item.appendChild(rmEl('span','flow-why flow-calls-nothing',rmT('calls nothing')));
-    else if((row.Calls||[]).length){var calls=rmEl('span','flow-why flow-reaches flow-reaches-own');text(calls,rmT('it calls')+' ');row.Calls.forEach(function(row,i){if(i)text(calls,', ');if(row.More){text(calls,'…');return;}var code=rmEl('code');if(row.Anchor)code.appendChild(anchor(row.Anchor));calls.appendChild(code);if(row.Unresolved)calls.appendChild(rmEl('span','meta',' ('+rmT('implementation not established')+')'));if((row.Implementers||[]).length){var by=rmEl('span','meta');text(by,' ('+rmT('implemented in this repository by')+' ');row.Implementers.forEach(function(name,i){if(i)text(by,', ');by.appendChild(rmEl('code','',name));});text(by,'; '+rmT('by method set, not a traced call')+')');calls.appendChild(by);}});item.appendChild(calls);}
+    else if((row.Calls||[]).length){var calls=rmEl('span','flow-why flow-reaches flow-reaches-own');text(calls,rmT('it calls')+' ');row.Calls.forEach(function(row,i){if(i)text(calls,', ');if(row.More){text(calls,'…');return;}var code=rmEl('code');if(row.Anchor)code.appendChild(anchor(row.Anchor));calls.appendChild(code);if(row.Unresolved)calls.appendChild(rmEl('span','meta',' ('+rmT('implementation not established')+')'));if((row.Implementers||[]).length){var by=rmEl('span','meta');text(by,' ('+rmT((row.Basis==='members'?'every member the code uses on the value is in':row.Basis==='overrides'?'overridden in this repository by':'implemented in this repository by'))+' ');row.Implementers.forEach(function(name,i){if(i)text(by,', ');by.appendChild(rmEl('code','',name));});text(by,'; '+rmT((row.Basis==='members'?'by the members used, not a traced call':row.Basis==='overrides'?'by subclassing, not a traced call':'by method set, not a traced call'))+')');calls.appendChild(by);}});item.appendChild(calls);}
   }
   function elsewhere(row){
     var item=rmEl('p','meta flow-elsewhere');text(item,rmT('Elsewhere in')+' ');var link=rmEl('a','',row.Group);link.href=row.Href;item.appendChild(link);text(item,', '+rmT('not from these entries:'));

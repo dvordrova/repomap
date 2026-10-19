@@ -97,9 +97,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   when both are deliberately declared. Compiler availability does not supply
   missing project dependencies or call-target authority.
   The native Node helper preserves an explicitly supplied `NODE_OPTIONS`,
-  including the owner's V8 heap setting, alongside `PATH`. It does not impose
-  another heap cap or forward the provider credentials or the whole process
-  environment. Invalid Node options remain native execution failures.
+  including the owner's V8 heap setting, alongside `PATH`. Without such a
+  setting (`--max-old-space-size` or `--max_old_space_size`) it runs with
+  half the machine's physical memory as its heap, a container's cgroup limit
+  heeded on Linux, and with V8's own default where the memory is unknown
+  (2026-10-20): V8's default, about 4.3 GB on a 32 GB Mac, is an engine
+  heuristic, not an envelope of the evidence, and orca's three project
+  references need about 13 GB. A repository needing more still fails as an
+  explicit outcome. It does not forward the provider credentials or the
+  whole process environment. Invalid Node options remain native execution
+  failures. A program holding no file first (every file of it held by an
+  earlier program, orca's `tsconfig.relay.json`) is released once each file
+  has its program. Code lines come from the AST's own walk and a scan of
+  the gaps between nodes, never `getChildren()`, which kept every file's
+  token tree alive (3 GB on orca). Type text keeps no control character:
+  one the compiler leaves raw in a literal type (DEL) is written `\u007F`.
   Native result transport writes one complete JSON value incrementally in the
   same schema and field/row order, awaiting stdout writes. It does not construct
   an aggregate V8 string or bound the graph by an output byte count. An
@@ -292,6 +304,64 @@ fixture's `node:fs` calls (`prepare-readme.mjs`'s `readFileSync` through
 as `spawn` does not, so no `talks` answer makes them file calls and no file
 of a JS/TS program is gathered from them (READING, files a program keeps;
 2026-09-29 files pass).
+
+## Calls on values the compiler types any
+
+A method call on a field (`this.client.multi()`) or on a parameter the
+function never reassigns, where the compiler's type of the receiver is
+`any` and no resolution above names a target, calls the method of each
+repository class whose instances have every member the code uses on that
+value, as Python's (PYTHON "Calls on values nothing types"): `dispatch:
+interface`, `basis: members`, one class exact, several alternatives, one
+`members_used` witness. The members are the properties the code reads or
+calls on the value (an assignment target constrains nothing): a field's
+those of the reading class and the classes it extends, a parameter's those
+its function makes. A class has a member when the compiler's instance type
+of it has the property, inherited ones included. It stays unresolved when
+the code uses no other member than the one called, tests the value's shape
+(`"x" in value`, `typeof value.x`), a store of the field gives an observed
+value (a literal, an object, array or function, a construction, an outside
+call's result, a typed value), a caller hands the parameter such a value
+other than a repository class's instance, or a candidate's member of that
+name is no repository method. A lib-typed value is the compiler's already,
+so Python's builtins guard has no equivalent here; an `any` value only
+array- or map-shaped would match a repository class with those members, a
+recorded divergence.
+
+bee-queue: `Queue._finishJob(err, data, job)` calls `job.computeDelay()`
+and `job.toData()` on its parameter, and only `Job` has both: each is
+exact. `Job`'s `this.queue` calls are `Queue`'s methods. `Queue`'s
+`this.client.*` stay unresolved: the client is an outside redis client
+stored as `this[clientName] = client` in a promise callback, no repository
+class has its members. The cumulative fixture's `src/duck-receivers.js`
+checks each case
+(`TestCumulativeJSTSCallsOnUntypedValuesGoToTheClassesHavingTheirMembers`).
+
+## Calls through a repository interface
+
+A method call through a value whose type is an interface this repository
+declares, which the compiler resolves only to the interface's own
+signature, calls the method of each repository class whose instances are
+assignable to the interface (the compiler's `isTypeAssignableTo`, else
+every member the interface declares being one of the class's): `dispatch:
+interface`, `basis: implements`, one class exact, several alternatives, no
+unknown beside them, Go's rule for an interface call no observed flow gives
+(GO "A value no observed flow gives", owner 2026-09-30). TypeScript is
+structural, so a class need not write `implements`. An abstract class is
+never the value: its subclasses are, keeping the methods they inherit
+(`CachedStore` takes `BaseStore.get`). A generic class is not enumerated,
+as Go enumerates none; a test's class is no candidate for the program's
+call. A candidate whose member of that name is no repository method with a
+body (an arrow-function property) leaves the call unresolved, as an
+interface no repository class implements does. JS/TS keeps no observed
+flow of instances, so every such call takes this basis; an interface
+declared outside the repository is filled by no repository class, as in
+Go. The cumulative fixture's `src/interface-calls.ts` checks each case
+(`TestCumulativeJSTSInterfaceCallsFollowAssignableClasses`). Recorded
+missing: a call through a value of a repository class type stays the
+method the compiler names, an abstract one included; the overrides of its
+subclasses are not joined, where Python takes `basis: overrides` (PYTHON
+"Calls a subclass runs").
 
 ## Native compiler compatibility
 

@@ -222,6 +222,9 @@ type pageSpineStep struct {
 	// method set, never a traced call (etcd's gateway reaching
 	// electionServer.Campaign and electionProxy.Campaign).
 	Implemented bool `json:"implemented,omitempty"`
+	// Basis is how an Implemented step is known (StructuralEdge.Basis):
+	// "implements", "members" or "overrides".
+	Basis string `json:"basis,omitempty"`
 }
 
 // pageWay is one way a request reaches a dispatch site: the input it
@@ -449,8 +452,12 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 			}
 		}
 		spineStep := func(step groupindex.SpineStep) pageSpineStep {
-			result := pageSpineStep{Decl: decls.of(step.SubjectID), Part: partOf[step.SubjectID], Helper: step.Helper,
-				Implemented: step.Edge >= 0 && step.Edge < len(index.StructuralEdges) && index.StructuralEdges[step.Edge].Basis == programindex.BasisImplements}
+			result := pageSpineStep{Decl: decls.of(step.SubjectID), Part: partOf[step.SubjectID], Helper: step.Helper}
+			if step.Edge >= 0 && step.Edge < len(index.StructuralEdges) {
+				basis := index.StructuralEdges[step.Edge].Basis
+				result.Implemented = programindex.KnownBasis(basis)
+				result.Basis = basis
+			}
 			for _, member := range step.Members {
 				if member != step.SubjectID {
 					result.Members = append(result.Members, decls.of(member))

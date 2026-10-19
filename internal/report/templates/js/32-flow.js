@@ -71,7 +71,7 @@ function rmFlowRow(ctx,data,call,opts,helper){
     if(call.macro)head.appendChild(rmEl('span','map-flow-plain',call.macro+(call.every?'':' ')));
     // A call through an interface no observed value fills: its method,
     // implemented by the repository's types (page_flow.go Implements).
-    if(call.implements){var said=rmEl('span','map-flow-implements');said.append(rmDotBreaks(rmEl('span','map-flow-plain',call.implements)),' ',rmEl('span','map-flow-one',rmT('implemented in this repository by these')),' ',rmEl('span','map-flow-implemented meta','('+rmT('by method set, not a traced call')+')'));head.appendChild(said);}
+    if(call.implements){var said=rmEl('span','map-flow-implements');said.append(rmDotBreaks(rmEl('span','map-flow-plain',call.implements)),' ',rmEl('span','map-flow-one',rmT((call.basis==='members'?'every member the code uses on it is in these':call.basis==='overrides'?'overridden in this repository by these':'implemented in this repository by these'))),' ',rmEl('span','map-flow-implemented meta','('+rmT((call.basis==='members'?'by the members used, not a traced call':call.basis==='overrides'?'by subclassing, not a traced call':'by method set, not a traced call'))+')'));head.appendChild(said);}
     else if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of these')));
     head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
     site.addEventListener('toggle',function(){
@@ -87,7 +87,7 @@ function rmFlowRow(ctx,data,call,opts,helper){
   var named=rmFlowName(ctx,decl,call);
   // The one implementation of an interface no observed value fills says so
   // beside its name (page_flow.go Implements).
-  if(call.implements){var both=rmEl('span','map-flow-implements');both.append(named,' ',rmEl('span','map-flow-implemented meta','('+rmT('the one implementation of {0} in this repository',call.implements)+'; '+rmT('by method set, not a traced call')+')'));named=both;}
+  if(call.implements){var both=rmEl('span','map-flow-implements');both.append(named,' ',rmEl('span','map-flow-implemented meta','('+rmT((call.basis==='members'?'the one class in this repository with every member the code uses on the receiver of {0}':call.basis==='overrides'?'the one override of {0} in this repository':'the one implementation of {0} in this repository'),call.implements)+'; '+rmT((call.basis==='members'?'by the members used, not a traced call':call.basis==='overrides'?'by subclassing, not a traced call':'by method set, not a traced call'))+')'));named=both;}
   head.append(rmEl('span','map-flow-twist'),named);
   if(cycle)head.appendChild(rmEl('span','map-flow-above meta',rmT('↑ shown above')));
   row.appendChild(head);

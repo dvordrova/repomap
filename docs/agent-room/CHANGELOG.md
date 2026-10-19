@@ -1,3 +1,170 @@
+## 2026-10-19 — Python calls a subclass runs go to its methods
+
+Python used to resolve a call on a value of a known class exactly to that
+class's method. That was wrong where the method is abstract, since its body
+never runs, or where a repository subclass overrides it. Such a call now goes
+to the method each concrete class the receiver's class is or derives into
+runs (`dispatch: interface`, new closed word `basis: overrides`). A
+`typing.Protocol`'s call goes to the classes having every member the protocol
+declares (`basis: implements`, as in Go and TypeScript).
+
+The skeptic's changes were adopted:
+
+- a method is abstract when `abc.abstractmethod` (or a deprecated variant)
+  marks it, when its body only raises `NotImplementedError`, or when a
+  protocol declares it;
+- candidates are the receiver's class and the classes deriving from it, never
+  siblings, and an abstract class is never the value;
+- `abc.ABC`, `Protocol` and `Generic` bring a class no members, so they don't
+  count as bases;
+- a concrete method a subclass overrides is alternatives too.
+
+One choice differs from the skeptic. It suggested keeping `implements` and
+adding a witness kind, but several report and orientation sites only receive
+the basis word. The report words each basis: "by method set", "by the
+members used", "by subclassing".
+
+The `members` rule now leaves abstract classes out too: huey's
+`BaseStorage.enqueue` is no longer an alternative.
+
+Fixture `subclass_calls.py` and `tests/test_exporters.py`
+(`TestCumulativePythonCallsASubclassRunsGoToItsMethods`). No model:
+
+- **freqtrade**: 95 program calls changed (88 alternatives, 7 exact), plus
+  220 in tests.
+  - `FreqaiDataKitchen`'s `strategy.set_freqai_targets` reaches the two
+    template strategies beside `IStrategy`'s default.
+  - `self.exchange.fetch_order` reaches the Bybit, Hyperliquid and
+    Krakenfutures overrides.
+  - `IFreqaiModel.start_backtesting`'s `self.train` reaches the five model
+    families.
+  - 22 sampled edges were all right.
+- **huey**: 18 program calls changed (`BaseStorage.flush_all` → each
+  storage's flush). Some candidates are huey's own test classes
+  (`NoUseHuey`, `CustomError`): huey runs unittest, so repomap's pytest-based
+  test detection does not mark `huey/tests`. This is an existing detection
+  gap.
+- **graphile-worker** (dependencies installed with the owner's approval)
+  declares 26 interfaces and no classes. It gets no `implements` edge: an
+  interface filled by object literals is not followed, a recorded limit.
+
+Recorded missing:
+
+- `super()` calls stay unresolved;
+- abstract properties are reads, not calls;
+- TypeScript's class-typed calls don't follow subclass overrides.
+
+## 2026-10-19 — TypeScript interface calls follow the classes assignable to them
+
+A TypeScript call through a value of an interface this repository declares
+used to stay unresolved: the compiler names only the interface's signature.
+It now calls the method of each repository class whose instances are
+assignable to the interface (`checker.isTypeAssignableTo`, with a
+member-by-member fallback). This is Go's `basis: implements` rule, with
+`dispatch: interface`.
+
+- Structural classes count; they need not write `implements`.
+- Abstract and generic classes are not enumerated. A subclass keeps the
+  method it inherits.
+- A candidate whose member is no repository method with a body leaves the
+  call unresolved.
+- Implementing classes are computed once per interface type.
+- The members pass now asks the compiler for types only at the receivers of
+  unresolved calls.
+- The JS helper contract is 33.
+
+Fixture `src/interface-calls.ts` (`TestCumulativeJSTSInterfaceCallsFollowAssignableClasses`):
+
+- `store.put` → `CachedStore`, `DiskStore` and `MemoryStore`, as
+  alternatives;
+- `store.get` → `BaseStore.get` and two others;
+- `receipt.print` → `PaperReceipt.print` exactly; the generic
+  `TemplateReceipt` is not counted;
+- `ledger.record` stays unresolved.
+
+Python, probed again on a small repository: a parameter annotated with a
+repository ABC still calls the abstract method exactly, and one annotated
+with a `typing.Protocol` calls the protocol's own method. Both are recorded
+as missing equivalents.
+
+No real TypeScript repository here exercises the new rule yet. Each failure
+below also happens on clean HEAD 3e08c07b, so none comes from this change:
+
+- **orca** (`jsts:package.json`) runs out of node heap: after 45 s by
+  default, after 119–137 s at 8 GB.
+- **orca** `jsts:mobile/package.json` fails with `node.getChildren is not a
+  function`.
+- **graphile-worker** has no `node_modules`.
+
+gop runs (`jsts:package.json`), but its one interface, `UIObject`, declares
+only data fields. It gives no `implements` call, which is correct. Its six
+JS `members` edges are right (`this.node.remove` → `DiagramCache.remove`
+and `Database.remove`).
+
+## 2026-10-19 — calls on untyped values go to the classes having the members used
+
+The pattern lens v2 found one fact gap in Python, JS and Go: a call through
+a field or parameter whose type nothing gives had no edge, so a walk ended
+just before the place that does the work. Python and JS/TS now follow such a
+call to the methods of the repository classes that have every member the
+code uses on the value (`dispatch: interface`, new `basis: members`, one
+unlocated `members_used` witness). This is the duck-typed counterpart of
+Go's `implements`. A skeptic's changes were adopted:
+
+- the call stays unresolved when the called method is the only member used;
+- it stays unresolved when a `builtins` class has every member (Python), or
+  when the code tests the value's shape;
+- it stays unresolved when a store or a caller gives an observed value;
+- a field's members are the reading class's base chain only;
+- classes outside a single repository base chain are not enumerated;
+- a data member of the called name leaves the call unresolved;
+- the report says "by the members used", never "implemented by".
+
+ProgramIndex stays 28; an index without the word reads unchanged, as with
+the docstring ranges. The JS helper contract is 32.
+
+Results, no model:
+
+- **huey** (`python:.:guard:huey/bin/huey_consumer`): 524 calls gained
+  targets, 54 of them in the program and 470 in tests.
+  - `Huey.enqueue`'s `self.storage.enqueue` now has the 10 storage classes'
+    `enqueue` as alternatives.
+  - `Worker.loop`'s `self.huey.dequeue` and `self.huey.execute` are exact.
+  - 40 sampled program edges were all right.
+- **bee-queue** (`jsts:package.json`): 16 calls gained targets.
+  - `Queue._finishJob`'s `job.computeDelay()` is exactly `Job.computeDelay`.
+  - `this.client.*` stays unresolved: it is an outside redis client stored by
+    `this[clientName] = client`.
+
+- **freqtrade** (`python:.:guard:freqtrade/main`): 93 program calls
+  gained targets (83 exact, 10 alternatives), plus 14 in tests.
+  - Telegram's `self._rpc.*` now go to `RPC`; the pairlists'
+    `self._exchange.*` go to `Exchange` and to the exchange subclasses that
+    override the method.
+  - Of 35 sampled, 33 are right and one has an extra alternative
+    (`IPairList.verify_whitelist` beside `PairListManager`'s).
+  - One is the known limit: `self.model.predict` names
+    `FreqaiMultiOutputClassifier.predict`, but the model is usually an
+    outside sklearn or lightgbm object. An untyped slot holding an outside
+    value cannot be told apart; the basis says so on the page.
+
+Go cases, decided:
+
+- **wild-workouts trainings**: the call already resolved
+  (`h.app.Commands.ScheduleTraining.Handle` →
+  `scheduleTrainingHandler.Handle`, `implements`). `d.base.Handle` lives in
+  the separate `internal/common` module, whose generic decorator types are
+  not enumerated. That belongs to the decorators card.
+- **go-memdb**: `&Txn{…}` giving no `writes` belongs to the literal/atomic
+  writes card.
+
+Fixtures: `duck_receivers.py` and `duck-receivers.js`. Recorded missing:
+
+- a local name bound to an unresolved call's result;
+- a class-body attribute's value;
+- TypeScript interface-typed values taking `implements`;
+- the Clojure and C equivalents.
+
 ## 2026-10-14 — the model can read a module library as its program's code
 
 Target placement gains `program_code` for Go module libraries (owner: "a

@@ -335,14 +335,19 @@ type embedding the interface, a method of another signature) and
 and the command table's `fire` through `write`
 (`assertGoOpenInterfaceCallsFollowImplementations`).
 
-Native equivalents, probed on one small repository per language (a base or
+For a value no declared type gives at all, Python and JS/TS follow the
+classes having every member the code uses on it (`basis: members`, PYTHON
+"Calls on values nothing types", JSTS); Go's values always have a type,
+so a Go call never takes that basis. Native equivalents of a declared
+interface, probed on one small repository per language (a base or
 interface `Store` with two implementations, a `save(store)` called with one,
 and a `register_store_handler(routes, store)` no code calls), are recorded
-missing, not fabricated: Python resolves `store.put(key)` on a parameter
-annotated with the repository's ABC exactly to the abstract `Store.put`, its
-subclasses' overrides not alternatives, the called `save` included; JS/TS
-leaves the call through an interface-typed parameter unresolved, the classes
-that `implements` it not joined; Clojure resolves a protocol call `(put!
+missing, not fabricated, except JS/TS, which follows them (2026-10-19:
+the repository classes assignable to the interface, `basis: implements`,
+JSTS "Calls through a repository interface") and Python, which follows an
+ABC's abstract method and a subclass's override (`basis: overrides`) and a
+`typing.Protocol`'s structural implementations (`basis: implements`,
+PYTHON "Calls a subclass runs", 2026-10-19); Clojure resolves a protocol call `(put!
 store k)` exactly to the protocol's `put!`, the `defrecord` implementations
 not joined; C has no interfaces, and a function-pointer field keeps its
 stores (C).

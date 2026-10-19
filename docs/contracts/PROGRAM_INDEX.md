@@ -107,9 +107,24 @@ ProgramIndex retains:
   `interface` call's targets are known when no observed flow gives the
   value: `implements`, the methods of the repository's types implementing
   the interface (Go, GO: the owner's rule that an interface call follows the
-  repository's implementations), never a traced binding of that value;
-  absent, the targets are observed. Validation refuses it on any other
-  relation. `guard` says what a call, an external call or a callback handed
+  repository's implementations; JS/TS, the classes assignable to a
+  repository interface, JSTS "Calls through a repository interface"),
+  never a traced binding of that value;
+  `members` (2026-10-19), the methods of the repository's classes that
+  have every member the code uses on a field or parameter whose value no
+  store, declared type or flow gives, another member than the one called
+  among them (Python, JS/TS: PYTHON "Calls on values nothing types", JSTS
+  "Calls on values the compiler types any"), the duck-typed counterpart of
+  `implements`: the classes have what the code uses, and that the value is
+  one of them is not traced. Such a call carries one `members_used`
+  witness, unlocated, naming the members and the value
+  (`dequeue, enqueue, size used on self.storage`); it is no call site of
+  its own; `overrides` (2026-10-19, Python), the method each concrete
+  repository class that the receiver's class is or derives into runs,
+  where that method is abstract (its body never runs) or a subclass
+  overrides it (PYTHON "Calls a subclass runs"). Absent, the targets are
+  observed. Validation refuses any of these words on any other relation. The word is optional in ProgramIndex 28, as
+  the docstring ranges are: an index without it reads unchanged. `guard` says what a call, an external call or a callback handed
   over runs under, from the code's structure, saved and never a provider
   row: `branch` (an if or else arm, a case, a ?: arm, the operands of a
   short-circuit operator after the first; a call in a condition itself is
