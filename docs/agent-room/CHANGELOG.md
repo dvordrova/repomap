@@ -1,3 +1,17 @@
+## 2026-10-20 — native helpers read their source from a file, not argv
+
+CI on `main` had been red since 2026-09-27: on Linux `MAX_ARG_STRLEN` caps one
+argv string at 128 KiB, and the embedded helpers passed as `python3 -c <263 KB>`
+and `node --eval <180 KB>` failed with `argument list too long` (gh run
+38684639078). macOS has only a total limit, so local runs never saw it. The
+three helpers now reach their interpreter as a temporary file written for the
+one call and removed on return (`internal/nativeproc.SourceFile`); the request
+still arrives on stdin. Each package keeps a controlled-interpreter test that
+refuses any argument of 128 KiB or more and checks the file is gone. The
+cumulative JS test `TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract`
+(`new Date` default-library proof) fails on clean HEAD under node 21 as well;
+it is not from this change.
+
 ## 2026-10-19 — Python calls a subclass runs go to its methods
 
 Python used to resolve a call on a value of a known class exactly to that

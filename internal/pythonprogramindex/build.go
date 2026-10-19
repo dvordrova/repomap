@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/nativeproc"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
@@ -959,7 +960,12 @@ func runParser(ctx context.Context, request parserRequest) (parserResponse, erro
 	if err != nil {
 		return parserResponse{}, fmt.Errorf("python program index: encode parser request: %w", err)
 	}
-	command := exec.CommandContext(ctx, "python3", "-I", "-S", "-c", parserHelper)
+	helperPath, removeHelper, err := nativeproc.SourceFile("repomap-python-*.py", parserHelper)
+	if err != nil {
+		return parserResponse{}, fmt.Errorf("python program index: %w", err)
+	}
+	defer removeHelper()
+	command := exec.CommandContext(ctx, "python3", "-I", "-S", helperPath)
 	command.Stdin = bytes.NewReader(wire)
 	var stdout bytes.Buffer
 	command.Stdout = &stdout

@@ -18,6 +18,10 @@ original scope, launch seeds, complete dependencies and model analysis.
 A bad launch projection refuses only that target while its neighbours keep
 their already parsed inputs. A failed shared parser preparation retains the
 existing exact-target fallback; cancellation stops dispatch immediately.
+Both parsers run as `python3 -I -S <file>` with the embedded source written to
+a temporary file for the one call, never as a `-c` argument: Linux caps one
+argv string at 128 KiB and the index parser is larger. The request arrives on
+stdin; the file is removed when the call returns.
 
 A module-level function, class or variable is public unless its name starts
 with an underscore (visibility, never whether a reader sees it: a module's

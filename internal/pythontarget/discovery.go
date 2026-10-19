@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/nativeproc"
 )
 
 const (
@@ -323,7 +324,12 @@ func runPythonParser(ctx context.Context, executable string, files []inputFile) 
 	if err != nil {
 		return helperResponse{}, fmt.Errorf("python target discovery: encode parser request: %w", err)
 	}
-	command := exec.CommandContext(ctx, executable, "-I", "-S", "-c", pythonParserHelper)
+	helperPath, removeHelper, err := nativeproc.SourceFile("repomap-python-target-*.py", pythonParserHelper)
+	if err != nil {
+		return helperResponse{}, fmt.Errorf("python target discovery: %w", err)
+	}
+	defer removeHelper()
+	command := exec.CommandContext(ctx, executable, "-I", "-S", helperPath)
 	command.Stdin = bytes.NewReader(requestBytes)
 	var stderr limitedBuffer
 	stderr.limit = maxHelperStderrBytes

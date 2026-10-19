@@ -372,6 +372,11 @@ existing legacy compiler check, retaining the original field signatures,
 owners and question evidence. The native regression was reproduced and checked
 with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 
+The helper reaches Node as a temporary module file written for the one call
+(`node <file>.mjs`), never as an `--eval` argument: Linux caps one argv string
+at 128 KiB and the helper is larger, so it did not start there. The request
+still arrives on stdin, and the file is removed when the call returns.
+
 ## Framework-neutral registrations
 
 Compiler-observed `setInterval`, worker construction, callbacks and native source expressions enter existing observations. Constructor/helper names do not prove a persistent responsibility. A periodic callback and a supported one-shot scheduled task remain distinct legitimate operation candidates; the initializer is not automatically that work. Explicit imports and compiler-resolved barrels retain original native identities; no export or target is inferred by name alone.
