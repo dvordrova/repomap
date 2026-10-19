@@ -1,3 +1,12 @@
+## 2026-10-20 — CI's test job installs Node 24 and TypeScript 7.0.2
+
+The `test` job ran on ubuntu without Node, so every JS/TS helper test
+skipped there and the adapter was never exercised in CI. It now installs
+Node 24.19.0 (the version the `visual` job pins) and typescript 7.0.2
+globally; `internal/report/web` declares the same Node in `engines` and
+`.nvmrc`. The helper's own TypeScript 7 failure stays visible there until it
+is fixed.
+
 ## 2026-10-20 — a stopped run cancels its background work before waiting for it
 
 The extractors and the tracked-path listing ran on the run's own context,
