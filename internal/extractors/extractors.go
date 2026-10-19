@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dvordrova/repomap/internal/nativeproc"
 	"io"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
@@ -137,12 +139,19 @@ func Run(ctx context.Context, root string, repository *corpus.Corpus) (Result, e
 		}
 		process := exec.CommandContext(ctx, command.Command[0], command.Command[1:]...)
 		process.Dir, process.Stdin = root, bytes.NewReader(data)
+		// A stop reaches the command's children too, and a child still
+		// holding the pipes does not keep the run waiting.
+		nativeproc.OwnProcessGroup(process)
+		process.WaitDelay = 2 * time.Second
 		var stderr bytes.Buffer
 		process.Stderr = &stderr
 		output, err := process.Output()
 		exchange := Exchange{Name: command.Name, Command: command.Command, Request: input, Stdout: string(output), Stderr: stderr.String()}
 		if err != nil {
 			result.Exchanges = append(result.Exchanges, exchange)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return result, fmt.Errorf("extractor %s: %w", command.Name, ctxErr)
+			}
 			return result, fmt.Errorf("extractor %s: command failed: %w; %s", command.Name, err, strings.TrimSpace(stderr.String()))
 		}
 		if err := result.accept(exchange); err != nil {

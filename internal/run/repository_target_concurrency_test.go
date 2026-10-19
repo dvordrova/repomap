@@ -2,13 +2,18 @@ package run
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/documentationreduce"
+	"github.com/dvordrova/repomap/internal/extractors"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -20,10 +25,22 @@ import (
 // The documentation reduction runs beside the first target's native
 // analysis. Its refusal is still the run's reported cause, and no page is
 // published without the reduced documentation every page is built from.
+// The stop also cancels the background work the dispatcher owns, here an
+// extractor that would run for half a minute, before anything waits for it.
 func TestDocumentationReductionFailureStopsTheRunBesideNativeAnalysis(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("a POSIX shell is required for the sleeping extractor")
+	}
 	repositoryRoot := ordinaryGraphGoRepository(t)
+	configuration, _ := json.Marshal(map[string]any{"version": extractors.Version, "extractors": []map[string]any{{"name": "slow", "command": []string{"sh", "-c", "sleep 30 & wait"}}}})
+	if err := os.WriteFile(filepath.Join(repositoryRoot, extractors.ConfigFilename), configuration, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ordinaryGraphGit(t, repositoryRoot, "add", extractors.ConfigFilename)
+	ordinaryGraphGit(t, repositoryRoot, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "slow extractor")
 	debugDir := t.TempDir()
 	refused := errors.New("documentation preset refused")
+	started := time.Now()
 	err := runDefaultWithDeps(repositoryRoot, []string{
 		"--no-model", "--target", "example.com/common-page@.::example.com/common-page/cmd/app",
 		"--no-open", "--debug-dir", debugDir,
@@ -43,6 +60,9 @@ func TestDocumentationReductionFailureStopsTheRunBesideNativeAnalysis(t *testing
 	})
 	if !errors.Is(err, refused) {
 		t.Fatalf("run error = %v, want the documentation refusal", err)
+	}
+	if elapsed := time.Since(started); elapsed > 20*time.Second {
+		t.Fatalf("the stopped run waited %s for its extractor", elapsed)
 	}
 	if published := ordinaryGraphRunDirs(t, debugDir); len(published) != 0 {
 		t.Fatalf("published run directories without documentation: %v", published)

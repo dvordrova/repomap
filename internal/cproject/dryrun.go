@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dvordrova/repomap/internal/nativeproc"
 	"os"
 	"os/exec"
 	"path"
@@ -120,7 +121,7 @@ func dryRun(ctx context.Context, root string, command []string) (string, error) 
 		cmd.Env = append(cmd.Env, variable)
 	}
 	cmd.Env = append(cmd.Env, "LC_ALL=C")
-	ownProcessGroup(cmd)
+	nativeproc.OwnProcessGroup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

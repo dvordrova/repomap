@@ -123,9 +123,12 @@ func dispatchRepositoryTargetPlan(
 	// first target's compiler. It is joined before a target page needs it and
 	// before the first-layer journal is flushed on every path; it is the only
 	// first-layer writer after planning, so the journal keeps its order.
+	// Background work the dispatcher owns stops with the first failure that
+	// ends the publication: a stop cancels it before anything waits for it.
+	runCtx, cancelRun := context.WithCancel(ctx)
 	documentation := startBackground(func() (documentationreduce.Result, error) {
 		return reduceRepositoryDocumentationForRun(
-			ctx,
+			runCtx,
 			options.DebugDir,
 			options.NoCache,
 			options.Deps.llmBatchConcurrency,
@@ -140,8 +143,9 @@ func dispatchRepositoryTargetPlan(
 	defer documentation.wait()
 	// Extractors and the tracked-path listing read only the repository, so
 	// they run beside the target pages and the facts stage waits for them.
-	factSources := startRepositoryFactSources(ctx, options.Repo, options.Corpus)
+	factSources := startRepositoryFactSources(runCtx, options.Repo, options.Corpus)
 	defer factSources.wait()
+	defer cancelRun()
 
 	registry, err := ordinaryRepositoryTargetAdapterRegistry()
 	if err != nil {
@@ -195,13 +199,15 @@ func dispatchRepositoryTargetPlan(
 		options: options, registry: registry, plans: dispatchPlans,
 		programStore: programindex.NewArtifactStore(), documentation: documentation,
 	}
-	runTargetPageLanes(ctx, slots, pages.page)
+	runTargetPageLanes(runCtx, slots, pages.page)
 	fold := foldTargetPageSlots(slots)
 	runs, pendingTargets, outcomes := fold.runs, fold.pendingTargets, fold.outcomes
 	failPublication := func(runErr error) (string, error) {
+		cancelRun()
 		// A refused documentation reduction preceded every target in the
-		// serial order, so it stays the reported cause.
-		if _, reduceErr := documentation.wait(); reduceErr != nil {
+		// serial order, so it stays the reported cause; a reduction this
+		// stop cancelled is not one.
+		if _, reduceErr := documentation.wait(); reduceErr != nil && !errors.Is(reduceErr, context.Canceled) {
 			return "", reduceErr
 		}
 		runDir := filepath.Join(options.DebugDir, options.RunID)

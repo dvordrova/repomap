@@ -1,3 +1,16 @@
+## 2026-10-20 — a stopped run cancels its background work before waiting for it
+
+The extractors and the tracked-path listing ran on the run's own context,
+so a publication-terminal failure first waited for them (an extractor can
+run for minutes) and only then reported the error. The dispatcher now owns a
+cancellable context for that work and cancels it in `failPublication` before
+joining; a reduction the stop cancelled is not reported as the cause. An
+extractor command also runs in its own process group with `WaitDelay`
+(the mechanism `make -n` already used, now `nativeproc.OwnProcessGroup`), so
+`sh -c 'sleep 30 & wait'` returns right after cancellation with the context's
+cause (Codex R4). The documentation-refusal test now carries such an
+extractor and bounds the run's return.
+
 ## 2026-10-20 — a refused key or balance stops the run from the executing call
 
 The stop on HTTP 401, 403 or 402 lived in the observer's failure notice, so

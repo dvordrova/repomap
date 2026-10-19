@@ -150,7 +150,12 @@ neither. Do not add script entrypoints or sidecar tools.
   beside the target pages. The reduction is joined before a page needs it and on
   every return; it is the only first-layer journal writer after planning, so
   first-layer exchange ordinals are unchanged, and its refusal stays the
-  reported cause ahead of any target failure. Console rows of concurrent stages
+  reported cause ahead of any target failure. A publication-terminal failure
+  cancels this background work before anything waits for it, so a stopped run
+  does not finish an extractor or a reduction nobody will read; a reduction
+  that stop cancelled is not the reported cause. An extractor runs in its own
+  process group with a short wait after cancellation, so its children stop
+  with it and a child holding the pipes cannot keep the run waiting. Console rows of concurrent stages
   interleave; artifacts, request bytes and cache keys do not depend on the
   schedule.
 

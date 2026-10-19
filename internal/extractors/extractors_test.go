@@ -3,12 +3,15 @@ package extractors
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
@@ -144,5 +147,34 @@ func TestCommandConfigHasOneCurrentVersion(t *testing.T) {
 	root, repository := newCorpus(t, map[string]string{ConfigFilename: `{"version":2,"extractors":[]}`})
 	if _, err := Run(context.Background(), root, repository); err == nil || !strings.Contains(err.Error(), "unsupported version") {
 		t.Fatal("old config accepted")
+	}
+}
+
+// A stop reaches an extractor's children: a command whose child still holds
+// the pipes returns soon after cancellation with the context's cause, not
+// after the child's own exit.
+func TestCancellationStopsAnExtractorsChildrenToo(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("a POSIX shell is required")
+	}
+	configuration, _ := json.Marshal(config{Version: Version, Extractors: []Command{{Name: "company", Command: []string{"sh", "-c", "sleep 30 & wait"}}}})
+	root, repository := newCorpus(t, map[string]string{
+		ConfigFilename: string(configuration),
+		"sqlc.yaml":    "version: '2'\nsql:\n- engine: sqlite\n  schema: schema.sql\n  queries: query.sql\n  gen:\n    go:\n      out: generated\n",
+		"schema.sql":   "CREATE TABLE t (id integer);\n", "query.sql": "-- name: List :many\nSELECT * FROM t;\n",
+	})
+	defer repository.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+	started := time.Now()
+	_, err := Run(ctx, root, repository)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled extractor returned %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("the run waited %s for the extractor's child", elapsed)
 	}
 }
