@@ -15,7 +15,6 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -197,7 +196,7 @@ func dispatchRepositoryTargetPlan(
 	}
 	pages := targetPageDispatcher{
 		options: options, registry: registry, plans: dispatchPlans,
-		programStore: programindex.NewArtifactStore(), documentation: documentation,
+		documentation: documentation,
 	}
 	runTargetPageLanes(runCtx, slots, pages.page)
 	fold := foldTargetPageSlots(slots)
@@ -302,7 +301,6 @@ type targetPageDispatcher struct {
 	options       repositoryTargetDispatchOptions
 	registry      repositoryTargetAdapterRegistry
 	plans         map[repositoryTargetAdapter]any
-	programStore  *programindex.ArtifactStore
 	documentation *background[documentationreduce.Result]
 }
 
@@ -496,7 +494,6 @@ func (pages targetPageDispatcher) page(ctx context.Context, slot *targetPageSlot
 	childDeps.capturedRepositoryState = &state
 	childDeps.preselectedTarget = &target
 	childDeps.preselectedProgramPage = &programPage
-	childDeps.programIndexStore = pages.programStore
 	childDeps.coreReadmeRoleRows = cloneReadmeRoleLog(options.Plan.Outcome.ReadmeRoles)
 	childDeps.runIDOverride = slot.runID
 	childDeps.siblingTargetRun = true

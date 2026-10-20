@@ -11,21 +11,20 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// AssertSharedArtifact exercises the ordinary storage path using the real
+// AssertPersistRoundTrip exercises the ordinary storage path using the real
 // adapter's complete input, including nested provenance and omission counts.
-func AssertSharedArtifact(t testing.TB, input programindex.Input, index programindex.Index) {
+func AssertPersistRoundTrip(t testing.TB, index programindex.Index) {
 	t.Helper()
 	dir := t.TempDir()
-	store := programindex.NewArtifactStore()
-	if err := store.Persist(dir, index, input); err != nil {
-		t.Fatalf("persist shared ProgramIndex: %v", err)
+	if err := programindex.Persist(dir, programindex.ArtifactFilename, index); err != nil {
+		t.Fatalf("persist ProgramIndex: %v", err)
 	}
 	restored, err := programindex.ReadFile(filepath.Join(dir, programindex.ArtifactFilename))
 	if err != nil {
-		t.Fatalf("restore shared ProgramIndex: %v", err)
+		t.Fatalf("restore ProgramIndex: %v", err)
 	}
 	if index.SHA256 != restored.SHA256 || index.Target.ID != restored.Target.ID {
-		t.Fatal("shared storage changed the adapter's sealed ProgramIndex")
+		t.Fatal("storage changed the adapter's sealed ProgramIndex")
 	}
 }
 

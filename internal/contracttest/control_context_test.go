@@ -26,7 +26,7 @@ func TestCumulativeGoWorkerControlContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertProgramIndexRoundTrip(t, index)
-	adaptertest.AssertSharedArtifact(t, input, index)
+	adaptertest.AssertPersistRoundTrip(t, index)
 	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
 	if err != nil {
 		t.Fatal(err)

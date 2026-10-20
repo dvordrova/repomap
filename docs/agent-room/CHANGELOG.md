@@ -1,3 +1,14 @@
+## 2026-10-20 — the ProgramIndex storage wrappers are gone
+
+`programindex.ArtifactStore` was an empty struct whose `Persist` ignored its
+`Input` argument, `FileReader.Release` did nothing, and `SharedInput` only
+copied an `Input` value; yet the run kept every target's whole `Input` alive
+until persistence for a branch that could not run, and SURFACE still
+described a shared store. `Persist` and `ReadFile` are called directly, the
+Python adapter copies its common `Input` per target (the slices stay
+shared), and `adaptertest.AssertPersistRoundTrip` replaces
+`AssertSharedArtifact` (Codex S2, adapters F6, run F10).
+
 ## 2026-10-20 — CURRENT.md is again the decisions in force, not a journal
 
 The living ADR had grown to 1,337 lines of run ids, seconds and bytes since

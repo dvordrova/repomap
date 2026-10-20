@@ -64,13 +64,13 @@ neither. Do not add script entrypoints or sidecar tools.
   catalogue and GroupsIndex artifacts. Publish repository-wide facts, claims,
   orientation, atlas, portfolios, manifest, `report.json` and `report.html` once
   in the successful owner run. Stages pass typed values in memory; persistence
-  is separate from computation. Identical project/parser views share their
-  complete common ProgramIndex input; target-local `program-index.json` stores
-  the complete sealed ProgramIndex; there is no `program-facts` sidecar
-  in the initial run directory. The existing common builder restores the exact
-  sealed target index without parsing code. Distinct package/import contexts
-  remain separate facts even when they share ASTs. The owner approved this
-  shared storage on 2026-09-09, independently of tools/examples' full analyses.
+  is separate from computation. Views of one native parse share its objects
+  and relations in memory while their targets are built (each target's Input
+  is a copy with its own Target); target-local `program-index.json` stores the
+  complete sealed ProgramIndex; there is no `program-facts` sidecar and no
+  shared store: a reader decodes the sealed index and never rebuilds it
+  through `New`. Distinct package/import contexts remain separate facts even
+  when they share ASTs (owner, 2026-09-09).
   A completed child releases its native index only after every target-local
   sealed artifact succeeds. Its exact ProgramTarget remains in the page
   portfolio. Facts, claims, places and the group projection read the complete

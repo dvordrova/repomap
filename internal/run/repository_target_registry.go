@@ -87,7 +87,6 @@ type repositoryDependencyBuildRequest struct {
 
 type repositoryProgramPageAuthority struct {
 	ProgramIndex programindex.Index
-	ProgramInput *programindex.Input
 	Dependencies dependencies.Catalog
 	Label        string
 	// CPlatform is the platform view of a C program, for the target run's
@@ -95,14 +94,8 @@ type repositoryProgramPageAuthority struct {
 	CPlatform *debugdump.CPlatform
 }
 
-func persistProgramPageIndex(runDir string, page repositoryProgramPageAuthority, store *programindex.ArtifactStore) error {
-	if store == nil {
-		return programindex.Persist(runDir, programindex.ArtifactFilename, page.ProgramIndex)
-	}
-	if page.ProgramInput == nil {
-		return fmt.Errorf("program index: shared persistence requires the original common input")
-	}
-	return store.Persist(runDir, page.ProgramIndex, *page.ProgramInput)
+func persistProgramPageIndex(runDir string, page repositoryProgramPageAuthority) error {
+	return programindex.Persist(runDir, programindex.ArtifactFilename, page.ProgramIndex)
 }
 
 type repositoryTargetFileRestoration struct {
@@ -488,7 +481,7 @@ func buildRepositoryProgramPageAuthority(
 		)
 	}
 	return repositoryProgramPageAuthority{
-		ProgramIndex: index, ProgramInput: &input, Dependencies: catalog, Label: descriptor.Label,
+		ProgramIndex: index, Dependencies: catalog, Label: descriptor.Label,
 	}, nil
 }
 
@@ -540,7 +533,6 @@ func ownRepositoryProgramPageAuthority(
 	}
 	return repositoryProgramPageAuthority{
 		ProgramIndex: page.ProgramIndex,
-		ProgramInput: page.ProgramInput,
 		Dependencies: ownedDependencies,
 		Label:        page.Label,
 		CPlatform:    page.CPlatform,

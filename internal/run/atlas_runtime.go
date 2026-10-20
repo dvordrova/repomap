@@ -71,8 +71,6 @@ func readRepositoryAtlas(
 		targetIDs[runs[i].SelectedTargetKey] = runs[i].programTarget().ID
 	}
 	planned := make(map[string]repositoryTypedTarget)
-	var indexReader programindex.FileReader
-	defer indexReader.Release()
 	for _, target := range options.Plan.Targets {
 		planned[target.Key.String()] = target
 	}
@@ -80,10 +78,10 @@ func readRepositoryAtlas(
 		run := &runs[position]
 		index := programindex.Index{Target: run.programTarget()}
 		_, root := atlasTargetRoots(index, planned[run.SelectedTargetKey])
-		readIndex := run.validProgramIndex
+		readIndex := run.programIndex
 		if run.ProgramIndex == nil {
 			filename := filepath.Join(run.RunDir, programindex.ArtifactFilename)
-			readIndex = func() (programindex.Index, error) { return indexReader.ReadFile(filename) }
+			readIndex = func() (programindex.Index, error) { return programindex.ReadFile(filename) }
 		}
 		target := atlasPlacesTarget(index, planned[run.SelectedTargetKey])
 		target.ReadIndex = readIndex
@@ -120,7 +118,6 @@ func readRepositoryAtlas(
 		Revision: options.RepositoryState.Head, Repository: options.Corpus,
 		Targets: targets, Claims: claimsResult, Facts: factsResult,
 	})
-	indexReader.Release()
 	if err != nil {
 		return atlasOutcome{}, err
 	}
@@ -249,7 +246,7 @@ func startDeclarationKeys(targetIDs []string, runs []targetPublishedRun) func() 
 			if !ok {
 				return programindex.Index{}, fmt.Errorf("atlas: target %s has no program index", id)
 			}
-			return run.validProgramIndex()
+			return run.programIndex()
 		})
 		done <- read{keys: keys, err: err}
 	}()
@@ -281,7 +278,7 @@ func projectAtlasRuns(runs []targetPublishedRun, outcome atlasOutcome, output *r
 		if !ok {
 			return programindex.Index{}, fmt.Errorf("atlas: target %s has no program index", id)
 		}
-		return run.validProgramIndex()
+		return run.programIndex()
 	})
 	if err != nil {
 		return nil, err

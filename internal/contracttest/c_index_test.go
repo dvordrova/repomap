@@ -36,7 +36,7 @@ func buildCInput(t *testing.T, fixture cFixture, selector string) (programindex.
 		t.Fatalf("seal %s: %v", selector, err)
 	}
 	assertProgramIndexRoundTrip(t, index)
-	adaptertest.AssertSharedArtifact(t, input, index)
+	adaptertest.AssertPersistRoundTrip(t, index)
 	return input, index
 }
 

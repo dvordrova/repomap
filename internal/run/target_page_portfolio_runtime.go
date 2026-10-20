@@ -87,13 +87,6 @@ func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
 	return *run.ProgramIndex, nil
 }
 
-// validProgramIndex is the target's program index, validated: a saved one
-// by the reader that decodes it; one in memory was validated when the
-// adapter sealed it and nothing writes it, so it needs no second check.
-func (run *targetPublishedRun) validProgramIndex() (programindex.Index, error) {
-	return run.programIndex()
-}
-
 func (run *targetPublishedRun) programTarget() programindex.Target {
 	if run.ProgramIndex != nil {
 		return run.ProgramIndex.Target

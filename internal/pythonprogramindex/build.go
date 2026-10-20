@@ -460,13 +460,15 @@ func buildInputResults(
 		for viewPosition, group := range batch.views {
 			parsed := parsedViews[viewPosition]
 			keepReadTables(parsed.objects, parsed.relations, testSources)
-			shared := programindex.ShareInput(programindex.Input{
+			// One parse serves every view of the group: each target's Input is
+			// a copy of this value with its own Target, sharing the slices.
+			common := programindex.Input{
 				ScenarioSHA256: parsed.scenarioSHA256, SourceSHA256: parsed.sourceSHA256,
 				Objects: parsed.objects, Relations: parsed.relations,
 				Coverage: programindex.CoverageInput{
 					Measured: true, ObjectsObserved: len(parsed.objects), RelationsObserved: len(parsed.relations),
 				},
-			})
+			}
 			for offset, target := range group.targets {
 				programTarget, err := projectTarget(repository, target, parsed.objectRefs)
 				if err != nil {
@@ -483,7 +485,9 @@ func buildInputResults(
 						programTarget.Exports, programTarget.ExportBasis = exports, programindex.ExportsVisibility
 					}
 				}
-				inputs[group.positions[offset]].Input = shared.ForTarget(programTarget)
+				input := common
+				input.Target = programTarget
+				inputs[group.positions[offset]].Input = input
 			}
 		}
 	}

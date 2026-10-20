@@ -13,7 +13,7 @@ import (
 // Encode validates the sealed index, seal included, and returns its one
 // canonical encoding; those bytes are written as they are. Decoding them
 // again here would only repeat what the adapter conformance kit proves for
-// every adapter's real output (adaptertest.AssertSharedArtifact), and every
+// every adapter's real output (adaptertest.AssertPersistRoundTrip), and every
 // reader still decodes and validates what it reads.
 func Persist(runDir string, filename string, index Index) error {
 	if strings.TrimSpace(filename) == "" {

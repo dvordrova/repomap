@@ -203,7 +203,6 @@ func stoppedFor(ctx context.Context, err error) error {
 }
 
 type defaultRunDeps struct {
-	programIndexStore *programindex.ArtifactStore
 	// Child target consoles share elapsed/delta while keeping their own accounting.
 	consoleClock               *runOutput
 	repositoryConfig           *repoconfig.Config
@@ -828,7 +827,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if setErr != nil {
 		return setErr
 	}
-	if err := persistProgramPageIndex(runDir, genericProgramPage, deps.programIndexStore); err != nil {
+	if err := persistProgramPageIndex(runDir, genericProgramPage); err != nil {
 		return err
 	}
 	if err := programindex.PersistArtifactSet(runDir, indexSet); err != nil {

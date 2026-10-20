@@ -72,7 +72,6 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := programindex.NewArtifactStore()
 	var artifactPaths []string
 	for _, target := range targets {
 		binding, err := preparePythonRepositoryDispatchTarget(t.Context(), repositoryTargetDispatchOptions{}, target, state)
@@ -92,7 +91,7 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 		if err := os.MkdirAll(runDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := persistProgramPageIndex(runDir, page, store); err != nil {
+		if err := persistProgramPageIndex(runDir, page); err != nil {
 			t.Fatal(err)
 		}
 		artifact := filepath.Join(runDir, programindex.ArtifactFilename)

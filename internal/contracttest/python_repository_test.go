@@ -43,7 +43,7 @@ func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertProgramIndexRoundTrip(t, index)
-	adaptertest.AssertSharedArtifact(t, input, index)
+	adaptertest.AssertPersistRoundTrip(t, index)
 	var namespace programindex.Object
 	for _, object := range index.Objects {
 		if object.Kind == programindex.ObjectPackage && object.Name == "fixture_shared" {

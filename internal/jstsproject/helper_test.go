@@ -324,11 +324,10 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertCumulativeJSTSRuntimeRegistrations(t, result, index, repository)
 	assertCumulativeJSTSSourceValues(t, repository, index)
 	assertMergedDefaultLibraryInvocations(t, result, index)
-	input, err := BuildInputFromResult(result)
-	if err != nil {
+	if _, err := BuildInputFromResult(result); err != nil {
 		t.Fatal(err)
 	}
-	adaptertest.AssertSharedArtifact(t, input, index)
+	adaptertest.AssertPersistRoundTrip(t, index)
 	encoded, err := programindex.Encode(index)
 	if err != nil {
 		t.Fatalf("encode cumulative JSTS ProgramIndex: %v", err)

@@ -70,7 +70,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adaptertest.AssertSharedArtifact(t, input, index)
+	adaptertest.AssertPersistRoundTrip(t, index)
 	assertProgramIndexRoundTrip(t, index)
 	assertGoRuntimeTypeMethods(t, index)
 	assertGoAttachedAuthorCommentOwnership(t, repositoryPath, repository, index)

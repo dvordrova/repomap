@@ -204,7 +204,7 @@ func indexProgram(t *testing.T, files map[string]string, selector string) indexe
 		}
 		return again.Input, nil
 	}))
-	adaptertest.AssertSharedArtifact(t, result.Input, index)
+	adaptertest.AssertPersistRoundTrip(t, index)
 	return indexed{repository: repository, result: result, index: index}
 }
 
