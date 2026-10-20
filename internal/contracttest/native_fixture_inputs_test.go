@@ -22,9 +22,10 @@ var nativeInputMemo = struct {
 	c                                              map[string]*cproject.Parsed
 	cProjects                                      map[string]*cproject.Project
 	py                                             map[string]programindex.Input
+	pyCatalogs                                     map[string]pythontarget.Catalog
 	clj                                            map[string]*clojureproject.Result
 	cRuns, cHits, pyRuns, pyHits, cljRuns, cljHits int
-}{c: map[string]*cproject.Parsed{}, cProjects: map[string]*cproject.Project{}, py: map[string]programindex.Input{}, clj: map[string]*clojureproject.Result{}}
+}{c: map[string]*cproject.Parsed{}, cProjects: map[string]*cproject.Project{}, py: map[string]programindex.Input{}, pyCatalogs: map[string]pythontarget.Catalog{}, clj: map[string]*clojureproject.Result{}}
 
 func fixtureDecisionKey(t *testing.T, value any) string {
 	t.Helper()
@@ -154,6 +155,27 @@ func sharedCFixture(t *testing.T) cFixture {
 	}
 	fixture.parsed = ownNativeFixture(t, originals)
 	return fixture
+}
+
+// sharedPythonCatalog is the fixture's discovered Python catalogue, run once
+// per fixture content: discovery is a python process, and every reader gets
+// its own snapshot of the one checked catalogue.
+func sharedPythonCatalog(t *testing.T, repository *corpus.Corpus) (pythontarget.Catalog, error) {
+	t.Helper()
+	key := nativeFixtureKey(t, repository, "", "python:discover", false)
+	nativeInputMemo.Lock()
+	defer nativeInputMemo.Unlock()
+	if value, ok := nativeInputMemo.pyCatalogs[key]; ok {
+		nativeInputMemo.pyHits++
+		return value.Snapshot(), nil
+	}
+	value, err := pythontarget.Discover(t.Context(), repository)
+	if err != nil {
+		return pythontarget.Catalog{}, err
+	}
+	nativeInputMemo.pyRuns++
+	nativeInputMemo.pyCatalogs[key] = value.Snapshot()
+	return value, nil
 }
 
 func sharedPythonFixtureInput(t *testing.T, repository *corpus.Corpus, target pythontarget.Target, seeds ...pythontarget.Target) (programindex.Input, error) {

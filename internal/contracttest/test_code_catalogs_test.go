@@ -45,7 +45,7 @@ func TestCumulativeTestCodeReachesNoOutboundOrData(t *testing.T) {
 	})
 	t.Run("python", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "python")
-		catalog, err := pythontarget.Discover(t.Context(), repository)
+		catalog, err := sharedPythonCatalog(t, repository)
 		if err != nil {
 			t.Fatal(err)
 		}

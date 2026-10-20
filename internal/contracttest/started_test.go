@@ -147,7 +147,7 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 // is poll_prices.
 func TestCumulativePythonStartsAreAskedPerStatement(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

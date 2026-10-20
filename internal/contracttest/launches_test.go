@@ -11,7 +11,6 @@ import (
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
@@ -174,7 +173,7 @@ func TestEveryLanguageAsksItsLaunchingCallsWithTheirWords(t *testing.T) {
 	})
 	t.Run("python", func(t *testing.T) {
 		_, repository := materializeFixtureRepository(t, "python")
-		catalog, err := pythontarget.Discover(t.Context(), repository)
+		catalog, err := sharedPythonCatalog(t, repository)
 		if err != nil {
 			t.Fatal(err)
 		}

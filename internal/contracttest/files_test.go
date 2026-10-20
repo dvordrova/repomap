@@ -236,7 +236,7 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 	})
 	t.Run("jsts", func(t *testing.T) {
 		root, repository := materializeFixtureRepository(t, "jsts")
-		result, err := jstsproject.DiscoverSelected(t.Context(), repository, root, "jsts:packages/documentation-tools/package.json")
+		result, err := sharedJSTSSelected(t, repository, root, "jsts:packages/documentation-tools/package.json")
 		if err != nil {
 			t.Fatal(err)
 		}

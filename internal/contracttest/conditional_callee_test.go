@@ -54,7 +54,7 @@ func assertConditionalCallees(t *testing.T, index programindex.Index, path, witn
 // equivalent of C's conditional callee (src/fixture_app/stored_callbacks.py).
 func TestCumulativePythonACalleeChosenByAConditionCallsOneOfItsCallables(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

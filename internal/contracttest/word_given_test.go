@@ -17,7 +17,6 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
 // askedSymbol is an outside symbol's row as the reading asks it: which
@@ -191,7 +190,7 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 	})
 	t.Run("python", func(t *testing.T) {
 		_, repository := materializeFixtureRepository(t, "python")
-		catalog, err := pythontarget.Discover(t.Context(), repository)
+		catalog, err := sharedPythonCatalog(t, repository)
 		if err != nil {
 			t.Fatal(err)
 		}

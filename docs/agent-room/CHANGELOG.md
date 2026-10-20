@@ -1,3 +1,19 @@
+## 2026-10-20 — contracttest discovers each native fixture once more often
+
+The shared memos already covered Go facts, C parses, Python inputs and
+Clojure, but twenty tests still ran `pythontarget.Discover` (a python
+process each) and four ran `jstsproject.DiscoverSelected` (a node process
+each) themselves. `sharedPythonCatalog` and `sharedJSTSSelected` memoize
+those by fixture content and selector, returning snapshots; the package goes
+from 127 s to 111 s on an idle machine (python analyses 4→5 with 57 hits,
+jsts 2→7 analyses with 13 hits — the selected projects differ). Three tests
+fail before and after, on `main` before today's work:
+`TestCumulativeGoExecutableSeedIsItsOwnRow` and `TestCumulativePythonMapOfParts`
+("area is core, and holding the entry's part is its only entry", red at
+6ab4e994 under node 21 and 24) and `TestCumulativeJSTSEmptyConfigKeepsExplicitToolSource`
+(the inferred tool program differs under TypeScript 7.0.2; red at e841bdb1,
+before the helper's TS 7 adaptation).
+
 ## 2026-10-20 — the JS/TS helper runs on the native TypeScript 7.0.2 again
 
 With node 24 and typescript 7.0.2 the helper failed on the cumulative fixture

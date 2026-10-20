@@ -20,7 +20,7 @@ import (
 // target's code (CLOJURE, C).
 func TestACallIntoAnotherTargetsPackageJoinsTheirFiles(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

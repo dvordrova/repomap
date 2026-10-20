@@ -116,7 +116,7 @@ func TestCFixtureACallSaysWhatItRunsUnder(t *testing.T) {
 // run unguarded (src/fixture_app/iteration.py's checked_store).
 func TestCumulativePythonACallSaysWhatItRunsUnder(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

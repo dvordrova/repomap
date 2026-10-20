@@ -10,7 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
 // kvcli's connect is written in net.c's netConnect, and the client reaches
@@ -86,7 +85,7 @@ func TestEveryLanguageReachesASendingHelperFromItsCallersParts(t *testing.T) {
 	})
 	t.Run("python", func(t *testing.T) {
 		_, repository := materializeFixtureRepository(t, "python")
-		catalog, err := pythontarget.Discover(t.Context(), repository)
+		catalog, err := sharedPythonCatalog(t, repository)
 		if err != nil {
 			t.Fatal(err)
 		}

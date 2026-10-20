@@ -12,7 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
 // ownerFixture is one language fixture's program, its corpus and its facts.
@@ -34,7 +33,7 @@ func ownerFacts(t *testing.T, repository *corpus.Corpus, index programindex.Inde
 func ownerPython(t *testing.T) ownerFixture {
 	t.Helper()
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

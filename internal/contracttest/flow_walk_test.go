@@ -283,7 +283,7 @@ func assertNoTestCode(t *testing.T, preset *flowPreset, testNames ...string) {
 func pythonFlowFixture(t *testing.T) (groupindex.Index, facts.Result, atlas.Graph) {
 	t.Helper()
 	root, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

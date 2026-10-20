@@ -27,7 +27,7 @@ func TestCumulativeJSTSLibraryExportsItsAPI(t *testing.T) {
 		{"jsts:packages/canvas-ui/package.json", programindex.ExportsEntryModules, []string{"packages/canvas-ui/canvas.mjs drawCanvas"}},
 		{"jsts:packages/local-store/package.json", programindex.ExportsVisibility, []string{"packages/local-store/src/index.ts createClient", "packages/local-store/src/index.ts get"}},
 	} {
-		result, err := jstsproject.DiscoverSelected(t.Context(), repository, root, want.selector)
+		result, err := sharedJSTSSelected(t, repository, root, want.selector)
 		if err != nil {
 			t.Fatal(err)
 		}

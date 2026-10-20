@@ -27,7 +27,7 @@ func TestSameNamedDeclarationsOfOneScopeReadApartByWhatOnlyEachCalls(t *testing.
 		t.Fatal(err)
 	}
 	_, pythonRepository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), pythonRepository)
+	catalog, err := sharedPythonCatalog(t, pythonRepository)
 	if err != nil {
 		t.Fatal(err)
 	}

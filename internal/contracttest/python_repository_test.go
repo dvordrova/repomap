@@ -21,7 +21,7 @@ const pythonFixtureSelector = "python:.:script:repomap-fixture"
 
 func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
 // are not, nor is exports.py's format_score, which __all__ leaves out.
 func TestCumulativePythonLibraryExportsItsAPI(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestCumulativePythonLibraryExportsItsAPI(t *testing.T) {
 
 func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func assertChainedCallbackArguments(t *testing.T, index programindex.Index, call
 
 func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	repositoryPath, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatalf("discover cumulative Python fixture: %v", err)
 	}
@@ -1052,7 +1052,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 // equivalent of the TypeScript chained-call check.
 func TestCumulativePythonChainedCallsKeepTheirOwnPositions(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}

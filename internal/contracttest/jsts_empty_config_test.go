@@ -12,7 +12,7 @@ import (
 // config is an explicit compiler input. Its excluded template is not one.
 func TestCumulativeJSTSEmptyConfigKeepsExplicitToolSource(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "jsts")
-	result, err := jstsproject.DiscoverSelected(t.Context(), repository, root, "jsts:packages/template-tool/package.json")
+	result, err := sharedJSTSSelected(t, repository, root, "jsts:packages/template-tool/package.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestCumulativeJSTSEmptyConfigKeepsExplicitToolSource(t *testing.T) {
 
 func TestCumulativeJSTSDependencyAliasDoesNotInventInstalledSource(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "jsts")
-	result, err := jstsproject.DiscoverSelected(t.Context(), repository, root, "jsts:package.json")
+	result, err := sharedJSTSSelected(t, repository, root, "jsts:package.json")
 	if err != nil {
 		t.Fatal(err)
 	}

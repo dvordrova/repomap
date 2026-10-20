@@ -33,8 +33,9 @@ var nativeFixtureMemo = struct {
 	sync.Mutex
 	goResults                      map[string]goFixtureAuthorities
 	jsResults                      map[string]jstsFixtureAuthorities
+	jsSelected                     map[string]jstsproject.Result
 	goRuns, goHits, jsRuns, jsHits int
-}{goResults: map[string]goFixtureAuthorities{}, jsResults: map[string]jstsFixtureAuthorities{}}
+}{goResults: map[string]goFixtureAuthorities{}, jsResults: map[string]jstsFixtureAuthorities{}, jsSelected: map[string]jstsproject.Result{}}
 
 func TestMain(m *testing.M) {
 	code := m.Run()
@@ -121,6 +122,29 @@ func ownGoFixtureAuthorities(t *testing.T, value goFixtureAuthorities) goFixture
 		value.dependencies = &owned
 	}
 	return value
+}
+
+// sharedJSTSSelected is one selected JS/TS project's compiler result, run
+// once per fixture content and selector: the node helper is the cost, and
+// BuildFromResult stays with each test.
+func sharedJSTSSelected(t *testing.T, repository *corpus.Corpus, root, selector string) (jstsproject.Result, error) {
+	t.Helper()
+	key := nativeFixtureKey(t, repository, root, selector, false)
+	nativeFixtureMemo.Lock()
+	defer nativeFixtureMemo.Unlock()
+	value, ok := nativeFixtureMemo.jsSelected[key]
+	if !ok {
+		result, err := jstsproject.DiscoverSelected(t.Context(), repository, root, selector)
+		if err != nil {
+			return jstsproject.Result{}, err
+		}
+		value = result.Snapshot()
+		nativeFixtureMemo.jsRuns++
+		nativeFixtureMemo.jsSelected[key] = value
+	} else {
+		nativeFixtureMemo.jsHits++
+	}
+	return value.Snapshot(), nil
 }
 
 func sharedJSTSFixture(t *testing.T, repository *corpus.Corpus, root string) (jstsproject.Result, programindex.Index, dependencies.Catalog, error) {

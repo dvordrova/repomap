@@ -290,7 +290,7 @@ func checkUnreachedParts(t *testing.T, program programindex.Index, index groupin
 
 func TestCumulativePythonMapOfParts(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "python")
-	catalog, err := pythontarget.Discover(t.Context(), repository)
+	catalog, err := sharedPythonCatalog(t, repository)
 	if err != nil {
 		t.Fatal(err)
 	}
