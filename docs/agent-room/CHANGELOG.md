@@ -1,3 +1,17 @@
+## 2026-10-20 — an inferred tool program resolves modules as its compiler does
+
+`TestCumulativeJSTSEmptyConfigKeepsExplicitToolSource` expected `nodenext`
+for template-tool's Vite config, which is the legacy helper's own default for
+an additional-files program whose config selects nothing. The native
+TypeScript 7 helper hands such a file to an inferred project with the
+compiler's defaults, `bundler` (probed: a written `node16` in that config is
+not read for it either, in both flavours). JSTS says those sources use the
+compiler's existing inferred defaults, so the test now compares the tool
+program with the package that has no config at all (`canvas-ui`) under the
+same compiler: `nodenext` under 6.0.3/node 21.6.1, `bundler` under
+7.0.2/node 24.19.0, both run. The `jstsproject` tests that still say
+`nodenext` prepare a legacy `lib/typescript.js` and skip on 7.
+
 ## 2026-10-20 — flowtest's area rule follows the all-parts role
 
 `TestCumulativeGoExecutableSeedIsItsOwnRow` and `TestCumulativePythonMapOfParts`

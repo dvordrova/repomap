@@ -17,8 +17,22 @@ func TestCumulativeJSTSEmptyConfigKeepsExplicitToolSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	const source = "packages/template-tool/vite.config.ts"
-	if len(result.Files) != 1 || result.Files[0].Path != source || result.Project.ModuleResolution != "nodenext" {
+	if len(result.Files) != 1 || result.Files[0].Path != source {
 		t.Fatalf("explicit inferred tool program = %#v, files = %#v", result.Project, result.Files)
+	}
+	// The config selects nothing, so the tool program takes the compiler's
+	// own inferred defaults, the ones a package without a config gets: the
+	// legacy helper's nodenext, TypeScript 7's bundler. The written
+	// "bundler" of its config is not read for it.
+	configless, err := sharedJSTSSelected(t, repository, root, "jsts:packages/canvas-ui/package.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configless.Project.ConfigPath != "" || !slices.Contains([]string{"nodenext", "bundler"}, configless.Project.ModuleResolution) {
+		t.Fatalf("the package without a config resolves modules as %q under %q", configless.Project.ModuleResolution, configless.Project.ConfigPath)
+	}
+	if result.Project.ModuleResolution != configless.Project.ModuleResolution {
+		t.Fatalf("explicit inferred tool program resolves modules as %q, a package without a config as %q", result.Project.ModuleResolution, configless.Project.ModuleResolution)
 	}
 	index, _, err := jstsproject.BuildFromResult(result)
 	if err != nil {
