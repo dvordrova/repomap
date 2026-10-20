@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"errors"
-	"fmt"
 )
 
 // AdaptiveEachResult is one leaf of ExecuteAdaptiveJSONEachResults: the
@@ -16,36 +15,15 @@ type AdaptiveEachResult[Item any, Value any] struct {
 	Err     error
 }
 
-// ExecuteAdaptiveJSONEach completes independent items without canceling or
-// repeating successful siblings when an item must split. Build owns one item,
-// not the changing plan: accepted calls and outcomes stay unchanged in memory,
-// including when the persistent cache is disabled. Each round uses the shared
-// pool, and all splittable failures from that round become its next children.
-// A terminal failure still prevents returning a partial successful cover.
-func ExecuteAdaptiveJSONEach[Item any, Value any](
-	ctx context.Context,
-	executor Executor,
-	provider Provider,
-	items []Item,
-	build func(Item) (Call[Value], error),
-	split func(Item) (Item, Item, bool),
-) ([]Item, []Outcome[Value], error) {
-	results, err := executeAdaptiveJSONEach(ctx, executor, provider, items, build, split, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	final := make([]Item, len(results))
-	outcomes := make([]Outcome[Value], len(results))
-	for i, result := range results {
-		final[i], outcomes[i] = result.Item, result.Outcome
-	}
-	return final, outcomes, nil
-}
-
-// ExecuteAdaptiveJSONEachResults runs the same rounds, but an item that can
-// neither be completed nor split further stays as its own terminal leaf beside
-// the completed cover while the remaining items continue. Cancellation, build,
-// split-memo and executor errors still fail the whole call.
+// ExecuteAdaptiveJSONEachResults completes independent items without
+// canceling or repeating successful siblings when an item must split. Build
+// owns one item, not the changing plan: accepted calls and outcomes stay
+// unchanged in memory, including when the persistent cache is disabled. Each
+// round uses the shared pool, and all splittable failures from that round
+// become its next children. An item that can neither be completed nor split
+// further stays as its own terminal leaf beside the completed cover while the
+// remaining items continue. Cancellation, build, split-memo and executor
+// errors still fail the whole call.
 func ExecuteAdaptiveJSONEachResults[Item any, Value any](
 	ctx context.Context,
 	executor Executor,
@@ -53,18 +31,6 @@ func ExecuteAdaptiveJSONEachResults[Item any, Value any](
 	items []Item,
 	build func(Item) (Call[Value], error),
 	split func(Item) (Item, Item, bool),
-) ([]AdaptiveEachResult[Item, Value], error) {
-	return executeAdaptiveJSONEach(ctx, executor, provider, items, build, split, true)
-}
-
-func executeAdaptiveJSONEach[Item any, Value any](
-	ctx context.Context,
-	executor Executor,
-	provider Provider,
-	items []Item,
-	build func(Item) (Call[Value], error),
-	split func(Item) (Item, Item, bool),
-	keepTerminal bool,
 ) ([]AdaptiveEachResult[Item, Value], error) {
 	type node struct {
 		item    Item
@@ -131,11 +97,8 @@ func executeAdaptiveJSONEach[Item any, Value any](
 					i--
 					continue
 				}
-				if keepTerminal {
-					plan[i].err, plan[i].done = prepareErr, true
-					continue
-				}
-				return nil, &BatchItemError{Index: i, Err: prepareErr}
+				plan[i].err, plan[i].done = prepareErr, true
+				continue
 			}
 			found, err := loadAdaptiveSplit(executor, provider, plan[i].call)
 			if err != nil {
@@ -175,9 +138,8 @@ func executeAdaptiveJSONEach[Item any, Value any](
 			return nil, err
 		}
 		var next []node
-		var terminal error
 		at := 0
-		for i, item := range plan {
+		for _, item := range plan {
 			if item.done {
 				next = append(next, item)
 				continue
@@ -203,17 +165,8 @@ func executeAdaptiveJSONEach[Item any, Value any](
 					continue
 				}
 			}
-			if keepTerminal {
-				item.outcome, item.err, item.done = result.Outcome, result.Err, true
-				next = append(next, item)
-				continue
-			}
-			if terminal == nil {
-				terminal = &BatchItemError{Index: i, Err: result.Err}
-			}
-		}
-		if terminal != nil {
-			return nil, fmt.Errorf("llm: adaptive independent item: %w", terminal)
+			item.outcome, item.err, item.done = result.Outcome, result.Err, true
+			next = append(next, item)
 		}
 		plan = next
 	}

@@ -12,10 +12,11 @@ type EachResult[T any] struct {
 	Err     error
 }
 
-// ExecuteJSONEach runs independent calls through the same pool, attempt gate
-// and observer as ExecuteJSONBatch, but never cancels a sibling when one item
-// fails: each item's result stays in its caller-indexed slot with its own
-// error. A table window that the model answered badly is one rejected window,
+// ExecuteJSONEach runs independent calls through one pool of
+// BatchConcurrency workers, the shared attempt gate and the executor's
+// observer, replayed in caller order. It never cancels a sibling when one
+// item fails: each item's result stays in its caller-indexed slot with its
+// own error. A table window that the model answered badly is one rejected window,
 // not a rejected stage. Only the caller's context ends the run early.
 func ExecuteJSONEach[T any](
 	ctx context.Context,

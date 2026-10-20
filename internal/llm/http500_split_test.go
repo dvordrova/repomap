@@ -14,18 +14,16 @@ func TestHTTP500SplitMemoRequiresItsOwnOptInAndKeepsParentReplay(t *testing.T) {
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
 	items := [][]string{{"a", "b"}}
 	optIn := true
-	build := func(items [][]string) ([]Call[testValue], error) {
-		calls, err := adaptiveBatchTestBuild(items)
-		for i := range calls {
-			calls[i].SplitRejectedResponse = true
-			calls[i].SplitHTTP500 = optIn && len(items[i]) > 1
-		}
-		return calls, err
+	build := func(item []string) (Call[testValue], error) {
+		call, err := adaptiveEachBuild(item)
+		call.SplitRejectedResponse = true
+		call.SplitHTTP500 = optIn && len(item) > 1
+		return call, err
 	}
 	run := func(wantCalls int, success bool) {
 		t.Helper()
 		p.calls = nil
-		_, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
+		_, outcomes, err := adaptiveCover(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
 		if (err == nil) != success || len(p.calls) != wantCalls || (!success && outcomes != nil) {
 			t.Fatalf("calls=%v outcomes=%v error=%v", p.calls, outcomes, err)
 		}
@@ -49,7 +47,7 @@ func TestHTTP500SplitMemoRequiresItsOwnOptInAndKeepsParentReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.calls = nil
-	plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
+	plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
 	if err != nil || len(plan) != 1 || len(p.calls) != 0 || !outcomes[0].Cached || outcomes[0].Value.Value != "whole replay" {
 		t.Fatalf("HTTP 500 memo hid accepted parent: %v / %v", plan, err)
 	}

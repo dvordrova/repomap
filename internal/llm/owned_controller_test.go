@@ -25,9 +25,9 @@ func (provider *ownedProvider) Complete(ctx context.Context, prepared Prepared) 
 }
 
 // Every call through a provider that owns its controller runs under that
-// controller's one gate, whichever executor, batch form or gate already in
+// controller's one gate, whichever executor, call form or gate already in
 // the context the caller brings; its preset limit is the gate's, whatever
-// concurrency the first batch asks. Without one, the executor's stays.
+// concurrency the first caller asks. Without one, the executor's stays.
 func TestAProviderOwnedControllerIsEveryCallersGate(t *testing.T) {
 	owned := &ownedProvider{testProvider: baseTestProvider(), controller: NewBatchController(3)}
 	executors := []Executor{
@@ -45,8 +45,10 @@ func TestAProviderOwnedControllerIsEveryCallersGate(t *testing.T) {
 			t.Fatal(result.Err)
 		}
 	}
-	if _, err := ExecuteJSONBatch(t.Context(), executors[2], owned, []Call[testValue]{baseTestCall("", "batch a"), baseTestCall("", "batch b")}); err != nil {
-		t.Fatal(err)
+	for _, result := range ExecuteJSONEach(t.Context(), executors[2], owned, []Call[testValue]{baseTestCall("", "each c"), baseTestCall("", "each d")}) {
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
 	}
 	gate := owned.controller.gate
 	if gate == nil || gate.configured != 3 || len(owned.gates) != 5 {

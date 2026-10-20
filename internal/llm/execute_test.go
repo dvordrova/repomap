@@ -738,27 +738,6 @@ func TestExecuteJSONDoesNotCacheFailures(t *testing.T) {
 	}
 }
 
-func TestExecuteJSONBatchPreservesOrderAndStops(t *testing.T) {
-	provider := baseTestProvider()
-	provider.responses = [][]byte{
-		[]byte(`{"value":"one"}`), []byte(`{"value":"two"}`), []byte(`{"value":"three"}`),
-	}
-	provider.errors = []error{nil, errors.New("stop here"), nil}
-	calls := []Call[testValue]{
-		baseTestCall("", "one"), baseTestCall("", "two"), baseTestCall("", "three"),
-	}
-	outcomes, err := ExecuteJSONBatch(
-		t.Context(), Executor{Enabled: false}, provider, calls,
-	)
-	if err == nil || len(outcomes) != 2 {
-		t.Fatalf("batch outcomes/error = %#v / %v", outcomes, err)
-	}
-	if !reflect.DeepEqual(provider.prepareOrder, []string{"one", "two"}) ||
-		!reflect.DeepEqual(provider.completeOrder, []string{"one", "two"}) {
-		t.Fatalf("prepare/complete order = %v / %v", provider.prepareOrder, provider.completeOrder)
-	}
-}
-
 func TestAttemptGateRejectsCanceledAdmission(t *testing.T) {
 	gate := newAttemptGate(1)
 	canceled, cancel := context.WithCancel(t.Context())
@@ -798,7 +777,7 @@ func TestAttemptGateRejectsCanceledAdmission(t *testing.T) {
 	}
 }
 
-func TestExecuteJSONBatchBoundsParallelismAndReplaysObserversInCallerOrder(t *testing.T) {
+func TestExecuteJSONEachBoundsParallelismAndReplaysObserversInCallerOrder(t *testing.T) {
 	users := []string{"one", "two", "three", "four"}
 	provider := newControlledBatchProvider(users...)
 	var observed []string
@@ -812,23 +791,18 @@ func TestExecuteJSONBatchBoundsParallelismAndReplaysObserversInCallerOrder(t *te
 			return nil
 		}),
 	}
-	type result struct {
-		outcomes []Outcome[testValue]
-		err      error
-	}
-	done := make(chan result, 1)
+	done := make(chan []EachResult[testValue], 1)
 	go func() {
 		calls := make([]Call[testValue], 0, len(users))
 		for _, user := range users {
 			calls = append(calls, baseTestCall("", user))
 		}
-		outcomes, err := ExecuteJSONBatch(t.Context(), executor, provider, calls)
-		done <- result{outcomes: outcomes, err: err}
+		done <- ExecuteJSONEach(t.Context(), executor, provider, calls)
 	}()
 
 	first := waitForBatchStarts(t, provider.started, 2)
 	if got := map[string]bool{first[0]: true, first[1]: true}; !got["one"] || !got["two"] || len(got) != 2 {
-		t.Fatalf("initial batch starts = %v", first)
+		t.Fatalf("initial starts = %v", first)
 	}
 	provider.release("two")
 	if got := waitForBatchStarts(t, provider.started, 1); got[0] != "three" {
@@ -840,20 +814,20 @@ func TestExecuteJSONBatchBoundsParallelismAndReplaysObserversInCallerOrder(t *te
 	}
 	provider.release("four")
 	provider.release("one")
-	got := <-done
-	if got.err != nil || len(got.outcomes) != len(users) {
-		t.Fatalf("parallel batch = %#v / %v", got.outcomes, got.err)
+	results := <-done
+	if len(results) != len(users) {
+		t.Fatalf("results = %#v", results)
 	}
 	for index, user := range users {
-		if got.outcomes[index].Value.Value != user {
-			t.Fatalf("outcome %d = %#v, want %q", index, got.outcomes[index], user)
+		if results[index].Err != nil || results[index].Outcome.Value.Value != user {
+			t.Fatalf("result %d = %#v, want %q", index, results[index], user)
 		}
 	}
 	if !reflect.DeepEqual(observed, users) {
 		t.Fatalf("observer order = %v, want %v", observed, users)
 	}
-	if !hasIssue(got.outcomes[2].Issues, IssueObserver) {
-		t.Fatalf("third outcome issues = %#v, missing observer issue", got.outcomes[2].Issues)
+	if !hasIssue(results[2].Outcome.Issues, IssueObserver) {
+		t.Fatalf("third outcome issues = %#v, missing observer issue", results[2].Outcome.Issues)
 	}
 	maxActive, completeCalls := provider.snapshot()
 	if maxActive != 2 || len(completeCalls) != len(users) {
@@ -866,9 +840,13 @@ func TestExecuteJSONBatchBoundsParallelismAndReplaysObserversInCallerOrder(t *te
 	}
 }
 
-func TestExecuteJSONBatchFailsFastAndPersistsRateLimitGate(t *testing.T) {
+// One exhausted rate limit collapses the shared gate: the siblings already
+// running finish, every later attempt of this call and of the next call
+// through the same controller runs alone, and the one failed item is the
+// only one lost.
+func TestExecuteJSONEachRateLimitCollapsesTheGateForLaterCalls(t *testing.T) {
 	users := []string{"one", "two", "three", "four", "five", "six"}
-	provider := newControlledBatchProvider(users...)
+	provider := newControlledBatchProvider(append(users, "seven", "eight")...)
 	controller := &BatchController{}
 	provider.attempts["two"] = 4
 	provider.errors["two"] = &classifiedTestProviderError{
@@ -878,68 +856,81 @@ func TestExecuteJSONBatchFailsFastAndPersistsRateLimitGate(t *testing.T) {
 		},
 		cause: errors.New("rate limited"),
 	}
-	type result struct {
-		outcomes []Outcome[testValue]
-		err      error
-	}
-	done := make(chan result, 1)
 	executor := Executor{
 		Enabled: false, BatchConcurrency: 3, BatchController: controller,
 	}
+	done := make(chan []EachResult[testValue], 1)
 	go func() {
 		calls := make([]Call[testValue], 0, len(users))
 		for _, user := range users {
 			calls = append(calls, baseTestCall("", user))
 		}
-		outcomes, err := ExecuteJSONBatch(t.Context(), executor, provider, calls)
-		done <- result{outcomes: outcomes, err: err}
+		done <- ExecuteJSONEach(t.Context(), executor, provider, calls)
 	}()
 
 	first := waitForBatchStarts(t, provider.started, 3)
 	initial := map[string]bool{first[0]: true, first[1]: true, first[2]: true}
 	if !initial["one"] || !initial["two"] || !initial["three"] || len(initial) != 3 {
-		t.Fatalf("initial batch starts = %v", first)
+		t.Fatalf("initial starts = %v", first)
 	}
 	provider.release("two")
-	got := <-done
-	if got.err == nil || !strings.Contains(got.err.Error(), "batch item 1") ||
-		len(got.outcomes) != len(users) {
-		t.Fatalf("rate-limited batch = %#v / %v", got.outcomes, got.err)
+	requireNoBatchStart(t, provider.started)
+	provider.release("one")
+	requireNoBatchStart(t, provider.started)
+	provider.release("three")
+	serialized := map[string]bool{}
+	for range 3 {
+		user := waitForBatchStarts(t, provider.started, 1)[0]
+		requireNoBatchStart(t, provider.started)
+		serialized[user] = true
+		provider.release(user)
+	}
+	if !serialized["four"] || !serialized["five"] || !serialized["six"] {
+		t.Fatalf("serialized starts = %v", serialized)
+	}
+	results := <-done
+	if len(results) != len(users) {
+		t.Fatalf("results = %#v", results)
+	}
+	for index, user := range users {
+		if user == "two" {
+			continue
+		}
+		if results[index].Err != nil || results[index].Outcome.Value.Value != user {
+			t.Fatalf("sibling %q lost: %#v", user, results[index])
+		}
 	}
 	var providerErr *ProviderError
-	if !errors.As(got.err, &providerErr) {
-		t.Fatalf("rate-limited batch lost provider error: %v", got.err)
+	if !errors.As(results[1].Err, &providerErr) {
+		t.Fatalf("rate-limited item lost its provider error: %v", results[1].Err)
 	}
 	failure := providerErr.ProviderFailure()
 	if failure.Kind != ProviderFailureHTTPStatus || failure.HTTPStatus != 429 ||
 		failure.Attempts != 4 || !failure.RetryExhausted {
 		t.Fatalf("rate-limit failure = %#v", failure)
 	}
-	requireNoBatchStart(t, provider.started)
 	maxActive, completeCalls := provider.snapshot()
-	if maxActive != 3 || len(completeCalls) != 3 ||
-		completeCalls["four"] != 0 || completeCalls["five"] != 0 || completeCalls["six"] != 0 {
+	if maxActive != 3 || len(completeCalls) != len(users) {
 		t.Fatalf("parallelism/calls = %d / %v", maxActive, completeCalls)
 	}
 
-	secondDone := make(chan result, 1)
+	secondDone := make(chan []EachResult[testValue], 1)
 	go func() {
-		calls := []Call[testValue]{
-			baseTestCall("", "four"), baseTestCall("", "five"), baseTestCall("", "six"),
-		}
-		outcomes, err := ExecuteJSONBatch(t.Context(), executor, provider, calls)
-		secondDone <- result{outcomes: outcomes, err: err}
+		secondDone <- ExecuteJSONEach(t.Context(), executor, provider, []Call[testValue]{
+			baseTestCall("", "seven"), baseTestCall("", "eight"),
+		})
 	}()
-	for _, user := range []string{"four", "five", "six"} {
+	for _, user := range []string{"seven", "eight"} {
 		if started := waitForBatchStarts(t, provider.started, 1); started[0] != user {
 			t.Fatalf("serialized start = %v, want %q", started, user)
 		}
 		requireNoBatchStart(t, provider.started)
 		provider.release(user)
 	}
-	second := <-secondDone
-	if second.err != nil || len(second.outcomes) != 3 {
-		t.Fatalf("post-rate-limit batch = %#v / %v", second.outcomes, second.err)
+	for _, result := range <-secondDone {
+		if result.Err != nil {
+			t.Fatalf("post-rate-limit call = %#v", result)
+		}
 	}
 }
 
@@ -1004,122 +995,65 @@ func TestExecuteJSONDirectCallsShareCollapsedAttemptGate(t *testing.T) {
 	}
 }
 
-func TestExecuteJSONBatchDoesNotCollapseAfterSemanticFailure(t *testing.T) {
+func TestExecuteJSONEachDoesNotCollapseAfterSemanticFailure(t *testing.T) {
 	users := []string{"one", "two", "three", "four"}
-	provider := newControlledBatchProvider(users...)
+	provider := newControlledBatchProvider(append(users, "five", "six")...)
 	provider.responses["two"] = []byte(`not-json`)
 	controller := &BatchController{}
 	executor := Executor{
 		Enabled: false, BatchConcurrency: 2, BatchController: controller,
 	}
-	type result struct {
-		outcomes []Outcome[testValue]
-		err      error
-	}
-	done := make(chan result, 1)
+	done := make(chan []EachResult[testValue], 1)
 	go func() {
 		calls := make([]Call[testValue], 0, len(users))
 		for _, user := range users {
 			calls = append(calls, baseTestCall("", user))
 		}
-		outcomes, err := ExecuteJSONBatch(t.Context(), executor, provider, calls)
-		done <- result{outcomes: outcomes, err: err}
+		done <- ExecuteJSONEach(t.Context(), executor, provider, calls)
 	}()
 
 	_ = waitForBatchStarts(t, provider.started, 2)
 	provider.release("two")
-	got := <-done
-	if got.err == nil || !strings.Contains(got.err.Error(), "batch item 1") ||
-		len(got.outcomes) != len(users) {
-		t.Fatalf("semantic-failure batch = %#v / %v", got.outcomes, got.err)
+	if got := waitForBatchStarts(t, provider.started, 1); got[0] != "three" {
+		t.Fatalf("start after a semantic failure = %v, want three", got)
 	}
-	requireNoBatchStart(t, provider.started)
-
-	secondDone := make(chan result, 1)
-	go func() {
-		outcomes, err := ExecuteJSONBatch(t.Context(), executor, provider, []Call[testValue]{
-			baseTestCall("", "three"), baseTestCall("", "four"),
-		})
-		secondDone <- result{outcomes: outcomes, err: err}
-	}()
-	started := waitForBatchStarts(t, provider.started, 2)
-	seen := map[string]bool{started[0]: true, started[1]: true}
-	if !seen["three"] || !seen["four"] || len(seen) != 2 {
-		t.Fatalf("starts after semantic failure = %v", started)
+	provider.release("one")
+	if got := waitForBatchStarts(t, provider.started, 1); got[0] != "four" {
+		t.Fatalf("start after a sibling finished = %v, want four", got)
 	}
 	provider.release("three")
 	provider.release("four")
-	second := <-secondDone
-	if second.err != nil || len(second.outcomes) != 2 {
-		t.Fatalf("second batch = %#v / %v", second.outcomes, second.err)
+	results := <-done
+	if len(results) != len(users) || results[1].Err == nil {
+		t.Fatalf("semantic-failure results = %#v", results)
+	}
+	for _, index := range []int{0, 2, 3} {
+		if results[index].Err != nil || results[index].Outcome.Value.Value != users[index] {
+			t.Fatalf("sibling %q lost: %#v", users[index], results[index])
+		}
+	}
+
+	secondDone := make(chan []EachResult[testValue], 1)
+	go func() {
+		secondDone <- ExecuteJSONEach(t.Context(), executor, provider, []Call[testValue]{
+			baseTestCall("", "five"), baseTestCall("", "six"),
+		})
+	}()
+	started := waitForBatchStarts(t, provider.started, 2)
+	seen := map[string]bool{started[0]: true, started[1]: true}
+	if !seen["five"] || !seen["six"] || len(seen) != 2 {
+		t.Fatalf("starts after semantic failure = %v", started)
+	}
+	provider.release("five")
+	provider.release("six")
+	for _, result := range <-secondDone {
+		if result.Err != nil {
+			t.Fatalf("second call = %#v", result)
+		}
 	}
 	maxActive, _ := provider.snapshot()
 	if maxActive != 2 {
 		t.Fatalf("semantic failure collapsed parallelism: max active = %d", maxActive)
-	}
-}
-
-func TestExecuteJSONBatchSurfacesLowestConcurrentTerminalFailure(t *testing.T) {
-	users := []string{"one", "two", "three"}
-	provider := newControlledBatchProvider(users...)
-	provider.responses["one"] = []byte(`invalid-one`)
-	provider.responses["two"] = []byte(`invalid-two`)
-	provider.ignoreCtx["one"] = true
-	provider.ignoreCtx["two"] = true
-	type result struct {
-		outcomes []Outcome[testValue]
-		err      error
-	}
-	done := make(chan result, 1)
-	go func() {
-		outcomes, err := ExecuteJSONBatch(t.Context(), Executor{
-			Enabled: false, BatchConcurrency: 2,
-		}, provider, []Call[testValue]{
-			baseTestCall("", "one"), baseTestCall("", "two"), baseTestCall("", "three"),
-		})
-		done <- result{outcomes: outcomes, err: err}
-	}()
-	_ = waitForBatchStarts(t, provider.started, 2)
-	provider.release("two")
-	requireNoBatchStart(t, provider.started)
-	provider.release("one")
-	got := <-done
-	if got.err == nil || !strings.Contains(got.err.Error(), "batch item 0") ||
-		len(got.outcomes) != len(users) {
-		t.Fatalf("concurrent failure batch = %#v / %v", got.outcomes, got.err)
-	}
-	requireNoBatchStart(t, provider.started)
-}
-
-func TestExecuteJSONBatchCancellationDoesNotStartQueuedCalls(t *testing.T) {
-	users := []string{"one", "two", "three", "four"}
-	provider := newControlledBatchProvider(users...)
-	ctx, cancel := context.WithCancel(t.Context())
-	type result struct {
-		outcomes []Outcome[testValue]
-		err      error
-	}
-	done := make(chan result, 1)
-	go func() {
-		calls := make([]Call[testValue], 0, len(users))
-		for _, user := range users {
-			calls = append(calls, baseTestCall("", user))
-		}
-		outcomes, err := ExecuteJSONBatch(ctx, Executor{
-			Enabled: false, BatchConcurrency: 2,
-		}, provider, calls)
-		done <- result{outcomes: outcomes, err: err}
-	}()
-	_ = waitForBatchStarts(t, provider.started, 2)
-	cancel()
-	got := <-done
-	if !errors.Is(got.err, context.Canceled) || len(got.outcomes) != len(users) {
-		t.Fatalf("canceled batch = %#v / %v", got.outcomes, got.err)
-	}
-	requireNoBatchStart(t, provider.started)
-	_, completeCalls := provider.snapshot()
-	if len(completeCalls) != 2 || completeCalls["three"] != 0 || completeCalls["four"] != 0 {
-		t.Fatalf("calls after cancellation = %v", completeCalls)
 	}
 }
 

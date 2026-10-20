@@ -37,16 +37,13 @@ func TestOwnerHTTP500OrTimeoutSplitsAndWarmRunSkipsRefusedParent(t *testing.T) {
 					_, _ = w.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
 				}))
 				client.OnRetry = func(llm.RetryProgress) { t.Error("divisible refused request retried identical bytes") }
-				build := func(items []string) ([]llm.Call[map[string]any], error) {
-					calls := make([]llm.Call[map[string]any], len(items))
-					for i, item := range items {
-						calls[i] = llmProviderFailureCall()
-						calls[i].State = []byte("test")
-						calls[i].Prompt.User = item
-						calls[i].Limits.AttemptTimeout = 4 * time.Minute
-						calls[i].SplitHTTP500 = strings.Contains(item, ",")
-					}
-					return calls, nil
+				build := func(item string) (llm.Call[map[string]any], error) {
+					call := llmProviderFailureCall()
+					call.State = []byte("test")
+					call.Prompt.User = item
+					call.Limits.AttemptTimeout = 4 * time.Minute
+					call.SplitHTTP500 = strings.Contains(item, ",")
+					return call, nil
 				}
 				split := func(item string) (string, string, bool) {
 					left, right, found := strings.Cut(item, ",")
@@ -55,13 +52,13 @@ func TestOwnerHTTP500OrTimeoutSplitsAndWarmRunSkipsRefusedParent(t *testing.T) {
 				executor := llm.Executor{RootDir: t.TempDir(), Enabled: true, BatchConcurrency: 4}
 				started := time.Now()
 				for run := 0; run < 2; run++ {
-					plan, outcomes, err := llm.ExecuteAdaptiveJSONBatch(t.Context(), executor, client, []string{"a,b", "c"}, build, split)
-					if err != nil || len(plan) != 3 || len(outcomes) != 3 || attempts.Load() != 4 {
-						t.Fatalf("run %d: plan %v, calls %d, error %v", run, plan, attempts.Load(), err)
+					leaves, err := llm.ExecuteAdaptiveJSONEachResults(t.Context(), executor, client, []string{"a,b", "c"}, build, split)
+					if err != nil || len(leaves) != 3 || attempts.Load() != 4 {
+						t.Fatalf("run %d: leaves %v, calls %d, error %v", run, leaves, attempts.Load(), err)
 					}
-					for _, outcome := range outcomes {
-						if outcome.Value["ok"] != true || run == 1 && !outcome.Cached {
-							t.Fatal("a child was lost or its current cache was not reused")
+					for _, leaf := range leaves {
+						if leaf.Err != nil || leaf.Outcome.Value["ok"] != true || run == 1 && !leaf.Outcome.Cached {
+							t.Fatalf("a child was lost or its current cache was not reused: %+v", leaf)
 						}
 					}
 				}

@@ -93,12 +93,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   with another finish reason, a choice count other than one, or any decoder
   or validation refusal
   ([DeepSeek notes](../DEEPSEEK_API_NOTES.md#wire-and-failure-contract)).
-  `ExecuteJSONBatch` fails closed: a terminal item
-  error cancels the batch child context, prevents queued items from starting,
-  and the owning stage rejects the complete batch. `ExecuteJSONEach` is the
-  table form: the same pool, gate and observer, but one window's failure
-  leaves its neighbours untouched, its rows take their fallback line, and a
-  wholly refused answer is written to `rejected.jsonl` and never cached.
+  Independent calls run through `ExecuteJSONEach`: one pool of
+  `BatchConcurrency` workers, the shared attempt gate and the observer
+  replayed in caller order, and one item's failure leaves its neighbours
+  untouched. A table window the model answered badly is one rejected window:
+  its rows take their fallback line, and a wholly refused answer is written
+  to `rejected.jsonl` and never cached. Items that may need provider-sized
+  partitioning go through `ExecuteAdaptiveJSONEachResults`, which splits a
+  refused item by the owner's rule and hands a leaf that can neither be
+  completed nor split back as that leaf's own error. There is no
+  all-or-nothing form that cancels siblings on the first failure.
   Partly accepted responses retain their original bytes; every reuse revalidates
   individual results and optional terminology follows only accepted output. Validation
   annotates and does not abort a run ([Constitution](../CONSTITUTION.md)); accepted sibling

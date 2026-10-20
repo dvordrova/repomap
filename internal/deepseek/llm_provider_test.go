@@ -409,9 +409,9 @@ func TestLLMProviderSupportsConcurrentExecutorBatch(t *testing.T) {
 	done := make(chan result, 1)
 	root := t.TempDir()
 	go func() {
-		outcomes, err := llm.ExecuteJSONBatch(context.Background(), llm.Executor{
+		outcomes, err := llmEachOutcomes(llm.ExecuteJSONEach(context.Background(), llm.Executor{
 			RootDir: root, Enabled: true, BatchConcurrency: callCount,
-		}, client, calls)
+		}, client, calls))
 		done <- result{outcomes: outcomes, err: err}
 	}()
 	timer := time.NewTimer(time.Second)
@@ -546,9 +546,9 @@ func testLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T)
 	client := llmProviderHandlerClient(handler)
 	firstDone := make(chan result, 1)
 	go func() {
-		outcomes, err := llm.ExecuteJSONBatch(
+		outcomes, err := llmEachOutcomes(llm.ExecuteJSONEach(
 			t.Context(), executor, client, callFor("one", "two", "three"),
-		)
+		))
 		firstDone <- result{outcomes: outcomes, err: err}
 	}()
 	initial := make(map[string]attemptEvent)
@@ -593,9 +593,9 @@ func testLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T)
 
 	secondDone := make(chan result, 1)
 	go func() {
-		outcomes, err := llm.ExecuteJSONBatch(
+		outcomes, err := llmEachOutcomes(llm.ExecuteJSONEach(
 			t.Context(), executor, client, callFor("four", "five"),
-		)
+		))
 		secondDone <- result{outcomes: outcomes, err: err}
 	}()
 	four := nextAttempt()
@@ -1036,7 +1036,7 @@ func TestLLMProviderConcurrentRateLimitsShareLongestWaitAndRetrySerially(t *test
 		}
 		done := make(chan error, 1)
 		go func() {
-			outcomes, err := llm.ExecuteJSONBatch(t.Context(), llm.Executor{BatchConcurrency: 3}, client, calls)
+			outcomes, err := llmEachOutcomes(llm.ExecuteJSONEach(t.Context(), llm.Executor{BatchConcurrency: 3}, client, calls))
 			if err == nil && len(outcomes) != 3 {
 				t.Errorf("outcomes=%d, want 3", len(outcomes))
 			}
@@ -1154,4 +1154,17 @@ func TestLLMProviderRefusesARequestOverTheDeclaredSize(t *testing.T) {
 	if !errors.As(err, &refused) || refused.Kind != llm.ResourceLimitRequestBytes || refused.Limit != 4096 {
 		t.Fatalf("over the declared size: %v", err)
 	}
+}
+
+// llmEachOutcomes reads independent results as one accepted set: every
+// outcome in order, or the first item's error.
+func llmEachOutcomes(results []llm.EachResult[map[string]any]) ([]llm.Outcome[map[string]any], error) {
+	outcomes := make([]llm.Outcome[map[string]any], len(results))
+	for i, result := range results {
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		outcomes[i] = result.Outcome
+	}
+	return outcomes, nil
 }

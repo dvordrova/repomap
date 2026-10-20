@@ -218,29 +218,6 @@ type Call[T any] struct {
 	Validate       func(T) error
 }
 
-// BatchItemError identifies the exact caller-order item that failed in one
-// batch execution. Adaptive owners may use the index to split resource
-// refusals or explicitly opted-in failures. Other errors remain terminal to
-// the complete domain result.
-type BatchItemError struct {
-	Index int
-	Err   error
-}
-
-func (err *BatchItemError) Error() string {
-	if err == nil {
-		return "llm: batch item failed"
-	}
-	return fmt.Sprintf("llm: batch item %d: %v", err.Index, err.Err)
-}
-
-func (err *BatchItemError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.Err
-}
-
 type EventKind string
 
 const (
@@ -589,10 +566,10 @@ func providerFailureGuidance(failure ProviderFailure) string {
 // semantic event observer. RootDir contains the fixed .llm-cache directory.
 // Enabled=false bypasses all cache identity, reads, and writes.
 //
-// BatchConcurrency bounds the number of independent ExecuteJSONBatch items
+// BatchConcurrency bounds the number of independent ExecuteJSONEach items
 // that may execute at once. Values below two preserve the sequential default.
-// Providers used with a larger value must permit concurrent calls. Batch
-// observers are still invoked serially in caller order.
+// Providers used with a larger value must permit concurrent calls. Observers
+// are still invoked serially in caller order.
 //
 // BatchController should be shared by executors that use the same provider so
 // the first transport HTTP 429 makes later provider attempts sequential.

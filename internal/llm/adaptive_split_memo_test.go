@@ -65,7 +65,7 @@ func TestAdaptiveSplitMemoColdAndWarmKeepCompleteOrderedCover(t *testing.T) {
 			items := [][]string{{"a", "b", "c", "d"}}
 			for run := 0; run < 2; run++ {
 				p.calls, notices = nil, nil
-				plan, outcomes, accounting, err := ExecuteAdaptiveJSONBatchWithAccounting(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+				plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -78,11 +78,11 @@ func TestAdaptiveSplitMemoColdAndWarmKeepCompleteOrderedCover(t *testing.T) {
 					}
 				}
 				if run == 0 {
-					if len(p.calls) != 7 || !reflect.DeepEqual(notices, []int{1, 2, 3, 4}) {
-						t.Fatalf("cold calls/notices = %d/%v, want 7/[1 2 3 4]", len(p.calls), notices)
+					if len(p.calls) != 7 || !reflect.DeepEqual(notices, []int{1, 2, 4}) {
+						t.Fatalf("cold calls/notices = %d/%v, want 7/[1 2 4]", len(p.calls), notices)
 					}
-				} else if len(p.calls) != 0 || accounting != (AdaptiveBatchAccounting{}) || !reflect.DeepEqual(notices, []int{4}) {
-					t.Fatalf("warm calls/accounting/notices = %d/%#v/%v", len(p.calls), accounting, notices)
+				} else if len(p.calls) != 0 || !reflect.DeepEqual(notices, []int{4}) {
+					t.Fatalf("warm calls/notices = %d/%v", len(p.calls), notices)
 				}
 			}
 			paths, err := filepath.Glob(filepath.Join(executor.RootDir, CacheDirectoryName, "memo-*.json"))
@@ -113,11 +113,11 @@ func TestAdaptiveSplitMemoDoesNotClaimMissingChildrenAccepted(t *testing.T) {
 	}}
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
 	items := [][]string{{"a", "b"}}
-	if plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit); err == nil || plan != nil || outcomes != nil {
+	if plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit); err == nil || plan != nil || outcomes != nil {
 		t.Fatalf("refused child supplied partial authority: %#v / %#v / %v", plan, outcomes, err)
 	}
 	p.calls, p.response = nil, nil
-	plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+	plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 	if err != nil || len(plan) != 2 || len(outcomes) != 2 || !reflect.DeepEqual(p.calls, [][]string{{"a"}, {"b"}}) {
 		t.Fatalf("missing children not executed: %#v / %#v / %v", p.calls, outcomes, err)
 	}
@@ -135,7 +135,7 @@ func TestAdaptiveSplitMemoNoCacheAndClear(t *testing.T) {
 	run := func(executor Executor, wantCalls int) {
 		t.Helper()
 		p.calls = nil
-		_, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+		_, _, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 		if err != nil || len(p.calls) != wantCalls {
 			t.Fatalf("calls = %d, want %d: %v", len(p.calls), wantCalls, err)
 		}
@@ -170,7 +170,7 @@ func TestAdaptiveSplitMemoParentAndChildReplayRemainAuthoritative(t *testing.T) 
 	run := func() ([][]string, []Outcome[testValue]) {
 		t.Helper()
 		p.calls = nil
-		plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+		plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -211,8 +211,7 @@ func TestAdaptiveSplitMemoParentAndChildReplayRemainAuthoritative(t *testing.T) 
 func TestAdaptiveSplitMemoIdentityIncludesCanonicalProviderExactBytesAndAllLimits(t *testing.T) {
 	p := &adaptiveSplitTestProvider{}
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
-	calls, _ := adaptiveBatchTestBuild([][]string{{"a", "b"}})
-	call := calls[0]
+	call, _ := adaptiveEachBuild([]string{"a", "b"})
 	prepared, err := Prepare(p, call.Prompt, call.Limits)
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +256,7 @@ func TestAdaptiveSplitMemoDoesNotPersistSemanticOrOtherResourceFailures(t *testi
 	for _, kind := range []string{"invalid JSON", "invalid shape", "semantic resource", "request resource", "atomic"} {
 		t.Run(kind, func(t *testing.T) {
 			p := &adaptiveSplitTestProvider{}
-			build := adaptiveBatchTestBuild
+			build := adaptiveEachBuild
 			split := adaptiveBatchTestSplit
 			switch kind {
 			case "invalid JSON":
@@ -266,15 +265,11 @@ func TestAdaptiveSplitMemoDoesNotPersistSemanticOrOtherResourceFailures(t *testi
 				p.response = func([]string) ([]byte, error, bool) { return []byte(`{"wrong":"shape"}`), nil, true }
 			case "semantic resource":
 				p.response = func([]string) ([]byte, error, bool) { return []byte(`{"value":"ok"}`), nil, true }
-				build = func(items [][]string) ([]Call[testValue], error) {
-					calls, err := adaptiveBatchTestBuild(items)
-					for i := range calls {
-						calls[i].Validate = func(testValue) error {
-							return NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitResponseBytes})
-						}
+				build = adaptiveEachBuildWith(func(call *Call[testValue]) {
+					call.Validate = func(testValue) error {
+						return NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitResponseBytes})
 					}
-					return calls, err
-				}
+				})
 			case "request resource":
 				p.kind = ResourceLimitRequestBytes
 			case "atomic":
@@ -282,7 +277,7 @@ func TestAdaptiveSplitMemoDoesNotPersistSemanticOrOtherResourceFailures(t *testi
 			}
 			executor := Executor{Enabled: true, RootDir: t.TempDir()}
 			for run := 0; run < 2; run++ {
-				_, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, [][]string{{"a", "b"}}, build, split)
+				_, _, err := adaptiveCover(t.Context(), executor, p, [][]string{{"a", "b"}}, build, split)
 				if err == nil {
 					t.Fatal("refused response became accepted")
 				}
@@ -299,12 +294,12 @@ func TestAdaptiveSplitMemoStillUsesCurrentOwnerSplit(t *testing.T) {
 	p := &adaptiveSplitTestProvider{}
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
 	items := [][]string{{"a", "b"}}
-	if _, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit); err != nil {
+	if _, _, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil {
 		t.Fatal(err)
 	}
 	p.calls = nil
 	atomic := func([]string) ([]string, []string, bool) { return nil, nil, false }
-	_, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, atomic)
+	_, _, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, atomic)
 	var resourceErr *ResourceLimitError
 	if !errors.As(err, &resourceErr) || len(p.calls) != 1 {
 		t.Fatalf("old hint bypassed current owner atomicity: calls=%v err=%v", p.calls, err)
@@ -319,8 +314,7 @@ func TestAdaptiveSplitMemoTheValidatorRefusesIsAMissAndAcceptedParentStillWins(t
 	p := &adaptiveSplitTestProvider{}
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
 	items := [][]string{{"a", "b"}}
-	calls, _ := adaptiveBatchTestBuild(items)
-	call := calls[0]
+	call, _ := adaptiveEachBuild(items[0])
 	prepared, _ := Prepare(p, call.Prompt, call.Limits)
 	state, _ := canonicalProviderState(p.State())
 	key := adaptiveSplitKey(state, prepared.Bytes(), call.Limits)
@@ -334,12 +328,12 @@ func TestAdaptiveSplitMemoTheValidatorRefusesIsAMissAndAcceptedParentStillWins(t
 		}
 		return nil
 	})
-	if _, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit); err != nil ||
+	if _, _, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil ||
 		!reflect.DeepEqual(p.calls, [][]string{{"a", "b"}, {"a"}, {"b"}}) || len(misses) != 1 || misses[0].CacheKey != key {
 		t.Fatalf("unreadable hint: calls=%v misses=%d err=%v", p.calls, len(misses), err)
 	}
 	p.calls = nil
-	if _, _, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit); err != nil || len(p.calls) != 0 {
+	if _, _, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil || len(p.calls) != 0 {
 		t.Fatalf("the fresh memo was not used: calls=%v err=%v", p.calls, err)
 	}
 	p.response = func([]string) ([]byte, error, bool) { return []byte(`{"value":"whole"}`), nil, true }
@@ -347,7 +341,7 @@ func TestAdaptiveSplitMemoTheValidatorRefusesIsAMissAndAcceptedParentStillWins(t
 		t.Fatal(err)
 	}
 	p.calls = nil
-	plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+	plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 	if err != nil || len(plan) != 1 || len(outcomes) != 1 || !outcomes[0].Cached || outcomes[0].Value.Value != "whole" || len(p.calls) != 0 {
 		t.Fatalf("the hint hid a valid parent replay: %#v / %#v / %v", plan, outcomes, err)
 	}
@@ -517,16 +511,10 @@ func TestAdaptiveRejectedResponseMemoRequiresOwnerOptInAndParentReplayWins(t *te
 	executor := Executor{Enabled: true, RootDir: t.TempDir()}
 	items := [][]string{{"a", "b"}}
 	optIn := true
-	build := func(items [][]string) ([]Call[testValue], error) {
-		calls, err := adaptiveBatchTestBuild(items)
-		for i := range calls {
-			calls[i].SplitRejectedResponse = optIn
-		}
-		return calls, err
-	}
+	build := adaptiveEachBuildWith(func(call *Call[testValue]) { call.SplitRejectedResponse = optIn })
 	run := func() ([][]string, []Outcome[testValue], error) {
 		p.calls = nil
-		return ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
+		return adaptiveCover(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
 	}
 	if plan, outcomes, err := run(); err != nil || len(plan) != 2 || len(outcomes) != 2 || len(p.calls) != 3 {
 		t.Fatalf("cold rejected response split: plan=%v calls=%v error=%v", plan, p.calls, err)
@@ -547,14 +535,14 @@ func TestAdaptiveRejectedResponseMemoRequiresOwnerOptInAndParentReplayWins(t *te
 	if _, outcomes, err := run(); err != nil || len(p.calls) != 0 || !outcomes[0].Cached || !outcomes[1].Cached {
 		t.Fatalf("warm children not reused: calls=%v error=%v", p.calls, err)
 	}
-	calls, _ := build(items)
+	built, _ := build(items[0])
 	for _, change := range []func(*Call[testValue]){
 		func(call *Call[testValue]) { call.Prompt.User = `["changed","input"]` },
 		func(call *Call[testValue]) { call.Limits.MaxRequestBytes++ },
 		func(call *Call[testValue]) { call.Limits.MaxResponseBytes-- },
 		func(call *Call[testValue]) { call.Limits.MaxOutputTokens++ },
 	} {
-		current := calls[0]
+		current := built
 		change(&current)
 		if found, err := loadAdaptiveSplit(executor, p, current); err != nil || found {
 			t.Fatalf("rejected-response hint leaked across changed input/envelope: %v", err)

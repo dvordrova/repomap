@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/dvordrova/repomap/internal/testbudget"
 	"reflect"
 	"strings"
@@ -60,11 +59,58 @@ func (p *adaptiveEachProvider) Complete(ctx context.Context, prepared Prepared) 
 }
 
 func adaptiveEachBuild(item []string) (Call[testValue], error) {
-	calls, err := adaptiveBatchTestBuild([][]string{item})
+	wire, err := json.Marshal(item)
 	if err != nil {
 		return Call[testValue]{}, err
 	}
-	return calls[0], nil
+	return Call[testValue]{
+		State:  []byte(`{"item":"` + strings.Join(item, ",") + `"}`),
+		Prompt: Prompt{User: string(wire), ResponseFormatJSON: true},
+		Limits: Limits{
+			MaxRequestBytes: 1024, MaxResponseBytes: ProviderResponseByteLimit,
+			MaxOutputTokens: 128_000,
+		},
+	}, nil
+}
+
+// adaptiveEachBuildWith is adaptiveEachBuild with one adjustment per call.
+func adaptiveEachBuildWith(adjust func(*Call[testValue])) func([]string) (Call[testValue], error) {
+	return func(item []string) (Call[testValue], error) {
+		call, err := adaptiveEachBuild(item)
+		if err == nil {
+			adjust(&call)
+		}
+		return call, err
+	}
+}
+
+func adaptiveBatchTestSplit(item []string) ([]string, []string, bool) {
+	if len(item) <= 1 {
+		return nil, nil, false
+	}
+	middle := len(item) / 2
+	return append([]string(nil), item[:middle]...), append([]string(nil), item[middle:]...), true
+}
+
+// adaptiveCover runs the adaptive executor and reads its leaves as one
+// complete cover: the items and outcomes in order, or the first terminal
+// leaf's error and no cover at all.
+func adaptiveCover(ctx context.Context, executor Executor, provider Provider, items [][]string,
+	build func([]string) (Call[testValue], error), split func([]string) ([]string, []string, bool),
+) ([][]string, []Outcome[testValue], error) {
+	results, err := ExecuteAdaptiveJSONEachResults(ctx, executor, provider, items, build, split)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan := make([][]string, len(results))
+	outcomes := make([]Outcome[testValue], len(results))
+	for i, result := range results {
+		if result.Err != nil {
+			return nil, nil, result.Err
+		}
+		plan[i], outcomes[i] = result.Item, result.Outcome
+	}
+	return plan, outcomes, nil
 }
 
 type preflightEachProvider struct{ adaptiveEachProvider }
@@ -92,44 +138,27 @@ func (p *completionEnvelopeEachProvider) Complete(ctx context.Context, prepared 
 
 func TestAdaptiveOwnersSplitExecutorCompletionEnvelopesAndReuseLeaves(t *testing.T) {
 	for _, kind := range []ResourceLimitKind{ResourceLimitOutputTokens, ResourceLimitResponseBytes} {
-		for _, batch := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/batch=%t", kind, batch), func(t *testing.T) {
-				p := &completionEnvelopeEachProvider{kind: kind}
-				executor := Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1}
-				build := func(items [][]string) ([]Call[testValue], error) {
-					calls, err := adaptiveBatchTestBuild(items)
-					for i := range calls {
-						calls[i].Limits.MaxResponseBytes = 512
-					}
-					return calls, err
+		t.Run(string(kind), func(t *testing.T) {
+			p := &completionEnvelopeEachProvider{kind: kind}
+			executor := Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1}
+			build := adaptiveEachBuildWith(func(call *Call[testValue]) { call.Limits.MaxResponseBytes = 512 })
+			for range 2 {
+				items := [][]string{{"a", "b"}, {"sibling"}}
+				_, outcomes, err := adaptiveCover(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
+				if err != nil || len(outcomes) != 3 {
+					t.Fatalf("complete leaves unavailable: %+v / %v", outcomes, err)
 				}
-				for range 2 {
-					items := [][]string{{"a", "b"}, {"sibling"}}
-					var outcomes []Outcome[testValue]
-					var err error
-					if batch {
-						_, outcomes, err = ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
-					} else {
-						_, outcomes, err = ExecuteAdaptiveJSONEach(t.Context(), executor, p, items, func(item []string) (Call[testValue], error) {
-							calls, err := build([][]string{item})
-							return calls[0], err
-						}, adaptiveBatchTestSplit)
-					}
-					if err != nil || len(outcomes) != 3 {
-						t.Fatalf("complete leaves unavailable: %+v / %v", outcomes, err)
-					}
-					for i, want := range []string{"a", "b", "sibling"} {
-						if outcomes[i].Value.Value != want {
-							t.Fatalf("leaf %d: %q, want %q", i, outcomes[i].Value.Value, want)
-						}
+				for i, want := range []string{"a", "b", "sibling"} {
+					if outcomes[i].Value.Value != want {
+						t.Fatalf("leaf %d: %q, want %q", i, outcomes[i].Value.Value, want)
 					}
 				}
-				want := map[string]int{"a,b": 1, "a": 1, "b": 1, "sibling": 1}
-				if !reflect.DeepEqual(p.requests, want) {
-					t.Fatalf("exact failed parent or accepted sibling was repeated: %v", p.requests)
-				}
-			})
-		}
+			}
+			want := map[string]int{"a,b": 1, "a": 1, "b": 1, "sibling": 1}
+			if !reflect.DeepEqual(p.requests, want) {
+				t.Fatalf("exact failed parent or accepted sibling was repeated: %v", p.requests)
+			}
+		})
 	}
 }
 
@@ -145,24 +174,14 @@ func (p *preflightEachProvider) Prepare(prompt Prompt, limits Limits) (Prepared,
 }
 
 func TestAdaptiveOwnersPartitionKnownEnvelopeBeforeAnyTransport(t *testing.T) {
-	for _, batch := range []bool{false, true} {
-		t.Run(fmt.Sprint(batch), func(t *testing.T) {
-			p := &preflightEachProvider{}
-			items := [][]string{{"a", "b", "c", "d"}, {"sibling"}}
-			var err error
-			if batch {
-				_, _, err = ExecuteAdaptiveJSONBatch(t.Context(), Executor{BatchConcurrency: 2}, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
-			} else {
-				_, _, err = ExecuteAdaptiveJSONEach(t.Context(), Executor{BatchConcurrency: 2}, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := map[string]int{"a": 1, "b": 1, "c": 1, "d": 1, "sibling": 1}
-			if !reflect.DeepEqual(p.requests, want) {
-				t.Fatalf("transport calls %v, want complete leaf cover %v", p.requests, want)
-			}
-		})
+	p := &preflightEachProvider{}
+	items := [][]string{{"a", "b", "c", "d"}, {"sibling"}}
+	if _, _, err := adaptiveCover(t.Context(), Executor{BatchConcurrency: 2}, p, items, adaptiveEachBuild, adaptiveBatchTestSplit); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"a": 1, "b": 1, "c": 1, "d": 1, "sibling": 1}
+	if !reflect.DeepEqual(p.requests, want) {
+		t.Fatalf("transport calls %v, want complete leaf cover %v", p.requests, want)
 	}
 }
 
@@ -184,7 +203,7 @@ func TestAdaptiveEachKeepsRunningSiblingAndSplitsEveryFailureWithoutCache(t *tes
 	}
 	done := make(chan result, 1)
 	go func() {
-		plan, out, err := ExecuteAdaptiveJSONEach(ctx, executor, p, [][]string{{"a", "b"}, {"slow"}, {"c", "d"}},
+		plan, out, err := adaptiveCover(ctx, executor, p, [][]string{{"a", "b"}, {"slow"}, {"c", "d"}},
 			func(item []string) (Call[testValue], error) {
 				built[strings.Join(item, ",")]++
 				return adaptiveEachBuild(item)
@@ -249,7 +268,7 @@ func TestAdaptiveEachWarmCacheKeepsSplitMemosAndWholeParentReplayPrecedence(t *t
 	executor := Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 2}
 	items := [][]string{{"a", "b"}, {"slow"}}
 	for range 2 {
-		plan, outcomes, err := ExecuteAdaptiveJSONEach(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
+		plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 		if err != nil || len(plan) != 3 || len(outcomes) != 3 {
 			t.Fatalf("split cover: %v / %v / %v", plan, outcomes, err)
 		}
@@ -265,7 +284,7 @@ func TestAdaptiveEachWarmCacheKeepsSplitMemosAndWholeParentReplayPrecedence(t *t
 	if _, err := ExecuteJSON(t.Context(), executor, replay, call); err != nil {
 		t.Fatal(err)
 	}
-	plan, outcomes, err := ExecuteAdaptiveJSONEach(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
+	plan, outcomes, err := adaptiveCover(t.Context(), executor, p, items, adaptiveEachBuild, adaptiveBatchTestSplit)
 	if err != nil || len(plan) != 2 || len(outcomes) != 2 || outcomes[0].Value.Value != "replayed parent" || !outcomes[0].Cached {
 		t.Fatalf("parent did not supersede split: %v / %v / %v", plan, outcomes, err)
 	}
@@ -277,9 +296,8 @@ func (*adaptiveEachReplayProvider) Complete(context.Context, Prepared) (Completi
 	return Completion{Response: []byte(`{"value":"replayed parent"}`), FinishReason: FinishStop, ChoiceCount: 1, Metrics: Metrics{Attempts: 1}}, nil
 }
 
-// The results variant hands a terminal leaf back to its owner beside the
-// completed cover and keeps splitting the other items; the plain variant
-// keeps failing closed (the test below).
+// A terminal leaf is handed back to its owner beside the completed cover
+// while the other items keep splitting; the owner decides what it means.
 func TestAdaptiveEachResultsKeepTerminalLeafBesideCompletedCover(t *testing.T) {
 	p := &adaptiveEachProvider{atomic: true}
 	results, err := ExecuteAdaptiveJSONEachResults(t.Context(), Executor{BatchConcurrency: 2}, p,
@@ -310,15 +328,5 @@ func TestAdaptiveEachResultsKeepTerminalLeafBesideCompletedCover(t *testing.T) {
 		if p.requests[key] != 1 {
 			t.Fatalf("request %q made %d times: %v", key, p.requests[key], p.requests)
 		}
-	}
-}
-
-func TestAdaptiveEachTerminalFailureWaitsForSiblingsWithoutPartialCover(t *testing.T) {
-	p := &adaptiveEachProvider{atomic: true}
-	plan, outcomes, err := ExecuteAdaptiveJSONEach(t.Context(), Executor{BatchConcurrency: 2}, p,
-		[][]string{{"bad"}, {"good"}}, adaptiveEachBuild, adaptiveBatchTestSplit)
-	var itemErr *BatchItemError
-	if !errors.As(err, &itemErr) || itemErr.Index != 0 || plan != nil || outcomes != nil || p.requests["good"] != 1 {
-		t.Fatalf("terminal result: %v / %v / %v, calls %v", plan, outcomes, err, p.requests)
 	}
 }

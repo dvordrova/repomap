@@ -1,3 +1,21 @@
+## 2026-10-20 — the all-or-nothing llm executors are gone
+
+`ExecuteJSONBatch`, `ExecuteAdaptiveJSONBatch(WithAccounting)` and the plan
+form `ExecuteAdaptiveJSONEach` cancelled every sibling on the first failed
+item and returned one error for the lot. Nothing on the ordinary path called
+them: all twenty-odd stages run `ExecuteJSONEach` or
+`ExecuteAdaptiveJSONEachResults`, where a failed item is its own explicit
+outcome and its neighbours survive, as the constitution asks. Deleted with
+their private recorder, accounting ledger and `BatchItemError` (−640 lines);
+the pool, gate, memoized splits and caller-order observer replay stay where
+they lived, in the Each engine. The live properties their tests carried
+(parallelism bounded by `BatchConcurrency`, observers replayed in caller
+order, one exhausted 429 collapses the shared gate for the rest of the call
+and the next one, a semantic failure does not collapse it, cold/warm split
+memos keep the complete ordered cover) are now asserted on Each; the tests of
+the cancel-on-first-failure semantics itself were dropped with it.
+`adaptive_batch.go` is `adaptive_memo.go`: the failure-to-memo rules alone.
+
 ## 2026-10-20 — contracttest discovers each native fixture once more often
 
 The shared memos already covered Go facts, C parses, Python inputs and
