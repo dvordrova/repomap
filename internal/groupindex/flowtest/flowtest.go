@@ -170,9 +170,22 @@ func Check(t testing.TB, program programindex.Index, index groupindex.Index) {
 			t.Fatalf("part %q is %s, and holding a seed or an export is its only entry", g.Title, g.Lane)
 		}
 	}
+	// An area takes a role only when every part in it has it (owner,
+	// 2026-10-14): all entry parts make the entry area, all dependency
+	// parts the dependency area, and a mixed area is in the middle.
 	for _, container := range index.Containers {
-		if (container.Lane == groupindex.LaneTriggers) != slices.ContainsFunc(groupindex.ContainerGroups(index.Containers, container.ID), func(id string) bool { return lanes[id] == groupindex.LaneTriggers }) {
-			t.Fatalf("area %q is %s, and holding the entry's part is its only entry", container.Title, container.Lane)
+		groups := groupindex.ContainerGroups(index.Containers, container.ID)
+		all := func(lane groupindex.Lane) bool {
+			return len(groups) > 0 && !slices.ContainsFunc(groups, func(id string) bool { return lanes[id] != lane })
+		}
+		want := groupindex.LaneCore
+		if all(groupindex.LaneTriggers) {
+			want = groupindex.LaneTriggers
+		} else if all(groupindex.LaneDependencies) {
+			want = groupindex.LaneDependencies
+		}
+		if container.Lane != want {
+			t.Fatalf("area %q is %s, and only an area of entry parts alone is the entry (want %s)", container.Title, container.Lane, want)
 		}
 	}
 	hydrated, err := groupindex.OverlayFromIndex(index).Hydrate(program)

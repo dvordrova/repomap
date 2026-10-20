@@ -1,3 +1,16 @@
+## 2026-10-20 — flowtest's area rule follows the all-parts role
+
+`TestCumulativeGoExecutableSeedIsItsOwnRow` and `TestCumulativePythonMapOfParts`
+failed inside `flowtest.Check`, which required an area to be the entry
+whenever it held the entry part, the rule of 168b350f (GroupsIndex 19).
+f40add96 (owner, 2026-10-14) made an area take a role only when every part in
+it has it, and the Go `cmd` and Python `src/acme` areas hold the entry part
+beside middle parts, so the product rightly draws them as core. The check now
+mirrors the product rule: all entry parts make the entry area, all dependency
+parts the dependency area, anything mixed is in the middle. The expectation
+had drifted, not the product; `checkOneEntryPart` still holds the triggers
+lane to the one part holding the seed.
+
 ## 2026-10-20 — the C preset tests name strcasecmp by the host's header
 
 `TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests` and
