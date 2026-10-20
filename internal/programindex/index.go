@@ -2022,12 +2022,13 @@ func New(input Input) (Index, error) {
 	if err := resolveSameValuePatterns(index.Relations, pendingSameValues); err != nil {
 		return Index{}, err
 	}
+	arguments := newPatternArguments(index.Relations)
 	for position := range index.Relations {
 		reference, ok := pendingSourceArguments[index.Relations[position].ID]
 		if !ok {
 			continue
 		}
-		argumentID, err := resolvePatternArgumentReference(index.Relations, reference)
+		argumentID, err := arguments.resolve(reference)
 		if err != nil {
 			return Index{}, fmt.Errorf("program index: relation %q source argument: %w", index.Relations[position].SourceRef, err)
 		}
@@ -3479,37 +3480,72 @@ func patternArgumentReferenceKey(value PatternArgumentRefInput) string {
 	}, "\x00")
 }
 
-func resolvePatternArgumentReference(
-	relations []Relation,
-	reference PatternArgumentRefInput,
-) (string, error) {
+// patternArguments finds a pattern argument by an adapter's reference or by
+// its sealed ID through one index of the relations, where each lookup had
+// scanned every relation (orca's ProgramIndex spent over 20 minutes there,
+// 2026-10-20). It keeps positions, so a lookup reads the argument as it is
+// now, and the first argument in relation order for an ID, as the scan did.
+type patternArguments struct {
+	relations []Relation
+	byRef     map[patternArgumentRefKey][]patternArgumentAt
+	byID      map[string]patternArgumentAt
+}
+
+type patternArgumentRefKey struct {
+	relation, pattern, keyword string
+	position                   int
+}
+
+type patternArgumentAt struct{ relation, pattern, argument int }
+
+func newPatternArguments(relations []Relation) *patternArguments {
+	index := &patternArguments{relations: relations, byRef: map[patternArgumentRefKey][]patternArgumentAt{}, byID: map[string]patternArgumentAt{}}
+	for relationPosition, relation := range relations {
+		for patternPosition, pattern := range relation.Patterns {
+			for argumentPosition, argument := range pattern.Arguments {
+				at := patternArgumentAt{relationPosition, patternPosition, argumentPosition}
+				key := patternArgumentRefKey{relation: relation.SourceRef, pattern: pattern.SourceRef, keyword: argument.Keyword, position: argument.Position}
+				index.byRef[key] = append(index.byRef[key], at)
+				if _, seen := index.byID[argument.ID]; !seen {
+					index.byID[argument.ID] = at
+				}
+			}
+		}
+	}
+	return index
+}
+
+func (index *patternArguments) argument(at patternArgumentAt) PatternArgument {
+	return index.relations[at.relation].Patterns[at.pattern].Arguments[at.argument]
+}
+
+// resolve is the sealed ID of the one argument a reference names: refused
+// when the reference is invalid, names none, or names several.
+func (index *patternArguments) resolve(reference PatternArgumentRefInput) (string, error) {
 	if !validPatternArgumentRefInput(reference) {
 		return "", fmt.Errorf("invalid reference")
 	}
 	argumentID := ""
-	for _, relation := range relations {
-		if relation.SourceRef != reference.RelationSourceRef {
-			continue
+	for _, at := range index.byRef[patternArgumentRefKey{relation: reference.RelationSourceRef, pattern: reference.PatternSourceRef, keyword: reference.Keyword, position: reference.Position}] {
+		id := index.argument(at).ID
+		if argumentID != "" && argumentID != id {
+			return "", fmt.Errorf("ambiguous reference")
 		}
-		for _, pattern := range relation.Patterns {
-			if pattern.SourceRef != reference.PatternSourceRef {
-				continue
-			}
-			for _, argument := range pattern.Arguments {
-				if argument.Position != reference.Position || argument.Keyword != reference.Keyword {
-					continue
-				}
-				if argumentID != "" && argumentID != argument.ID {
-					return "", fmt.Errorf("ambiguous reference")
-				}
-				argumentID = argument.ID
-			}
-		}
+		argumentID = id
 	}
 	if argumentID == "" {
 		return "", fmt.Errorf("unknown reference")
 	}
 	return argumentID, nil
+}
+
+// withID is the relation and argument of a sealed argument ID.
+func (index *patternArguments) withID(id string) (Relation, PatternArgument, bool) {
+	at, ok := index.byID[id]
+	if !ok {
+		return Relation{}, PatternArgument{}, false
+	}
+	return index.relations[at.relation], index.argument(at), true
 }
 
 // resolveSameValuePatterns gives each pattern that reads the same value as
@@ -3585,6 +3621,7 @@ func resolvePatternValueSourceArgumentReferences(
 	pending map[string]pendingPatternValueSourceArguments,
 ) error {
 	resolvedPending := make(map[string]struct{}, len(pending))
+	arguments := newPatternArguments(relations)
 	for relationPosition := range relations {
 		for patternPosition := range relations[relationPosition].Patterns {
 			pattern := &relations[relationPosition].Patterns[patternPosition]
@@ -3598,14 +3635,14 @@ func resolvePatternValueSourceArgumentReferences(
 					}
 					ids := make([]string, 0, len(value.Refs))
 					for _, ref := range value.Refs {
-						id, err := resolvePatternArgumentReference(relations, ref)
+						id, err := arguments.resolve(ref)
 						if err != nil {
 							return fmt.Errorf("program index: pattern value source argument: %w", err)
 						}
 						if id == argument.ID {
 							return fmt.Errorf("program index: pattern value candidate cites its owning argument")
 						}
-						sourceRelation, sourceArgument, ok := patternArgumentAuthorityWithID(relations, id)
+						sourceRelation, sourceArgument, ok := arguments.withID(id)
 						if !ok || sourceRelation.Resolution != ResolutionExact || len(sourceRelation.ToIDs) != 1 ||
 							sourceRelation.TargetsOmitted != 0 || !samePatternValue(candidate.Kind, candidate.Value, candidate.Parts, sourceArgument) {
 							return fmt.Errorf("program index: actual value source argument has incompatible authority")
@@ -3634,19 +3671,6 @@ func resolvePatternValueSourceArgumentReferences(
 		return fmt.Errorf("program index: unresolved pending pattern value candidate")
 	}
 	return nil
-}
-
-func patternArgumentAuthorityWithID(relations []Relation, id string) (Relation, PatternArgument, bool) {
-	for _, relation := range relations {
-		for _, pattern := range relation.Patterns {
-			for _, argument := range pattern.Arguments {
-				if argument.ID == id {
-					return relation, argument, true
-				}
-			}
-		}
-	}
-	return Relation{}, PatternArgument{}, false
 }
 
 func samePatternValue(kind PatternValueKind, value string, parts []PatternPart, source PatternArgument) bool {

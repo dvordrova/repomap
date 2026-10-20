@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/nativeproc"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
@@ -1157,11 +1158,18 @@ func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequ
 	if err != nil {
 		return helperOutput{}, fmt.Errorf("%w: Node.js executable is required: %w", ErrTypeScriptCompilerUnavailable, err)
 	}
-	command := exec.CommandContext(ctx, nodePath, "--input-type=module", "--eval", nodeHelper)
+	helperPath, removeHelper, err := nativeproc.SourceFile("repomap-jsts-*.mjs", nodeHelper)
+	if err != nil {
+		return helperOutput{}, fmt.Errorf("jsts project: %w", err)
+	}
+	defer removeHelper()
+	nodeOptions, supplied := os.LookupEnv("NODE_OPTIONS")
+	arguments := append(helperHeapArguments(nodeOptions), helperPath)
+	command := exec.CommandContext(ctx, nodePath, arguments...)
 	command.Dir = repositoryRoot
 	command.Env = []string{"PATH=" + os.Getenv("PATH")}
-	if options, supplied := os.LookupEnv("NODE_OPTIONS"); supplied {
-		command.Env = append(command.Env, "NODE_OPTIONS="+options)
+	if supplied {
+		command.Env = append(command.Env, "NODE_OPTIONS="+nodeOptions)
 	}
 	command.Stdin = bytes.NewReader(encoded)
 	stdout := &bytes.Buffer{}

@@ -73,6 +73,37 @@ func TestCumulativeJSTSNativeNodeOptionsReachRuntimeWithoutProviderCredentials(t
 	if err := os.Remove(receipt); err != nil {
 		t.Fatal(err)
 	}
+	// Without a heap setting of the owner's, the helper runs with half the
+	// machine's memory; with one, the owner's stands (helperHeapArguments).
+	heapSeen := func(options string) int64 {
+		t.Helper()
+		t.Setenv("NODE_OPTIONS", options)
+		if _, err := DiscoverSelected(t.Context(), repository, root, "jsts:"+project+"package.json"); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := os.ReadFile(receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var seen struct {
+			Heap int64 `json:"heap"`
+		}
+		if err := json.Unmarshal(encoded, &seen); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(receipt); err != nil {
+			t.Fatal(err)
+		}
+		return seen.Heap
+	}
+	if share := physicalMemory() / 2; share > 0 {
+		if heap := heapSeen("--require " + strconv.Quote(preload)); uint64(heap) < share*9/10 {
+			t.Fatalf("helper heap %d MB, want about half the machine's %d MB", heap>>20, physicalMemory()>>20)
+		}
+	}
+	if heap := heapSeen("--max_old_space_size=1024 --require " + strconv.Quote(preload)); heap < 1024<<20 || heap > 1536<<20 {
+		t.Fatalf("the owner's heap setting did not stand: %d MB", heap>>20)
+	}
 	t.Setenv("NODE_OPTIONS", "--repomap-invalid-native-option")
 	_, err = DiscoverSelected(t.Context(), repository, root, "jsts:"+project+"package.json")
 	if err == nil || !strings.Contains(err.Error(), "not allowed in NODE_OPTIONS") {
@@ -80,5 +111,27 @@ func TestCumulativeJSTSNativeNodeOptionsReachRuntimeWithoutProviderCredentials(t
 	}
 	if _, err := os.Stat(receipt); !os.IsNotExist(err) {
 		t.Fatalf("invalid Node option reached the native helper: %v", err)
+	}
+}
+
+func TestHelperHeapIsHalfTheMachineUnlessNodeOptionsSetsIt(t *testing.T) {
+	for _, options := range []string{"--max-old-space-size=2048", "--require x --max_old_space_size=512"} {
+		if got := helperHeapArguments(options); got != nil {
+			t.Fatalf("NODE_OPTIONS %q kept, yet the helper adds %q", options, got)
+		}
+	}
+	memory := physicalMemory()
+	got := helperHeapArguments("--require x")
+	if memory == 0 {
+		if got != nil {
+			t.Fatalf("unknown memory, yet a heap setting %q", got)
+		}
+		return
+	}
+	if want := []string{"--max-old-space-size=" + strconv.FormatUint(memory/2/(1<<20), 10)}; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("helper heap arguments = %q, want %q", got, want)
+	}
+	if memory < 1<<30 {
+		t.Fatalf("physical memory %d bytes is not a machine's", memory)
 	}
 }

@@ -101,6 +101,73 @@ cumulative JS test `TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract`
 (`new Date` default-library proof) fails on clean HEAD under node 21 as well;
 it is not from this change.
 
+## 2026-10-20 — orca's JS/TS target completes
+
+orca (`jsts:package.json`: an Electron app, three tsconfig project
+references, 15,493 repository source files) could not be analysed. The node
+helper ran out of heap at the default limit after 45 s, and at 8 GB after
+130 s. HEAD 3e08c07b does the same. It was not a loop: a stage-by-stage heap
+probe showed steady growth.
+
+Fixes, each keeping the output identical:
+
+- **Code lines.** `codeLineSet` called `node.getChildren()`, which kept every
+  file's token tree alive: 3 GB. It now walks `forEachChild` and scans only
+  the gaps between child nodes. The line sets are the same on all 17,656 orca
+  files and on the fixture, bee-queue and gop files.
+- **A program holding no file first is released.** orca's
+  `tsconfig.relay.json` (1,570 files, ~250 MB) owns no file the other
+  programs don't.
+- **Control characters in type text are escaped.** TypeScript leaves DEL raw
+  in a literal type (`\u007f` in a test's template literal), and the index
+  then refused the signature.
+- **Heap size.** The helper now runs with half the machine's physical memory
+  as heap unless `NODE_OPTIONS` sets one. This was decided with a skeptic
+  (JSTS). V8's 4.3 GB default here is an engine heuristic; orca needs about
+  13 GB.
+- **ProgramIndex lookup.** `programindex.New` resolved each pattern-argument
+  reference by scanning every relation, and spent over 20 minutes there on
+  orca. It now builds one index (`patternArguments`).
+
+Receipt, without `NODE_OPTIONS`:
+
+- JS/TS materialization completes in 25 m 44 s (the helper ~15 m, peak
+  10.4–12.3 GB), with 385 product surfaces.
+- The run's next stage then went 40 minutes without a log line at ~20 GB,
+  and the one-hour timeout cancelled the run before the report.
+- A profiling build (`-tags profile`) measured that stage: 11 minutes of
+  it spent 316 s in `jstsproject.Result.Validate` (208 s from
+  `TargetFromResult`, 107 s from `BuildInputFromResult`) and 73 s in
+  `Result.Snapshot`; the rest was garbage collection.
+- One run validates the same sealed result about seven times: `Seal`,
+  `TargetFromResult` at three call sites, `BuildInputFromResult`,
+  `BuildDependenciesFromResult` and `ValidateProgramIndex`. Each pass
+  re-encodes, decodes, deep-compares and hashes the whole multi-gigabyte
+  result, 70–100 s apiece on orca. `Snapshot` deep-copies it through JSON
+  twice more.
+- Not changed here: where a result is trusted within one run is a
+  trust-boundary decision for `internal/run`, recorded for its own change.
+- The profiled run then went through: base ProgramIndex 466,388 objects
+  and 1,434,960 relations (`program-index.json` 1.3 GB), 72 minutes, peak
+  24.5 GB. It stopped at the facts: orca's test literal
+  `"local\u0000repo-1"` (a NUL as key separator) became a fact value, and
+  facts refuse a NUL in any text. A fact now writes a source NUL as its
+  escape `\u0000` in its path, value, text and registration values; all
+  other text is kept byte for byte. Facts built from the saved index:
+  110,755, none refused.
+- **Final run, no `NODE_OPTIONS`, plain build:** exit 0 in 37 m 20 s, peak
+  25.3 GB resident, target coverage 1/1 complete, report generated.
+  - Native analysis took 15 m 41 s and program projection 9 m 39 s (the
+    repeated validations above); artifacts 1 m 40 s, report publication
+    2 m 50 s.
+  - Artifacts: `program-index.json` 1.3 GB, `report.html` 55 MB,
+    `report.json` 42 MB, `groups-index.json` 42 MB, `facts.json` 29 MB.
+  - Headless Chromium over a loopback server opened the report in 9.8 s
+    with no page or console error.
+  - Seen, not changed: many of the program's entries are `*.test` files,
+    so orca's tests (Vitest) are not recognised as test sources for this
+    target.
+
 ## 2026-10-19 — Python calls a subclass runs go to its methods
 
 Python used to resolve a call on a value of a known class exactly to that
