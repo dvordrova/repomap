@@ -1,3 +1,16 @@
+## 2026-10-20 — the cproject index fixture asks glibc for POSIX
+
+The inline kvd program of `build_test.go` (`TestIndexKeepsLinkerIdentities`
+and its four siblings) uses `siginfo_t` and `sa_sigaction` under
+`CFLAGS = -std=c99`. macOS headers expose them regardless; glibc under strict
+C99 hides them, so clang on CI's Ubuntu refused `kvd.c` ("unknown type name
+'siginfo_t'", "variable has incomplete type 'struct sigaction'") and the five
+tests failed before any assertion. The fixture's Makefile now says
+`-D_POSIX_C_SOURCE=200809L`, as a real program with that code must on glibc;
+the extracted units parse on macOS with and without the macro. The checked-in
+`testdata/repositories/c` fixture already builds with `-D_DEFAULT_SOURCE` and
+was never the failing one.
+
 ## 2026-10-20 — the project's Go is 1.27
 
 Owner decision: the version in PATH, not the one go.mod kept. `go 1.27` in

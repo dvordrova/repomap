@@ -16,7 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 )
 
-const indexMakefile = `CFLAGS = -std=c99 -O2 -Wall
+const indexMakefile = `CFLAGS = -std=c99 -O2 -Wall -D_POSIX_C_SOURCE=200809L
 
 all: kvd kvcli
 
