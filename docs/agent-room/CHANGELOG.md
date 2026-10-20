@@ -1,3 +1,13 @@
+## 2026-10-20 — the component flow DOM test reads its script from a file
+
+`TestComponentFlowDOMMatchesThePreviousCompleteReading` passed the reading
+column's factory and the UI vocabulary to `node -e`, one argv string past
+Linux's 128 KiB cap ("fork/exec node: argument list too long"), the same
+cause as the helpers' E2BIG. It now writes the script with
+`nativeproc.SourceFile` and runs `node <file>`. The other `node -e` tests
+(catalog disclosure, map history, the run package's C projection) stay under
+the cap and passed on the same CI run.
+
 ## 2026-10-20 — an inferred tool program resolves modules as its compiler does
 
 `TestCumulativeJSTSEmptyConfigKeepsExplicitToolSource` expected `nodenext`

@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/nativeproc"
 )
 
 // A DOM with the child-combinator selectors the component reading uses
@@ -200,7 +202,14 @@ function write(node){
 }
 process.stdout.write(into.children.map(write).join(''));
 `
-	encoded, err := exec.CommandContext(t.Context(), node, "-e", script).CombinedOutput()
+	// The script holds the column's factory and the vocabulary: larger than
+	// one argv string may be on Linux, so Node reads it from a file.
+	scriptPath, remove, err := nativeproc.SourceFile("flow-display-*.js", script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remove()
+	encoded, err := exec.CommandContext(t.Context(), node, scriptPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("selected flow DOM: %v\n%s", err, encoded)
 	}
