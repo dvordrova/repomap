@@ -1,3 +1,12 @@
+## 2026-10-20 — x/tools v0.52.0 reads Go 1.27.2 export data
+
+CI's `go-version: '1.27'` installs go1.27.2, whose export data (version 5)
+`golang.org/x/tools v0.47.0` could not read, so every Go fixture analysis
+failed on CI (58 tests in contracttest, goadapter, run, surfacediscovery)
+while local go1.27.0 showed nothing. `go get golang.org/x/tools@v0.52.0`
+(x/mod v0.42.0, x/sync v0.24.0 follow); goadapter, surfacediscovery, run,
+llm and contracttest green locally.
+
 ## 2026-10-20 — the component flow DOM test reads its script from a file
 
 `TestComponentFlowDOMMatchesThePreviousCompleteReading` passed the reading
