@@ -252,6 +252,14 @@ try {
           astAPI.isConstructorDeclaration(node) || astAPI.isGetAccessorDeclaration(node) ||
           astAPI.isSetAccessorDeclaration(node) || astAPI.isFunctionExpression(node) ||
           astAPI.isArrowFunction(node),
+        isClassLike: astAPI.isClassLikeDeclaration,
+        isMethodSignature: astAPI.isMethodSignatureDeclaration,
+        isTypeAssertionExpression: astAPI.isTypeAssertion,
+        isIterationStatement: (node) => astAPI.isForStatement(node) || astAPI.isForInStatement(node) ||
+          astAPI.isForOfStatement(node) || astAPI.isWhileStatement(node) || astAPI.isDoStatement(node),
+        isOptionalChain: (node) => Boolean(node && (node.flags & astAPI.NodeFlags.OptionalChain) &&
+          (astAPI.isPropertyAccessExpression(node) || astAPI.isElementAccessExpression(node) ||
+            astAPI.isCallExpression(node) || astAPI.isNonNullExpression(node))),
       }
       nativeAPI = new syncAPI.API({ cwd: root })
     }
@@ -937,6 +945,16 @@ function namedParent(node) {
   return undefined
 }
 
+// openingBraceStart is where a class's or interface's body opens: its
+// members start right after the brace in both compilers, and the native one
+// has no getChildren to find the token by.
+function openingBraceStart(node, source) {
+  const pos = node.members?.pos
+  if (typeof pos === "number" && pos > 0 && source.text[pos - 1] === "{") return pos - 1
+  const brace = node.getChildren?.(source)?.find((child) => child.kind === ts.SyntaxKind.OpenBraceToken)
+  return brace ? brace.getStart(source) : undefined
+}
+
 function signatureOf(node) {
   const safeTypeText = (value) => {
     value = escapeControls(value.split(slash(rootPrefix)).join(""))
@@ -951,9 +969,9 @@ function signatureOf(node) {
     const typeHeader = ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)
     if (typeHeader || ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent)) {
       const source = node.getSourceFile()
-      const openingBrace = typeHeader ? node.getChildren(source).find((child) => child.kind === ts.SyntaxKind.OpenBraceToken) : undefined
-      if (typeHeader && !openingBrace) return ""
-      const end = typeHeader ? openingBrace.getStart(source) : node.end
+      const braceStart = typeHeader ? openingBraceStart(node, source) : undefined
+      if (typeHeader && braceStart === undefined) return ""
+      const end = typeHeader ? braceStart : node.end
       const literals = []
       const visit = (child) => {
         if (child.getStart(source) >= end) return
@@ -1183,7 +1201,7 @@ function calledOwnParameter(node) {
   if (!checker || !ts.isIdentifier(node.expression)) return 0
   let symbol
   try { symbol = checker.getSymbolAtLocation(node.expression) } catch {}
-  const declaration = symbol?.valueDeclaration
+  const declaration = resolvedNode(symbol?.valueDeclaration)
   if (!declaration || !ts.isParameter(declaration) || !ts.isIdentifier(declaration.name) || declaration.dotDotDotToken) return 0
   let owner = node.parent
   while (owner && !ts.isFunctionLike(owner)) owner = owner.parent
@@ -1205,10 +1223,23 @@ function calledOwnParameter(node) {
   return filled.indexOf(declaration) + 1
 }
 
+// hasModifier says whether a node carries the modifier keyword, read from
+// its modifiers in both compilers (the native one has no
+// getCombinedModifierFlags).
+function hasModifier(node, kind) {
+  return Boolean(node?.modifiers?.some((modifier) => modifier.kind === kind))
+}
+
+// resolvedNode is the node a declaration reference stands for: the native
+// compiler hands lazy references, the legacy one the nodes themselves.
+function resolvedNode(declaration) {
+  return typeof declaration?.resolve === "function" ? declaration.resolve() : declaration
+}
+
 function symbolDeclarations(symbol) {
   const result = []
   for (const declaration of symbol?.declarations || []) {
-    const node = typeof declaration?.resolve === "function" ? declaration.resolve() : declaration
+    const node = resolvedNode(declaration)
     if (node) result.push(node)
   }
   return result
@@ -1295,15 +1326,17 @@ function ownFunction(node) {
 }
 
 function storedVariable(symbol) {
-  const declarations = symbol?.declarations || []
+  // The native compiler hands a symbol's declarations as lazy references;
+  // symbolDeclarations resolves them to nodes (TypeScript 7.0.2 otherwise
+  // threw on `declaration.name`).
+  const declarations = symbolDeclarations(symbol)
   if (declarations.length !== 1) return undefined
   const declaration = declarations[0]
   if (!ts.isVariableDeclaration(declaration) || !ts.isIdentifier(declaration.name)) return undefined
   const list = declaration.parent, statement = list?.parent
   if (!list || !ts.isVariableDeclarationList(list) || !statement || !ts.isVariableStatement(statement)) return undefined
   const sourceFile = declaration.getSourceFile()
-  if (sourceFile.isDeclarationFile || (declaration.flags & ts.NodeFlags.Ambient) ||
-      (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Ambient)) return undefined
+  if (sourceFile.isDeclarationFile || (declaration.flags & ts.NodeFlags.Ambient) || hasModifier(statement, ts.SyntaxKind.DeclareKeyword)) return undefined
   for (let current = statement.parent; current && !ts.isSourceFile(current); current = current.parent) {
     if (ts.isModuleBlock(current)) return undefined
   }
@@ -1738,7 +1771,7 @@ function constructorRefs(leaf) {
     if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
   } catch {}
   if (!(symbol?.flags & ts.SymbolFlags.Class)) return []
-  return (symbol.members?.get(ts.InternalSymbolName.Constructor)?.declarations || [])
+  return symbolDeclarations(symbol.members?.get(ts.InternalSymbolName.Constructor))
     .filter((declaration) => declarationRefByNode.has(declaration))
     .map((declaration) => declarationRefByNode.get(declaration))
     .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
@@ -3306,7 +3339,7 @@ function implementationsOf(checker, type) {
   if (implementingClasses.has(type)) return implementingClasses.get(type)
   const found = []
   for (const { node: classNode } of repositoryClasses) {
-    if (classNode.typeParameters?.length || (ts.getCombinedModifierFlags(classNode) & ts.ModifierFlags.Abstract)) continue
+    if (classNode.typeParameters?.length || hasModifier(classNode, ts.SyntaxKind.AbstractKeyword)) continue
     let instance
     try { instance = checker.getDeclaredTypeOfSymbol(checker.getSymbolAtLocation(classNode.name)) } catch {}
     if (instance && assignableTo(checker, instance, type)) found.push(classNode)

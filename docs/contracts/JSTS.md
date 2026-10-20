@@ -371,6 +371,16 @@ type-member check runs against a prepared native `tsc` on PATH as well as the
 existing legacy compiler check, retaining the original field signatures,
 owners and question evidence. The native regression was reproduced and checked
 with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
+Three native differences the helper adapts (2026-10-20, TypeScript 7.0.2): a
+symbol's `declarations` and `valueDeclaration` are lazy references, read
+through `symbolDeclarations`/`resolvedNode` before any property; there is no
+`getCombinedModifierFlags`, so `declare` and `abstract` are read from the
+node's own modifiers (`hasModifier`); nodes have no `getChildren`, so a
+class's or interface's body brace is found as `members.pos - 1`
+(`openingBraceStart`). Predicates the native AST names differently
+(`isClassLike`, `isMethodSignature`, `isTypeAssertionExpression`,
+`isIterationStatement`, `isOptionalChain`) are shimmed where the native `ts`
+object is assembled.
 
 The helper reaches Node as a temporary module file written for the one call
 (`node <file>.mjs`), never as an `--eval` argument: Linux caps one argv string

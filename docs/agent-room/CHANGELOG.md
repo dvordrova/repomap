@@ -1,3 +1,22 @@
+## 2026-10-20 — the JS/TS helper runs on the native TypeScript 7.0.2 again
+
+With node 24 and typescript 7.0.2 the helper failed on the cumulative fixture
+(`Cannot read properties of undefined (reading 'kind')`), and with node 21 the
+native test only skipped, so nothing caught it. Four native differences,
+all in code the last two commits added or in paths they reach: a symbol's
+`declarations`/`valueDeclaration` are lazy references (`storedVariable`,
+the constructor lookup and `calledOwnParameter` now resolve them like
+`symbolDeclarations` already did); `getCombinedModifierFlags` does not exist
+(`declare`/`abstract` are read from the node's modifiers); five predicates
+carry other names (`isClassLike`, `isMethodSignature`,
+`isTypeAssertionExpression`, `isIterationStatement`, `isOptionalChain`,
+shimmed with the existing ones); and nodes have no `getChildren`, which
+`signatureOf` used to find a class's or interface's body brace: the throw was
+swallowed by its `try` and every class and interface header was empty. The
+brace is `members.pos - 1` in both compilers. The native type-members test
+passes under node 24; the legacy suite under node 21 keeps its two
+pre-existing default-library failures.
+
 ## 2026-10-20 — 48 functions nothing could reach are removed
 
 `deadcode -test` (x/tools) listed functions unreachable from the binary and
