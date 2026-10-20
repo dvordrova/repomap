@@ -1,3 +1,20 @@
+## 2026-10-20 — the jstsproject tests isolate Node with a wrapper, not a hard link
+
+`isolatedNodeEnvironment` hard-linked the real `node` binary into an empty
+prefix so that `process.execPath` would move there. A hard link fails across
+file systems (`t.TempDir()` on another volume) and runs a dynamically linked
+Node away from its libraries; a plain symlink is no answer, because Node
+resolves it (`process.execPath` stays in the global installation, whose
+`lib/node_modules/typescript` then leaks into every "missing compiler"
+check). Now the prefix's `bin/node` is a shell wrapper that execs the real
+binary where it is with `--require <prefix>/lib/execpath.cjs`, a one-line
+preload assigning `process.execPath` to the wrapper. The helper's
+environment lookups therefore see only what the test puts in the prefix.
+Checked under node 24.19.0 with global TypeScript 7.0.2 (the "missing"
+case fails closed, so the global compiler is hidden) and under node 21.6.1
+with 6.0.3 (the node-prefix and path-tsc variants find the compiler the
+test placed). Windows skips: the wrapper is POSIX shell.
+
 ## 2026-10-20 — the all-or-nothing llm executors are gone
 
 `ExecuteJSONBatch`, `ExecuteAdaptiveJSONBatch(WithAccounting)` and the plan

@@ -1,11 +1,13 @@
 package jstsproject
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -64,11 +66,19 @@ func TestCumulativeJSTSNativeCompilerTypeMembers(t *testing.T) {
 	assertCumulativeJSTSValueReads(t, result, index)
 }
 
-// A real Node executable in an empty prefix makes missing-compiler checks
-// independent of the machine's global installation. The hard link avoids a
-// large copied runtime and, unlike a symlink, keeps process.execPath local.
+// isolatedNodeEnvironment makes the helper's compiler checks independent of
+// the machine's global installation: PATH holds one empty prefix whose
+// `node` is a wrapper around the real executable with a preload that moves
+// `process.execPath` into the prefix, so the environment lookups
+// (`<prefix>/lib/node_modules/typescript`, the first `tsc` on PATH) see only
+// what the test puts there. The real binary runs from its own installation:
+// nothing is copied or linked, so a dynamically linked Node and a temporary
+// directory on another file system both work.
 func isolatedNodeEnvironment(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the isolated Node prefix is a POSIX shell wrapper")
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node is required to execute the embedded helper")
@@ -79,14 +89,31 @@ func isolatedNodeEnvironment(t *testing.T) string {
 	}
 	prefix := t.TempDir()
 	bin := filepath.Join(prefix, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
+	lib := filepath.Join(prefix, "lib")
+	for _, directory := range []string{bin, lib} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapper := filepath.Join(bin, "node")
+	preload := filepath.Join(lib, "execpath.cjs")
+	execPath, err := json.Marshal(wrapper)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Link(node, filepath.Join(bin, filepath.Base(node))); err != nil {
+	if err := os.WriteFile(preload, []byte("process.execPath = "+string(execPath)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nexec " + shellQuote(node) + " --require " + shellQuote(preload) + " \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
 	return prefix
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func TestCumulativeJSTSExplicitScriptsSurviveSiblingOnlyConfig(t *testing.T) {
