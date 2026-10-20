@@ -1,3 +1,11 @@
+## 2026-10-20 — the project's Go is 1.27
+
+Owner decision: the version in PATH, not the one go.mod kept. `go 1.27` in
+go.mod and `go-version: '1.27'` in CI; tidy only dropped stale sums. A
+`toolchain` line would have changed nothing for a newer local Go. The
+linters in `~/go/bin` built under 1.26 refuse 1.27 sources and are to be
+rebuilt when `make lint` lands.
+
 ## 2026-10-20 — the jstsproject tests isolate Node with a wrapper, not a hard link
 
 `isolatedNodeEnvironment` hard-linked the real `node` binary into an empty
