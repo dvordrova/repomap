@@ -247,9 +247,10 @@ func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
 			t.Fatalf("the connect was offered the handler-less input %q among %q", values, offered)
 		}
 	}
+	strcasecmp := platformSymbol(t, pair.client, "strcasecmp")
 	for _, call := range []string{
-		`string.h.strcasecmp in main: 1: element "1" of parameter #2 argv of main; 2: "--raw"`,
-		`string.h.strcasecmp in main: 1: field name of result of calling lookupCommand(argv[first]); 2: "bgsave"`,
+		strcasecmp + ` in main: 1: element "1" of parameter #2 argv of main; 2: "--raw"`,
+		strcasecmp + ` in main: 1: field name of result of calling lookupCommand(argv[first]); 2: "bgsave"`,
 	} {
 		if !slices.Contains(entered, call) {
 			t.Fatalf("%s was not asked on its own: %v", call, entered)

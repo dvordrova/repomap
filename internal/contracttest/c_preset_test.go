@@ -91,10 +91,11 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	kept := slices.Clone(preset.kept)
 	tables := slices.Clone(preset.tables)
 	preset.mu.Unlock()
+	strcasecmp := platformSymbol(t, index, "strcasecmp")
 	for _, call := range []string{
 		`string.h.strcmp in main: 1: element "1" of parameter #2 argv of main; 2: "--symbols"`,
-		`string.h.strcasecmp in loadConfig: 1: element "0" of result of calling splitLine(line, &words); 2: "port"`,
-		`string.h.strcasecmp in loadConfig: 1: element "0" of result of calling splitLine(line, &words); 2: "dbfilename"`,
+		strcasecmp + ` in loadConfig: 1: element "0" of result of calling splitLine(line, &words); 2: "port"`,
+		strcasecmp + ` in loadConfig: 1: element "0" of result of calling splitLine(line, &words); 2: "dbfilename"`,
 	} {
 		if !slices.Contains(entered, call) {
 			t.Fatalf("%s was not asked what its words become: %v", call, entered)
@@ -802,4 +803,20 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 		}
 		return decide(key, question)
 	}}
+}
+
+// platformSymbol is the name the host's platform view gives a library
+// function: the header the repository includes on the way to its declaration
+// and the name. strcasecmp is declared in strings.h, which glibc's string.h
+// includes and macOS's reaches only through private headers, so each host
+// names it differently (C, native tooling and platform view).
+func platformSymbol(t *testing.T, index programindex.Index, name string) string {
+	t.Helper()
+	for _, object := range index.Objects {
+		if object.Kind == programindex.ObjectExternalSymbol && object.Name == name && object.External != nil {
+			return object.External.PackagePath + "." + name
+		}
+	}
+	t.Fatalf("%s is not an external symbol of %s", name, index.Target.Name)
+	return ""
 }

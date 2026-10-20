@@ -1,3 +1,18 @@
+## 2026-10-20 — the C preset tests name strcasecmp by the host's header
+
+`TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests` and
+`TestCFixturePresetReadingNamesTheClientsOptionsAndCommands` expected the word
+call `string.h.strcasecmp`. A library function's package is the header the
+repository includes on the way to its declaration under the host build's
+view (`packageOf` walks clang's include tree up to the first directive a
+corpus file wrote): on macOS `<string.h>` reaches the declaring `_strings.h`
+through private headers before the written `<strings.h>` is entered, so the
+name is `string.h.strcasecmp`; on CI's Ubuntu the walk ends at the written
+`<strings.h>` and the name is `strings.h.strcasecmp`. Both are the platform
+fact the local build view promises (2026-10-05), so the tests read the name
+from the sealed index (`platformSymbol`) and keep asserting what they are
+for: which word calls are asked on their own, with which argument provenance.
+
 ## 2026-10-20 — the cproject index fixture asks glibc for POSIX
 
 The inline kvd program of `build_test.go` (`TestIndexKeepsLinkerIdentities`
