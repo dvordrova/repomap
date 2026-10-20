@@ -2215,13 +2215,6 @@ func validPatternArgumentSelector(position int, keyword string) bool {
 	return position > 0 && keyword == "" || position == 0 && validText(keyword)
 }
 
-func patternArgumentKey(argument PatternArgument) string {
-	if argument.Position > 0 {
-		return "position:" + strconv.Itoa(argument.Position)
-	}
-	return "keyword:" + argument.Keyword
-}
-
 func comparePatternArguments(left, right PatternArgument) int {
 	if left.Position > 0 && right.Position == 0 {
 		return -1
@@ -2247,20 +2240,6 @@ func structuralEdgeKey(edge StructuralEdge) string {
 		string(edge.RelationKind), string(edge.Resolution), edge.ArgumentID, edge.ValueCandidateID,
 		edge.SourceArgumentID, string(edge.ValueResolution), string(edge.ValueSourceKind),
 	}, "\x00")
-}
-
-func patternValueCandidateIdentity(argumentID string, value PatternValueCandidate) string {
-	fields := []string{
-		argumentID, string(value.Kind), value.Value, string(value.Resolution), string(value.SourceKind),
-	}
-	for _, part := range value.Parts {
-		fields = append(fields, string(part.Kind), part.Text)
-	}
-	fields = append(fields, "source-objects")
-	fields = append(fields, value.SourceObjectIDs...)
-	fields = append(fields, "source-arguments")
-	fields = append(fields, value.SourceArgumentIDs...)
-	return stableID("program-pattern-value", fields...)
 }
 
 // compileContainers resolves the group keys a container names. A container
@@ -2668,16 +2647,6 @@ func artifactDigest(payload Overlay) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-func stableID(prefix string, fields ...string) string {
-	digest := sha256.New()
-	for _, field := range append([]string{prefix}, fields...) {
-		_, _ = digest.Write([]byte(strconv.Itoa(len(field))))
-		_, _ = digest.Write([]byte{0})
-		_, _ = digest.Write([]byte(field))
-	}
-	return prefix + "-" + hex.EncodeToString(digest.Sum(nil))
-}
-
 func validText(value string) bool {
 	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false
@@ -2761,12 +2730,6 @@ func subjectIDLess(left, right string) bool {
 	return leftPattern < rightPattern
 }
 
-// SubjectIDLess orders the compact object and pattern identities used by the
-// shared graph and by qualified provider references.
-func SubjectIDLess(left, right string) bool {
-	return subjectIDLess(left, right)
-}
-
 func validRelationID(value string) bool {
 	return validCompactID(value, "e")
 }
@@ -2800,10 +2763,6 @@ func validScopedCompactID(value, outerPrefix, innerPrefix string) bool {
 
 func validTargetID(value string) bool {
 	return validCompactID(value, "t")
-}
-
-func validPrefixedSHA256(value, prefix string) bool {
-	return strings.HasPrefix(value, prefix) && validSHA256(strings.TrimPrefix(value, prefix))
 }
 
 func validSHA256(value string) bool {

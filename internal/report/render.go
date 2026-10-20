@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -90,11 +89,6 @@ func renderValidatedHTML(data *ReportData, options RenderOptions) ([]byte, error
 	return rendered, err
 }
 
-func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
-	rendered, _, err := buildHTMLWithOptionsDiagnostics(data, options)
-	return rendered, err
-}
-
 func buildHTMLWithOptionsDiagnostics(
 	data *ReportData,
 	options RenderOptions,
@@ -119,11 +113,6 @@ func buildHTMLWithOptionsDiagnostics(
 		return nil, GenerationDiagnostics{}, fmt.Errorf("report: HTML publication requires a complete program portfolio")
 	}
 	return buildProgramHTMLWithOptionsDiagnostics(data, options)
-}
-
-func buildProgramHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
-	rendered, _, err := buildProgramHTMLWithOptionsDiagnostics(data, options)
-	return rendered, err
 }
 
 func buildProgramHTMLWithOptionsDiagnostics(
@@ -228,46 +217,6 @@ func bundledTemplateAssets(directory string) (string, error) {
 	return strings.TrimRight(bundle.String(), "\n"), nil
 }
 
-// browserValueContainsLocalPath walks the typed browser contract before JSON
-// escaping can hide host separators or HTML-sensitive path characters. It is
-// a persistence guard only; it neither rewrites fields nor supplies semantics.
-func browserValueContainsLocalPath(value any, roots []string) bool {
-	return browserReflectValueContainsLocalPath(reflect.ValueOf(value), roots)
-}
-
-func browserReflectValueContainsLocalPath(value reflect.Value, roots []string) bool {
-	if !value.IsValid() {
-		return false
-	}
-	switch value.Kind() {
-	case reflect.Interface, reflect.Pointer:
-		return !value.IsNil() && browserReflectValueContainsLocalPath(value.Elem(), roots)
-	case reflect.String:
-		return browserTextContainsLocalPath(value.String(), roots)
-	case reflect.Struct:
-		for index := 0; index < value.NumField(); index++ {
-			if browserReflectValueContainsLocalPath(value.Field(index), roots) {
-				return true
-			}
-		}
-	case reflect.Slice, reflect.Array:
-		for index := 0; index < value.Len(); index++ {
-			if browserReflectValueContainsLocalPath(value.Index(index), roots) {
-				return true
-			}
-		}
-	case reflect.Map:
-		iterator := value.MapRange()
-		for iterator.Next() {
-			if browserReflectValueContainsLocalPath(iterator.Key(), roots) ||
-				browserReflectValueContainsLocalPath(iterator.Value(), roots) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func scrubBrowserLocalPaths(text string, roots []string) string {
 	for _, root := range normalizedBrowserLocalRoots(roots) {
 		for searchFrom := 0; searchFrom <= len(text)-len(root); {
@@ -286,24 +235,6 @@ func scrubBrowserLocalPaths(text string, roots []string) string {
 		}
 	}
 	return text
-}
-
-func browserTextContainsLocalPath(text string, roots []string) bool {
-	for _, root := range normalizedBrowserLocalRoots(roots) {
-		for searchFrom := 0; searchFrom <= len(text)-len(root); {
-			relative := strings.Index(text[searchFrom:], root)
-			if relative < 0 {
-				break
-			}
-			start := searchFrom + relative
-			end := start + len(root)
-			if browserLocalPathBoundary(text, start, end) {
-				return true
-			}
-			searchFrom = end
-		}
-	}
-	return false
 }
 
 func normalizedBrowserLocalRoots(roots []string) []string {

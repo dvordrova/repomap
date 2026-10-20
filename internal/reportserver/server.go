@@ -12,7 +12,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -249,30 +248,6 @@ func renderRun(runID string, receipt report.RunReceipt) (runRecord, error) {
 		id: runID, runDir: receipt.RunDir(), analysisRoot: page.AnalysisRoot,
 		rendered: page.HTML, sources: page.Sources, htmlFilename: receipt.HTMLFilename(),
 	}, nil
-}
-
-// navigationRunID reads the sibling run id back out of a navigation link.
-func navigationRunID(
-	initialRunID, currentTargetID string,
-	item report.TargetNavigationItem,
-) (string, error) {
-	if item.TargetID == currentTargetID {
-		return initialRunID, nil
-	}
-	parsed, err := url.Parse(item.Href)
-	if err != nil {
-		return "", fmt.Errorf("sibling target route is invalid")
-	}
-	const prefix = "../"
-	const suffix = "/report.html"
-	if !strings.HasPrefix(parsed.Path, prefix) || !strings.HasSuffix(parsed.Path, suffix) {
-		return "", fmt.Errorf("sibling target route is invalid")
-	}
-	runID := strings.TrimSuffix(strings.TrimPrefix(parsed.Path, prefix), suffix)
-	if !validRunID(runID) {
-		return "", fmt.Errorf("sibling target run id is invalid")
-	}
-	return runID, nil
 }
 
 func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {

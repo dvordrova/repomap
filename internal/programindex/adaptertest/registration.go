@@ -142,22 +142,6 @@ func AssertRegistration(t testing.TB, index programindex.Index, want Registratio
 	}
 }
 
-// AssertRelation proves one arbitrary directed ProgramIndex fact without
-// assigning it product semantics. Cumulative-fixture tests use this for the
-// calls that must feed a registration handler after dispatch.
-func AssertRelation(t testing.TB, index programindex.Index, name string, want Relation) {
-	t.Helper()
-	if err := index.Validate(); err != nil {
-		t.Fatalf("%s: invalid ProgramIndex: %v", name, err)
-	}
-	objects := make(map[string]struct{}, len(index.Objects))
-	for _, object := range index.Objects {
-		objects[object.ID] = struct{}{}
-	}
-	assertExpectedObjectIDs(t, name, objects, want)
-	assertRelation(t, index, name, want)
-}
-
 func assertRelation(t testing.TB, index programindex.Index, label string, want Relation) programindex.Relation {
 	t.Helper()
 	candidates := make([]programindex.Relation, 0, 1)

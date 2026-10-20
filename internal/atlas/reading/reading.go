@@ -286,18 +286,6 @@ func (r *reader) symbolID(path string, line int, name string) string {
 	return ""
 }
 
-func (r *reader) directoryID(path string) string {
-	if id := r.directoriesByPath[path]; id != "" {
-		return id
-	}
-	for id, place := range r.places {
-		if place.Kind == atlas.PlaceDirectory && place.Path == path {
-			return id
-		}
-	}
-	return ""
-}
-
 // Read performs the walk.
 func Read(ctx context.Context, opts Options) (Result, error) {
 	return read(ctx, opts, SaveInput)

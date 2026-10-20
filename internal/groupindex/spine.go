@@ -222,17 +222,6 @@ type SpinePath struct {
 	Then *SpinePath `json:"-"`
 }
 
-// WalkPaths walks as Walk does, pick naming the candidates to follow at a
-// split: one is followed; several are each followed as a path of its own,
-// each with its own visited set (the path before the split, the first step
-// of every way and its own steps), so no way goes back through the trunk,
-// another way's start or its own steps, while two ways may each meet a unit
-// further on; none ends the path at a named fork of every candidate. Owner, 2026-09-30: several main paths are allowed where the
-// model is torn between them.
-func WalkPaths(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
-	return walkPath(start, map[string]bool{}, nil, next, pick, nil)
-}
-
 // WalkPathsThen walks as WalkPaths does and, where a route ends, goes back
 // to the last step that chose among several calls and reads the calls it
 // writes after the chosen one, in written order (later): one goes on with

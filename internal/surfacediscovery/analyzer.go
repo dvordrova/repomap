@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"go/types"
 	"io/fs"
@@ -540,55 +539,10 @@ func (a *analyzer) staticCallsTo(callee *ssa.Function) []ssa.CallInstruction {
 	return a.staticCalls[callee]
 }
 
-func (a *analyzer) entrypoints() []*ssa.Function {
-	result := []*ssa.Function{}
-	for _, pkg := range a.packages {
-		if pkg == nil || pkg.Pkg == nil || pkg.Pkg.Name() != "main" {
-			continue
-		}
-		function, ok := pkg.Members["main"].(*ssa.Function)
-		if ok && function.Blocks != nil {
-			result = append(result, function)
-		}
-	}
-	sort.Slice(result, func(i, j int) bool { return a.functionID(result[i]) < a.functionID(result[j]) })
-	return result
-}
-
-func importedPackagePaths(entrypoint *ssa.Function) map[string]bool {
-	result := make(map[string]bool)
-	if entrypoint == nil || entrypoint.Pkg == nil || entrypoint.Pkg.Pkg == nil {
-		return result
-	}
-	var visit func(*types.Package)
-	visit = func(pkg *types.Package) {
-		if pkg == nil || result[pkg.Path()] {
-			return
-		}
-		result[pkg.Path()] = true
-		for _, imported := range pkg.Imports() {
-			visit(imported)
-		}
-	}
-	visit(entrypoint.Pkg.Pkg)
-	return result
-}
-
 func (a *analyzer) repositoryDirectStaticCall(call ssa.CallInstruction, target *ssa.Function) bool {
 	return call != nil && target != nil && call.Parent() != nil &&
 		call.Common() != nil && call.Common().StaticCallee() == target &&
 		a.isRepositoryFunction(call.Parent()) && a.repositorySourceFunction(target)
-}
-
-func typedStringValue(expression ast.Expr, info *types.Info) (string, bool) {
-	if expression == nil || info == nil {
-		return "", false
-	}
-	value := info.Types[expression].Value
-	if value == nil || value.Kind() != constant.String {
-		return "", false
-	}
-	return constant.StringVal(value), true
 }
 
 func validEntryHandoffSymbol(symbol Symbol) bool {

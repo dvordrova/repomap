@@ -1390,26 +1390,6 @@ func validPlaceID(id string, kind PlaceKind) bool {
 	return err == nil && ordinal > 0 && prefix+strconv.Itoa(ordinal) == id
 }
 
-// Slug turns a title into a stable identifier: lowercase words joined by
-// hyphens, nothing else.
-func Slug(title string) string {
-	var out strings.Builder
-	dash := false
-	for _, r := range strings.ToLower(strings.TrimSpace(title)) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r > 127 && !strings.ContainsRune(" \t\n-_/.,:;()[]{}\"'", r):
-			out.WriteRune(r)
-			dash = false
-		default:
-			if !dash && out.Len() > 0 {
-				out.WriteByte('-')
-				dash = true
-			}
-		}
-	}
-	return strings.TrimSuffix(out.String(), "-")
-}
-
 // GraphPresentation contains only the producer's original traversal and
 // alternative ordering. It changes no canonical graph, source value or artifact.
 // Fields are private; consumers cannot replace this ordering with new evidence.
@@ -1597,28 +1577,10 @@ func Decode(encoded []byte) (Atlas, error) {
 	return value, nil
 }
 
-// PersistGraph writes places.json into a run directory.
-func PersistGraph(runDir string, graph Graph) error {
-	encoded, err := EncodeGraph(graph)
-	if err != nil {
-		return err
-	}
-	return WriteGraph(runDir, encoded)
-}
-
 // WriteGraph writes places.json from the bytes EncodeGraph returned, for a
 // caller that hands the same sealed bytes on instead of sealing twice.
 func WriteGraph(runDir string, encoded []byte) error {
 	return writeFile(filepath.Join(runDir, GraphFilename), encoded)
-}
-
-// ReadGraph reads places.json from a run directory.
-func ReadGraph(runDir string) (Graph, error) {
-	raw, err := os.ReadFile(filepath.Join(runDir, GraphFilename))
-	if err != nil {
-		return Graph{}, fmt.Errorf("atlas: read %s: %w", GraphFilename, err)
-	}
-	return DecodeGraph(raw)
 }
 
 // Persist writes atlas.json into a run directory.

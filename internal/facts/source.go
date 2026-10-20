@@ -121,18 +121,6 @@ func clipText(value string) string {
 	return strings.TrimSpace(string(runes[:textMaxRunes]))
 }
 
-// isCommentLine reports a line that is only a comment, so a regex pass does
-// not turn "# never call exec()" into a risk.
-func isCommentLine(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	for _, prefix := range []string{"#", "//", "/*", "*", "<!--"} {
-		if strings.HasPrefix(trimmed, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 func sourceExtension(filePath string) string {
 	dot := strings.LastIndex(filePath, ".")
 	slash := strings.LastIndex(filePath, "/")
@@ -150,9 +138,4 @@ func IsSourceFile(filePath string) bool {
 	default:
 		return false
 	}
-}
-
-func isPythonFile(filePath string) bool {
-	extension := sourceExtension(filePath)
-	return extension == ".py" || extension == ".pyi"
 }

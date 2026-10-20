@@ -278,22 +278,6 @@ func originText(value *sourcevalue.Value, owners map[sourcevalue.Anchor]string) 
 	return "not followed: " + value.Text
 }
 
-// entersAt is what the words of the call at a site became: the entry kind
-// its answer chose, or nothing. undecided says the call was asked and its
-// answer was not decided; a call never asked is neither.
-func (r *reader) entersAt(path string, line, column int) (kind string, undecided bool) {
-	answer, asked := r.callEnters[sourceSite{path, line, column}]
-	switch {
-	case !asked:
-		return "", false
-	case answer == "":
-		return "", true
-	case answer == lines.APINone:
-		return "", false
-	}
-	return answer, false
-}
-
 // tableReadSites are where a declaration reads a table the program wrote
 // (a variable with rows), by site.
 func (r *reader) tableReadSites() map[sourceSite]bool {

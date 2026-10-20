@@ -473,11 +473,6 @@ type walker struct {
 	unevaluated bool
 }
 
-func (w walker) with(conditional bool) walker {
-	w.conditional = w.conditional || conditional
-	return w
-}
-
 // in walks an arm of a construct deciding whether it runs: condition
 // decides it, the arm running when it does (Guard.When).
 func (w walker) in(site Position, node, condition *Node, when string) walker {

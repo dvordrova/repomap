@@ -203,14 +203,6 @@ func BindStage(executor llm.Executor, stage string) llm.Executor {
 	return executor
 }
 
-func semanticExchangeForStageEvent(
-	stage string,
-	ordinal int,
-	event llm.Event,
-) (SemanticExchange, bool) {
-	return semanticExchangeForStageEventAt(stage, 1, ordinal, event)
-}
-
 func semanticExchangeForStageEventAt(
 	stage string,
 	instanceOrdinal int,

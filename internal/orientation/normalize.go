@@ -185,33 +185,6 @@ func (err *noOutputError) Error() string {
 	return fmt.Sprintf("orientation: no output accepted: %d rows refused, first: %s", len(err.rejected), err.rejected[0].Reason)
 }
 
-func (result *normalized) decodeField(section, name string, fields map[string]json.RawMessage, value any) bool {
-	raw, present := fields[name]
-	if !present {
-		return true
-	}
-	if err := json.Unmarshal(raw, value); err != nil {
-		result.reject(section, raw, fmt.Sprintf("%s has an invalid shape: %v", name, err))
-		return false
-	}
-	return true
-}
-
-func decodeResponse(raw []byte) (map[string]json.RawMessage, error) {
-	if len(raw) == 0 || len(raw) > llm.ProviderResponseByteLimit {
-		return nil, fmt.Errorf("orientation: response exceeds bounded envelope")
-	}
-	normalizedJSON, err := llm.NormalizeJSON(raw)
-	if err != nil {
-		return nil, fmt.Errorf("orientation: invalid response JSON: %w", err)
-	}
-	var response map[string]json.RawMessage
-	if err := decodeStrict(normalizedJSON, &response); err != nil || response == nil {
-		return nil, fmt.Errorf("orientation: response must be a JSON object")
-	}
-	return response, nil
-}
-
 func decodeStrict(raw []byte, value any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if err := decoder.Decode(value); err != nil {

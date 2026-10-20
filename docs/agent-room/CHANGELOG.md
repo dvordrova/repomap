@@ -1,3 +1,21 @@
+## 2026-10-20 — 48 functions nothing could reach are removed
+
+`deadcode -test` (x/tools) listed functions unreachable from the binary and
+from every test; they are deleted with their doc comments and orphaned
+imports, by file: `atlas` (`PersistGraph`, `ReadGraph`, `Slug`), `lines`
+(`Placement` with its `placement.md`, `EvidenceVocabulary`; the stage
+constants stay), `places`, `reading` (five), `table.SortRows`, `cproject`,
+`debugdump`, `facts` (five), `freshness` (two), `groupindex` (`SubjectIDLess`,
+`WalkPaths`, `stableID`, …), `jstsproject.TargetSelector`, `orientation`
+(three), `adaptertest.AssertRelation`, goadapter's `target_binding.go`
+(whole file), `report` (`VerifyOrdinaryReportHTMLPayload`, lane helpers,
+`browser*ContainsLocalPath`, `build*WithOptions`, three navigation loaders),
+`reportserver.navigationRunID`, `run.reduceReportGlossary`,
+`surfacediscovery` (three), `targetportfolio.defaultBatches`. Build, vet and
+the owning packages' tests pass; `facts/build.go` is left to its current
+editor. `TestManyBoxesAreGatheredIntoLargerParts` failed once under the
+parallel batch and passes three times alone: a pre-existing flake to watch.
+
 ## 2026-10-20 — the ProgramIndex storage wrappers are gone
 
 `programindex.ArtifactStore` was an empty struct whose `Persist` ignored its

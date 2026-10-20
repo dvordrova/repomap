@@ -1514,16 +1514,6 @@ func runningCallTargets(place atlas.Place, call atlas.SymbolCall) []string {
 	return intersectTargets(runningTargets(place), callTargets(place, call))
 }
 
-// An equal terminal identifier is only a candidate for the model to confirm.
-// It never establishes that two interfaces are connected.
-func operationIdentifier(name string) string {
-	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '.' || r == '/' || r == '(' || r == ')' || r == '*' })
-	if len(parts) == 0 {
-		return name
-	}
-	return parts[len(parts)-1]
-}
-
 // side says which column a box stands in: in when the outside calls into
 // it or execution starts there, out when it only calls out, mid otherwise.
 func (r *reader) side(owner *boxState, targetID string) string {

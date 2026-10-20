@@ -85,30 +85,6 @@ func (target *targetContext) enclosingSymbol(id string) (string, string) {
 	return "", ""
 }
 
-// symbolAtLine names the last function, method or type declared at or before
-// a line of a file; regex-derived rows use it as their enclosing symbol.
-func (target *targetContext) symbolAtLine(filePath string, line int) string {
-	best, bestLine := "", 0
-	for _, object := range target.sortedObjects() {
-		if object.Location == nil || object.Location.Path != filePath || object.Location.Line > line {
-			continue
-		}
-		switch object.Kind {
-		case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectType:
-		default:
-			continue
-		}
-		if object.Location.Line >= bestLine {
-			best, bestLine = object.Name, object.Location.Line
-		}
-	}
-	return best
-}
-
-func (target *targetContext) sortedObjects() []programindex.Object {
-	return target.input.Index.Objects
-}
-
 // externalOrigins lists the external symbols behind one pattern: receiver
 // origins first (Python/Go attach them to the pattern), then the relation's
 // external targets (TypeScript resolves the callee directly).

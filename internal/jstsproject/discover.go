@@ -402,9 +402,6 @@ func helperPackageBoundaries(
 	return boundaries, nil
 }
 
-// TargetSelector returns the exact selected-package selector advertised to --target.
-func TargetSelector(result Result) string { return result.Project.Selector }
-
 type packageProjectCandidate struct {
 	manifestPath string
 	projectDir   string

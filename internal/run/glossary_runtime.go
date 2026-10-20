@@ -17,16 +17,6 @@ import (
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
-// The shared run collector contains accepted live/cache adjuncts from every
-// analysis cube. Reduction happens once, before localization and publication.
-// indexes are the sealed ProgramIndexes of every published target.
-func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData, indexes []programindex.Index) error {
-	if options.Deps.terminology == nil || options.NoModel {
-		return nil
-	}
-	return reduceReportGlossaryNames(ctx, options, runDir, data, glossaryCodeNames(indexes, data.Facts))
-}
-
 func reduceReportGlossaryPortfolio(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData) error {
 	if options.Deps.terminology == nil || options.NoModel {
 		return nil

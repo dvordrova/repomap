@@ -954,16 +954,6 @@ func orderedBlocks(blocks []mapBlock, lanes []struct {
 	return result
 }
 
-func laneMapBlocks(blocks []mapBlock, lane groupindex.Lane) []mapBlock {
-	var result []mapBlock
-	for _, block := range blocks {
-		if block.lane == lane {
-			result = append(result, block)
-		}
-	}
-	return result
-}
-
 // layerBlocks puts a lane's blocks in the order its own arrows run: what
 // nothing points at goes first, what it points at follows. A lane laid out by
 // size alone is one tall column, and in a library where almost everything is
@@ -1199,16 +1189,6 @@ func spreadZones(frames []pageMapFrame) {
 
 // mapZoneColours is how many pastels the stylesheet defines for zones.
 const mapZoneColours = 8
-
-func laneGroups(index groupindex.Index, lane groupindex.Lane) []groupindex.Group {
-	var result []groupindex.Group
-	for _, group := range index.Groups {
-		if group.Lane == lane {
-			result = append(result, group)
-		}
-	}
-	return result
-}
 
 // mapNeighbours returns, per group, the group ids one connection away. An
 // empty string stands for a connection whose other end is in another target.

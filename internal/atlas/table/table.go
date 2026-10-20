@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -896,9 +895,4 @@ func jsonString(value string) []byte {
 func sha256Hex(value []byte) string {
 	sum := sha256.Sum256(value)
 	return hex.EncodeToString(sum[:])
-}
-
-// SortRows orders rows by ID so windows are stable across runs.
-func SortRows(rows []Row) {
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 }

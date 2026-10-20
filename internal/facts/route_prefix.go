@@ -42,12 +42,6 @@ func (target *targetContext) routeValueOrigins() map[string][]programindex.Exter
 	return result
 }
 
-// isRouterMount reports a route-word call whose "handler" is a repository
-// value rather than a callable: mount("/api", router) describes a router.
-func (target *targetContext) isRouterMount(pattern programindex.RelationPattern) bool {
-	return target.mountedValue(pattern) != ""
-}
-
 // mountedValue is the one repository non-callable object a call hands over.
 func (target *targetContext) mountedValue(pattern programindex.RelationPattern) string {
 	for _, argument := range pattern.Arguments {

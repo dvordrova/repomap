@@ -686,22 +686,6 @@ func cloneSlice[T any](values []T) []T {
 	return append(make([]T, 0, len(values)), values...)
 }
 
-func validID(value string, prefix string) bool {
-	if !strings.HasPrefix(value, prefix) || len(value) < len(prefix)+idHexWidth {
-		return false
-	}
-	body := value[len(prefix):]
-	for i, r := range body {
-		switch {
-		case r >= '0' && r <= '9', r >= 'a' && r <= 'f':
-		case r == '-' && i >= idHexWidth:
-		default:
-			return false
-		}
-	}
-	return true
-}
-
 func validRevision(value string) bool {
 	if len(value) < 7 || len(value) > 64 {
 		return false

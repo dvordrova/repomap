@@ -2166,23 +2166,6 @@ func literalArgument(argument programindex.PatternArgument) (string, bool) {
 	}
 }
 
-// packageMatches reports whether a package path is one of the candidates or
-// beneath one, tolerating a Go major-version suffix.
-func packageMatches(packagePath string, candidates ...string) (string, bool) {
-	if slash := strings.LastIndex(packagePath, "/"); slash >= 0 {
-		suffix := packagePath[slash+1:]
-		if len(suffix) >= 2 && suffix[0] == 'v' && strings.Trim(suffix[1:], "0123456789") == "" {
-			packagePath = packagePath[:slash]
-		}
-	}
-	for _, candidate := range candidates {
-		if packagePath == candidate || strings.HasPrefix(packagePath, candidate+"/") {
-			return candidate, true
-		}
-	}
-	return "", false
-}
-
 // callerOf names the declaration a boundary sits in and its docstring.
 func (b *builder) callerOf(file *fileState, objectID, symbol string, line int) (string, string) {
 	if file == nil {

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 const (
@@ -174,10 +173,6 @@ func validStatus(status string) bool {
 	default:
 		return false
 	}
-}
-
-func validLabel(value string) bool {
-	return strings.TrimSpace(value) != "" && strings.IndexFunc(value, unicode.IsControl) < 0
 }
 
 func validHexDigest(value string, lengths ...int) bool {

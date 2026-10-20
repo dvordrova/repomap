@@ -41,12 +41,6 @@ const (
 	designOutputPerRow = 16
 )
 
-// designOutputTokens is the output allowance of a parts or areas request
-// listing rows rows.
-func designOutputTokens(rows int) int {
-	return min(llm.DefaultMaxOutputTokens, max(designOutputFloor, designOutputPerRow*rows))
-}
-
 // designFile is a file of the target that holds at least one unit of its
 // own: a function, a variable, a type together with its methods, or a
 // module body.
@@ -367,11 +361,6 @@ func (r *reader) designView(targetID string) *designView {
 	return view
 }
 
-func (view *designView) partsEndpoint(id string, rowOf map[string]string) partsEndpoint {
-	decl := view.declarations[id]
-	return partsEndpoint{Ref: decl.Ref, UnitRef: rowOf[view.root(id)], Path: decl.Path, Name: decl.Name, Kind: decl.Kind, Signature: decl.Signature, Line: decl.Line, Column: decl.Column}
-}
-
 // root is the unit a declaration's membership comes from.
 func (view *designView) root(id string) string {
 	if view.roots == nil {
@@ -457,10 +446,6 @@ type designUnitRow struct {
 	Variables []string `json:"variables,omitempty"`
 }
 
-func (unit *designUnit) row() designUnitRow {
-	return designUnitRow{Ref: unit.ref, Path: unit.path, Box: unit.box, Units: len(unit.units), Types: unit.types, Functions: unit.functions, Variables: unit.variables}
-}
-
 // designUnitOf is a row of the given units of one file.
 func (view *designView) designUnitOf(ref string, file *designFile, box string, units []string) *designUnit {
 	unit := &designUnit{ref: ref, path: file.path, dir: file.dir, box: box, file: file.id, test: file.test, generated: file.generated, units: units}
@@ -480,24 +465,6 @@ func (view *designView) designUnitOf(ref string, file *designFile, box string, u
 func cleanText(text string) string {
 	space := func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f }
 	return strings.Join(strings.FieldsFunc(text, space), " ")
-}
-
-// refList reads a list of refs: a JSON array of strings, or one string of
-// refs separated by spaces or commas, the form a table sequence cell takes.
-// Every ref is still checked by the caller. Anything else is not a list.
-func refList(raw json.RawMessage) ([]string, bool) {
-	if len(raw) == 0 {
-		return nil, true
-	}
-	var refs []string
-	if json.Unmarshal(raw, &refs) == nil {
-		return refs, true
-	}
-	var text string
-	if json.Unmarshal(raw, &text) == nil {
-		return strings.Fields(strings.ReplaceAll(text, ",", " ")), true
-	}
-	return nil, false
 }
 
 // inputRefused says whether the provider refused a request for its input or

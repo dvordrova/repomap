@@ -307,23 +307,6 @@ func semanticStatus(xy string) string {
 	return "modified"
 }
 
-func isGoBuildInput(path string) bool {
-	base := filepath.Base(path)
-	switch base {
-	case "go.mod", "go.sum", "go.work", "go.work.sum":
-		return true
-	}
-	if filepath.ToSlash(path) == "vendor/modules.txt" || strings.HasSuffix(filepath.ToSlash(path), "/vendor/modules.txt") {
-		return true
-	}
-	switch strings.ToLower(filepath.Ext(base)) {
-	case ".go", ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".s", ".syso":
-		return true
-	default:
-		return false
-	}
-}
-
 func gitOutput(ctx context.Context, path string, args ...string) ([]byte, error) {
 	commandArgs := []string{
 		"--no-pager",

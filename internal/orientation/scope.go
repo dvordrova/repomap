@@ -470,32 +470,6 @@ func (graph *flowGraph) public(id string) bool {
 	return subject != nil && subject.Object != nil && subject.Object.Visibility == programindex.VisibilityPublic
 }
 
-// coreParts are the core parts a candidate's closure enters, by title, in
-// the order the program lists its parts: code's word for where a choice
-// leads.
-func (graph *flowGraph) coreParts(candidate flowCandidate) []string {
-	reached := map[string]bool{}
-	queue := append([]string(nil), candidate.members...)
-	for _, member := range queue {
-		reached[member] = true
-	}
-	for next := 0; next < len(queue); next++ {
-		for _, edge := range graph.out[queue[next]] {
-			if !reached[edge.to] {
-				reached[edge.to] = true
-				queue = append(queue, edge.to)
-			}
-		}
-	}
-	var parts []string
-	for _, group := range graph.index.Groups {
-		if group.Core && slices.ContainsFunc(group.MemberSubjectIDs, func(id string) bool { return reached[id] }) {
-			parts = append(parts, group.Title)
-		}
-	}
-	return parts
-}
-
 // conduit says a helper only passes the call on: the walk follows exactly
 // one edge from it, to a further helper, and it makes no call the index
 // leaves open. That helper serves whoever the conduit serves, so the walk

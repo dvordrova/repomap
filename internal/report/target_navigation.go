@@ -3,7 +3,6 @@ package report
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -116,57 +115,6 @@ func TargetNavigationPageFor(runDir string, target programindex.Target) (TargetN
 	return page, nil
 }
 
-// LoadTargetNavigationPage restores one page identity only from its validated
-// ProgramPortfolio default and the exact ProgramIndex artifact-set binding.
-func LoadTargetNavigationPage(runDir, runID string) (TargetNavigationPage, error) {
-	if err := programpage.ValidateRunID(runID); err != nil {
-		return TargetNavigationPage{}, fmt.Errorf("report: target navigation run: %w", err)
-	}
-	data, err := ReadRunDir(runDir)
-	if err != nil {
-		return TargetNavigationPage{}, fmt.Errorf("report: target navigation program page: %w", err)
-	}
-	if data.ProgramPortfolio == nil {
-		return TargetNavigationPage{}, fmt.Errorf("report: target navigation program portfolio is missing")
-	}
-	defaultEntry, err := data.ProgramPortfolio.defaultBinding()
-	if err != nil {
-		return TargetNavigationPage{}, fmt.Errorf("report: target navigation program portfolio: %w", err)
-	}
-	setRaw, _, err := readBoundedProgramArtifact(
-		filepath.Join(runDir, programindex.ArtifactSetFilename),
-		programindex.MaxArtifactSetBytes,
-		"program index set",
-		false,
-	)
-	if err != nil {
-		return TargetNavigationPage{}, err
-	}
-	set, err := programindex.DecodeArtifactSet(setRaw)
-	if err != nil {
-		return TargetNavigationPage{}, fmt.Errorf("report: target navigation program index set: %w", err)
-	}
-	if set.DefaultTargetID != defaultEntry.Target.ID {
-		return TargetNavigationPage{}, fmt.Errorf("report: target navigation default program target mismatch")
-	}
-	artifactFilename := ""
-	for _, entry := range set.Entries {
-		if entry.TargetID == set.DefaultTargetID {
-			artifactFilename = entry.Filename
-			break
-		}
-	}
-	page := TargetNavigationPage{
-		RunID:            runID,
-		ProgramTarget:    defaultEntry.Target.Snapshot(),
-		ArtifactFilename: artifactFilename,
-	}
-	if err := validateTargetNavigationPage(page); err != nil {
-		return TargetNavigationPage{}, err
-	}
-	return page, nil
-}
-
 // BuildTargetNavigation projects validated ProgramTarget pages into transient
 // presentation state. Order and routes remain backend-owned; identity and
 // display facts come only from each page's ProgramPortfolio/ArtifactSet.
@@ -222,51 +170,6 @@ func BuildTargetNavigation(
 		return nil, fmt.Errorf("report: target navigation default or current program target is absent")
 	}
 	return navigation, nil
-}
-
-// LoadManifestTargetNavigation restores transient target navigation only from
-// the language-neutral page portfolio bound by one verified run manifest. It
-// never reads report.html and never persists the projection into report.json.
-func LoadManifestTargetNavigation(
-	runDir string,
-	manifest RunManifest,
-) (*TargetNavigationPortfolio, error) {
-	return loadManifestProgramPageNavigation(runDir, manifest)
-}
-
-func loadManifestProgramPageNavigation(
-	runDir string,
-	manifest RunManifest,
-) (*TargetNavigationPortfolio, error) {
-	portfolioRaw, err := os.ReadFile(filepath.Join(runDir, programpage.ArtifactFilename))
-	if err != nil {
-		return nil, fmt.Errorf("report: program page navigation portfolio: %w", err)
-	}
-	portfolio, err := programpage.Decode(portfolioRaw)
-	if err != nil {
-		return nil, fmt.Errorf("report: program page navigation portfolio: %w", err)
-	}
-	pages := make([]TargetNavigationPage, 0, len(portfolio.Pages))
-	currentTargetID := ""
-	runsDir := filepath.Dir(filepath.Clean(runDir))
-	for index, binding := range portfolio.Pages {
-		pageRunDir := filepath.Join(runsDir, binding.RunID)
-		page, pageErr := LoadTargetNavigationPage(pageRunDir, binding.RunID)
-		if pageErr != nil {
-			return nil, fmt.Errorf("report: program page navigation page %d: %w", index, pageErr)
-		}
-		if filepath.Clean(pageRunDir) == filepath.Clean(runDir) {
-			if binding.Target.ID != manifest.ProgramTargetID {
-				return nil, fmt.Errorf("report: current program page is not the one this run is for")
-			}
-			currentTargetID = binding.Target.ID
-		}
-		pages = append(pages, page)
-	}
-	if currentTargetID == "" {
-		return nil, fmt.Errorf("report: current program page is absent from portfolio")
-	}
-	return BuildTargetNavigation(pages, portfolio.DefaultTargetID, currentTargetID)
 }
 
 func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPortfolio) error {
